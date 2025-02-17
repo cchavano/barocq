@@ -7,3 +7,5 @@ barocq
 compcert.ini
 dune-project
 .vscodeignore
+.depend
+.depend.extr
