@@ -76,13 +76,13 @@ let comp_to_string (c : comp) : string =
   match c with
   | CpAtom a -> atom_to_string a
   | CpArrayGet (a1, a2) ->
-      sprintf "%s[%s]" (atom_to_string a1) (atom_to_string a2)
+      sprintf "%s[%s]" (atom_to_string a1) (opt_parens a2)
   | CpArraySet (a1, a2, a3) ->
       sprintf
         "%s[%s] <- %s"
         (atom_to_string a1)
         (atom_to_string a2)
-        (atom_to_string a3)
+        (opt_parens a3)
   | CpStructProj (a, x) ->
       sprintf "%s.%s" (atom_to_string a) (ident_to_string x)
   | CpStructUpdate (a1, x, a2) ->
@@ -90,7 +90,7 @@ let comp_to_string (c : comp) : string =
         "%s.%s <- %s"
         (atom_to_string a1)
         (ident_to_string x)
-        (atom_to_string a2)
+        (opt_parens a2)
   | CpCall (f, args) ->
       sprintf
         "%s %s"
