@@ -46,42 +46,6 @@ Module MonError <: MONAD.
 
 End MonError.
 
-Module MonOption <: MONAD.
-
-  Export Errors.
-
-  Definition M : Type -> Type := option.
-
-  Definition ret {A: Type} (a: A) : option A := Some a.
-
-  Definition bind {A B: Type} (f: M A) (g: A -> M B) : M B :=
-    match f with
-    | Some v => g v
-    | None => None
-    end.
-
-  Definition bind2 {A B C: Type} (f: M (A * B)) (g: A -> B -> M C) : M C :=
-    match f with
-    | Some (v1, v2) => g v1 v2
-    | None => None
-    end.
-
-  Definition fail {A: Type} : M A := None.
-
-  (* Notation eret := ret. *)
-
-  Declare Scope option_monad_scope.
-
-  Notation "'let*' X := A 'in' B" := (MonOption.bind A (fun X => B))
-    (at level 200, X name, A at level 100, B at level 200)
-    : option_monad_scope.
-
-  Notation "'let*' ( X , Y ) := A 'in' B" := (MonOption.bind2 A (fun X Y => B))
-    (at level 200, X name, Y name, A at level 100, B at level 200)
-    : option_monad_scope.
-
-End MonOption.
-
 Module Type STATE_TYPE.
 
   Parameter t : Type.
