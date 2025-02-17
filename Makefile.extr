@@ -1,0 +1,226 @@
+#######################################################################
+#                                                                     #
+#              The Compcert verified compiler                         #
+#                                                                     #
+#          Xavier Leroy, INRIA Paris-Rocquencourt                     #
+#                                                                     #
+#  Copyright Institut National de Recherche en Informatique et en     #
+#  Automatique.  All rights reserved.  This file is distributed       #
+#  under the terms of the GNU Lesser General Public License as        #
+#  published by the Free Software Foundation, either version 2.1 of   #
+#  the License, or (at your option) any later version.                #
+#  This file is also distributed under the terms of the               #
+#  INRIA Non-Commercial License Agreement.                            #
+#                                                                     #
+#######################################################################
+
+# Second-stage Makefile, after Coq extraction
+
+include Makefile.config
+
+#
+# Variables from Makefile.config:
+# -OCAML_NATIVE_COMP: native-code compilation is supported
+# -OCAML_OPT_COMP: can we use the natively-compiled compilers
+# -COMPFLAGS: compile options
+# -LINK_OPT: additional linker flags for the native binary
+#
+
+# Menhir configuration.
+
+include Makefile.menhir
+
+#
+# Variables from Makefile.menhir:
+# -MENHIR_INCLUDES: additional menhir include paths
+# -MENHIR_LIBS: additional menhir libraries
+#
+
+# The pre-parser's error message database is compiled as follows.
+
+# cparser/pre_parser_messages.ml:
+# 	$(MAKE) -C cparser correct
+
+# Directories containing plain Caml code
+
+# DIRS=extraction \
+#   lib common $(ARCH) backend cfrontend cparser driver \
+#   export debug
+
+CDIRS=\
+	lib common $(ARCH) backend cfrontend\
+	driver cparser export debug
+
+BDIRS=extraction $(BDIRS_SOURCE)
+
+DIRS=$(addprefix $(BUILD_DIR)/, $(BDIRS)) $(addprefix $(COMPCERT_DIR)/, $(CDIRS))
+
+INCLUDES=$(patsubst %,-I %, $(DIRS))
+
+# Control of warnings:
+
+WARNINGS=-w +a-4-9-26-27-44-45-70
+# extraction/%.cmx: WARNINGS +=-w -20-27-32..34-39-41-44..45-60-67
+# extraction/%.cmo: WARNINGS +=-w -20-27-32..34-39-41-44..45-60-67
+# cparser/pre_parser.cmx: WARNINGS += -w -41
+# cparser/pre_parser.cmo: WARNINGS += -w -41
+$(BUILD_DIR)/extraction/%.cmx: WARNINGS +=-w -20-27-32..34-39-41-44..45-60-67
+$(BUILD_DIR)/extraction/%.cmo: WARNINGS +=-w -20-27-32..34-39-41-44..45-60-67
+
+# Turn warnings into errors, but not for released tarballs
+ifeq ($(wildcard .git),.git)
+WARN_ERRORS=-warn-error +a
+else
+WARN_ERRORS=
+endif
+
+COMPFLAGS+=-g -strict-sequence -safe-string \
+  $(INCLUDES) -I "$(MENHIR_DIR)" -I +str -I +unix \
+  $(WARNINGS) $(WARN_ERRORS)
+
+# Using .opt compilers if available
+
+ifeq ($(OCAML_OPT_COMP),true)
+DOTOPT=.opt
+else
+DOTOPT=
+endif
+
+OCAMLC=ocamlc$(DOTOPT) $(COMPFLAGS)
+OCAMLOPT=ocamlopt$(DOTOPT) $(COMPFLAGS)
+OCAMLDEP=ocamldep$(DOTOPT) -slash $(INCLUDES)
+
+OCAMLLEX=ocamllex -q
+MODORDER=$(COMPCERT_DIR)/tools/modorder .depend.extr
+COPY=cp
+
+# PARSERS=cparser/pre_parser.mly
+# LEXERS=cparser/Lexer.mll lib/Tokenize.mll \
+# 	     lib/Readconfig.mll lib/Responsefile.mll
+
+PARSERS=$(BUILD_DIR)/bparser/Bparser.mly
+LEXERS=$(BUILD_DIR)/bparser/Blexer.mll
+
+LIBS=str.cmxa unix.cmxa $(MENHIR_LIBS)
+LIBS_BYTE=$(patsubst %.cmxa,%.cma,$(patsubst %.cmx,%.cmo,$(LIBS)))
+
+# EXECUTABLES=ccomp ccomp.byte cchecklink cchecklink.byte clightgen clightgen.byte
+# GENERATED=$(PARSERS:.mly=.mli) $(PARSERS:.mly=.ml) $(LEXERS:.mll=.ml) cparser/pre_parser_messages.ml
+GENERATED=$(PARSERS:.mly=.mli) $(PARSERS:.mly=.ml) $(LEXERS:.mll=.ml)
+
+MLSOURCE=$(addprefix $(BUILD_DIR)/,$(foreach dir,$(BDIRS_SOURCE),$(wildcard $(dir)/*.ml $(dir)/*.mli)))
+
+MLFILES=$(GENERATED) $(MLSOURCE)
+
+# Beginning of part that assumes .depend.extr already exists
+
+ifeq ($(wildcard .depend.extr),.depend.extr)
+
+# CCOMP_OBJS:=$(shell $(MODORDER) driver/Driver.cmx)
+
+# ifeq ($(OCAML_NATIVE_COMP),true)
+# ccomp: $(CCOMP_OBJS)
+# 	@echo "Linking $@"
+# 	@$(OCAMLOPT) -o $@ $(LIBS) $(LINK_OPT) $+
+# else
+# ccomp: ccomp.byte
+# 	@echo "Copying to $@"
+# 	@$(COPY) $+ $@
+# endif
+
+# ccomp.byte: $(CCOMP_OBJS:.cmx=.cmo)
+# 	@echo "Linking $@"
+# 	@$(OCAMLC) -o $@ $(LIBS_BYTE) $+
+
+# CLIGHTGEN_OBJS:=$(shell $(MODORDER) export/ExportDriver.cmx)
+
+# ifeq ($(OCAML_NATIVE_COMP),true)
+# clightgen: $(CLIGHTGEN_OBJS)
+# 	@echo "Linking $@"
+# 	@$(OCAMLOPT) -o $@ $(LIBS) $(LINK_OPT) $+
+# else
+# clightgen: clightgen.byte
+# 	@echo "Copying to $@"
+# 	@$(COPY) $+ $@
+# endif
+
+# clightgen.byte: $(CLIGHTGEN_OBJS:.cmx=.cmo)
+# 	@echo "Linking $@"
+# 	@$(OCAMLC) -o $@ $(LIBS_BYTE) $+
+
+BAROCQ_OBJS=$(shell $(MODORDER) $(BUILD_DIR)/src/Bcomp.cmx)
+
+barocq: $(BAROCQ_OBJS)
+	@echo "LINK $@"
+	@$(OCAMLOPT) -o $@ $(LIBS)  $(LINK_OPT) $+
+
+include .depend.extr
+
+endif
+
+# Copy ml source files to the build directory
+
+$(BUILD_DIR)/src:
+	@mkdir -p $(BUILD_DIR)/src
+
+$(BUILD_DIR)/bparser:
+	@mkdir -p $(BUILD_DIR)/bparser
+
+$(BUILD_DIR)/printer:
+	@mkdir -p $(BUILD_DIR)/printer
+
+builddir: $(addprefix $(BUILD_DIR)/,$(BDIRS_SOURCE))
+
+$(BUILD_DIR)/src/%.ml: src/%.ml | builddir
+	@echo COPY $< to $@
+	@cp $< $(BUILD_DIR)/src
+
+$(BUILD_DIR)/src/%.mli: src/%.mli | builddir
+	@echo COPY $< to $@
+	@cp $< $(BUILD_DIR)/src
+
+$(BUILD_DIR)/bparser/Bparser.mly: bparser/Bparser.mly | builddir
+	@echo COPY $< to $@
+	@cp $< $(BUILD_DIR)/bparser
+
+$(BUILD_DIR)/bparser/Blexer.mll: bparser/Blexer.mll | builddir
+	@echo COPY $< to $@
+	@cp $< $(BUILD_DIR)/bparser
+
+$(BUILD_DIR)/printer/%.ml: printer/%.ml | builddir
+	@echo COPY $< to $@
+	@cp $< $(BUILD_DIR)/printer
+
+$(BUILD_DIR)/printer/%.mli: printer/%.mli | builddir
+	@echo COPY $< to $@
+	@cp $< $(BUILD_DIR)/printer
+
+# End of part that assumes .depend.extr already exists
+
+%.cmi: %.mli
+	@echo "OCAMLC   $<"
+	@$(OCAMLC) -c $<
+%.cmo: %.ml
+	@echo "OCAMLC   $<"
+	@$(OCAMLC) -c $<
+%.cmx: %.ml
+	@echo "OCAMLOPT $<"
+	@$(OCAMLOPT) -c $<
+
+%.ml: %.mll
+	$(OCAMLLEX) $<
+
+clean:
+#	rm -f $(EXECUTABLES)
+	rm -f $(GENERATED)
+	for d in $(DIRS); do rm -f $$d/*.cm[iotx] $$d/*cmti $$d/*.o; done
+#	$(MAKE) -C cparser clean
+
+# Generation of .depend.extr
+
+depend: $(MLFILES)
+	@echo "Analyzing OCaml dependencies"
+	@$(OCAMLDEP) $(foreach d,$(DIRS),$(wildcard $(d)/*.ml)) $(GENERATED) >.depend.extr || { rm -f .depend.extr; exit 2; }
+	@$(OCAMLDEP) $(foreach d,$(DIRS),$(wildcard $(d)/*.mli)) $(GENERATED) >>.depend.extr || { rm -f .depend.extr; exit 2; }
+
+.PHONY: builddir

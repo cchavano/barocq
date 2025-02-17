@@ -1,0 +1,38 @@
+From Coq Require Import List.
+From BarocqComp Require Import Syntax BarocqBNF ImpBNF.
+Import ListNotations.
+
+Local Open Scope error_monad_scope.
+
+Fixpoint transl_expr (e: BarocqBNF.expr) : ImpBNF.tailcomp :=
+  match e with
+  | EAtom a => TcComp (CpAtom a)
+  | EArrayGet a1 a2 => TcComp (CpArrayGet a1 a2)
+  | EArraySet a1 a2 a3 => TcComp (CpArraySet a1 a2 a3)
+  | EStructProj a x => TcComp (CpStructProj a x)
+  | EStructUpdate a1 x a2 => TcComp (CpStructUpdate a1 x a2)
+  | EApp a args => TcComp (CpCall a args)
+  | ELetIn x e1 e2 =>
+      TcBegin (StSetTailcomp x (transl_expr e1) :: nil) (transl_expr e2)
+  | EIfThenElse a e1 e2 =>
+      TcIfThenElse a (transl_expr e1) (transl_expr e2)
+  end.
+
+Definition transl_function (f: BarocqBNF.function) : ImpBNF.function :=
+  {|
+    fn_return := fn_return f;
+    fn_params := fn_params f;
+    fn_body := transl_expr (fn_body f)
+  |}.
+
+Definition transl_globdef (def: BarocqBNF.globdef) : ImpBNF.globdef :=
+  match def with
+  | DefConst x l ty => DefConst x l ty
+  | DefFun x f => DefFun x (transl_function f)
+  end.
+
+Definition transl_program (prog: BarocqBNF.program) : ImpBNF.program :=
+  {|
+    prog_defs := map transl_globdef (prog_defs prog);
+    prog_types := prog_types prog
+  |}.

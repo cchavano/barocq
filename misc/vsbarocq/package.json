@@ -1,0 +1,25 @@
+{
+  "name": "vsbarocq",
+  "displayName": "VsBarocq",
+  "description": "Syntax highlighting for the Barocq programming language",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [{
+      "id": "barocq",
+      "aliases": ["Barocq", "barocq"],
+      "extensions": [".br"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "barocq",
+      "scopeName": "source.barocq",
+      "path": "./syntaxes/barocq.tmLanguage.json"
+    }]
+  }
+}

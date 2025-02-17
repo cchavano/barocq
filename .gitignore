@@ -1,0 +1,9 @@
+_build
+_opam
+test
+.vscode
+.merlin
+barocq
+compcert.ini
+dune-project
+.vscodeignore

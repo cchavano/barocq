@@ -1,0 +1,623 @@
+From Coq Require Import List String.
+From compcert Require Import Maps.
+From BarocqComp Require Import Monads Error MapList Types Common Syntax Barocq BarocqShallow.
+Import ListNotations.
+Import MonCounterErr.
+
+Module Normalization.
+
+  Import BNF.
+
+  Open Scope error_monad_scope.
+
+  Fixpoint atom_of_expr (e: Barocq.expr) : res atom :=
+    match e with
+    | Barocq.ETrue => eret ATrue
+    | Barocq.EFalse => eret AFalse
+    | Barocq.EInt32 i => eret (AInt32 i)
+    | Barocq.EInt64 i => eret (AInt64 i)
+    | Barocq.EVar x => eret (AVar (transl_user_ident x))
+    | Barocq.EUnaryOp op e1 =>
+        let* a1 := atom_of_expr e1 in
+        eret (AUnaryOp op a1)
+    | Barocq.EBinaryOp op e1 e2 =>
+        let* a1 := atom_of_expr e1 in
+        let* a2 := atom_of_expr e2 in
+        eret (ABinaryOp op a1 a2)
+    | Barocq.EStructProj e1 x =>
+        let* a1 := atom_of_expr e1 in
+        eret (AStructProj a1 x)
+    | Barocq.EStructUpdate e1 x e2 =>
+        let* a1 := atom_of_expr e1 in
+        let* a2 := atom_of_expr e2 in
+        eret (AStructUpdate a1 x a2)
+    | _ => MonError.fail
+    end.
+
+  Definition spread_atomlist (e: Barocq.expr) (la: list atom) : res BNF.expr :=
+    match e with
+    | Barocq.EUnaryOp op _ =>
+        let* a := nth_err la 0 in
+        eret (EAtom (AUnaryOp op a))
+    | Barocq.EBinaryOp op _ _ =>
+        let* a1 := nth_err la 0 in
+        let* a2 := nth_err la 1 in
+        eret (EAtom (ABinaryOp op a1 a2))
+    | Barocq.EArrayGet _ _ =>
+        let* a1 := nth_err la 0 in
+        let* a2 := nth_err la 1 in
+        eret (EArrayGet a1 a2)
+    | Barocq.EArraySet _ _ _ =>
+        let* a1 := nth_err la 0 in
+        let* a2 := nth_err la 1 in
+        let* a3 := nth_err la 2 in
+        eret (EArraySet a1 a2 a3)
+    | Barocq.EStructProj _ x =>
+        let* a := nth_err la 0 in
+        eret (EAtom (AStructProj a x))
+    | Barocq.EStructUpdate _ x _ =>
+        let* a1 := nth_err la 0 in
+        let* a2 := nth_err la 1 in
+        eret (EAtom (AStructUpdate a1 x a2))
+    | Barocq.EApp _ _ =>
+        let* a := nth_err la 0 in
+        let args := tail la in
+        eret (EApp a args)
+    | _ => MonError.fail
+    end.
+
+  Close Scope error_monad_scope.
+
+  Open Scope state_err_monad_scope.
+
+  Definition fresh_var : crmon ident := Common.fresh_var_err "b".
+
+  Fixpoint normalize_expr_rec (e: Barocq.expr) : crmon BNF.expr :=
+    let fix normalize_exprlist_rec (e: Barocq.expr) (le: list Barocq.expr) (la: list atom) : crmon BNF.expr :=
+      match le with
+      | nil => lift_err (spread_atomlist e (rev' la))
+      | e1 :: le' =>
+          match atom_of_expr e1 with
+          | OK a => normalize_exprlist_rec e le' (a :: la)
+          | Error _ =>
+              let* x := fresh_var in
+              let* ne1 := normalize_expr_rec e1 in
+              let* ler := normalize_exprlist_rec e le' (AVar x :: la) in
+              ret (ELetIn x ne1 ler)
+          end
+      end
+    in
+    let normalize_exprlist (e: Barocq.expr) (le: list Barocq.expr) : crmon BNF.expr :=
+      normalize_exprlist_rec e le nil
+    in
+    match e with
+    | Barocq.ETrue =>
+        ret (EAtom ATrue)
+    | Barocq.EFalse =>
+        ret (EAtom AFalse)
+    | Barocq.EInt32 i =>
+        ret (EAtom (AInt32 i))
+    | Barocq.EInt64 i =>
+        ret (EAtom (AInt64 i))
+    | Barocq.EVar x =>
+        ret (EAtom (AVar (transl_user_ident x)))
+    | Barocq.EUnaryOp op e1 =>
+        normalize_exprlist e [e1]
+    | Barocq.EBinaryOp op e1 e2 =>
+        normalize_exprlist e [e1; e2]
+    | Barocq.EArrayGet e1 e2 =>
+        normalize_exprlist e [e1; e2]
+    | Barocq.EArraySet e1 e2 e3 =>
+        normalize_exprlist e [e1; e2; e3]
+    | Barocq.EStructProj e1 k =>
+        normalize_exprlist e [e1]
+    | Barocq.EStructUpdate e1 k e2 =>
+        normalize_exprlist e [e1; e2]
+    | Barocq.EApp e1 args =>
+        normalize_exprlist e (e1 :: args)
+    | Barocq.EIfThenElse e1 e2 e3 =>
+        let* ne2 := normalize_expr_rec e2 in
+        let* ne3 := normalize_expr_rec e3 in
+        match atom_of_expr e1 with
+        | OK a => ret (EIfThenElse a ne2 ne3)
+        | Error _ =>
+            let* x1 := fresh_var in
+            let* ne1 := normalize_expr_rec e1 in
+            ret (ELetIn x1 ne1 (EIfThenElse (AVar x1) ne2 ne3))
+        end
+    | Barocq.ELetIn x e1 e2 =>
+        let* ne1 := normalize_expr_rec e1 in
+        let* ne2 := normalize_expr_rec e2 in
+        ret (ELetIn (transl_user_ident x) ne1 ne2)
+    end.
+
+  Close Scope state_err_monad_scope.
+
+  Local Open Scope error_monad_scope.
+
+  Definition normalize_expr (e: Barocq.expr) : res BNF.expr :=
+    let* ne := normalize_expr_rec e 0 in
+    eret (fst ne).
+
+  Definition normalize_params (params: list (ident * ctyp)) : list (ident * ctyp) :=
+    map (fun '(x, tx) => (transl_user_ident x, tx)) params.
+
+  Definition normalize_function (f: Barocq.function) : res BNF.function :=
+    let* body_norm := normalize_expr (fn_body f) in
+    eret {|
+      fn_return := fn_return f;
+      fn_params := normalize_params (fn_params f);
+      fn_body := body_norm
+    |}.
+
+  Fixpoint normalize_program_rec (ts: types) (prog: Barocq.program) : res BNF.program :=
+    match prog with
+    | nil =>
+        eret {|
+          prog_defs := nil;
+          prog_types := ts
+        |}
+    | d :: prog' =>
+        match d with
+        | Barocq.DefStruct a fields =>
+            let* ts' := types_update ts a fields in
+            normalize_program_rec ts' prog'
+        | Barocq.DefConst x l ty =>
+            let* r := normalize_program_rec ts prog' in
+            eret {|
+              prog_defs := (Syntax.DefConst (transl_user_ident x) l ty) :: (prog_defs r);
+              prog_types := (prog_types r)
+            |}
+        | Barocq.DefFun x f =>
+            let* f' := normalize_function f in
+            let* r := normalize_program_rec ts prog' in
+            eret {|
+              prog_defs := (Syntax.DefFun (transl_user_ident x) f') :: (prog_defs r);
+              prog_types := prog_types r
+            |}
+        end
+    end.
+
+  Definition normalize_program (prog: Barocq.program) : res BNF.program :=
+    normalize_program_rec tempty prog.
+
+End Normalization.
+
+Module Monadification.
+
+  Import Monadic.
+
+  Open Scope error_monad_scope.
+
+  Definition typof_atom (a: atom) : mtyp :=
+    match a with
+    | ATrue ty
+    | AFalse ty
+    | AInt32 _ ty
+    | AInt64 _ ty
+    | AVar _ ty
+    | AUnaryOp _ _ ty
+    | ABinaryOp _ _ _ ty
+    | AStructProj  _ _ ty
+    | AStructUpdate _ _ _ ty
+    | ALambda _ _ ty
+    | ALambdaRet _ _ ty
+    | AApp _ _ ty => ty
+    end.
+
+  Definition typof_expr (e: expr) : mtyp :=
+    match e with
+    | EAtom _ ty
+    | EArrayGet _ _ ty
+    | EArraySet _ _ _ ty
+    | EApp _ _ ty
+    | EIfThenElse _ _ _ ty
+    | ELetIn _ _ _ ty
+    | ELetMon _ _ _ ty
+    | ERet _ ty => ty
+    end.
+
+  Fixpoint mtyp_eq_dec (t1 t2: mtyp) : { t1 = t2 } + { t1 <> t2 }.
+  Proof.
+    decide equality. apply ident_eq_dec. 
+    apply list_eq_dec. apply mtyp_eq_dec.
+  Defined.
+
+  Definition types_get (ts: types) (x: ident) : res (list (ident * mtyp)) :=
+    err_of_opt (tget ts x).
+
+  Definition types_update (ts: types) (x: ident) (fields: list (ident * mtyp)) : res types :=
+    match types_get ts x with
+    | OK _ => MonError.fail
+    | Error _ => eret (tset ts x fields)
+    end.
+
+  Definition gcontext : Type := ptree mtyp.
+
+  Definition lcontext : Type := ptree mtyp.
+
+  Definition gcontext_get (gx: gcontext) (x: ident) : res mtyp :=
+    match tget gx x with
+    | Some t => eret t
+    | None => MonError.fail
+    end.
+
+  Definition gcontext_update (gx: gcontext) (x: ident) (ty: mtyp) : res gcontext :=
+    match gcontext_get gx x with
+    | OK _ => MonError.fail
+    | Error _ => eret (tset gx x ty)
+    end.
+
+  Definition lcontext_get (lx: lcontext) (x: ident) : res mtyp :=
+    match tget lx x with
+    | Some t => eret t
+    | None => MonError.fail
+    end.
+
+  Definition lcontext_update (lx: lcontext) (x: ident) (ty: mtyp) : res lcontext :=
+    match lcontext_get lx x with
+    | OK t =>
+        if mtyp_eq_dec ty t then eret (tset lx x ty)
+        else
+          MonError.fail
+    | Error _ => eret (tset lx x ty)
+    end.
+
+  Close Scope error_monad_scope.
+
+  Open Scope state_err_monad_scope.
+
+  Definition fresh_var : crmon ident := Common.fresh_var_err "x".
+
+  Fixpoint make_lambda_args (n: nat) : crmon (list ident) :=
+    match n with
+    | 0 => ret nil
+    | S n' =>
+        let* x := fresh_var in
+        let* r := make_lambda_args n' in
+        ret (x :: r)
+    end.
+  
+  Definition mtyp_list_eq_dec :
+    forall (lx ly : list mtyp), {lx = ly} + {lx <> ly}.
+  Proof.
+    apply list_eq_dec. apply mtyp_eq_dec.
+  Defined.
+
+  Fixpoint eta_expand_rec (f: ident) (ty1: mtyp) (ty2: mtyp) (l: list ident) : crmon atom :=
+    match ty1, ty2 with
+    | MBool, MBool
+    | MInt32, MInt32
+    | MInt64, MInt64 => ret (AApp f l ty2)
+    | MArray ta1, MArray ta2 =>
+        if mtyp_eq_dec ta1 ta2 then ret (AApp f l ty2)
+        else fail
+    | MStruct s1, MStruct s2 =>
+        if ident_eq_dec s1 s2 then ret (AApp f l ty2)
+        else fail
+    | MFun t1 tr1, MFun t2 tr2 =>
+        if mtyp_list_eq_dec t1 t2 then
+          if mtyp_eq_dec tr1 tr2 then
+            ret (AApp f l ty2)
+          else
+            match tr2 with
+            | MRes tr2' =>
+                let* args := make_lambda_args (List.length t1) in
+                let* a := eta_expand_rec f tr1 tr2' (l ++ args) in
+                ret (ALambdaRet args a ty2)
+            | _ =>
+              let* args := make_lambda_args (List.length t1) in
+              let* a := eta_expand_rec f tr1 tr2 (l ++ args) in
+              ret (ALambda args a ty2)
+            end
+        else fail
+    | _, _ => fail
+    end.
+  
+  Close Scope state_err_monad_scope.
+
+  Definition eta_expand (f: ident) (ty1: mtyp) (ty2: mtyp) : res atom :=
+    match eta_expand_rec f ty1 ty2 nil 0 with
+    | OK (a, _) => OK a
+    | Error e => Error e
+    end.
+  
+  Open Scope error_monad_scope.
+
+  Definition typof_var (gx: gcontext) (lx: lcontext) (x: ident) : res mtyp :=
+    match (lcontext_get lx x) with
+    | OK ty => eret ty
+    | Error _ => gcontext_get gx x
+    end.
+
+  Definition typecheck_unary_op (op: unary_op) (ty: mtyp) : res mtyp :=
+    match op, ty with
+    | UopNotbool, MBool
+    | UopNotint, MInt32
+    | UopNotint, MInt64
+    | UopNeg, MInt32
+    | UopNeg, MInt64 => eret ty
+    | _, _ => MonError.fail
+    end.
+
+  Definition typecheck_binary_op (op: binary_op) (ty1 ty2: mtyp) : res mtyp :=
+    match op with
+    | BopAndbool
+    | BopOrbool
+    | BopXorbool =>
+        match ty1, ty2 with
+        | MBool, MBool => eret ty1
+        | _, _ => MonError.fail
+        end
+    | BopEq
+    | BopNeq =>
+        match ty1, ty2 with
+        | MBool, MBool
+        | MInt32, MInt32
+        | MInt64, MInt64 => eret ty1
+        | _, _ =>
+            MonError.fail
+        end
+    | _ =>
+        match ty1, ty2 with
+        | MInt32, MInt32
+        | MInt64, MInt64 => eret ty1
+        | _, _ =>
+          MonError.fail
+        end
+    end.
+
+  Definition typecheck_array_get (ty1 ty2: mtyp) : res mtyp :=
+    match ty1, ty2 with
+    | MArray ta, MInt32 => eret (MRes ta)
+    | _, _ => MonError.fail
+    end.
+
+  Definition typecheck_atom_against (a: atom) (ty: mtyp) : res atom :=
+    match a with
+    | AVar x ((MFun _ _) as tx) => eta_expand x tx ty
+    | _ =>
+        if mtyp_eq_dec (typof_atom a) ty then eret a
+        else MonError.fail
+    end.
+
+  Definition typecheck_array_set (ty1 ty2: mtyp) (a3: atom) : res (atom * mtyp) :=
+    let tr := MRes ty1 in
+    match ty1, ty2 with
+    | MArray ta, MInt32 =>
+        let* a3' := typecheck_atom_against a3 ta in
+        eret (a3', tr)
+    | _, _ => MonError.fail
+    end.      
+
+  Definition mtypof_field (k: ident) (fields: list (ident * mtyp)) : res mtyp :=
+    find_k_err ident_eq_dec k fields.
+
+  Definition typecheck_struct_proj (ts: types) (ty: mtyp) (x: ident) : res mtyp :=
+    match ty with
+    | MStruct t =>
+        let* fields := types_get ts t in
+        mtypof_field x fields
+    | _ => MonError.fail
+    end.
+
+  Definition typecheck_struct_update (ts: types) (ty1: mtyp) (a2: atom) (x: ident) : res (atom * mtyp) :=
+    match ty1 with
+    | MStruct t =>
+        let* fields := types_get ts t in
+        let* tx := mtypof_field x fields in
+        let* a2' := typecheck_atom_against a2 tx in
+        eret (a2', ty1)
+    | _ => MonError.fail
+    end.
+
+  Fixpoint typecheck_atom (ts: types) (gx: gcontext) (lx: lcontext) (a: BNF.atom) : res atom :=
+    match a with
+    | BNF.ATrue => eret (ATrue MBool)
+    | BNF.AFalse => eret (AFalse MBool)
+    | BNF.AInt32 i => eret (AInt32 i MInt32)
+    | BNF.AInt64 i => eret (AInt64 i MInt64)
+    | BNF.AVar x =>
+        let* t := typof_var gx lx x in
+        eret (AVar x t)
+    | BNF.AUnaryOp op a1 =>
+        let* a1' := typecheck_atom ts gx lx a1 in
+        let ty1 := typof_atom a1' in
+        let* t := typecheck_unary_op op ty1 in
+        eret (AUnaryOp op a1' t)
+    | BNF.ABinaryOp op a1 a2 =>
+        let* a1' := typecheck_atom ts gx lx a1 in
+        let* a2' := typecheck_atom ts gx lx a2 in
+        let ty1 := typof_atom a1' in
+        let ty2 := typof_atom a2' in
+        let* t := typecheck_binary_op op ty1 ty2 in
+        eret (ABinaryOp op a1' a2' t)
+    | BNF.AStructProj a1 x =>
+        let* a1' := typecheck_atom ts gx lx a1 in
+        let ty1 := typof_atom a1' in
+        let* t := typecheck_struct_proj ts ty1 x in
+        eret (AStructProj a1' x t)
+    | BNF.AStructUpdate a1 x a2 =>
+        let* a1' := typecheck_atom ts gx lx a1 in
+        let* a2' := typecheck_atom ts gx lx a2 in
+        let ty1 := typof_atom a1' in
+        let ty2 := typof_atom a2' in
+        let* (a2', t) := typecheck_struct_update ts ty1 a2' x in
+        eret (AStructUpdate a1' x a2' t)
+    end.
+
+  Fixpoint typecheck_call_rec (tparams: list mtyp) (args: list atom) (tret: mtyp) : res (list atom * mtyp) :=
+    match tparams, args with
+    | nil, nil => eret (nil, tret)
+    | tp1 :: tparams', a1 :: args' =>
+        let ta1 := typof_atom a1 in
+        let* (args1, t) := typecheck_call_rec tparams' args' tret in
+        let* a1' := typecheck_atom_against a1 tp1 in
+        eret (a1' :: args1, t)
+    | _, _ => MonError.fail
+    end.
+
+  Definition typecheck_call (ty1: mtyp) (args: list atom) : res (list atom * mtyp) :=
+    match ty1 with
+    | MFun tparams tret => typecheck_call_rec tparams args tret
+    | _ => MonError.fail
+    end.
+
+  Fixpoint wrap_mtyp (ty: mtyp) : mtyp :=
+    match ty with
+    | MBool
+    | MInt32
+    | MInt64
+    | MArray _
+    | MStruct _ => MRes ty
+    | MFun tparams tret =>
+        MRes (MFun tparams (wrap_mtyp tret))
+    | MRes _ => ty
+    end.
+
+  Definition unwrap_mtyp (ty: mtyp) : mtyp :=
+    match ty with
+    | MRes t => t
+    | _ => ty
+    end.
+
+  Definition wrap_atom (a: atom) : res expr :=
+    let ty := typof_atom a in
+    let ty' := wrap_mtyp ty in
+    let* a' :=
+      match a with
+      | ATrue _
+      | AFalse _
+      | AInt32 _ _
+      | AInt64 _ _
+      | AUnaryOp _ _ _
+      | ABinaryOp _ _ _  _=> eret a
+      | AVar x _ =>
+          match ty with
+          | MFun _ _ => eta_expand x ty (unwrap_mtyp ty')
+          | _ => eret a
+          end
+      | _ => MonError.fail
+      end
+    in eret (ERet a' ty').
+
+  Fixpoint monadify_expr_rec (ts: types) (gx: gcontext) (lx: lcontext) (e: BNF.expr) (imp: bool) : res expr :=
+    match e with
+    | BNF.EAtom a =>
+        let* a' := typecheck_atom ts gx lx a in
+        if imp then wrap_atom a'
+        else eret (EAtom a' (typof_atom a'))
+    | BNF.EArrayGet a1 a2 =>
+        let* a1' := typecheck_atom ts gx lx a1 in
+        let* a2' := typecheck_atom ts gx lx a2 in
+        let ty1 := typof_atom a1' in
+        let ty2 := typof_atom a2' in
+        let* t := typecheck_array_get ty1 ty2 in
+        eret (EArrayGet a1' a2' t)
+    | BNF.EArraySet a1 a2 a3 =>
+        let* a1' := typecheck_atom ts gx lx a1 in
+        let* a2' := typecheck_atom ts gx lx a2 in
+        let* a3' := typecheck_atom ts gx lx a3 in
+        let ty1 := typof_atom a1' in
+        let ty2 := typof_atom a2' in
+        let ty3 := typof_atom a3' in
+        let* (a3', t) := typecheck_array_set ty1 ty2 a3' in
+        eret (EArraySet a1' a2' a3' t)
+    | BNF.EApp a1 args =>
+        let* a1' := typecheck_atom ts gx lx a1 in
+        let ty1 := typof_atom a1' in
+        let* args' := mmap (typecheck_atom ts gx lx) args in
+        let* (args1, t) := typecheck_call ty1 args' in
+        eret (EApp a1' args1 t)
+    | BNF.EIfThenElse a e1 e2 =>
+        let* a' := typecheck_atom ts gx lx a in
+        match (typof_atom a') with
+        | MBool =>
+            let* e1' := monadify_expr_rec ts gx lx e1 imp in
+            let* e2' := monadify_expr_rec ts gx lx e2 imp in
+            let ty1 := typof_expr e1' in
+            let ty2 := typof_expr e2' in
+            if mtyp_eq_dec ty1 ty2 then
+              eret (EIfThenElse a' e1' e2' ty1)
+            else MonError.fail
+        | _ => MonError.fail
+        end
+    | BNF.ELetIn x e1 e2 =>
+        let* e1' := monadify_expr_rec ts gx lx e1 imp in
+        let t := typof_expr e1' in
+        match t with
+        | MRes tr =>
+            let* lx' := lcontext_update lx x tr in
+            let* e2' := monadify_expr_rec ts gx lx' e2 true in
+            eret (ELetMon x e1' e2' (typof_expr e2'))
+        | _ =>
+            let* lx' := lcontext_update lx x t in
+            let* e2' := monadify_expr_rec ts gx lx' e2 false in
+            eret (ELetIn x e1' e2' (typof_expr e2'))
+        end
+    end.
+  
+  Definition monadify_expr (ts: types) (gx: gcontext) (lx: lcontext) (e: BNF.expr) : res expr :=
+    monadify_expr_rec ts gx lx e false.
+
+  Fixpoint monadify_ctyp (ty: ctyp) : mtyp :=
+    match ty with
+    | CBool => MBool
+    | CInt32 => MInt32
+    | CInt64 => MInt64
+    | CArray ta => MArray (monadify_ctyp ta)
+    | CStruct s => MStruct s
+    | CFun tparams tret =>
+        MFun (map monadify_ctyp tparams) (MRes (monadify_ctyp tret))
+    end.
+
+  Definition monadify_function (ts: types) (gx: gcontext) (f: BNF.function) : res function :=
+    let params := map_k monadify_ctyp (Syntax.fn_params f) in
+    let* lx :=
+      fold_left_err
+        (fun acc '(x, tx) => lcontext_update acc x tx)
+        params
+        (eret tempty)
+    in
+    let* body := monadify_expr ts gx lx (Syntax.fn_body f) in
+    eret {|
+      fn_return := typof_expr body;
+      fn_params := params;
+      fn_body := body
+    |}.
+
+  Fixpoint monadify_globdefs_rec (ts: types) (gx: gcontext) (defs: list BNF.globdef) : res (list globdef) :=
+    match defs with
+    | nil => eret nil
+    | Syntax.DefConst x l ty :: defs' =>
+        let ty' := monadify_ctyp ty in
+        let* gx' := gcontext_update gx x ty' in
+        let* r := monadify_globdefs_rec ts gx' defs' in
+        eret (DefConst x l ty' :: r) 
+    | Syntax.DefFun x f :: defs' =>
+        let* f' := monadify_function ts gx f in
+        let tf := MFun (map snd (fn_params f')) (fn_return f') in
+        let* gx' := gcontext_update gx x tf in
+        let* r := monadify_globdefs_rec ts gx' defs' in
+        eret (DefFun x f' :: r)
+    end.
+
+  Definition monadify_globdefs (ts: types) (defs: list BNF.globdef) : res (list globdef) :=
+    monadify_globdefs_rec ts tempty defs.
+
+  Definition monadify_program (prog: BNF.program) : res program :=
+    let ts := PTree.fold (fun acc k lt => tset acc k (map_k monadify_ctyp lt)) (Syntax.prog_types prog) tempty in
+    let* defs := monadify_globdefs ts (Syntax.prog_defs prog) in
+    eret {|
+      prog_types := ts;
+      prog_defs := defs
+    |}.
+
+End Monadification.
+
+Local Open Scope error_monad_scope.
+
+Definition monadify_norm_program (prog: Barocq.program) : res Monadic.program :=
+  let* _ := Barocq.Typing.typecheck_program prog in
+  let* bnf := Normalization.normalize_program prog in
+  Monadification.monadify_program bnf.

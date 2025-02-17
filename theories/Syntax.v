@@ -1,0 +1,129 @@
+From compcert Require Import Integers.
+From BarocqComp Require Import Common Array Types.
+
+Definition ident : Type := Common.ident.
+
+(** * Constant literals *)
+
+Inductive literal :=
+  | LTrue : literal
+  | LFalse  : literal
+  | LInt32 : int -> literal
+  | LInt64 : int64 -> literal
+  | LArray : array literal -> literal
+  | LStruct : list (ident * literal) -> ident -> literal.
+
+(** * Operators *)
+
+Inductive unary_op : Type :=
+  | UopNotbool : unary_op
+  | UopNotint : unary_op
+  | UopNeg : unary_op.
+
+Inductive binary_op : Type :=
+  | BopAndbool : binary_op
+  | BopOrbool : binary_op
+  | BopXorbool : binary_op
+  | BopAdd : binary_op
+  | BopSub : binary_op
+  | BopMul : binary_op
+  | BopDiv : binary_op
+  | BopMod : binary_op
+  | BopAndint : binary_op
+  | BopOrint : binary_op
+  | BopXorint : binary_op
+  | BopShl : binary_op
+  | BopShr : binary_op
+  | BopEq : binary_op
+  | BopNeq : binary_op
+  | BopLt : binary_op
+  | BopGt : binary_op
+  | BopLe : binary_op
+  | BopGe : binary_op.
+
+(** * Atoms *)
+
+(** Atoms are pure computations in C *)
+
+Inductive atom :=
+  | ATrue : atom
+  | AFalse : atom
+  | AInt32 : int -> atom
+  | AInt64 : int64 -> atom
+  | AVar : ident -> atom
+  | AUnaryOp : unary_op -> atom -> atom
+  | ABinaryOp : binary_op -> atom -> atom -> atom.
+
+(** * Computations with atomic operands *)
+
+Inductive comp : Type := 
+  | CpAtom : atom -> comp
+  | CpArrayGet : atom -> atom -> comp
+  | CpArraySet : atom -> atom -> atom -> comp
+  | CpStructProj : atom -> ident -> comp
+  | CpStructUpdate : atom -> ident -> atom -> comp
+  | CpCall : atom -> list atom -> comp.
+
+(** * Typed syntax *)
+
+Module Typed.
+
+  Inductive literal :=
+    | LTrue : ctyp -> literal
+    | LFalse : ctyp -> literal
+    | LInt32 : int -> ctyp -> literal
+    | LInt64 : int64 -> ctyp -> literal
+    | LArray : array literal -> ctyp -> literal
+    | LStruct : list (ident * literal) -> ctyp -> literal.
+
+  Inductive atom :=
+    | ATrue : ctyp -> atom
+    | AFalse : ctyp -> atom
+    | AInt32 : int -> ctyp -> atom
+    | AInt64 : int64 -> ctyp -> atom
+    | AVar : ident -> ctyp -> atom
+    | AUnaryOp : unary_op -> atom -> ctyp -> atom
+    | ABinaryOp : binary_op -> atom -> atom -> ctyp -> atom.
+
+  Inductive comp : Type := 
+    | CpAtom : atom -> ctyp -> comp
+    | CpArrayGet : atom -> atom -> ctyp -> comp
+    | CpArraySet : atom -> atom -> atom -> ctyp -> comp
+    | CpStructProj : atom -> ident -> ctyp -> comp
+    | CpStructUpdate : atom -> ident -> atom -> ctyp -> comp
+    | CpCall : atom -> list atom -> ctyp -> comp.
+
+End Typed.
+
+(** * Functions *)
+
+Record function (B: Type) : Type := mk_function {
+  fn_return: ctyp;
+  fn_params: list (ident * ctyp);
+  fn_body: B
+}.
+
+(** * Global definitions *)
+
+Inductive globdef (C F: Type) : Type :=
+  | DefConst : ident -> C -> ctyp -> globdef C F
+  | DefFun : ident -> F -> globdef C F.
+
+(** Programs *)
+
+Record program (G: Type): Type := mk_program {
+  prog_defs : list G;
+  prog_types : types
+}.
+
+Arguments DefConst {C} {F}.
+Arguments DefFun {C} {F}.
+
+Arguments mk_function {B}.
+Arguments fn_return {B}.
+Arguments fn_params {B}.
+Arguments fn_body {B}.
+
+Arguments mk_program {G}.
+Arguments prog_defs {G}.
+Arguments prog_types {G}.
