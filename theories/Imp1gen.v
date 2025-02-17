@@ -4,9 +4,8 @@ Import MonCounter.
 
 Fixpoint transl_statement (s: ImpABNF.statement) : Imp1.statement :=
   match s with
-  | ImpABNF.StBegin ls =>
-      fold_left
-        (fun acc s => StSequence acc (transl_statement s)) ls StSkip
+  | ImpABNF.StSequence s1 s2 =>
+      StSequence (transl_statement s1) (transl_statement s2)
   | ImpABNF.StSet x c => StSet x c
   | ImpABNF.StIfThenElse a s1 s2 =>
       StIfThenElse a (transl_statement s1) (transl_statement s2)
@@ -18,10 +17,10 @@ Definition fresh_var : cmon ident := Common.fresh_var "i".
 
 Fixpoint transl_tailcomp_rec (t: ImpABNF.tailcomp) : cmon Imp1.statement :=
   match t with
-  | TcBegin ls t1 =>
-      let s1 := fold_left (fun acc s => StSequence acc (transl_statement s)) ls StSkip in
-      let* s2 := transl_tailcomp_rec t1 in
-      ret (StSequence s1 s2)
+  | TcBegin s t1 =>
+      let s' := transl_statement s in
+      let* s1 := transl_tailcomp_rec t1 in
+      ret (StSequence s' s1)
   | TcComp c =>
       match c with
       | CpAtom a => ret (StReturn a)

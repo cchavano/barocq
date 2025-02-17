@@ -10,7 +10,6 @@ Import MonCounter.
 
 Fixpoint transl_statement (s: Imp1Typed.statement) : Imp2.statement :=
   match s with
-  | Imp1Typed.StSkip => StSkip
   | Imp1Typed.StSet x (CpAtom a ty) =>
       StSetExpr x (EAtom a ty)
   | Imp1Typed.StSet x (CpArrayGet a1 a2 ty) =>
@@ -31,7 +30,6 @@ Fixpoint transl_statement (s: Imp1Typed.statement) : Imp2.statement :=
 
 Fixpoint all_vars (s: Imp1Typed.statement) : list (ident * ctyp) :=
   match s with
-  | Imp1Typed.StSkip
   | Imp1Typed.StReturn _ => nil
   | Imp1Typed.StSet x c => (x, typof_comp c) :: nil
   | Imp1Typed.StIfThenElse _ s1 s2

@@ -17,7 +17,6 @@ Definition atom : Type := Syntax.atom.
 (** ** Statements *)
  
 Inductive statement : Type :=
-  | StSkip : statement
   | StSet : ident -> comp -> statement
   | StIfThenElse : atom -> statement -> statement -> statement
   | StSequence : statement -> statement -> statement
@@ -54,7 +53,6 @@ Module Typed.
   (** ** Statements *)
 
   Inductive statement : Type :=
-    | StSkip : statement
     | StSet : ident -> comp -> statement
     | StIfThenElse : atom -> statement -> statement -> statement
     | StSequence : statement -> statement -> statement
@@ -170,7 +168,6 @@ Module Typing.
 
   Fixpoint typecheck_statement (ts: types) (gx: gcontext) (lx: lcontext) (tret: ctyp) (s: Imp1.statement) : res (Imp1Typed.statement * lcontext) := 
     match s with
-    | Imp1.StSkip => ret (StSkip, lx)
     | Imp1.StSet x c =>
         let* c' := typecheck_comp ts gx lx c in
         let* lx' := lcontext_update lx x (typof_comp c') in

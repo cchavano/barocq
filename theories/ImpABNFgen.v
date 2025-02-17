@@ -6,9 +6,8 @@ Local Open Scope error_monad_scope.
 
 Fixpoint tailcomp_depth (t: ImpBNF.tailcomp) : nat :=
   match t with
-  | ImpBNF.TcBegin ls t1 =>
-      1 + (fold_left (fun acc x => acc + (statement_depth x)) ls 0)
-        + (tailcomp_depth t1)
+  | ImpBNF.TcBegin s t1 =>
+      1 + (statement_depth s) + (tailcomp_depth t1)
   | ImpBNF.TcComp _ => 3
   | ImpBNF.TcIfThenElse _ t1 t2 =>
       let m := max 1 (tailcomp_depth t1) in
@@ -27,10 +26,10 @@ Fixpoint normalize_statement (fuel: nat) (s: ImpBNF.statement) : res ImpABNF.sta
   | S fuel' =>
       let '(ImpBNF.StSetTailcomp x t) := s in
       match t with
-        | ImpBNF.TcBegin ls tc =>
-            let* ls' := mmap (normalize_statement fuel') ls in
+        | ImpBNF.TcBegin s tc =>
+            let* s' := normalize_statement fuel' s in
             let* sc := normalize_statement fuel' (ImpBNF.StSetTailcomp x tc) in
-            ret (StBegin (ls' ++ [sc]))
+            ret (StSequence s' sc)
         | ImpBNF.TcIfThenElse a t1 t2 => 
             let* s1 := normalize_statement fuel' (ImpBNF.StSetTailcomp x t1) in
             let* s2 := normalize_statement fuel' (ImpBNF.StSetTailcomp x t2) in
@@ -41,10 +40,10 @@ Fixpoint normalize_statement (fuel: nat) (s: ImpBNF.statement) : res ImpABNF.sta
 
 Fixpoint normalize_tailcomp (t: ImpBNF.tailcomp) : res ImpABNF.tailcomp :=
   match t with
-  | ImpBNF.TcBegin ls t1 =>
-      let* ls' := mmap (fun s => normalize_statement (statement_depth s + 1) s) ls in
+  | ImpBNF.TcBegin s t1 =>
+      let* s' := normalize_statement (statement_depth s + 1) s in
       let* t1' := normalize_tailcomp t1 in
-      ret (TcBegin ls' t1')
+      ret (TcBegin s' t1')
   | ImpBNF.TcIfThenElse a t1 t2 =>
       let* t1' := normalize_tailcomp t1 in
       let* t2' := normalize_tailcomp t2 in

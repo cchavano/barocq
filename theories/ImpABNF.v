@@ -13,14 +13,14 @@ Definition atom : Type := Syntax.atom.
 (** ** Statements *)
 
 Inductive statement : Type :=
-  | StBegin : list statement -> statement
+  | StSequence : statement -> statement -> statement
   | StSet : ident -> comp -> statement
   | StIfThenElse : atom -> statement  -> statement -> statement.
 
 (** ** Tail computations *)
 
 Inductive tailcomp : Type :=
-  | TcBegin : list statement -> tailcomp -> tailcomp
+  | TcBegin : statement -> tailcomp -> tailcomp
   | TcComp : comp -> tailcomp
   | TcIfThenElse : atom -> tailcomp -> tailcomp -> tailcomp.
 

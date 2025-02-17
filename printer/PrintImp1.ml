@@ -7,7 +7,6 @@ let rec statement_to_string_rec (prefix : string) (s : Imp1.statement) : string
     =
   let prefix' = prefix ^ indent in
   match s with
-  | StSkip -> ""
   | StSet (x, c) ->
       sprintf "%sset %s = %s" prefix (ident_to_string x) (comp_to_string c)
   | StIfThenElse (a, s1, s2) ->
@@ -20,9 +19,8 @@ let rec statement_to_string_rec (prefix : string) (s : Imp1.statement) : string
         (statement_to_string_rec prefix' s2)
   | StSequence (s1, s2) ->
       sprintf
-        "%s%s%s"
+        "%s\n%s"
         (statement_to_string_rec prefix s1)
-        (if s1 = StSkip then "" else "\n")
         (statement_to_string_rec prefix s2)
   | StReturn a -> sprintf "%sret %s" prefix (atom_to_string a)
 

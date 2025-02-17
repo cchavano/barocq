@@ -13,7 +13,7 @@ Fixpoint transl_expr (e: BarocqBNF.expr) : ImpBNF.tailcomp :=
   | EStructUpdate a1 x a2 => TcComp (CpStructUpdate a1 x a2)
   | EApp a args => TcComp (CpCall a args)
   | ELetIn x e1 e2 =>
-      TcBegin (StSetTailcomp x (transl_expr e1) :: nil) (transl_expr e2)
+      TcBegin (StSetTailcomp x (transl_expr e1)) (transl_expr e2)
   | EIfThenElse a e1 e2 =>
       TcIfThenElse a (transl_expr e1) (transl_expr e2)
   end.

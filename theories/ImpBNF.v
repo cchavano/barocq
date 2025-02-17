@@ -13,7 +13,7 @@ Definition atom : Type := Syntax.atom.
 (** ** Tail computations *)
 
 Inductive tailcomp : Type :=
-  | TcBegin : list statement -> tailcomp -> tailcomp
+  | TcBegin : statement -> tailcomp -> tailcomp
   | TcComp : comp -> tailcomp
   | TcIfThenElse : atom -> tailcomp -> tailcomp -> tailcomp
 
