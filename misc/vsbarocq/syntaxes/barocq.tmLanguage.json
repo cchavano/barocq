@@ -82,7 +82,7 @@
             "patterns": [
                 {
                     "comment": "function definition",
-                    "match": "\\b(def)\\s+(\\w+)\\s*\\(",
+                    "match": "\\b(def)\\s+(([[:alpha:]](\\w|')*)|([_](\\w|')+))\\s*\\(",
                     "captures": {
                         "1": { "name": "keyword.other.barocq" },
                         "2": { "name": "entity.name.function.barocq" }
@@ -90,7 +90,7 @@
                 },
                 {
                     "comment": "constant definition",
-                    "match": "\\b(def)\\s+(\\w+)",
+                    "match": "\\b(def)\\s+(([[:alpha:]](\\w|')*)|([_](\\w|')+))",
                     "captures": {
                         "1": { "name": "keyword.other.barocq" },
                         "2": { "name": "entity.name.constant.barocq" }
@@ -106,7 +106,7 @@
                 },
                 {
                     "comment": "let-binding",
-                    "match": "\\b(let)\\s+(\\w+)",
+                    "match": "\\b(let)\\s+(([[:alpha:]](\\w|')*)|([_](\\w|')+))",
                     "captures": {
                         "1": { "name": "keyword.other.barocq" },
                         "2": { "name": "variable.name.barocq" }
@@ -130,7 +130,7 @@
                 {   
                     "comment": "variable name",
                     "name": "entity.variable.name",
-                    "match": "\\w+"
+                    "match": "([[:alpha:]](\\w|')*)|([_](\\w|')+)"
                 }
             ]
 
