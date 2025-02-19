@@ -64,7 +64,7 @@ let get_raw_filename (file : string) : string =
 
 let get_full_filename (file : string) (suffix : string) : string =
   let rawname = get_raw_filename file in
-  let dirname = Filename.dirname rawname in
+  let dirname = Filename.dirname file in
   Printf.sprintf "%s/%s%s" dirname rawname suffix
 
 let set_c_filename (file : string) : unit =
