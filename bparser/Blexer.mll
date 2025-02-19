@@ -25,7 +25,7 @@ let letter = ['a'-'z''A'-'Z']
 let space = [' ''\t''\r']
 
 let lit_int = digit+
-let ident_char = (letter | digit | '_')
+let ident_char = (letter | digit | '_' | '\'')
 let ident = letter ident_char* | '_' ident_char+
 
 rule read_token = parse
