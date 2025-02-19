@@ -75,8 +75,7 @@ and opt_parens (a : atom) : string =
 let comp_to_string (c : comp) : string =
   match c with
   | CpAtom a -> atom_to_string a
-  | CpArrayGet (a1, a2) ->
-      sprintf "%s[%s]" (atom_to_string a1) (opt_parens a2)
+  | CpArrayGet (a1, a2) -> sprintf "%s[%s]" (atom_to_string a1) (opt_parens a2)
   | CpArraySet (a1, a2, a3) ->
       sprintf
         "%s[%s] <- %s"
