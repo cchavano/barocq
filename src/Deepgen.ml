@@ -193,9 +193,9 @@ let print_program (out : out_channel) (prog : program) : unit =
   fprintf out "%s" headers;
   let _ = print_globdefs out prog in
   print_list
+    out
     "Definition prog : Barocq.program := [\n"
     "\n]."
     ";\n"
     (fun d -> sprintf "%s%s" indent (globdef_to_deep d))
-    out
     prog

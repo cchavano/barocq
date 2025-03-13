@@ -22,6 +22,12 @@ Module MonError <: MONAD.
 
   Definition bind {A B: Type} (f: M A) (g: A -> M B) : M B := Errors.bind f g.
 
+  Definition bind_catch {A B: Type} (f: M A) (g: A -> M B) (m: string) : M B :=
+    match f with
+    | OK a => g a
+    | Error _ => Error (msg m)
+    end. 
+
   Definition bind2 {A B C: Type} (f: M (A * B)) (g: A -> B -> M C) : M C := Errors.bind2 f g.
 
   Definition fail {A: Type} : M A := Error nil.
@@ -42,6 +48,10 @@ Module MonError <: MONAD.
 
   Notation "'let*' ( X , Y ) := A 'in' B" := (MonError.bind2 A (fun X Y => B))
     (at level 200, X name, Y name, A at level 100, B at level 200)
+    : error_monad_scope.
+
+  Notation "let/catch X := A '/>' M 'in' B" := (MonError.bind_catch A (fun X => B) M)
+    (at level 200, X name, A at level 100, M at level 100, B at level 200)
     : error_monad_scope.
 
 End MonError.
@@ -135,7 +145,7 @@ Module MonStateErr (S: STATE_TYPE) <: MONAD.
 
 End MonStateErr.
 
-Module StateCounter.
+Module StateCounter <: STATE_TYPE.
   Definition t : Type := nat.
 End StateCounter.
 

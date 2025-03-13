@@ -8,8 +8,6 @@ Module Normalization.
 
   Import BNF.
 
-  Open Scope error_monad_scope.
-
   Fixpoint atom_of_expr (e: Barocq.expr) : res atom :=
     match e with
     | Barocq.ETrue => eret ATrue
@@ -65,8 +63,6 @@ Module Normalization.
         eret (EApp a args)
     | _ => MonError.fail
     end.
-
-  Close Scope error_monad_scope.
 
   Open Scope state_err_monad_scope.
 
@@ -133,8 +129,6 @@ Module Normalization.
 
   Close Scope state_err_monad_scope.
 
-  Local Open Scope error_monad_scope.
-
   Definition normalize_expr (e: Barocq.expr) : res BNF.expr :=
     let* ne := normalize_expr_rec e 0 in
     eret (fst ne).
@@ -186,8 +180,6 @@ End Normalization.
 Module Monadification.
 
   Import Monadic.
-
-  Open Scope error_monad_scope.
 
   Definition typof_atom (a: atom) : mtyp :=
     match a with
@@ -263,8 +255,6 @@ Module Monadification.
     | Error _ => eret (tset lx x ty)
     end.
 
-  Close Scope error_monad_scope.
-
   Open Scope state_err_monad_scope.
 
   Definition fresh_var : crmon ident := Common.fresh_var_err "x".
@@ -322,8 +312,6 @@ Module Monadification.
     | Error e => Error e
     end.
   
-  Open Scope error_monad_scope.
-
   Definition typof_var (gx: gcontext) (lx: lcontext) (x: ident) : res mtyp :=
     match (lcontext_get lx x) with
     | OK ty => eret ty
@@ -614,8 +602,6 @@ Module Monadification.
     |}.
 
 End Monadification.
-
-Local Open Scope error_monad_scope.
 
 Definition monadify_norm_program (prog: Barocq.program) : res Monadic.program :=
   let* _ := Barocq.Typing.typecheck_program prog in

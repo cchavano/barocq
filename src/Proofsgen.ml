@@ -214,18 +214,18 @@ let print_proofs (out : out_channel) (prog : program) : unit =
   fprintf out "%s" (make_headers ());
   fprintf out "(** * Struct conversions **)\n\n";
   print_list
+    out
     ""
     s
     "\n\n"
     (fun (id, fields) -> gen_struct_conv id fields)
-    out
     types;
   print_list
+    out
     ""
     s
     "\n\n"
     (fun (id, fields) -> gen_struct_conv_corres id fields)
-    out
     types;
   fprintf out "(** * Program correspondence proofs **)\n\n";
-  print_list "" e "\n\n" gen_globdef_corres out defs
+  print_list out "" e "\n\n" gen_globdef_corres defs

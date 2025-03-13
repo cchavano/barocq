@@ -3,7 +3,7 @@ open Imp1
 open PrintCommon
 open PrintSyntax
 
-let rec statement_to_string_rec (prefix : string) (s : Imp1.statement) : string
+let rec statement_to_string_pref (prefix : string) (s : Imp1.statement) : string
     =
   let prefix' = prefix ^ indent in
   match s with
@@ -14,18 +14,18 @@ let rec statement_to_string_rec (prefix : string) (s : Imp1.statement) : string
         "%sif %s then\n%s\n%selse\n%s"
         prefix
         (atom_to_string a)
-        (statement_to_string_rec prefix' s1)
+        (statement_to_string_pref prefix' s1)
         prefix
-        (statement_to_string_rec prefix' s2)
+        (statement_to_string_pref prefix' s2)
   | StSequence (s1, s2) ->
       sprintf
         "%s\n%s"
-        (statement_to_string_rec prefix s1)
-        (statement_to_string_rec prefix s2)
+        (statement_to_string_pref prefix s1)
+        (statement_to_string_pref prefix s2)
   | StReturn a -> sprintf "%sret %s" prefix (atom_to_string a)
 
 let statement_to_string (s : Imp1.statement) : string =
-  statement_to_string_rec PrintCommon.indent s
+  statement_to_string_pref PrintCommon.indent s
 
 let function_to_string (f : Imp1.coq_function) : string =
   PrintSyntax.function_to_string statement_to_string f
@@ -35,3 +35,27 @@ let globdef_to_string (def : Imp1.globdef) : string =
 
 let print_program (out : out_channel) (prog : Imp1.program) : unit =
   PrintSyntax.print_program out globdef_to_string prog
+
+module PrintTyped : sig
+  val statement_to_string_pref : string -> Imp1Typed.statement -> string
+
+  val statement_to_string : Imp1Typed.statement -> string
+end = struct
+  open PrintSyntax.PrintTyped
+
+  let rec untype_statement (s : Imp1Typed.statement) : Imp1.statement =
+    match s with
+    | Typed.StSet (x, c) -> StSet (x, untype_comp c)
+    | Typed.StIfThenElse (a, s1, s2) ->
+        StIfThenElse (untype_atom a, untype_statement s1, untype_statement s2)
+    | Typed.StSequence (s1, s2) ->
+        StSequence (untype_statement s1, untype_statement s2)
+    | Typed.StReturn a -> StReturn (untype_atom a)
+
+  let statement_to_string_pref (prefix : string) (s : Imp1Typed.statement) :
+      string =
+    statement_to_string_pref prefix (untype_statement s)
+
+  let statement_to_string (s : Imp1Typed.statement) : string =
+    statement_to_string (untype_statement s)
+end

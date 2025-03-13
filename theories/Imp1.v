@@ -2,8 +2,6 @@ From Coq Require Import List String.
 From compcert Require Import Integers Maps.
 From BarocqComp Require Import Error Common Syntax Types Typing Array.
 
-Local Open Scope error_monad_scope.
-
 (** * Abstract syntax *)
 
 (** ** Literals *)
@@ -72,6 +70,46 @@ Module Typed.
 
 End Typed.
 
+Module Aliasing_AST.
+
+  (** * Typed abstract syntax with aliasing information *)
+
+  Parameter ABSDOM : Type.
+
+  (** ** Literals *)
+
+  Definition literal : Type := Syntax.Typed.literal.
+
+  (** ** Atoms *)
+    
+  Definition atom : Type := Syntax.Typed.atom.
+
+  (** ** Computations *)
+
+  Definition comp : Type := Syntax.Typed.comp.
+
+  (** ** Statements *)
+
+  Inductive statement : Type :=
+    | StSet : ident -> comp -> ABSDOM -> ABSDOM -> statement
+    | StIfThenElse : atom -> statement -> statement -> statement
+    | StSequence : statement -> statement -> statement
+    | StReturn : atom -> ABSDOM -> ABSDOM -> statement.
+
+  (** ** Functions *)
+
+  Definition function : Type := Syntax.function statement.
+
+  (** ** Global definitions *)
+
+  Definition globdef : Type := Syntax.globdef literal function.
+
+  (** ** Programs *)
+
+  Definition program : Type := Syntax.program globdef.
+
+End Aliasing_AST.
+
 Module Imp1Typed := Imp1.Typed.
 
 Module Typing.
@@ -87,7 +125,7 @@ Module Typing.
         match gcontext_get gx x with
         | OK (CArray _)
         | OK (CStruct _) =>
-            failwith "The use of global structures or arrays is not yet supported"
+            failwith "Imp1.Typing.typof_var: the use of global structures or arrays is not yet supported"
         | OK ty => eret ty
         | Error e => Error e
         end
@@ -158,6 +196,7 @@ Module Typing.
         ret (CpCall a' args' ty)
     end.
 
+  (* Should be checked if the context contains the same set of set variables. ?*)
   Definition merge_context (lx1 lx2: lcontext) : res lcontext :=
     PTree.fold
       (fun acc k v =>

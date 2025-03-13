@@ -67,10 +67,24 @@ let rec atom_to_string (a : atom) : string =
         "%s %s %s"
         (opt_parens a1)
         (binary_op_to_string op)
-        (opt_parens a1)
+        (opt_parens a2)
 
 and opt_parens (a : atom) : string =
   PrintCommon.opt_parens is_simpl_atom atom_to_string a
+
+let typed_atom_to_string (a : Typed.atom) : string =
+  let rec untype_atom (a : Typed.atom) : atom =
+    match a with
+    | Typed.ATrue _ -> ATrue
+    | Typed.AFalse _ -> AFalse
+    | Typed.AInt32 (i, _) -> AInt32 i
+    | Typed.AInt64 (i, _) -> AInt64 i
+    | Typed.AVar (x, _) -> AVar x
+    | Typed.AUnaryOp (op, a', _) -> AUnaryOp (op, untype_atom a')
+    | Typed.ABinaryOp (op, a1, a2, _) ->
+        ABinaryOp (op, untype_atom a1, untype_atom a2)
+  in
+  atom_to_string (untype_atom a)
 
 let comp_to_string (c : comp) : string =
   match c with
@@ -95,6 +109,37 @@ let comp_to_string (c : comp) : string =
         "%s %s"
         (atom_to_string f)
         (list_to_string_paren atom_to_string args)
+
+module PrintTyped = struct
+  let rec untype_atom (a : Syntax.Typed.atom) : atom =
+    match a with
+    | Typed.ATrue _ -> ATrue
+    | Typed.AFalse _ -> AFalse
+    | Typed.AInt32 (i, _) -> AInt32 i
+    | Typed.AInt64 (i, _) -> AInt64 i
+    | Typed.AVar (x, _) -> AVar x
+    | Typed.AUnaryOp (op, a', _) -> AUnaryOp (op, untype_atom a')
+    | Typed.ABinaryOp (op, a1, a2, _) ->
+        ABinaryOp (op, untype_atom a1, untype_atom a2)
+
+  let atom_to_string (a : Syntax.Typed.atom) : string =
+    atom_to_string (untype_atom a)
+
+  let untype_comp (c : Typed.comp) : comp =
+    match c with
+    | Typed.CpAtom (a, _) -> CpAtom (untype_atom a)
+    | Typed.CpArrayGet (a1, a2, _) -> CpArrayGet (untype_atom a1, untype_atom a2)
+    | Typed.CpArraySet (a1, a2, a3, _) ->
+        CpArraySet (untype_atom a1, untype_atom a2, untype_atom a3)
+    | Typed.CpStructProj (a', f, _) -> CpStructProj (untype_atom a', f)
+    | Typed.CpStructUpdate (a1, f, a2, _) ->
+        CpStructUpdate (untype_atom a1, f, untype_atom a2)
+    | Typed.CpCall (a', args, _) ->
+        CpCall (untype_atom a', List.map untype_atom args)
+
+  let comp_to_string (c : Syntax.Typed.comp) : string =
+    comp_to_string (untype_comp c)
+end
 
 let param_to_string (param : ident * ctyp) : string =
   sprintf "%s : %s" (ident_to_string (fst param)) (ctyp_to_string (snd param))
@@ -134,6 +179,7 @@ let print_program (out : out_channel) (def_to_string : 'a -> string)
     | [], _ :: _ -> ("", "\n")
   in
   print_list
+    out
     ""
     s
     "\n\n"
@@ -142,6 +188,5 @@ let print_program (out : out_channel) (def_to_string : 'a -> string)
         "struct %s = %s;;"
         (ident_to_string x)
         (structtyp_to_string ctyp_to_string tx))
-    out
     types;
-  print_list "" e "\n\n" def_to_string out defs
+  print_list out "" e "\n\n" def_to_string defs

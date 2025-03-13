@@ -300,6 +300,6 @@ let print_program (out : out_channel) (prog : program) : unit =
     | [], _ :: _ -> ("", "\n")
   in
   fprintf out "%s" headers;
-  print_list "" s "\n\n" (fun (x, tx) -> structtyp_to_rocq x tx) out types;
+  print_list out "" s "\n\n" (fun (x, tx) -> structtyp_to_rocq x tx) types;
   List.iter (fun (id, fields) -> print_struct_setters out id fields) types;
-  print_list "" e "\n\n" globdef_to_rocq out defs
+  print_list out "" e "\n\n" globdef_to_rocq defs

@@ -3,8 +3,6 @@ From BarocqComp Require Import Error MapList Common Types Syntax Array.
 Import ListNotations.
 Import Syntax.Typed.
 
-Local Open Scope error_monad_scope.
-
 Definition typof_literal (l: literal) : ctyp :=
   match l with
   | LTrue ty => ty
@@ -70,7 +68,9 @@ Definition lcontext_update (lx: lcontext) (x: ident) (ty: ctyp) : res lcontext :
 Definition typof_var (gx: gcontext) (lx: lcontext) (x: ident) : res ctyp :=
   match (lcontext_get lx x) with
   | OK ty => ret ty
-  | Error _ => gcontext_get gx x
+  | Error _ =>
+      let/catch t := gcontext_get gx x /> "Typing.typof_var: unknown variable" in
+      ret t
   end.
 
 Definition typecheck_unary_op (op: unary_op) (ty: ctyp) : res ctyp :=
@@ -111,23 +111,33 @@ Definition typecheck_binary_op (op: binary_op) (ty1 ty2: ctyp) : res ctyp :=
   end.
 
 Definition typecheck_array_get (ty1 ty2: ctyp) : res ctyp :=
-  match ty1, ty2 with
-  | CArray ta, CInt32 => ret ta
-  | _, _ => failwith "Typing.typecheck_array_get: type mismatch"
+  match ty1 with
+  | CArray ta =>
+      match ty2 with
+      | CInt32 => ret ta
+      | _ => failwith "Typing.typecheck_array_get: i32 expected for array indexes"
+      end
+  | _ => failwith "Typing.typecheck_array_get: array typed expected"
   end.
 
 Definition typecheck_array_set (ty1 ty2 ty3: ctyp) : res ctyp :=
-  match ty1, ty2 with
-  | CArray ta, CInt32 =>
-      if ctyp_eq_dec ta ty3 then ret ty1
-      else failwith "Typing.typecheck_array_set: type mismatch"
-  | _, _ => failwith "Typing.typecheck_array_set: type mismatch"
+  match ty1 with
+  | CArray ta =>
+      match ty2 with
+      | CInt32 =>
+          if ctyp_eq_dec ta ty3 then ret ty1
+          else failwith "Typing.typecheck_array_set: type mismatch"
+      | _ => failwith "Typing.typecheck_array_set: i32 type expected for array indexes"
+      end
+  | _ => failwith "Typing.typecheck_array_set: array type expected"
   end.
 
 Definition typecheck_struct_proj (ts: types) (ty: ctyp) (x: ident) : res ctyp :=
   match ty with
   | CStruct t =>
-      let* fields := types_get ts t in
+      let/catch fields := types_get ts t
+        /> "Typing.typecheck_struct_proj: unknown struct type"
+      in
       ctypof_field x fields
   | _ => failwith "Typing.typecheck_struct_proj: struct type expected"
   end.
@@ -135,7 +145,9 @@ Definition typecheck_struct_proj (ts: types) (ty: ctyp) (x: ident) : res ctyp :=
 Definition typecheck_struct_update (ts: types) (ty1 ty2: ctyp) (x: ident) : res ctyp :=
   match ty1 with
   | CStruct t =>
-      let* fields := types_get ts t in
+      let/catch fields := types_get ts t
+        /> "Typing.typecheck_struct_proj: unknown struct type"
+      in
       let* tx := ctypof_field x fields in
       if ctyp_eq_dec tx ty2 then ret ty1
       else failwith "Typing.typecheck_struct_update: type mismatch"

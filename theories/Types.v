@@ -2,8 +2,6 @@ From Coq Require Import List.
 From compcert Require Import Integers.
 From BarocqComp Require Import Error Array Struct Common MapList.
 
-Local Open Scope error_monad_scope.
-
 (** * Syntax of types *)
 
 (** ** Plain types *)

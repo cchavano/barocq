@@ -3,7 +3,7 @@ open BarocqBNF
 open PrintCommon
 open PrintSyntax
 
-let rec expr_to_string_rec (prefix : string) (e : expr) : string =
+let rec expr_to_string_pref (prefix : string) (e : expr) : string =
   let prefix' = prefix ^ indent in
   let str =
     match e with
@@ -33,28 +33,29 @@ let rec expr_to_string_rec (prefix : string) (e : expr) : string =
         sprintf
           "if %s then\n%s\n%selse\n%s"
           (atom_to_string a)
-          (expr_to_string_rec prefix' e1)
+          (expr_to_string_pref prefix' e1)
           prefix
-          (expr_to_string_rec prefix' e2)
+          (expr_to_string_pref prefix' e2)
     | ELetIn (x, e1, e2) -> (
         match e1 with
         | ELetIn _ | EIfThenElse _ ->
             sprintf
               "let %s =\n%s\n%sin\n%s"
               (ident_to_string x)
-              (expr_to_string_rec prefix' e1)
+              (expr_to_string_pref prefix' e1)
               prefix
-              (expr_to_string_rec prefix e2)
+              (expr_to_string_pref prefix e2)
         | _ ->
             sprintf
               "let %s = %s in\n%s"
               (ident_to_string x)
-              (expr_to_string_rec "" e1)
-              (expr_to_string_rec prefix e2))
+              (expr_to_string_pref "" e1)
+              (expr_to_string_pref prefix e2))
   in
   prefix ^ str
 
-let expr_to_string (e : expr) : string = expr_to_string_rec PrintCommon.indent e
+let expr_to_string (e : expr) : string =
+  expr_to_string_pref PrintCommon.indent e
 
 let function_to_string (f : BarocqBNF.coq_function) : string =
   PrintSyntax.function_to_string expr_to_string f

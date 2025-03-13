@@ -3,8 +3,6 @@ From compcert Require Import Integers.
 From BarocqComp Require Import Error MapList Common Array Struct Types Typing Syntax.
 Import ListNotations.
 
-Local Open Scope error_monad_scope.
-
 (** * Abstract syntax *)
 
 (** ** Expressions *)

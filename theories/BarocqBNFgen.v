@@ -4,8 +4,6 @@ From BarocqComp Require Import Monads Error Common Syntax Types Barocq BarocqBNF
 Import ListNotations.
 Import MonCounter.
 
-Open Scope error_monad_scope.
-
 Fixpoint atom_of_expr (e: Barocq.expr) : res atom :=
   match e with
   | Barocq.ETrue => eret ATrue
@@ -22,8 +20,6 @@ Fixpoint atom_of_expr (e: Barocq.expr) : res atom :=
       eret (ABinaryOp op a1 a2)
   | _ => fail
   end.
-
-Close Scope error_monad_scope.
 
 Open Scope state_monad_scope.
 
@@ -204,8 +200,6 @@ Definition normalize_function (fsimpl: bool) (f: Barocq.function): BarocqBNF.fun
     fn_params := normalize_params (fn_params f);
     fn_body := if fsimpl then simplify_expr body_norm else body_norm
   |}.
-
-Local Open Scope error_monad_scope.
 
 Fixpoint normalize_program_rec (fsimpl: bool) (ts: types) (prog: Barocq.program) : res BarocqBNF.program :=
   match prog with

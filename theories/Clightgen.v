@@ -5,7 +5,6 @@ Import ClightNotations.
 Import Syntax.Typed.
 From BarocqComp Require Import Imp2.
 
-Local Open Scope error_monad_scope.
 Local Open Scope clight_scope.
 Local Open Scope string_scope.
 

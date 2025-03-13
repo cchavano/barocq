@@ -7,6 +7,9 @@ let indent : string = String.make 2 ' '
 let ident_to_string (x : Syntax.ident) : string =
   camlstring_of_coqstring (string_of_ident x)
 
+let ident_of_string (s : string) : Syntax.ident =
+  ident_of_string (coqstring_of_camlstring s)
+
 let list_to_string (b : string) (e : string) (s : string) (f : 'a -> string)
     (l : 'a list) : string =
   let rec aux (l : 'a list) =
@@ -29,8 +32,8 @@ let list_to_string_braces (f : 'a -> string) (args : 'a list) : string =
 let list_to_string_paren (f : 'a -> string) (args : 'a list) : string =
   list_to_string "(" ")" ", " f args
 
-let print_list (b : string) (e : string) (s : string) (f : 'a -> string)
-    (out : out_channel) (l : 'a list) : unit =
+let print_list (out : out_channel) (b : string) (e : string) (s : string)
+    (f : 'a -> string) (l : 'a list) : unit =
   let rec aux (l : 'a list) =
     match l with
     | [] -> fprintf out "%s%s" b e

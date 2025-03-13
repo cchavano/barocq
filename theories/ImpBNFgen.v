@@ -2,8 +2,6 @@ From Coq Require Import List.
 From BarocqComp Require Import Syntax BarocqBNF ImpBNF.
 Import ListNotations.
 
-Local Open Scope error_monad_scope.
-
 Fixpoint transl_expr (e: BarocqBNF.expr) : ImpBNF.tailcomp :=
   match e with
   | EAtom a => TcComp (CpAtom a)

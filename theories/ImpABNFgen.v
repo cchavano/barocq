@@ -2,8 +2,6 @@ From Coq Require Import List.
 From BarocqComp Require Import Error Syntax ImpBNF ImpABNF.
 Import ListNotations.
 
-Local Open Scope error_monad_scope.
-
 Fixpoint tailcomp_depth (t: ImpBNF.tailcomp) : nat :=
   match t with
   | ImpBNF.TcBegin s t1 =>

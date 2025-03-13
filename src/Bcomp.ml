@@ -23,9 +23,15 @@ let opt_gen_deep = ref false
 
 let opt_gen_corres = ref false
 
+let opt_gen_alias_call_state_of = ref ""
+
+let opt_gen_alias_exec_state_of = ref ""
+
+let opt_debug_aliasing = ref false
+
 let flag_simpl_bbnf = ref false
 
-let flag_bbnf_v2 = ref false
+let flag_bbnf_one_pass = ref false
 
 let usage_msg = "Usage: barocq [options] <file> \noptions:"
 
@@ -45,16 +51,25 @@ let options =
       Arg.Set opt_gen_shallow,
       "\t\tGenerate the Rocq shallow-embedding" );
     ("-gen-deep", Arg.Set opt_gen_deep, "\t\tGenerate the Rocq deep-embedding");
-    ( "-gen-proofs",
+    ( "-gen-corres",
       Arg.Set opt_gen_corres,
       "\t\tGenerate the correspondance proofs between the shallow and the \
        deep-embedding" );
+    ( "-gen-call-state-of",
+      Arg.Set_string opt_gen_alias_call_state_of,
+      "\tGenerate the aliaising call state of the given function" );
+    ( "-gen-exec-state-of",
+      Arg.Set_string opt_gen_alias_exec_state_of,
+      "\tGenerate the aliasing state of the execution of the given function" );
     ( "-fsimplify-bbnf",
       Arg.Set flag_simpl_bbnf,
-      "\tSimplify the BNF IR (does nothing with -fbbnf-v2)" );
-    ( "-fbbnf-v2",
-      Arg.Set flag_bbnf_v2,
-      "\t\tUses a one-pass BNF normalization with simplification" );
+      "\tSimplify the BNF IR (no effect if used with -fbbnf-one-pass)" );
+    ( "-fbbnf-one-pass",
+      Arg.Set flag_bbnf_one_pass,
+      "\tUse a one-pass BNF normalization with simplification" );
+    ( "-debug-aliasing",
+      Arg.Set opt_debug_aliasing,
+      "\tDisplay the alias analysis debugging information on stderr" );
   ]
 
 let set_source (file : string) : unit = source := file
@@ -98,6 +113,9 @@ let () =
     end;
 
     let xprog = Bparser.xprogram Blexer.read_token lexbuf in
+
+    close_in input;
+
     let prog = Barocq.xprog_to_prog xprog in
 
     begin
@@ -108,13 +126,12 @@ let () =
             exit 0
           end
       | Errors.Error msg ->
-          failwith
-            (sprintf "Typechecking error: %s\n" (C2C.string_of_errmsg msg))
+          failwith (sprintf "Typing error: %s\n" (C2C.string_of_errmsg msg))
     end;
 
     if !opt_print_bbnf then begin
       let norm =
-        if !flag_bbnf_v2 then BarocqBNFgen2.normalize_program
+        if !flag_bbnf_one_pass then BarocqBNFgen2.normalize_program
         else BarocqBNFgen.normalize_program !flag_simpl_bbnf
       in
       let bbnf = norm prog in
@@ -128,7 +145,7 @@ let () =
 
     if !opt_print_imp1 then begin
       let comp =
-        if !flag_bbnf_v2 then Compiler.compile2_to_imp1
+        if !flag_bbnf_one_pass then Compiler.compile2_to_imp1
         else Compiler.compile_to_imp1 !flag_simpl_bbnf
       in
       let imp1 = comp prog in
@@ -140,9 +157,118 @@ let () =
       exit 0
     end;
 
-    if !opt_interp then begin
-      let _ = Interpreter.interpret xprog in
-      exit 0
+    if !opt_gen_alias_call_state_of <> "" then begin
+      let comp =
+        if !flag_bbnf_one_pass then Compiler.compile2_to_imp1
+        else Compiler.compile_to_imp1 !flag_simpl_bbnf
+      in
+      let imp1 = comp prog in
+      begin
+        match imp1 with
+        | Errors.OK prog -> begin
+            match Imp1.Typing.typecheck_program prog with
+            | Errors.OK prog -> begin
+                let fid = "_" ^ !opt_gen_alias_call_state_of in
+                match Aliasing_impl.get_fun_descr false prog fid with
+                | Some fdescr ->
+                    let st =
+                      Aliasing_impl.gen_valid_call_state
+                        prog.Syntax.prog_types
+                        fdescr.Aliasing_defs.params
+                    in
+                    let dotfile =
+                      get_full_filename
+                        !source
+                        (sprintf "%s_call_state.dot" fid)
+                    in
+                    let dotfile_rev =
+                      get_full_filename
+                        !source
+                        (sprintf "%s_call_state_rev.dot" fid)
+                    in
+                    let out = open_out dotfile in
+                    let out_rev = open_out dotfile_rev in
+                    Aliasing_impl.DotExport.print_state
+                      out
+                      (Aliasing_defs.AbsDom.AbsState st);
+                    Aliasing_impl.DotExport.print_rev_state
+                      out_rev
+                      (Aliasing_defs.AbsDom.AbsState st);
+                    close_out out;
+                    close_out out_rev
+                | None ->
+                    failwith
+                      (sprintf
+                         "Error: function \"%s\" is not defined\n"
+                         !opt_gen_alias_call_state_of)
+              end
+            | Errors.Error msg ->
+                failwith
+                  (sprintf "Imp1 typing error: %s\n" (C2C.string_of_errmsg msg))
+          end
+        | Errors.Error msg -> raise @@ CompilerError (C2C.string_of_errmsg msg)
+      end
+    end;
+
+    if !opt_gen_alias_exec_state_of <> "" then begin
+      let comp =
+        if !flag_bbnf_one_pass then Compiler.compile2_to_imp1
+        else Compiler.compile_to_imp1 !flag_simpl_bbnf
+      in
+      let imp1 = comp prog in
+      begin
+        match imp1 with
+        | Errors.OK prog -> begin
+            match Imp1.Typing.typecheck_program prog with
+            | Errors.OK prog -> begin
+                let fid = "_" ^ !opt_gen_alias_exec_state_of in
+                match Aliasing_impl.get_fun_descr false prog fid with
+                | Some fdescr ->
+                    let stcall =
+                      Aliasing_impl.gen_valid_call_state
+                        prog.Syntax.prog_types
+                        fdescr.Aliasing_defs.params
+                    in
+                    let stexec =
+                      fdescr.Aliasing_defs.aliasing
+                        Aliasing_defs.IdentMap.empty
+                        (ref 0)
+                        (Aliasing_defs.AbsDom.AbsState stcall)
+                    in
+                    let dotfile =
+                      get_full_filename
+                        !source
+                        (sprintf "%s_exec_state.dot" fid)
+                    in
+                    let dotfile_rev =
+                      get_full_filename
+                        !source
+                        (sprintf "%s_exec_state_rev.dot" fid)
+                    in
+                    let out = open_out dotfile in
+                    let out_rev = open_out dotfile_rev in
+                    Aliasing_impl.DotExport.print_state out stexec;
+                    Aliasing_impl.DotExport.print_rev_state out_rev stexec;
+                    close_out out;
+                    close_out out_rev
+                | None ->
+                    failwith
+                      (sprintf
+                         "Error: function \"%s\" is not defined"
+                         !opt_gen_alias_call_state_of)
+              end
+            | Errors.Error msg ->
+                failwith
+                  (sprintf "Imp1 typing error: %s\n" (C2C.string_of_errmsg msg))
+          end
+        | Errors.Error msg -> raise @@ CompilerError (C2C.string_of_errmsg msg)
+      end
+    end;
+
+    begin
+      if !opt_interp then
+        let _ = Interpreter.interpret xprog in
+        exit 0
     end;
 
     if !opt_gen_corres then begin
@@ -162,8 +288,10 @@ let () =
       match BarocqShallowgen.monadify_norm_program prog with
       | Errors.OK prog ->
           Proofsgen.print_proofs oc prog;
-          printf "Correspondence proofs generated at %s\n" proofs_output
+          printf "Correspondence proofs generated at %s\n" proofs_output;
+          close_out oc
       | Errors.Error _ ->
+          close_out oc;
           failwith "Error: fail to generate the correspondence proofs\n"
     end;
 
@@ -173,8 +301,10 @@ let () =
       match BarocqShallowgen.monadify_norm_program prog with
       | Errors.OK prog ->
           Shallowgen.print_program oc prog;
-          printf "Shallow-embedding generated at %s\n" shallow_output
+          printf "Shallow-embedding generated at %s\n" shallow_output;
+          close_out oc
       | Errors.Error _ ->
+          close_out oc;
           failwith "Error: fail to generate the shallow-embedding\n"
     end;
 
@@ -182,13 +312,15 @@ let () =
       let deep_output = get_full_filename !source "_Deep.v" in
       let oc = open_out deep_output in
       Deepgen.print_program oc prog;
-      printf "Deep-embedding generated at %s\n" deep_output
+      printf "Deep-embedding generated at %s\n" deep_output;
+      close_out oc
     end;
 
     let comp =
-      if !flag_bbnf_v2 then Compiler.compile2
-      else Compiler.compile !flag_simpl_bbnf
+      if !flag_bbnf_one_pass then Compiler.compile2 !opt_debug_aliasing
+      else Compiler.compile !opt_debug_aliasing !flag_simpl_bbnf
     in
+
     match comp prog with
     | Errors.OK prog ->
         Camlcoq.use_canonical_atoms := true;
@@ -205,4 +337,6 @@ let () =
   | Bparser.Error -> eprintf "Parsing error\n"
   | Interpreter.Error msg -> eprintf "Interpretation error: %s\n" msg
   | CompilerError msg -> eprintf "Compilation error: %s\n" msg
-  | Failure msg -> eprintf "%s" msg
+  | Failure msg -> eprintf "%s\n" msg
+  | Aliasing_impl.UnsupportedFeature msg ->
+      eprintf "Compilation error: %s\n" msg

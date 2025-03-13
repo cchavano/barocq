@@ -2,8 +2,6 @@ From Coq Require Import List.
 From BarocqComp Require Import Error.
 Import ListNotations.
 
-Local Open Scope error_monad_scope.
-
 Set Implicit Arguments.
 
 Section MAPLISTS.

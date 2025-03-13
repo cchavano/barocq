@@ -1,4 +1,4 @@
-From Coq Require Import PArith ZArith String DecimalString List FSetPositive.
+From Coq Require Import PArith ZArith String DecimalString List MSetPositive.
 From compcert Require Import AST Ctypesdefs Maps Integers.
 From BarocqComp Require Import Error Monads.
 Import MonCounter.
@@ -48,8 +48,6 @@ Definition int_to_nat (i: int) : nat :=
 
 (** * Lists *)
 
-Local Open Scope error_monad_scope.
-
 Definition nth_err {A: Type} (l: list A) (n: nat) : res A :=
   err_of_opt (nth_error l n).
 
@@ -78,6 +76,8 @@ Notation pset := PositiveSet.t.
 Definition smem (s: pset) (p: positive) : bool := PositiveSet.mem p s.
 
 Definition sadd (s: pset) (p: positive) : pset := PositiveSet.add p s.
+
+Definition sremove (s: pset) (p: positive) : pset := PositiveSet.remove p s.
 
 Notation sempty := PositiveSet.empty.
 

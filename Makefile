@@ -121,6 +121,6 @@ FORCE:
 .PHONY:\
 	builddir extrdep vbuild depend depend1\
     vofiles clean extraction format install FORCE\
-	bonsoir theories
+	theories
 
 -include .depend

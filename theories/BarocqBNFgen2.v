@@ -4,8 +4,6 @@ From BarocqComp Require Import Error Monads Common Syntax Types Barocq BarocqBNF
 Import ListNotations.
 Import MonCounterErr.
 
-Open Scope error_monad_scope.
-
 Fixpoint atom_of_expr (e: Barocq.expr) : res atom :=
   match e with
   | Barocq.ETrue => eret ATrue
@@ -54,8 +52,6 @@ Definition spread_atomlist (e: Barocq.expr) (la: list atom) : res BarocqBNF.expr
       eret (EApp a args)
   | _ => MonError.fail
   end.
-
-Close Scope error_monad_scope.
 
 Open Scope state_err_monad_scope.
 
@@ -121,8 +117,6 @@ Fixpoint normalize_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
   end.
 
 Close Scope state_err_monad_scope.
-
-Local Open Scope error_monad_scope.
 
 Definition normalize_expr (e: Barocq.expr) : res BarocqBNF.expr :=
   let* ne := normalize_expr_rec e 0 in
