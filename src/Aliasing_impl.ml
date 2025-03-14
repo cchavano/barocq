@@ -572,9 +572,9 @@ let exec_set_call (show_debug : bool) (x : ident) (a : atom) (args : atom list)
         in
         subst_var_names stproj vmap
       in
-      let ce = build_cenv fdescr.params fargs in
+      let ce = build_cenv fdescr.fd_params fargs in
       if args_pointsto_unique stcall fargs && wf_args stcall fargs then
-        let dret = fdescr.aliasing ce nctr (AbsState stcall) in
+        let dret = fdescr.fd_transfer ce nctr (AbsState stcall) in
         let d' =
           let* stret = dret in
           (* When a function returns, 
@@ -753,8 +753,8 @@ let rec absexec (show_debug : bool) (ts : types) (fe : fenv) (ce : cenv)
 let gen_fun_descr (show_debug : bool) (ts : types) (fe : fenv)
     (f : coq_function) : fun_descr =
   {
-    params = f.fn_params;
-    aliasing =
+    fd_params = f.fn_params;
+    fd_transfer =
       (fun ce nctr st ->
         let _, d' = absexec show_debug ts fe ce st f.fn_body nctr in
         d');

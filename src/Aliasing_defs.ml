@@ -441,8 +441,8 @@ type cenv = atom IdentMap.t
     integer reference is used for renaming purposing to avoid function argument
     shadowing. *)
 type fun_descr = {
-  params : (ident * ctyp) list;
-  aliasing : cenv -> int ref -> absdom -> absdom;
+  fd_params : (ident * ctyp) list;
+  fd_transfer : cenv -> int ref -> absdom -> absdom;
 }
 
 type fenv = fun_descr IdentMap.t

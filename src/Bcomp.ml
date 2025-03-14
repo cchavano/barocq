@@ -174,7 +174,7 @@ let () =
                     let st =
                       Aliasing_impl.gen_valid_call_state
                         prog.Syntax.prog_types
-                        fdescr.Aliasing_defs.params
+                        fdescr.Aliasing_defs.fd_params
                     in
                     let dotfile =
                       get_full_filename
@@ -227,10 +227,10 @@ let () =
                     let stcall =
                       Aliasing_impl.gen_valid_call_state
                         prog.Syntax.prog_types
-                        fdescr.Aliasing_defs.params
+                        fdescr.Aliasing_defs.fd_params
                     in
                     let stexec =
-                      fdescr.Aliasing_defs.aliasing
+                      fdescr.Aliasing_defs.fd_transfer
                         Aliasing_defs.IdentMap.empty
                         (ref 0)
                         (Aliasing_defs.AbsDom.AbsState stcall)
