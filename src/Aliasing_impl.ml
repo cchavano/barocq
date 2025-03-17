@@ -30,7 +30,7 @@ let rec is_valid_atom (d : t) (a : atom) : bool =
   | ABinaryOp (op, a1, a2, _) -> is_valid_atom d a1 && is_valid_atom d a2
   | _ -> true
 
-let paths_to_string (paths : path_tree IdentMap.t) : string =
+let paths_to_string (paths : path_map) : string =
   list_to_string_bracket
     (fun (x, t) -> sprintf "%s.%s" (ident_to_string x) (PathTree.to_string t))
     (List.of_seq (IdentMap.to_seq paths))
@@ -42,7 +42,7 @@ let is_prim (c : ctyp) : bool =
   | _ -> false
 
 let rec paths_to_loc_rec (rev : rev_asbenv) (rm : rev_absmem) (curr : absloc)
-    (p : path) (paths : path_tree IdentMap.t) : path_tree IdentMap.t =
+    (p : path) (paths : path_map) : path_map =
   let paths' =
     match IdentMap.find_opt curr rev with
     | Some vars ->
@@ -73,13 +73,13 @@ let rec paths_to_loc_rec (rev : rev_asbenv) (rm : rev_absmem) (curr : absloc)
 
 (** [paths_to_loc st loc] computes all paths leading to the location [loc] in
     [st]. *)
-let paths_to_loc (st : absstate) (loc : absloc) : path_tree IdentMap.t =
+let paths_to_loc (st : absstate) (loc : absloc) : path_map =
   paths_to_loc_rec st.st_rev_env st.st_rev_mem loc [] IdentMap.empty
 
 (** [paths_to_loc_suffix st loc suffix] computes all paths leading to the
     location [loc] in [st] and suffixes them with [suffix]. *)
 let paths_to_loc_suffix (st : absstate) (loc : absloc) (suffix : path) :
-    path_tree IdentMap.t =
+    path_map =
   paths_to_loc_rec st.st_rev_env st.st_rev_mem loc suffix IdentMap.empty
 
 (** [invalid_paths_with_prefix inv x p] returns the invalid paths with prefix
@@ -172,8 +172,12 @@ let exec_set_struct_update (ts : types) (x : ident) (a : atom) (f : ident)
       in
       (* If variable shadowing occurs, and x already had invalid paths, then removes them. *)
       let inv' = IdentMap.remove x inv' in
-      (* x inherits the invalid paths from v *)
-      let v_inv = invalid_paths_of_atom st.st_inv a in
+      (* x.f inherits the invalid paths from v. *)
+      let v_inv =
+        match invalid_paths_of_atom st.st_inv v with
+        | Some t -> Some (Node [(f, t)])
+        | None -> None
+      in
       (* x inherits the invalid paths from y
          - if y was already completely invalid, x.f is valid (modulo invalid paths from v) but all x.f' s.t. f' <> f are invalid;
          - otherwise, if some y.f', f' <> f were invalid, then x.f' becomes also invalid. *)
