@@ -29,7 +29,7 @@ Definition transl_comp (params: pset) (c: comp) : comp :=
       let a1' := transl_atom params a1 in
       let a2' := transl_atom params a2 in
       let a3' := transl_atom params a3 in
-      CpArraySet a1 a2 a3
+      CpArraySet a1' a2' a3'
   | CpStructProj a f =>
       let a' := transl_atom params a in
       CpStructProj a' f
