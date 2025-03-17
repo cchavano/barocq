@@ -25,7 +25,7 @@ let opt_gen_corres = ref false
 
 let opt_gen_alias_call_state_of = ref ""
 
-let opt_gen_alias_exec_state_of = ref ""
+let opt_gen_alias_return_state_of = ref ""
 
 let opt_debug_aliasing = ref false
 
@@ -58,9 +58,10 @@ let options =
     ( "-gen-call-state-of",
       Arg.Set_string opt_gen_alias_call_state_of,
       "\tGenerate the aliaising call state of the given function" );
-    ( "-gen-exec-state-of",
-      Arg.Set_string opt_gen_alias_exec_state_of,
-      "\tGenerate the aliasing state of the execution of the given function" );
+    ( "-gen-return-state-of",
+      Arg.Set_string opt_gen_alias_return_state_of,
+      "\tGenerate the aliasing state after a complete execution of the given \
+       function" );
     ( "-fsimplify-bbnf",
       Arg.Set flag_simpl_bbnf,
       "\tSimplify the BNF IR (no effect if used with -fbbnf-one-pass)" );
@@ -169,13 +170,8 @@ let () =
             match Imp1.Typing.typecheck_program prog with
             | Errors.OK prog -> begin
                 let fid = "_" ^ !opt_gen_alias_call_state_of in
-                match Aliasing_impl.get_fun_descr false prog fid with
+                match Aliasing_impl.get_fun_descr prog fid with
                 | Some fdescr ->
-                    let st =
-                      Aliasing_impl.gen_valid_call_state
-                        prog.Syntax.prog_types
-                        fdescr.Aliasing_defs.fd_params
-                    in
                     let dotfile =
                       get_full_filename
                         !source
@@ -190,10 +186,12 @@ let () =
                     let out_rev = open_out dotfile_rev in
                     Aliasing_impl.DotExport.print_state
                       out
-                      (Aliasing_defs.AbsDom.AbsState st);
+                      (Aliasing_defs.AbsDom.AbsState
+                         fdescr.Aliasing_defs.fd_callstate);
                     Aliasing_impl.DotExport.print_rev_state
                       out_rev
-                      (Aliasing_defs.AbsDom.AbsState st);
+                      (Aliasing_defs.AbsDom.AbsState
+                         fdescr.Aliasing_defs.fd_callstate);
                     close_out out;
                     close_out out_rev
                 | None ->
@@ -210,7 +208,7 @@ let () =
       end
     end;
 
-    if !opt_gen_alias_exec_state_of <> "" then begin
+    if !opt_gen_alias_return_state_of <> "" then begin
       let comp =
         if !flag_bbnf_one_pass then Compiler.compile2_to_imp1
         else Compiler.compile_to_imp1 !flag_simpl_bbnf
@@ -221,34 +219,27 @@ let () =
         | Errors.OK prog -> begin
             match Imp1.Typing.typecheck_program prog with
             | Errors.OK prog -> begin
-                let fid = "_" ^ !opt_gen_alias_exec_state_of in
-                match Aliasing_impl.get_fun_descr false prog fid with
+                let fid = "_" ^ !opt_gen_alias_return_state_of in
+                match Aliasing_impl.get_fun_descr prog fid with
                 | Some fdescr ->
-                    let stcall =
-                      Aliasing_impl.gen_valid_call_state
-                        prog.Syntax.prog_types
-                        fdescr.Aliasing_defs.fd_params
-                    in
-                    let stexec =
-                      fdescr.Aliasing_defs.fd_transfer
-                        Aliasing_defs.IdentMap.empty
-                        (ref 0)
-                        (Aliasing_defs.AbsDom.AbsState stcall)
-                    in
                     let dotfile =
                       get_full_filename
                         !source
-                        (sprintf "%s_exec_state.dot" fid)
+                        (sprintf "%s_return_state.dot" fid)
                     in
                     let dotfile_rev =
                       get_full_filename
                         !source
-                        (sprintf "%s_exec_state_rev.dot" fid)
+                        (sprintf "%s_return_state_rev.dot" fid)
                     in
                     let out = open_out dotfile in
                     let out_rev = open_out dotfile_rev in
-                    Aliasing_impl.DotExport.print_state out stexec;
-                    Aliasing_impl.DotExport.print_rev_state out_rev stexec;
+                    Aliasing_impl.DotExport.print_state
+                      out
+                      fdescr.Aliasing_defs.fd_returnstate;
+                    Aliasing_impl.DotExport.print_rev_state
+                      out_rev
+                      fdescr.Aliasing_defs.fd_returnstate;
                     close_out out;
                     close_out out_rev
                 | None ->
@@ -337,6 +328,7 @@ let () =
   | Bparser.Error -> eprintf "Parsing error\n"
   | Interpreter.Error msg -> eprintf "Interpretation error: %s\n" msg
   | CompilerError msg -> eprintf "Compilation error: %s\n" msg
-  | Failure msg -> eprintf "%s\n" msg
+  | Failure msg -> eprintf "Unexpected error: %s\n" msg
   | Aliasing_impl.UnsupportedFeature msg ->
       eprintf "Compilation error: %s\n" msg
+  | Assert_failure (_, _, _) -> eprintf "Impossible error!!\n"

@@ -149,12 +149,8 @@ Module AliasingCheck.
               if is_valid_atom IN a then eret c
               else fail
           | CpCall _ args _ =>
-              let b :=
-                List.existsb
-                  (fun a => negb (is_valid_atom IN a))
-                  args
-              in
-              if b then fail else eret c
+              let all_valid := List.forallb (is_valid_atom IN) args in
+              if all_valid then eret c else fail
           end
         in
         eret (Imp1Typed.StSet x c')

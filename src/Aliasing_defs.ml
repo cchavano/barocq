@@ -1,6 +1,5 @@
 open BinPosDef
 open Syntax
-open Syntax.Typed
 open Types
 open PrintCommon
 
@@ -11,9 +10,9 @@ let path_to_string (p : path) : string =
 
 module PathTree = struct
   (** Tree representing invalid paths in the abstract memory. A path is a
-      succession of struct field names. If a path f1.\[...\].fn is contained in
-      a tree (i.e., following the path leads to a leaf), then every paths
-      sharing a prefix with it are considered invalid. *)
+      succession of struct field names. If a path p is contained in a tree
+      (i.e., following the path leads to a leaf), then every paths prefixed by p
+      are considered invalid. *)
 
   (** [Leaf] and [Node []] are two possible representations for leaves. *)
 
@@ -37,7 +36,7 @@ module PathTree = struct
     | (Leaf | Node []), _ -> Leaf
     | Node ln, x :: p' -> Node (add_list x p' ln)
 
-  (** [add_list x p l] adds the path x.p into the node list [ln]. *)
+  (** [add_list x p l] adds the path [x.p] into the node list [ln]. *)
   and add_list (x : ident) (p : path) (ln : (ident * t) list) =
     match ln with
     | [] -> [(x, create p)]
@@ -53,8 +52,7 @@ module PathTree = struct
     | Leaf, Leaf | Node _, Leaf | Leaf, Node _ | Node [], _ | _, Node [] -> Leaf
     | Node l1, Node l2 -> Node (union_list l1 l2)
 
-  (** [union_list ln1 ln2] computes the union of the node list [ln1] and [ln2].
-  *)
+  (** [union_list ln1 ln2] computes the union of the node lists [ln1] and [ln2].*)
   and union_list (ln1 : (ident * t) list) (ln2 : (ident * t) list) =
     match ln1 with
     | [] -> ln2
@@ -65,7 +63,7 @@ module PathTree = struct
         | None -> (f1, t1) :: union_list ln1' ln2
       end
 
-  (** [flatten t] gathers all paths in [t] in a list of paths. *)
+  (** [flatten t] collects all paths of [t] in a list of paths. *)
   let rec flatten (t : t) : path list =
     match t with
     | Leaf | Node [] -> [[]]
@@ -110,7 +108,7 @@ end
 
 type path_tree = PathTree.t
 
-(** An Abstract location is an identifer. *)
+(** An abstract location is an identifer. *)
 type absloc = ident
 
 let comparison_to_int (c : Datatypes.comparison) : int =
@@ -431,18 +429,17 @@ end
 
 type absdom = AbsDom.t
 
-(** The calling environment is used to substitute a formal parameter by its
-    corresponding atomic argument when analysing a function call. *)
-type cenv = atom IdentMap.t
-
-(** A function descriptor. It contains the parameter list and the transfer
-    function for the entire function CFG. The calling environment is used when
-    the function is analysed specifically at call-site (inter-procedural). An
-    integer reference is used for renaming purposing to avoid function argument
-    shadowing. *)
+(** A function descriptor. It contains:
+    - The parameter list;
+    - The call state built such that no inter-aliasing occurs between
+      parameters, and that each of them points to a unique tree-shaped part of
+      the memory;
+    - The return state which results from the execution of the transfer function
+      on the call state. *)
 type fun_descr = {
   fd_params : (ident * ctyp) list;
-  fd_transfer : cenv -> int ref -> absdom -> absdom;
+  fd_callstate : AbsDom.absstate;
+  fd_returnstate : absdom;
 }
 
 type fenv = fun_descr IdentMap.t
