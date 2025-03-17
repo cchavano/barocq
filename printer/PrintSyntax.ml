@@ -89,7 +89,8 @@ let typed_atom_to_string (a : Typed.atom) : string =
 let comp_to_string (c : comp) : string =
   match c with
   | CpAtom a -> atom_to_string a
-  | CpArrayGet (a1, a2) -> sprintf "%s[%s]" (atom_to_string a1) (opt_parens a2)
+  | CpArrayGet (a1, a2) ->
+      sprintf "%s[%s]" (atom_to_string a1) (atom_to_string a2)
   | CpArraySet (a1, a2, a3) ->
       sprintf
         "%s[%s] <- %s"
