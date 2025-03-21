@@ -511,11 +511,11 @@ let locs_bijection (ts : types) (v1 : ident) (v2 : ident) (ty : ctyp)
     map which associate each paramater in [params] to its corresponding argument
     in [args], and associated each location of [stcallee] to its corresponding
     location in [stcaller]. [ts] is the struct types environment. *)
-let funcall_bijection (ts : types) (params : (ident * ctyp) list)
-    (args : atom list) (stcallee : absstate) (stcaller : absstate) :
-    ident IdentMap.t * ident IdentMap.t =
+let funcall_bijection (show_debug : bool) (ts : types)
+    (params : (ident * ctyp) list) (args : atom list) (stcallee : absstate)
+    (stcaller : absstate) : ident IdentMap.t * ident IdentMap.t =
   let vars_bij = args_bijection (List.map fst params) args in
-  debug_info true
+  debug_info show_debug
   @@ sprintf
        "Parameters binding: %s\n"
        (list_to_string_bracket
@@ -608,9 +608,15 @@ let exec_set_call (show_debug : bool) (ts : types) (x : ident) (a : atom)
           None
       in
       (* We then build the bijections for the variables and the locations between the current call state,
-         and the pre-requisite call state of the calle. *)
+         and the pre-requisite call state of the callee. *)
       let vars_bij, locs_bij =
-        funcall_bijection ts fdescr.fd_params args fdescr.fd_callstate stcall
+        funcall_bijection
+          show_debug
+          ts
+          fdescr.fd_params
+          args
+          fdescr.fd_callstate
+          stcall
       in
       (* We check that all arguments are valid and well-formed. *)
       let args_validity = List.for_all (is_valid_atom (AbsState stcall)) args in
@@ -636,8 +642,8 @@ let exec_set_call (show_debug : bool) (ts : types) (x : ident) (a : atom)
                the one of the initial state memory.
              - The invalid paths of the resulting state will contain:
                + The invalid paths of the initial state;
-               + The invalid paths of the return state filtered on the arguments (to get rid off the local variables);
-               + The paths that become invalid because they were aliased with some arguments that themselves contained invalid paths in the return state. *)
+               + The invalid paths of the return state;
+               + The paths that were aliased with some arguments that themselves contained invalid paths when the function returns. *)
           let st' = if is_prim ty then st else env_add st x stret.st_res in
           let m_ret =
             IdentPairMap.merge
@@ -651,14 +657,18 @@ let exec_set_call (show_debug : bool) (ts : types) (x : ident) (a : atom)
           in
           let rm_ret = mem_reverse m_ret in
           let inv_ret =
-            let iv = IdentMap.filter (fun k _ -> is_arg k args) stret.st_inv in
-            let iv_args_alias = aliased_paths_of_pmap st iv in
+            (* If variable shadowing occurs, we must remove the binding with x in the invalid paths. *)
+            let iv_args_alias =
+              IdentMap.remove x (aliased_paths_of_pmap st stret.st_inv)
+            in
+            let iv_init = IdentMap.remove x st.st_inv in
+            let iv_ret = IdentMap.remove x stret.st_inv in
             let iv =
               match stret.st_inv_res with
-              | Some t -> IdentMap.add x t iv
-              | None -> iv
+              | Some t -> IdentMap.add x t iv_ret
+              | None -> iv_ret
             in
-            inv_union (inv_union st.st_inv iv) iv_args_alias
+            inv_union (inv_union iv_init iv) iv_args_alias
           in
           let inv_res_ret = st.st_inv_res in
           AbsState
@@ -841,12 +851,31 @@ let gen_valid_call_state (ts : types) (params : (ident * ctyp) list) : absstate
   in
   make_state2 ev m set_empty
 
+(** [is_param v params] checks wether the variable [v] is contained in the
+    parameter list [params]. *)
+let is_param (v : ident) (params : (ident * ctyp) list) : bool =
+  List.exists (fun (pid, _) -> v = pid) params
+
 (** [gen_fun_descr _ ts fe f] generates the function descriptor for [f]. *)
 let gen_fun_descr_and_ast (show_debug : bool) (ts : types) (fe : fenv)
     (f : coq_function) : fun_descr * Imp1.Aliasing_AST.statement =
   let callstate = gen_valid_call_state ts f.fn_params in
   let ast, returnstate =
     absexec show_debug ts fe (AbsState callstate) f.fn_body
+  in
+  (* We filter the returned environment and set of invalid paths to only keep the bindings
+     for which the key is a function paramater. *)
+  let returnstate =
+    let* retstate = returnstate in
+    let ev_ret =
+      IdentMap.filter (fun v _ -> is_param v f.fn_params) retstate.st_env
+    in
+    let rev_ret = env_reverse ev_ret in
+    let inv_ret =
+      IdentMap.filter (fun v _ -> is_param v f.fn_params) retstate.st_inv
+    in
+    AbsState
+      { retstate with st_env = ev_ret; st_rev_env = rev_ret; st_inv = inv_ret }
   in
   let fdescr =
     {
