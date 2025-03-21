@@ -117,13 +117,16 @@ let exec_set_atom (x : ident) (a : atom) (st : absstate) : absstate =
         if is_prim ty then st
         else
           let lv = IdentMap.find v st.st_env in
-          (* x inherits the invalid paths from v. *)
           env_add st x lv
     | _ -> st
   in
   match a_inv with
-  | Some t -> inv_add st' x t
-  | None -> st'
+  | Some t ->
+      (* x inherits the invalid paths from v. *)
+      inv_add st' x t
+  | None ->
+      (* If variable showing occurs, removes the value mapped to x in st'.st_inv *)
+      { st' with st_inv = IdentMap.remove x st'.st_inv }
 
 (** [exec_set_struct_proj x a f ty st] computes the transfer function for the
     statement [set x = a.f] on [st]. [ty] is the type of the field [f] in the
@@ -150,7 +153,9 @@ let exec_set_struct_proj (x : ident) (a : atom) (f : ident) (ty : ctyp)
         | Some t ->
             (* x inherits the invalid paths from y.f. *)
             inv_add st' x t
-        | None -> st'
+        | None ->
+            (* If variable showing occurs, removes the value mapped to x in st'.st_inv *)
+            { st' with st_inv = IdentMap.remove x st'.st_inv }
       end
   | _ -> assert false
 
