@@ -6,35 +6,41 @@ From BarocqComp Require Import Error Array Struct Common MapList.
 
 (** ** Plain types *)
 
+Inductive signedness : Type :=  
+  | Signed
+  | Unsigned.
+
+Lemma signedness_eq: forall (s1 s2: signedness), {s1 = s2} + {s1 <> s2}.
+Proof.
+  decide equality.
+Defined.
+
 Inductive typ : Type :=
   | TBool : typ
-  | TInt32 : typ
-  | TInt64 : typ
+  | TInt32 : signedness -> typ
+  | TInt64 : signedness -> typ
   | TArray : typ -> typ
   | TStruct : ident -> list (ident * typ) -> typ
   | TFun : list typ -> typ -> typ.
 
 Fixpoint typ_eq_dec (t1 t2: typ) : { t1 = t2 } + { t1 <> t2 }.
 Proof.
-  decide equality; try apply list_eq_dec.
-  decide equality. apply ident_eq_dec.
-  apply ident_eq_dec. apply typ_eq_dec.
+  repeat decide equality.
 Defined.
 
 (** ** Concrete types *)
 
 Inductive ctyp : Type :=
   | CBool : ctyp
-  | CInt32 : ctyp
-  | CInt64 : ctyp
+  | CInt32 : signedness -> ctyp
+  | CInt64 : signedness -> ctyp
   | CArray : ctyp -> ctyp
   | CStruct : ident -> ctyp
   | CFun : list ctyp -> ctyp -> ctyp.
 
 Fixpoint ctyp_eq_dec (t1 t2: ctyp) : { t1 = t2 } + { t1 <> t2 }.
 Proof.
-  decide equality. apply ident_eq_dec.
-  apply list_eq_dec. apply ctyp_eq_dec.
+  repeat decide equality.
 Defined.
 
 Definition cfun_typ (params: list (ident * ctyp)) (tret: ctyp) : ctyp :=
@@ -68,8 +74,8 @@ End EVALTYP.
 Fixpoint eval_typ (t: typ) : Type :=
   match t with
   | TBool => bool
-  | TInt32 => int
-  | TInt64 => int64
+  | TInt32 _ => int
+  | TInt64 _ => int64
   | TArray ta => array (eval_typ ta)
   | TStruct _ fields => eval_structtyp eval_typ fields
   | TFun tparams tret =>
@@ -118,8 +124,8 @@ Definition tenv_update (te: tenv) (x: ident) (fields: list (ident * typ)) : res 
 Fixpoint ctyp_to_typ (te: tenv) (ty: ctyp) : res typ :=
   match ty with
   | CBool => ret TBool
-  | CInt32 => ret TInt32
-  | CInt64 => ret TInt64
+  | CInt32 s => ret (TInt32 s)
+  | CInt64 s => ret (TInt64 s)
   | CArray ta =>
       let* bta := ctyp_to_typ te ta in 
       ret (TArray bta)

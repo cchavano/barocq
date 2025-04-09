@@ -37,7 +37,7 @@ let paths_to_string (paths : path_map) : string =
 
 let is_prim (c : ctyp) : bool =
   match c with
-  | CBool | CInt32 | CInt64 -> true
+  | CBool | CInt32 _ | CInt64 _ -> true
   | CFun (_, _) | CArray _ -> raise unsupported
   | _ -> false
 

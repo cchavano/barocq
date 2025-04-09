@@ -135,8 +135,8 @@ Module Typing.
     match a with
     | Syntax.ATrue => ret (ATrue CBool)
     | Syntax.AFalse => ret (AFalse CBool)
-    | Syntax.AInt32 i => ret (AInt32 i CInt32)
-    | Syntax.AInt64 i => ret (AInt64 i CInt64)
+    | Syntax.AInt32 i s => ret (AInt32 i (CInt32 s))
+    | Syntax.AInt64 i s => ret (AInt64 i (CInt64 s))
     | Syntax.AVar x =>
         let* t := typof_var gx lx x in
         ret (AVar x t)

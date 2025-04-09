@@ -1,5 +1,4 @@
 open Printf
-open Camlcoq
 open Types
 open PrintTypes
 open PrintCommon
@@ -9,8 +8,10 @@ let rec literal_to_string (l : literal) : string =
   match l with
   | LTrue -> "true"
   | LFalse -> "false"
-  | LInt32 i -> sprintf "%ld" (camlint_of_coqint i)
-  | LInt64 i -> sprintf "%Ld" (camlint64_of_coqint i)
+  | LInt32 (i, Signed) -> i32_to_string i
+  | LInt32 (i, Unsigned) -> u32_to_string i
+  | LInt64 (i, Signed) -> i64_to_string i
+  | LInt64 (i, Unsigned) -> u64_to_string i
   | LArray a -> list_to_string_bracketbar literal_to_string a
   | LStruct (st, t) ->
       let sts =
@@ -58,8 +59,10 @@ let rec atom_to_string (a : atom) : string =
   match a with
   | ATrue -> "true"
   | AFalse -> "false"
-  | AInt32 i -> sprintf "%ld" (camlint_of_coqint i)
-  | AInt64 i -> sprintf "%Ld" (camlint64_of_coqint i)
+  | AInt32 (i, Signed) -> i32_to_string i
+  | AInt32 (i, Unsigned) -> u32_to_string i
+  | AInt64 (i, Signed) -> i64_to_string i
+  | AInt64 (i, Unsigned) -> u64_to_string i
   | AVar x -> ident_to_string x
   | AUnaryOp (op, a) -> sprintf "%s %s" (unary_op_to_string op) (opt_parens a)
   | ABinaryOp (op, a1, a2) ->
@@ -71,20 +74,6 @@ let rec atom_to_string (a : atom) : string =
 
 and opt_parens (a : atom) : string =
   PrintCommon.opt_parens is_simpl_atom atom_to_string a
-
-let typed_atom_to_string (a : Typed.atom) : string =
-  let rec untype_atom (a : Typed.atom) : atom =
-    match a with
-    | Typed.ATrue _ -> ATrue
-    | Typed.AFalse _ -> AFalse
-    | Typed.AInt32 (i, _) -> AInt32 i
-    | Typed.AInt64 (i, _) -> AInt64 i
-    | Typed.AVar (x, _) -> AVar x
-    | Typed.AUnaryOp (op, a', _) -> AUnaryOp (op, untype_atom a')
-    | Typed.ABinaryOp (op, a1, a2, _) ->
-        ABinaryOp (op, untype_atom a1, untype_atom a2)
-  in
-  atom_to_string (untype_atom a)
 
 let comp_to_string (c : comp) : string =
   match c with
@@ -116,8 +105,18 @@ module PrintTyped = struct
     match a with
     | Typed.ATrue _ -> ATrue
     | Typed.AFalse _ -> AFalse
-    | Typed.AInt32 (i, _) -> AInt32 i
-    | Typed.AInt64 (i, _) -> AInt64 i
+    | Typed.AInt32 (i, ty) -> begin
+        match ty with
+        | CInt32 Signed -> AInt32 (i, Signed)
+        | CInt32 Unsigned -> AInt32 (i, Unsigned)
+        | _ -> assert false
+      end
+    | Typed.AInt64 (i, ty) -> begin
+        match ty with
+        | CInt64 Signed -> AInt64 (i, Signed)
+        | CInt64 Unsigned -> AInt64 (i, Unsigned)
+        | _ -> assert false
+      end
     | Typed.AVar (x, _) -> AVar x
     | Typed.AUnaryOp (op, a', _) -> AUnaryOp (op, untype_atom a')
     | Typed.ABinaryOp (op, a1, a2, _) ->

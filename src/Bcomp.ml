@@ -3,6 +3,8 @@ open Printf
 
 exception CompilerError of string
 
+exception TypingError of string
+
 let source = ref ""
 
 let c_output = ref ""
@@ -126,8 +128,7 @@ let () =
             printf "Typechecking succeeds\n";
             exit 0
           end
-      | Errors.Error msg ->
-          failwith (sprintf "Typing error: %s\n" (C2C.string_of_errmsg msg))
+      | Errors.Error msg -> raise (TypingError (C2C.string_of_errmsg msg))
     end;
 
     if !opt_print_bbnf then begin
@@ -328,6 +329,7 @@ let () =
   | Bparser.Error -> eprintf "Parsing error\n"
   | Interpreter.Error msg -> eprintf "Interpretation error: %s\n" msg
   | CompilerError msg -> eprintf "Compilation error: %s\n" msg
+  | TypingError msg -> eprintf "Typing error: %s\n" msg
   | Failure msg -> eprintf "Unexpected error: %s\n" msg
   | Aliasing_impl.UnsupportedFeature msg ->
       eprintf "Compilation error: %s\n" msg

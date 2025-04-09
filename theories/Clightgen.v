@@ -11,8 +11,10 @@ Local Open Scope string_scope.
 Fixpoint transl_ctyp (ty: ctyp) : Ctypes.type :=
   match ty with
   | CBool => tbool
-  | CInt32 => tint
-  | CInt64 => tlong
+  | CInt32 Signed => tint
+  | CInt32 Unsigned => tuint
+  | CInt64 Signed => tlong
+  | CInt64 Unsigned => tulong
   | CArray ta => tptr (transl_ctyp ta)
   | CStruct t => tptr (Tstruct t noattr)
   | CFun tparams tret =>

@@ -1,5 +1,4 @@
 open Printf
-open Camlcoq
 open Types
 open Syntax
 open Barocq
@@ -7,11 +6,21 @@ open PrintCommon
 
 let ident_to_deep (id : ident) : string = sprintf "$\"%s\"" (ident_to_string id)
 
-let int_to_deep (i : BinNums.coq_Z) : string =
-  sprintf "Int.repr %ld%%Z" (camlint_of_coqint i)
+let int_to_deep (i : Integers.Int.int) (s : signedness) : string =
+  let si =
+    match s with
+    | Signed -> i32_to_string i
+    | Unsigned -> u32_to_string i
+  in
+  sprintf "Int.repr %s%%Z" si
 
-let int64_to_deep (i : BinNums.coq_Z) : string =
-  sprintf "Int64.repr %Ld%%Z" (camlint64_of_coqint i)
+let int64_to_deep (i : Integers.Int64.int) (s : signedness) : string =
+  let si =
+    match s with
+    | Signed -> i64_to_string i
+    | Unsigned -> u64_to_string i
+  in
+  sprintf "Int.repr %s%%Z" si
 
 let unary_op_to_deep (op : unary_op) : string =
   match op with
@@ -41,13 +50,20 @@ let binary_op_to_deep (op : binary_op) : string =
   | BopLe -> "BopLe"
   | BopGe -> "BopGe"
 
+let signedness_to_deep (s : signedness) : string =
+  match s with
+  | Signed -> "Signed"
+  | Unsigned -> "Unsigned"
+
 let rec expr_to_deep (prefix : string) (e : expr) : string =
   let prefix' = prefix ^ indent in
   match e with
   | ETrue -> "ETrue"
   | EFalse -> "EFalse"
-  | EInt32 i -> sprintf "EInt32 (%s)" (int_to_deep i)
-  | EInt64 i -> sprintf "EInt64 (%s)" (int_to_deep i)
+  | EInt32 (i, s) ->
+      sprintf "EInt32 (%s %s)" (int_to_deep i s) (signedness_to_deep s)
+  | EInt64 (i, s) ->
+      sprintf "EInt64 (%s %s)" (int_to_deep i s) (signedness_to_deep s)
   | EVar x -> sprintf "EVar %s" (ident_to_deep x)
   | EUnaryOp (op, e1) ->
       sprintf "EUnaryOp %s (%s)" (unary_op_to_deep op) (expr_to_deep "" e1)
@@ -97,8 +113,8 @@ let rec expr_to_deep (prefix : string) (e : expr) : string =
 let rec ctyp_to_deep (ty : ctyp) : string =
   match ty with
   | CBool -> "CBool"
-  | CInt32 -> "CInt32"
-  | CInt64 -> "CInt64"
+  | CInt32 s -> sprintf "CInt32 %s" (signedness_to_deep s)
+  | CInt64 s -> sprintf "CInt64 %s" (signedness_to_deep s)
   | CArray ta -> sprintf "CArray (%s)" (ctyp_to_deep ta)
   | CStruct ts -> sprintf "CStruct (%s)" (ident_to_deep ts)
   | CFun (tparams, tret) ->
@@ -131,8 +147,10 @@ let rec literal_to_deep (l : literal) : string =
   match l with
   | LTrue -> "LTrue"
   | LFalse -> "LFalse"
-  | LInt32 i -> sprintf "LInt32 (%s)" (int_to_deep i)
-  | LInt64 i -> sprintf "LInt64 (%s)" (int64_to_deep i)
+  | LInt32 (i, s) ->
+      sprintf "LInt32 (%s) %s" (int_to_deep i s) (signedness_to_deep s)
+  | LInt64 (i, s) ->
+      sprintf "LInt64 (%s) %s" (int64_to_deep i s) (signedness_to_deep s)
   | LArray la -> sprintf "LArray %s" (list_to_string_bracket literal_to_deep la)
   | LStruct (ls, id) ->
       sprintf "LStruct %s %s" (fields_lit_to_deep ls) (ident_to_deep id)

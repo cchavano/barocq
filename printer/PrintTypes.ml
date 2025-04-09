@@ -29,8 +29,10 @@ let is_simpl_typ (ty : typ) : bool =
 let rec typ_to_string (ty : typ) : string =
   match ty with
   | TBool -> "bool"
-  | TInt32 -> "i32"
-  | TInt64 -> "i64"
+  | TInt32 Signed -> "i32"
+  | TInt32 Unsigned -> "u32"
+  | TInt64 Signed -> "i64"
+  | TInt64 Unsigned -> "u64"
   | TArray t -> sprintf "array %s" (opt_parens t)
   | TStruct (x, _) -> sprintf "%s" (ident_to_string x)
   | TFun (tparams, tret) -> funtyp_to_string typ_to_string tparams tret
@@ -40,8 +42,10 @@ and opt_parens (ty : typ) = PrintCommon.opt_parens is_simpl_typ typ_to_string ty
 let rec ctyp_to_string (ty : ctyp) : string =
   match ty with
   | CBool -> "bool"
-  | CInt32 -> "i32"
-  | CInt64 -> "i64"
+  | CInt32 Signed -> "i32"
+  | CInt32 Unsigned -> "u32"
+  | CInt64 Signed -> "i64"
+  | CInt64 Unsigned -> "u64"
   | CArray (CArray t) -> sprintf "array (%s)" (ctyp_to_string t)
   | CArray t -> sprintf "array %s" (ctyp_to_string t)
   | CStruct a -> ident_to_string a

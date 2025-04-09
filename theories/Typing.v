@@ -76,10 +76,10 @@ Definition typof_var (gx: gcontext) (lx: lcontext) (x: ident) : res ctyp :=
 Definition typecheck_unary_op (op: unary_op) (ty: ctyp) : res ctyp :=
   match op, ty with
   | UopNotbool, CBool
-  | UopNotint, CInt32
-  | UopNotint, CInt64
-  | UopNeg, CInt32
-  | UopNeg, CInt64 => ret ty
+  | UopNotint, CInt32 _
+  | UopNotint, CInt64 _
+  | UopNeg, CInt32 _
+  | UopNeg, CInt64 _ => ret ty
   | _, _ => failwith "Typing.typecheck_unary_op: type mismatch"
   end.
 
@@ -95,16 +95,32 @@ Definition typecheck_binary_op (op: binary_op) (ty1 ty2: ctyp) : res ctyp :=
   | BopEq
   | BopNeq =>
       match ty1, ty2 with
-      | CBool, CBool
-      | CInt32, CInt32
-      | CInt64, CInt64 => ret ty1
+      | CBool, CBool => ret ty1
+      | CInt32 s1, CInt32 s2
+      | CInt64 s1, CInt64 s2 =>
+          if signedness_eq s1 s2 then ret CBool
+          else failwith "Typing.typecheck_binary_op: integer signedness mismatch"
       | _, _ =>
           failwith "Typing.typecheck_binary_op: type mismatch"
       end
+  | BopLt
+  | BopLe 
+  | BopGt
+  | BopGe =>
+      match ty1, ty2 with
+      | CInt32 s1, CInt32 s2
+      | CInt64 s1, CInt64 s2 =>
+          if signedness_eq s1 s2 then ret CBool
+          else failwith "Typing.typecheck_binary_op: integer signedness mismatch"
+      | _, _ =>
+        failwith "Typing.typecheck_binary_op: type mismatch"
+      end
   | _ =>
       match ty1, ty2 with
-      | CInt32, CInt32
-      | CInt64, CInt64 => ret ty1
+      | CInt32 s1, CInt32 s2
+      | CInt64 s1, CInt64 s2 =>
+          if signedness_eq s1 s2 then ret ty1
+          else failwith "Typing.typecheck_binary_op: integer signedness mismatch"
       | _, _ =>
         failwith "Typing.typecheck_binary_op: type mismatch"
       end
@@ -114,8 +130,8 @@ Definition typecheck_array_get (ty1 ty2: ctyp) : res ctyp :=
   match ty1 with
   | CArray ta =>
       match ty2 with
-      | CInt32 => ret ta
-      | _ => failwith "Typing.typecheck_array_get: i32 expected for array indexes"
+      | CInt32 Unsigned => ret ta
+      | _ => failwith "Typing.typecheck_array_get: u32 expected for array indexes"
       end
   | _ => failwith "Typing.typecheck_array_get: array typed expected"
   end.
@@ -124,10 +140,10 @@ Definition typecheck_array_set (ty1 ty2 ty3: ctyp) : res ctyp :=
   match ty1 with
   | CArray ta =>
       match ty2 with
-      | CInt32 =>
+      | CInt32 Unsigned =>
           if ctyp_eq_dec ta ty3 then ret ty1
           else failwith "Typing.typecheck_array_set: type mismatch"
-      | _ => failwith "Typing.typecheck_array_set: i32 type expected for array indexes"
+      | _ => failwith "Typing.typecheck_array_set: u32 type expected for array indexes"
       end
   | _ => failwith "Typing.typecheck_array_set: array type expected"
   end.
@@ -195,8 +211,8 @@ Fixpoint typecheck_literal (ts: types) (l: Syntax.literal) : res literal :=
   match l with
   | Syntax.LTrue => ret (LTrue CBool)
   | Syntax.LFalse => ret (LFalse CBool)
-  | Syntax.LInt32 i => ret (LInt32 i CInt32)
-  | Syntax.LInt64 i => ret (LInt64 i CInt64)
+  | Syntax.LInt32 i s => ret (LInt32 i (CInt32 s))
+  | Syntax.LInt64 i s => ret (LInt64 i (CInt64 s))
   | Syntax.LArray a =>
       let* a' := mmap (typecheck_literal ts) a in
       let* t := typecheck_array_lit a' in

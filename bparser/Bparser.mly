@@ -20,11 +20,11 @@
 %token OP_EQ OP_NEQ OP_LT OP_GT OP_LE OP_GE
 %token OP_ANDBOOL OP_ORBOOL OP_XORBOOL OP_NOTBOOL 
 %token TRUE FALSE
-%token TYP_BOOL TYP_INT32 TYP_INT64 TYP_ARRAY
+%token TYP_BOOL TYP_INT32 TYP_UINT32 TYP_INT64 TYP_UINT64 TYP_ARRAY
 %token STRUCT DEF LET IN
 %token IF THEN ELSE
-%token <int32> LIT_INT32
-%token <int64> LIT_INT64
+%token <int32> LIT_INT32 LIT_UINT32
+%token <int64> LIT_INT64 LIT_UINT64
 %token <string> IDENT
 %token EOF
 
@@ -67,8 +67,10 @@ param:
 expr:
   | TRUE { ETrue }
   | FALSE { EFalse }
-  | i = LIT_INT32 { EInt32 (coqint_of_camlint i) }
-  | i = LIT_INT64 { EInt64 (coqint_of_camlint64 i) }
+  | i = LIT_INT32 { EInt32 (coqint_of_camlint i, Signed) }
+  | i = LIT_UINT32 { EInt32 (coqint_of_camlint i, Unsigned) }
+  | i = LIT_INT64 { EInt64 (coqint_of_camlint64 i, Signed) }
+  | i = LIT_UINT64 { EInt64 (coqint_of_camlint64 i, Unsigned) }
   | v = ident { EVar v }
   | e1 = expr LBRACKET e2 = expr RBRACKET { EArrayGet (e1, e2) }
   | e1 = expr LBRACKET e2 = expr RBRACKET ARROW_INV e3 = expr { EArraySet (e1, e2, e3) }
@@ -85,8 +87,10 @@ expr:
 literal:
   | TRUE { LTrue }
   | FALSE { LFalse }
-  | i = LIT_INT32 { LInt32 (coqint_of_camlint i) }
-  | i = LIT_INT64 { LInt64 (coqint_of_camlint64 i) }
+  | i = LIT_INT32 { LInt32 (coqint_of_camlint i, Signed) }
+  | i = LIT_UINT32 { LInt32 (coqint_of_camlint i, Unsigned) }
+  | i = LIT_INT64 { LInt64 (coqint_of_camlint64 i, Signed) }
+  | i = LIT_UINT64 { LInt64 (coqint_of_camlint64 i, Unsigned) }
   | a = delimited(LBRACKETBAR, separated_list(SEMICOLON, literal), RBRACKETBAR) { LArray a }
   | st = delimited(LBRACE, separated_nonempty_list(SEMICOLON, literal_field), RBRACE)
     HASHTAG ty = ident { LStruct (st, ty) }
@@ -128,8 +132,10 @@ typ_field:
 
 ctyp:
   | TYP_BOOL { CBool }
-  | TYP_INT32 { CInt32 }
-  | TYP_INT64 { CInt64 }
+  | TYP_INT32 { CInt32 Signed }
+  | TYP_UINT32 { CInt32 Unsigned }
+  | TYP_INT64 { CInt64 Signed }
+  | TYP_UINT64 { CInt64 Unsigned }
   | TYP_ARRAY ty = ctyp { CArray ty }
   | ty = ident { CStruct ty }
   | ty = funtyp { ty }

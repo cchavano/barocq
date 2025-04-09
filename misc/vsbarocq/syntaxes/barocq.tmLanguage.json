@@ -26,7 +26,7 @@
                 {
                     "comment": "primitive type",
                     "name": "entity.name.type.barocq",
-                    "match": "\\b(bool|i32|i64)\\b"
+                    "match": "\\b(bool|i32|u32|i64|u64)\\b"
                 },
                 {
                     "comment": "user-defined type declaration",
@@ -74,7 +74,7 @@
                 {
                     "comment": "decimal integer literal",
                     "name": "constant.numeric.integer.barocq",
-                    "match": "\\d+"
+                    "match": "\\d+[U]?[L]?"
                 }
             ]
         },

@@ -8,8 +8,8 @@ Definition ident : Type := Common.ident.
 Inductive literal :=
   | LTrue : literal
   | LFalse  : literal
-  | LInt32 : int -> literal
-  | LInt64 : int64 -> literal
+  | LInt32 : int -> signedness -> literal
+  | LInt64 : int64 -> signedness -> literal
   | LArray : array literal -> literal
   | LStruct : list (ident * literal) -> ident -> literal.
 
@@ -48,8 +48,8 @@ Inductive binary_op : Type :=
 Inductive atom :=
   | ATrue : atom
   | AFalse : atom
-  | AInt32 : int -> atom
-  | AInt64 : int64 -> atom
+  | AInt32 : int -> signedness -> atom
+  | AInt64 : int64 -> signedness -> atom
   | AVar : ident -> atom
   | AUnaryOp : unary_op -> atom -> atom
   | ABinaryOp : binary_op -> atom -> atom -> atom.

@@ -44,7 +44,9 @@ let token_to_string (tok : Bparser.token) : string =
   | FALSE -> "FALSE"
   | TYP_BOOL -> "TYP_BOOL"
   | TYP_INT32 -> "TYP_INT32"
+  | TYP_UINT32 -> "TYP_UINT32"
   | TYP_INT64 -> "TYP_INT64"
+  | TYP_UINT64 -> "TYP_UINT64"
   | TYP_ARRAY -> "TYP_ARRAY"
   | STRUCT -> "STRUCT"
   | DEF -> "DEF"
@@ -53,8 +55,10 @@ let token_to_string (tok : Bparser.token) : string =
   | IF -> "IF"
   | THEN -> "THEN"
   | ELSE -> "ELSE"
-  | LIT_INT32 i -> sprintf "LIT_INT32 %s" (Int32.to_string i)
-  | LIT_INT64 i -> sprintf "LIT_INT64 %s" (Int64.to_string i)
+  | LIT_INT32 i -> sprintf "LIT_INT32 %ld" i
+  | LIT_UINT32 i -> sprintf "LIT_UINT32 %lu" i
+  | LIT_INT64 i -> sprintf "LIT_INT64 %Ld" i
+  | LIT_UINT64 i -> sprintf "LIT_UINT64 %Lu" i
   | IDENT id -> sprintf "IDENT %s" id
   | EOF -> "EOF"
 

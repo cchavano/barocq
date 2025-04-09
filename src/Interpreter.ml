@@ -1,5 +1,4 @@
 open Printf
-open Camlcoq
 open Types
 open Barocq
 open Common
@@ -12,8 +11,10 @@ let rec val_to_string (ty : typ) (x : 'a) : string =
   let o = Obj.magic x in
   match ty with
   | TBool -> sprintf "%B" o
-  | TInt32 -> sprintf "%ld" (camlint_of_coqint o)
-  | TInt64 -> sprintf "%Ld" (camlint64_of_coqint o)
+  | TInt32 Signed -> i32_to_string o
+  | TInt32 Unsigned -> u32_to_string o
+  | TInt64 Signed -> i64_to_string o
+  | TInt64 Unsigned -> u64_to_string o
   | TArray ta -> list_to_string_bracketbar (val_to_string ta) o
   | TStruct (_, fields) -> struct_to_string fields o
   | TFun _ -> "<fun>"

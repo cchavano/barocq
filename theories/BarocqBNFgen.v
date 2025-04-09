@@ -8,8 +8,8 @@ Fixpoint atom_of_expr (e: Barocq.expr) : res atom :=
   match e with
   | Barocq.ETrue => eret ATrue
   | Barocq.EFalse => eret AFalse
-  | Barocq.EInt32 i => eret (AInt32 i)
-  | Barocq.EInt64 i => eret (AInt64 i)
+  | Barocq.EInt32 i s => eret (AInt32 i s)
+  | Barocq.EInt64 i s => eret (AInt64 i s)
   | Barocq.EVar x => eret (AVar (transl_user_ident x))
   | Barocq.EUnaryOp op e1 =>
       let* a1 := atom_of_expr e1 in
@@ -42,8 +42,8 @@ Section NORMEXPR.
     match e with
     | Barocq.ETrue => ret (EAtom ATrue)
     | Barocq.EFalse => ret (EAtom AFalse)
-    | Barocq.EInt32 i => ret (EAtom (AInt32 i))
-    | Barocq.EInt64 i => ret (EAtom (AInt64 i))
+    | Barocq.EInt32 i s => ret (EAtom (AInt32 i s))
+    | Barocq.EInt64 i s => ret (EAtom (AInt64 i s))
     | Barocq.EVar x => ret (EAtom (AVar (transl_user_ident x)))
     | Barocq.EUnaryOp op e1 =>
         match atom_of_expr e with

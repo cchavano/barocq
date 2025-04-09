@@ -1,5 +1,5 @@
 From compcert Require Import Integers.
-From BarocqComp Require Import Common Syntax.
+From BarocqComp Require Import Common Types Syntax.
 
 Module BNF.
 
@@ -14,8 +14,8 @@ Module BNF.
   Inductive atom :=
     | ATrue : atom
     | AFalse : atom
-    | AInt32 : int -> atom
-    | AInt64 : int64 -> atom
+    | AInt32 : int -> signedness -> atom
+    | AInt64 : int64 -> signedness -> atom
     | AVar : ident -> atom
     | AUnaryOp : unary_op -> atom -> atom
     | ABinaryOp : binary_op -> atom -> atom -> atom
@@ -54,8 +54,8 @@ Module Monadic.
 
   Inductive mtyp : Type :=
     | MBool : mtyp
-    | MInt32 : mtyp
-    | MInt64 : mtyp
+    | MInt32 : signedness -> mtyp
+    | MInt64 : signedness -> mtyp
     | MArray : mtyp -> mtyp
     | MStruct : ident -> mtyp
     | MFun : list mtyp -> mtyp -> mtyp

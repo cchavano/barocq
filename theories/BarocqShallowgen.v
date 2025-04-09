@@ -12,8 +12,8 @@ Module Normalization.
     match e with
     | Barocq.ETrue => eret ATrue
     | Barocq.EFalse => eret AFalse
-    | Barocq.EInt32 i => eret (AInt32 i)
-    | Barocq.EInt64 i => eret (AInt64 i)
+    | Barocq.EInt32 i s => eret (AInt32 i s)
+    | Barocq.EInt64 i s => eret (AInt64 i s)
     | Barocq.EVar x => eret (AVar (transl_user_ident x))
     | Barocq.EUnaryOp op e1 =>
         let* a1 := atom_of_expr e1 in
@@ -91,10 +91,10 @@ Module Normalization.
         ret (EAtom ATrue)
     | Barocq.EFalse =>
         ret (EAtom AFalse)
-    | Barocq.EInt32 i =>
-        ret (EAtom (AInt32 i))
-    | Barocq.EInt64 i =>
-        ret (EAtom (AInt64 i))
+    | Barocq.EInt32 i s =>
+        ret (EAtom (AInt32 i s))
+    | Barocq.EInt64 i s =>
+        ret (EAtom (AInt64 i s))
     | Barocq.EVar x =>
         ret (EAtom (AVar (transl_user_ident x)))
     | Barocq.EUnaryOp op e1 =>
@@ -211,8 +211,7 @@ Module Monadification.
 
   Fixpoint mtyp_eq_dec (t1 t2: mtyp) : { t1 = t2 } + { t1 <> t2 }.
   Proof.
-    decide equality. apply ident_eq_dec. 
-    apply list_eq_dec. apply mtyp_eq_dec.
+    repeat decide equality.
   Defined.
 
   Definition types_get (ts: types) (x: ident) : res (list (ident * mtyp)) :=
@@ -277,8 +276,8 @@ Module Monadification.
   Fixpoint eta_expand_rec (f: ident) (ty1: mtyp) (ty2: mtyp) (l: list ident) : crmon atom :=
     match ty1, ty2 with
     | MBool, MBool
-    | MInt32, MInt32
-    | MInt64, MInt64 => ret (AApp f l ty2)
+    | MInt32 _, MInt32 _
+    | MInt64 _, MInt64 _ => ret (AApp f l ty2)
     | MArray ta1, MArray ta2 =>
         if mtyp_eq_dec ta1 ta2 then ret (AApp f l ty2)
         else fail
@@ -321,10 +320,10 @@ Module Monadification.
   Definition typecheck_unary_op (op: unary_op) (ty: mtyp) : res mtyp :=
     match op, ty with
     | UopNotbool, MBool
-    | UopNotint, MInt32
-    | UopNotint, MInt64
-    | UopNeg, MInt32
-    | UopNeg, MInt64 => eret ty
+    | UopNotint, MInt32 _
+    | UopNotint, MInt64 _
+    | UopNeg, MInt32 _
+    | UopNeg, MInt64 _ => eret ty
     | _, _ => MonError.fail
     end.
 
@@ -340,16 +339,20 @@ Module Monadification.
     | BopEq
     | BopNeq =>
         match ty1, ty2 with
-        | MBool, MBool
-        | MInt32, MInt32
-        | MInt64, MInt64 => eret ty1
+        | MBool, MBool => eret ty1
+        | MInt32 s1, MInt32 s2
+        | MInt64 s1, MInt64 s2 =>
+            if signedness_eq s1 s2 then eret ty1
+            else MonError.fail
         | _, _ =>
             MonError.fail
         end
     | _ =>
         match ty1, ty2 with
-        | MInt32, MInt32
-        | MInt64, MInt64 => eret ty1
+        | MInt32 s1, MInt32 s2
+        | MInt64 s1, MInt64 s2 =>
+            if signedness_eq s1 s2 then eret ty1
+            else MonError.fail
         | _, _ =>
           MonError.fail
         end
@@ -357,7 +360,7 @@ Module Monadification.
 
   Definition typecheck_array_get (ty1 ty2: mtyp) : res mtyp :=
     match ty1, ty2 with
-    | MArray ta, MInt32 => eret (MRes ta)
+    | MArray ta, MInt32 Unsigned => eret (MRes ta)
     | _, _ => MonError.fail
     end.
 
@@ -372,7 +375,7 @@ Module Monadification.
   Definition typecheck_array_set (ty1 ty2: mtyp) (a3: atom) : res (atom * mtyp) :=
     let tr := MRes ty1 in
     match ty1, ty2 with
-    | MArray ta, MInt32 =>
+    | MArray ta, MInt32 Unsigned =>
         let* a3' := typecheck_atom_against a3 ta in
         eret (a3', tr)
     | _, _ => MonError.fail
@@ -403,8 +406,8 @@ Module Monadification.
     match a with
     | BNF.ATrue => eret (ATrue MBool)
     | BNF.AFalse => eret (AFalse MBool)
-    | BNF.AInt32 i => eret (AInt32 i MInt32)
-    | BNF.AInt64 i => eret (AInt64 i MInt64)
+    | BNF.AInt32 i s => eret (AInt32 i (MInt32 s))
+    | BNF.AInt64 i s => eret (AInt64 i (MInt64 s))
     | BNF.AVar x =>
         let* t := typof_var gx lx x in
         eret (AVar x t)
@@ -454,8 +457,8 @@ Module Monadification.
   Fixpoint wrap_mtyp (ty: mtyp) : mtyp :=
     match ty with
     | MBool
-    | MInt32
-    | MInt64
+    | MInt32 _
+    | MInt64 _
     | MArray _
     | MStruct _ => MRes ty
     | MFun tparams tret =>
@@ -551,8 +554,8 @@ Module Monadification.
   Fixpoint monadify_ctyp (ty: ctyp) : mtyp :=
     match ty with
     | CBool => MBool
-    | CInt32 => MInt32
-    | CInt64 => MInt64
+    | CInt32 s => MInt32 s
+    | CInt64 s => MInt64 s
     | CArray ta => MArray (monadify_ctyp ta)
     | CStruct s => MStruct s
     | CFun tparams tret =>

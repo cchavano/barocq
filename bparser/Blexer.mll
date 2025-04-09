@@ -8,13 +8,43 @@
 
   let keywords = Hashtbl.create 15
 
+  let parse_int_lit (li: string) : token =
+      let n = String.length li in
+      (* ===== u64 ===== *)
+      if String.ends_with ~suffix:"UL" li then
+        let li = "0u" ^ String.sub li 0 (n - 2) in
+        try
+          LIT_UINT64 (Int64.of_string li)
+        with Failure _ ->
+          error "unsigned 64-bit integer overflow."
+      (* ===== i64 ===== *)
+      else if String.ends_with ~suffix:"L" li then
+        let li = String.sub li 0 (n - 1) in
+        try
+          LIT_INT64 (Int64.of_string li)
+        with Failure _ ->
+          error "64-bit integer overflow."
+      (* ===== u32 ===== *)
+      else if String.ends_with ~suffix:"U"li  then
+        let li = "0u" ^ String.sub li 0 (n - 1) in
+        try
+          LIT_UINT32 (Int32.of_string li)
+        with Failure _ ->
+          error "unsigned 32-bit integer overflow"
+      (* ===== i32 ===== *)
+      else
+        try
+          LIT_INT32 (Int32.of_string li)
+        with Failure _ ->
+          error "32-bit integer overflow"
+
   let () =
     List.iter
       (fun (s, t) -> Hashtbl.add keywords s t)
       [
         ("true", TRUE); ("false", FALSE);
-        ("bool", TYP_BOOL); ("i32", TYP_INT32);
-        ("i64", TYP_INT64); ("array", TYP_ARRAY);
+        ("bool", TYP_BOOL); ("i32", TYP_INT32); ("u32", TYP_UINT32);
+        ("i64", TYP_INT64); ("u64", TYP_UINT64); ("array", TYP_ARRAY);
         ("struct", STRUCT); ("def", DEF); ("let", LET); ("in", IN);
         ("if", IF); ("then", THEN); ("else", ELSE)
       ]
@@ -24,7 +54,7 @@ let digit = ['0'-'9']
 let letter = ['a'-'z''A'-'Z']
 let space = [' ''\t''\r']
 
-let lit_int = digit+
+let lit_int = digit+ ['U']? ['L']?
 let ident_char = (letter | digit | '_' | '\'')
 let ident = letter ident_char* | '_' ident_char+
 
@@ -69,17 +99,7 @@ rule read_token = parse
   | ">"           { OP_GT }
   | "!"           { OP_NOTBOOL }
   | "="           { BIND }
-  | lit_int as li
-    {
-      try
-        let i : int64 ref = ref (Int64.of_string li) in
-        if (Int64.of_int32 (Int32.min_int) <= !i && !i <= Int64.of_int32 (Int32.max_int)) then
-          LIT_INT32 (Int64.to_int32 !i)
-        else
-          LIT_INT64 !i
-      with Failure _ ->
-        error "64-bit integer overflow"
-    }
+  | lit_int as li { parse_int_lit li }
   | ident as id 
     {
       try (Hashtbl.find keywords id) with 

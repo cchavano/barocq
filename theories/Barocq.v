@@ -10,8 +10,8 @@ Import ListNotations.
 Inductive expr : Type :=
   | ETrue : expr                                            (* true constant *)
   | EFalse : expr                                           (* false constant *)
-  | EInt32 (i: int) : expr                                  (* 32-bit integer *)
-  | EInt64 (i: int64) : expr                                (* 64-bit integer *)    
+  | EInt32 (i: int) (s: signedness) : expr                  (* 32-bit signed/unsigned integer *)
+  | EInt64 (i: int64) (s: signedness) : expr                (* 64-bit signed/unsigned integer *)    
   | EVar (x: ident) : expr                                  (* variable *)
   | EUnaryOp (op: unary_op) (e: expr) : expr                (* op e *)
   | EBinaryOp (op: binary_op) (e1 e2 : expr) : expr         (* e1 op e2 *)
@@ -125,8 +125,8 @@ Module Typing.
     match e with
     | Barocq.ETrue => ret (ETrue CBool)
     | Barocq.EFalse => ret (EFalse CBool)
-    | Barocq.EInt32 i => ret (EInt32 i CInt32)
-    | Barocq.EInt64 i => ret (EInt64 i CInt64)
+    | Barocq.EInt32 i s => ret (EInt32 i (CInt32 s))
+    | Barocq.EInt64 i s => ret (EInt64 i (CInt64 s))
     | Barocq.EVar x =>
         let* t := typof_var gx lx x in
         ret (EVar x t)
@@ -264,10 +264,10 @@ Section DENOT.
   Definition eval_unary_op (op: unary_op) (v: value) : res value :=
     match op, v with
     | UopNotbool, Val TBool b => ret (Val TBool (negb b))
-    | UopNotint, Val TInt32 i => ret (Val TInt32 (Int.not i))
-    | UopNeg, Val TInt32 i => ret (Val TInt32 (Int.neg i))
-    | UopNotint, Val TInt64 i => ret (Val TInt64 (Int64.neg i))
-    | UopNeg, Val TInt64 i => ret (Val TInt64 (Int64.not i))
+    | UopNotint, Val (TInt32 s) i => ret (Val (TInt32 s) (Int.not i))
+    | UopNeg, Val (TInt32 s) i => ret (Val (TInt32 s) (Int.neg i))
+    | UopNotint, Val (TInt64 s) i => ret (Val (TInt64 s) (Int64.neg i))
+    | UopNeg, Val (TInt64 s) i => ret (Val (TInt64 s) (Int64.not i))
     | _, _ => fail
     end.
 
@@ -290,100 +290,181 @@ Section DENOT.
         end
     | BopAdd =>
         match v1, v2 with
-        | Val TInt32 i1, Val TInt32 i2 => ret (Val TInt32 (Int.add i1 i2))
-        | Val TInt64 i1, Val TInt64 i2 => ret (Val TInt64 (Int64.add i1 i2))
+        | Val (TInt32 s1) i1, Val (TInt32 s2) i2 =>
+            if signedness_eq s1 s2 then ret (Val (TInt32 s1) (Int.add i1 i2))
+            else fail
+        | Val (TInt64 s1) i1, Val (TInt64 s2) i2 =>
+            if signedness_eq s1 s2 then ret (Val (TInt64 s1) (Int64.add i1 i2))
+            else fail
         | _, _ => fail
         end
     | BopSub =>
         match v1, v2 with
-        | Val TInt32 i1, Val TInt32 i2 => ret (Val TInt32 (Int.sub i1 i2))
-        | Val TInt64 i1, Val TInt64 i2 => ret (Val TInt64 (Int64.sub i1 i2))
+        | Val (TInt32 s1) i1, Val (TInt32 s2) i2 =>
+            if signedness_eq s1 s2 then ret (Val (TInt32 s1) (Int.sub i1 i2))
+            else fail
+        | Val (TInt64 s1) i1, Val (TInt64 s2) i2 =>
+            if signedness_eq s1 s2 then ret (Val (TInt64 s1) (Int64.sub i1 i2))
+            else fail
         | _, _ => fail
         end
     | BopMul =>
         match v1, v2 with
-        | Val TInt32 i1, Val TInt32 i2 => ret (Val TInt32 (Int.mul i1 i2))
-        | Val TInt64 i1, Val TInt64 i2 => ret (Val TInt64 (Int64.mul i1 i2))
+        | Val (TInt32 s1) i1, Val (TInt32 s2) i2 =>
+            if signedness_eq s1 s2 then ret (Val (TInt32 s1) (Int.mul i1 i2))
+            else fail
+        | Val (TInt64 s1) i1, Val (TInt64 s2) i2 =>
+            if signedness_eq s1 s2 then ret (Val (TInt64 s1) (Int64.mul i1 i2))
+            else fail
         | _, _ => fail
         end
     | BopDiv =>
         match v1, v2 with
-        | Val TInt32 i1, Val TInt32 i2 => ret (Val TInt32 (Int.divs i1 i2))
-        | Val TInt64 i1, Val TInt64 i2 => ret (Val TInt64 (Int64.divs i1 i2))
+        | Val (TInt32 Signed) i1, Val (TInt32 Signed) i2 =>
+            ret (Val (TInt32 Signed) (Int.divs i1 i2))
+        | Val (TInt32 Unsigned) i1, Val (TInt32 Unsigned) i2 =>
+            ret (Val (TInt32 Unsigned) (Int.divu i1 i2))
+        | Val (TInt64 Signed) i1, Val (TInt64 Signed) i2 =>
+            ret (Val (TInt64 Signed) (Int64.divs i1 i2))
+        | Val (TInt64 Unsigned) i1, Val (TInt64 Unsigned) i2 =>
+            ret (Val (TInt64 Unsigned) (Int64.divu i1 i2))
         | _, _ => fail
         end
     | BopMod =>
         match v1, v2 with
-        | Val TInt32 i1, Val TInt32 i2 => ret (Val TInt32 (Int.mods i1 i2))
-        | Val TInt64 i1, Val TInt64 i2 => ret (Val TInt64 (Int64.mods i1 i2))
+        | Val (TInt32 Signed) i1, Val (TInt32 Signed) i2 =>
+            ret (Val (TInt32 Signed) (Int.mods i1 i2))
+        | Val (TInt32 Unsigned) i1, Val (TInt32 Unsigned) i2 =>
+            ret (Val (TInt32 Unsigned) (Int.modu i1 i2))
+        | Val (TInt64 Signed) i1, Val (TInt64 Signed) i2 =>
+            ret (Val (TInt64 Signed) (Int64.mods i1 i2))
+        | Val (TInt64 Unsigned) i1, Val (TInt64 Unsigned) i2 =>
+            ret (Val (TInt64 Unsigned) (Int64.modu i1 i2))
         | _, _ => fail
         end
     | BopAndint =>
         match v1, v2 with
-        | Val TInt32 i1, Val TInt32 i2 => ret (Val TInt32 (Int.and i1 i2))
-        | Val TInt64 i1, Val TInt64 i2 => ret (Val TInt64 (Int64.and i1 i2))
+        | Val (TInt32 s1) i1, Val (TInt32 s2) i2 =>
+            if signedness_eq s1 s2 then ret (Val (TInt32 s1) (Int.and i1 i2))
+            else fail
+        | Val (TInt64 s1) i1, Val (TInt64 s2) i2 =>
+            if signedness_eq s1 s2 then ret (Val (TInt64 s1) (Int64.and i1 i2))
+            else fail
         | _, _ => fail
         end
     | BopOrint =>
         match v1, v2 with
-        | Val TInt32 i1, Val TInt32 i2 => ret (Val TInt32 (Int.or i1 i2))
-        | Val TInt64 i1, Val TInt64 i2 => ret (Val TInt64 (Int64.or i1 i2))
+        | Val (TInt32 s1) i1, Val (TInt32 s2) i2 =>
+            if signedness_eq s1 s2 then ret (Val (TInt32 s1) (Int.or i1 i2))
+            else fail
+        | Val (TInt64 s1) i1, Val (TInt64 s2) i2 =>
+            if signedness_eq s1 s2 then ret (Val (TInt64 s1) (Int64.or i1 i2))
+            else fail
         | _, _ => fail
         end
     | BopXorint =>
         match v1, v2 with
-        | Val TInt32 i1, Val TInt32 i2 => ret (Val TInt32 (Int.xor i1 i2))
-        | Val TInt64 i1, Val TInt64 i2 => ret (Val TInt64 (Int64.xor i1 i2))
+        | Val (TInt32 s1) i1, Val (TInt32 s2) i2 =>
+            if signedness_eq s1 s2 then ret (Val (TInt32 s1) (Int.xor i1 i2))
+            else fail
+        | Val (TInt64 s1) i1, Val (TInt64 s2) i2 =>
+            if signedness_eq s1 s2 then ret (Val (TInt64 s1) (Int64.xor i1 i2))
+            else fail
         | _, _ => fail
         end
     | BopShl =>
         match v1, v2 with
-        | Val TInt32 i1, Val TInt32 i2 => ret (Val TInt32 (Int.shl i1 i2))
-        | Val TInt64 i1, Val TInt64 i2 => ret (Val TInt64 (Int64.shl i1 i2))
+        | Val (TInt32 s1) i1, Val (TInt32 s2) i2 =>
+            if signedness_eq s1 s2 then ret (Val (TInt32 s1) (Int.shl i1 i2))
+            else fail
+        | Val (TInt64 s1) i1, Val (TInt64 s2) i2 =>
+            if signedness_eq s1 s2 then ret (Val (TInt64 s1) (Int64.shl i1 i2))
+            else fail
         | _, _ => fail
         end
     | BopShr =>
         match v1, v2 with
-        | Val TInt32 i1, Val TInt32 i2 => ret (Val TInt32 (Int.shr i1 i2))
-        | Val TInt64 i1, Val TInt64 i2 => ret (Val TInt64 (Int64.shr i1 i2))
+        | Val (TInt32 Signed) i1, Val (TInt32 Signed) i2 =>
+            ret (Val (TInt32 Signed) (Int.shr i1 i2))
+        | Val (TInt32 Unsigned) i1, Val (TInt32 Unsigned) i2 =>
+            ret (Val (TInt32 Unsigned) (Int.shru i1 i2))
+        | Val (TInt64 Signed) i1, Val (TInt64 Signed) i2 =>
+            ret (Val (TInt64 Signed) (Int64.shr i1 i2))
+        | Val (TInt64 Unsigned) i1, Val (TInt64 Unsigned) i2 =>
+            ret (Val (TInt64 Unsigned) (Int64.shru i1 i2))
         | _, _ => fail
         end
     | BopEq =>
         match v1, v2 with
         | Val TBool b1, Val TBool b2 => ret (Val TBool (eqb b1 b2))
-        | Val TInt32 i1, Val TInt32 i2 => ret (Val TBool (Int.eq i1 i2))
-        | Val TInt64 i1, Val TInt64 i2 => ret (Val TBool (Int64.eq i1 i2))
+        | Val (TInt32 s1) i1, Val (TInt32 s2) i2 =>
+            if signedness_eq s1 s2 then ret (Val TBool (Int.eq i1 i2))
+            else fail
+        | Val (TInt64 s1) i1, Val (TInt64 s2) i2 =>
+            if signedness_eq s1 s2 then ret (Val TBool (Int64.eq i1 i2))
+            else fail
         | _, _ => fail
         end
     | BopNeq =>
         match v1, v2 with
-        | Val TBool b1, Val TBool b2 => ret (Val TBool (negb (eqb b1 b2)))
-        | Val TInt32 i1, Val TInt32 i2 => ret (Val TBool (Int.cmp Cne i1 i2))
-        | Val TInt64 i1, Val TInt64 i2 => ret (Val TBool (Int64.cmp Cne i1 i2))
+        | Val TBool b1, Val TBool b2 =>
+            ret (Val TBool (negb (eqb b1 b2)))
+        | Val (TInt32 Signed) i1, Val (TInt32 Signed) i2 =>
+            ret (Val TBool (Int.cmp Cne i1 i2))
+        | Val (TInt32 Unsigned) i1, Val (TInt32 Unsigned) i2 =>
+            ret (Val TBool (Int.cmpu Cne i1 i2))
+        | Val (TInt64 Signed) i1, Val (TInt64 Signed) i2 =>
+            ret (Val TBool (Int64.cmp Cne i1 i2))
+        | Val (TInt64 Unsigned) i1, Val (TInt64 Unsigned) i2 =>
+            ret (Val TBool (Int64.cmpu Cne i1 i2))
         | _, _ => fail
         end
     | BopLt =>
         match v1, v2 with
-        | Val TInt32 i1, Val TInt32 i2 => ret (Val TBool (Int.lt i1 i2))
-        | Val TInt64 i1, Val TInt64 i2 => ret (Val TBool (Int64.lt i1 i2))
+        | Val (TInt32 Signed) i1, Val (TInt32 Signed) i2 =>
+            ret (Val TBool (Int.lt i1 i2))
+        | Val (TInt32 Unsigned) i1, Val (TInt32 Unsigned) i2 =>
+            ret (Val TBool (Int.ltu i1 i2))
+        | Val (TInt64 Signed) i1, Val (TInt64 Signed) i2 =>
+            ret (Val TBool (Int64.lt i1 i2))
+        | Val (TInt64 Unsigned) i1, Val (TInt64 Unsigned) i2 =>
+            ret (Val TBool (Int64.ltu i1 i2))
         | _, _ => fail
         end
     | BopGt =>
         match v1, v2 with
-        | Val TInt32 i1, Val TInt32 i2 => ret (Val TBool (Int.cmp Cgt i1 i2))
-        | Val TInt64 i1, Val TInt64 i2 => ret (Val TBool (Int64.cmp Cgt i1 i2))
+        | Val (TInt32 Signed) i1, Val (TInt32 Signed) i2 =>
+            ret (Val TBool (Int.cmp Cge i1 i2))
+        | Val (TInt32 Unsigned) i1, Val (TInt32 Unsigned) i2 =>
+            ret (Val TBool (Int.cmpu Cge i1 i2))
+        | Val (TInt64 Signed) i1, Val (TInt64 Signed) i2 =>
+            ret (Val TBool (Int64.cmp Cge i1 i2))
+        | Val (TInt64 Unsigned) i1, Val (TInt64 Unsigned) i2 =>
+            ret (Val TBool (Int64.cmpu Cge i1 i2))
         | _, _ => fail
         end
     | BopLe =>
         match v1, v2 with
-        | Val TInt32 i1, Val TInt32 i2 => ret (Val TBool (Int.cmp Cle i1 i2))
-        | Val TInt64 i1, Val TInt64 i2 => ret (Val TBool (Int64.cmp Cle i1 i2))
+        | Val (TInt32 Signed) i1, Val (TInt32 Signed) i2 =>
+            ret (Val TBool (Int.cmp Cle i1 i2))
+        | Val (TInt32 Unsigned) i1, Val (TInt32 Unsigned) i2 =>
+            ret (Val TBool (Int.cmpu Cle i1 i2))
+        | Val (TInt64 Signed) i1, Val (TInt64 Signed) i2 =>
+            ret (Val TBool (Int64.cmp Cle i1 i2))
+        | Val (TInt64 Unsigned) i1, Val (TInt64 Unsigned) i2 =>
+            ret (Val TBool (Int64.cmpu Cle i1 i2))
         | _, _ => fail
         end
     | BopGe =>
         match v1, v2 with
-        | Val TInt32 i1, Val TInt32 i2 => ret (Val TBool (Int.cmp Cge i1 i2))
-        | Val TInt64 i1, Val TInt64 i2 => ret (Val TBool (Int64.cmp Cge i1 i2))
+        | Val (TInt32 Signed) i1, Val (TInt32 Signed) i2 =>
+            ret (Val TBool (Int.cmp Cge i1 i2))
+        | Val (TInt32 Unsigned) i1, Val (TInt32 Unsigned) i2 =>
+            ret (Val TBool (Int.cmpu Cge i1 i2))
+        | Val (TInt64 Signed) i1, Val (TInt64 Signed) i2 =>
+            ret (Val TBool (Int64.cmp Cge i1 i2))
+        | Val (TInt64 Unsigned) i1, Val (TInt64 Unsigned) i2 =>
+            ret (Val TBool (Int64.cmpu Cge i1 i2))
         | _, _ => fail
         end
     end.
@@ -430,7 +511,7 @@ Section DENOT.
 
   Definition eval_array_get (v1 v2: value) : res value :=
     match v1, v2 with
-    | Val (TArray t) a, Val TInt32 i=>
+    | Val (TArray t) a, Val (TInt32 Unsigned) i=>
         let* v := Array.get a i in
         ret (Val t v)
     | _, _ => fail
@@ -438,7 +519,7 @@ Section DENOT.
 
   Definition eval_array_set (v1 v2 v3: value) : res value :=
     match v1, v2, v3 with
-    | Val (TArray ta) a, Val TInt32 i, Val t v =>
+    | Val (TArray ta) a, Val (TInt32 Unsigned) i, Val t v =>
         match (typ_eq_dec t ta) with
         | left eq =>
             let* a' := Array.set a i (typ_cast eq v) in
@@ -534,8 +615,8 @@ Section DENOT.
     match e with
     | ETrue => ret (Val TBool true)
     | EFalse => ret (Val TBool false)
-    | EInt32 i => ret (Val TInt32 i)
-    | EInt64 i => ret (Val TInt64 i)
+    | EInt32 i s => ret (Val (TInt32 s) i)
+    | EInt64 i s => ret (Val (TInt64 s) i)
     | EVar x => eval_var ge le x
     | EUnaryOp op e =>
         let* v := eval_expr te ge le e in
@@ -583,8 +664,8 @@ Section DENOT.
     match l with
     | LTrue => ret (Val TBool true)
     | LFalse => ret (Val TBool false)
-    | LInt32 i => ret (Val TInt32 i)
-    | LInt64 i => ret (Val TInt64 i)
+    | LInt32 i s => ret (Val (TInt32 s) i)
+    | LInt64 i s => ret (Val (TInt64 s) i)
     | LArray a =>
         let* av := mmap (eval_literal te) a in
         eval_array_lit av

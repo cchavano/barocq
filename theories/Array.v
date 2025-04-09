@@ -15,11 +15,11 @@ Section ARRAYS.
   Definition length (a: array A) : nat := length a.
 
   Definition valid_index (a: array A) (i: int) : bool :=
-    Int.cmp Cle Int.zero i &&
-    ((int_to_nat i) <? (length a))%nat.
+    Int.cmpu Cle Int.zero i &&
+    ((uint_to_nat i) <? (length a))%nat.
 
   Definition get (a: array A) (i: int) : res A :=
-    if valid_index a i then err_of_opt (nth_error a (int_to_nat i))
+    if valid_index a i then err_of_opt (nth_error a (uint_to_nat i))
     else fail.
   
   Fixpoint set_rec (l: list A) (n: nat) (x: A) {struct n} : list A :=
@@ -30,7 +30,7 @@ Section ARRAYS.
     end.
 
   Definition set (a: array A) (i: int) (x: A) : res (array A) :=
-    if valid_index a i then ret (set_rec a (int_to_nat i) x)
+    if valid_index a i then ret (set_rec a (uint_to_nat i) x)
     else fail.
 
 End ARRAYS.

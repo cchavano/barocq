@@ -1,14 +1,26 @@
 open Printf
-open Camlcoq
 open PrintCommon
+open Types
 open Syntax
 open BarocqShallow.Monadic
 
-let int_to_rocq (i : BinNums.coq_Z) : string =
-  sprintf "Int.repr %ld%%Z" (camlint_of_coqint i)
+let int_to_rocq (i : Integers.Int.int) (ty : mtyp) : string =
+  let si =
+    match ty with
+    | MInt32 Signed -> i32_to_string i
+    | MInt32 Unsigned -> u32_to_string i
+    | _ -> assert false
+  in
+  sprintf "Int.repr %s%%Z" si
 
-let int64_to_rocq (i : BinNums.coq_Z) : string =
-  sprintf "Int64.repr %Ld%%Z" (camlint64_of_coqint i)
+let int64_to_rocq (i : Integers.Int64.int) (ty : mtyp) : string =
+  let si =
+    match ty with
+    | MInt64 Signed -> i64_to_string i
+    | MInt64 Unsigned -> u64_to_string i
+    | _ -> assert false
+  in
+  sprintf "Int.repr %s%%Z" si
 
 let unary_op_to_rocq (op : unary_op) : string =
   match op with
@@ -17,13 +29,23 @@ let unary_op_to_rocq (op : unary_op) : string =
   | UopNeg -> "Int.neg"
 
 let binary_op_to_rocq (ty : mtyp) (op : binary_op) : string =
-  let intmod =
+  let intmod, suffix =
     match ty with
-    | MInt32 -> "Int"
-    | MInt64 -> "Int64"
-    | _ -> ""
+    | MInt32 Signed -> ("Int", "s")
+    | MInt32 Unsigned -> ("Int", "u")
+    | MInt64 Signed -> ("Int", "s")
+    | MInt64 Unsigned -> ("Int64", "u")
+    | _ -> ("", "")
   in
-  let intop (o : string) = sprintf "%s.%s" intmod o in
+  let intop (o : string) =
+    let suffix =
+      match o with
+      | "add" | "sub" | "mul" | "and" | "or" | "xor" | "shl" -> ""
+      | "shr" | "cmp" | "lt" -> if suffix = "s" then "" else suffix
+      | _ -> suffix
+    in
+    sprintf "%s.%s%s" intmod o suffix
+  in
   match op with
   | BopAndbool -> "andb"
   | BopOrbool -> "orb"
@@ -31,8 +53,8 @@ let binary_op_to_rocq (ty : mtyp) (op : binary_op) : string =
   | BopAdd -> intop "add"
   | BopSub -> intop "sub"
   | BopMul -> intop "mul"
-  | BopDiv -> intop "divs"
-  | BopMod -> intop "mods"
+  | BopDiv -> intop "div"
+  | BopMod -> intop "mod"
   | BopAndint -> intop "and"
   | BopOrint -> intop "or"
   | BopXorint -> intop "xor"
@@ -60,8 +82,8 @@ let rec atom_to_rocq (a : atom) : string =
   match a with
   | ATrue _ -> "true"
   | AFalse _ -> "false"
-  | AInt32 (i, _) -> int_to_rocq i
-  | AInt64 (i, _) -> int64_to_rocq i
+  | AInt32 (i, ty) -> int_to_rocq i ty
+  | AInt64 (i, ty) -> int64_to_rocq i ty
   | AVar (x, _) -> ident_to_string x
   | AUnaryOp (op, a, _) -> sprintf "%s %s" (unary_op_to_rocq op) (opt_parens a)
   | ABinaryOp (op, a1, a2, ty) ->
@@ -168,15 +190,15 @@ let expr_to_rocq (e : expr) : string = expr_to_rocq_rec PrintCommon.indent e
 
 let rec is_simpl_mtyp (ty : mtyp) : bool =
   match ty with
-  | MBool | MInt32 | MInt64 -> true
+  | MBool | MInt32 _ | MInt64 _ -> true
   | MRes ty' -> is_simpl_mtyp ty'
   | _ -> false
 
 let rec mtyp_to_rocq (ty : mtyp) : string =
   match ty with
   | MBool -> "bool"
-  | MInt32 -> "int"
-  | MInt64 -> "int64"
+  | MInt32 _ -> "int"
+  | MInt64 _ -> "int64"
   | MArray ta -> sprintf "array %s" (opt_parens ta)
   | MStruct ts -> ident_to_string ts
   | MFun (tparams, tret) -> (
@@ -216,8 +238,8 @@ let rec literal_to_rocq (l : literal) : string =
   match l with
   | LTrue -> "true"
   | LFalse -> "false"
-  | LInt32 i -> int_to_rocq i
-  | LInt64 i -> int64_to_rocq i
+  | LInt32 (i, s) -> int_to_rocq i (MInt32 s) (* Check for signedness ? *)
+  | LInt64 (i, s) -> int64_to_rocq i (MInt64 s) (* Check for signedness ? *)
   | LArray la -> list_to_string_bracket literal_to_rocq la
   | LStruct (st, _) -> struct_lit_to_rocq st
 

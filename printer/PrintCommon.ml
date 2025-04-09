@@ -10,6 +10,18 @@ let ident_to_string (x : Syntax.ident) : string =
 let ident_of_string (s : string) : Syntax.ident =
   ident_of_string (coqstring_of_camlstring s)
 
+let i32_to_string (i : Integers.Int.int) : string =
+  sprintf "%ld" (camlint_of_coqint i)
+
+let u32_to_string (i : Integers.Int.int) : string =
+  sprintf "%lu" (camlint_of_coqint i)
+
+let i64_to_string (i : Integers.Int64.int) : string =
+  sprintf "%Ld" (camlint64_of_coqint i)
+
+let u64_to_string (i : Integers.Int64.int) : string =
+  sprintf "%Lu" (camlint64_of_coqint i)
+
 let list_to_string (b : string) (e : string) (s : string) (f : 'a -> string)
     (l : 'a list) : string =
   let rec aux (l : 'a list) =
