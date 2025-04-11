@@ -1,4 +1,4 @@
-From Coq Require Import List String.
+From Coq Require Import Bool List String.
 From BarocqComp Require Import Error Common Monads Syntax ImpABNF Imp1.
 Import MonCounter.
 
@@ -131,6 +131,8 @@ Module AliasingCheck.
 
   Parameter gen_aliasing_program : bool -> Imp1Typed.program -> res Imp1.Aliasing_AST.program.
 
+  Definition failcheck {A: Type} : MonError.M A := failwith "Imp1gen.AliasingCheck.check_statement".
+
   Fixpoint check_statement (s: Imp1.Aliasing_AST.statement) : res Imp1Typed.statement :=
     match s with
     | StSet x c IN _ =>
@@ -138,19 +140,27 @@ Module AliasingCheck.
           match c with
           | CpAtom a _ =>
               if is_valid_atom IN a then eret c
-              else fail
-          | CpArrayGet _ _ _ => fail
-          | CpArraySet _ _ _ _ => fail
+              else failcheck
+          | CpArrayGet a i _ =>
+              if is_valid_atom IN a &&
+                 is_valid_atom IN i 
+              then eret c
+              else failcheck
+          | CpArraySet _ i v _ =>
+              if is_valid_atom IN i &&
+                 is_valid_atom IN v
+              then eret c
+              else failcheck
           | CpStructProj (AVar y _) f _ =>
               if is_valid_path IN y (make_path (cons f nil)) then eret c
-              else fail
-          | CpStructProj _ _ _ => eret c
-          | CpStructUpdate _ _ a _ =>
-              if is_valid_atom IN a then eret c
-              else fail
+              else failcheck
+          | CpStructProj _ _ _ => fail
+          | CpStructUpdate _ _ v _ =>
+              if is_valid_atom IN v then eret c
+              else failcheck
           | CpCall _ args _ =>
               let all_valid := List.forallb (is_valid_atom IN) args in
-              if all_valid then eret c else fail
+              if all_valid then eret c else failcheck
           end
         in
         eret (Imp1Typed.StSet x c')
@@ -164,7 +174,7 @@ Module AliasingCheck.
       eret (Imp1Typed.StSequence s1' s2')
   | StReturn a _ OUT =>
       if is_valid_return OUT then eret (Imp1Typed.StReturn a)
-      else fail
+      else failcheck
   end.
 
   Definition check_function (f: Imp1.Aliasing_AST.function) : res Imp1Typed.function :=

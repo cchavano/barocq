@@ -328,9 +328,10 @@ let () =
   | Blexer.Error msg -> eprintf "Lexer error: %s\n" msg
   | Bparser.Error -> eprintf "Parsing error\n"
   | Interpreter.Error msg -> eprintf "Interpretation error: %s\n" msg
-  | CompilerError msg -> eprintf "Compilation error: %s\n" msg
   | TypingError msg -> eprintf "Typing error: %s\n" msg
+  | CompilerError msg -> eprintf "Compilation error: %s\n" msg
   | Failure msg -> eprintf "Unexpected error: %s\n" msg
   | Aliasing_impl.UnsupportedFeature msg ->
       eprintf "Compilation error: %s\n" msg
-  | Assert_failure (_, _, _) -> eprintf "Impossible error!!\n"
+  | Assert_failure (_, _, _) ->
+      eprintf "Impossible error, please make a bug report.\n"

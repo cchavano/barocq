@@ -9,8 +9,12 @@ A Barocq program can also be translated to a shallow and deep embedding in Coq/R
 
 # Important TODOs
 
-- [ ] Static analysis to reject programs incompatible with in-place updates
-- [ ] Static analysis to allow / disallow dropping variables
+- [ ] Static analysis for in-place updates validation
+  - [x] Support for structures
+  - [x] Support for arrays
+  - [ ] Support for function pointers
+- [ ] Deep access to primitive values
+- [ ] FFI
 - [ ] Update the correspondence proof generator to handle more complex proofs than `reflexivity`
 
 # Dependencies

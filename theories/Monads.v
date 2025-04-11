@@ -18,7 +18,7 @@ Module MonError <: MONAD.
 
   Definition M : Type -> Type := res.
 
-  Definition ret {A: Type} (a: A) : res A := OK a.
+  Definition ret {A: Type} (a: A) : M A := OK a.
 
   Definition bind {A B: Type} (f: M A) (g: A -> M B) : M B := Errors.bind f g.
 

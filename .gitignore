@@ -10,3 +10,4 @@ dune-project
 .vscodeignore
 .depend
 .depend.extr
+*_old.*

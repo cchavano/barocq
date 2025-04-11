@@ -10,9 +10,10 @@ let path_to_string (p : path) : string =
 
 module PathTree = struct
   (** Tree representing invalid paths in the abstract memory. A path is a
-      succession of struct field names. If a path p is contained in a tree
-      (i.e., following the path leads to a leaf), then every paths prefixed by p
-      are considered invalid. *)
+      succession of struct field names or "[]" (used when accessing an array
+      element). If a path p is contained in a tree (i.e., following the path
+      leads to a leaf), then p and every paths prefixed by p are considered
+      invalid. *)
 
   (** [Leaf] and [Node []] are two possible representations for leaves. *)
 
@@ -28,8 +29,7 @@ module PathTree = struct
 
   (** [add t p] adds the path [p] into [t]. If [t] already contains a prefix of
       [p], then [t] is unchanged. If [p] is a prefix of some paths contained in
-      [t], then those paths are "removed" from the result and only [p] remains).
-  *)
+      [t], then those paths are replaced by [p]. *)
   let rec add (t : t) (p : path) : t =
     match (t, p) with
     | _, [] -> t
@@ -45,14 +45,15 @@ module PathTree = struct
         else (y, ty) :: add_list x p ln'
 
   (** [union t1 t2] computes the union of [t1] and [t2]. Similarly to [add], if
-      [t1] (resp. [t2]) contains prefixes of some paths in [t1] (resp. [t2]),
+      [t1] (resp. [t2]) contains prefixes of some paths in [t2] (resp. [t1]),
       the result only keeps the concerned paths of [t1] (resp [t2]). *)
   let rec union (t1 : t) (t2 : t) : t =
     match (t1, t2) with
     | Leaf, Leaf | Node _, Leaf | Leaf, Node _ | Node [], _ | _, Node [] -> Leaf
     | Node l1, Node l2 -> Node (union_list l1 l2)
 
-  (** [union_list ln1 ln2] computes the union of the node lists [ln1] and [ln2].*)
+  (** [union_list ln1 ln2] computes the union of the node lists [ln1] and [ln2].
+  *)
   and union_list (ln1 : (ident * t) list) (ln2 : (ident * t) list) =
     match ln1 with
     | [] -> ln2
@@ -81,7 +82,7 @@ module PathTree = struct
     list_to_string_braces path_to_string (flatten t)
 
   (** [is_completely_valid_path t p] checks wether [p] is a valid path in [t],
-      i.e. [t] does not contain [p] or a prefix of [p]. *)
+      i.e. [t] does not contain a path prefixed by [p], or a prefix of [p]. *)
   let rec is_completely_valid_path (t : t) (p : path) : bool =
     match (t, p) with
     | (Node [] | Leaf), _ -> false
@@ -145,30 +146,33 @@ module AbsDom = struct
 
   type var_set = IdentSet.t
 
-  (** Abstract environement. Bindings in a map of type absenv are of the form x
-      -> \{l1, ..., ln\}. It means that the variable x may point to the abstract
-      locations \{l1, ..., ln\}. *)
+  (** Abstract environement. Bindings in a map of type [absenv] are of the form
+      x -> \{l1, ..., ln\}. It means that the variable x may point to the
+      abstract locations \{l1, ..., ln\}. *)
   type absenv = pointsto_set IdentMap.t
 
-  (** Reverse abstract environment. Bindings in a map of type rev_absenv are of
-      the form l -> \{x1, ..., xn\}. It means that the abstract location l may
-      be pointed by the variables \{x1, ..., xn\}. *)
+  (** Reverse abstract environment. Bindings in a map of type [rev_absenv] are
+      of the form l -> \{x1, ..., xn\}. It means that the abstract location l
+      may be pointed by the variables \{x1, ..., xn\}. *)
   type rev_asbenv = var_set IdentMap.t
 
-  (** Abstract memory. Bindings in a map of type absmem are of the form (l, f)
-      -> \{l1, ..., ln\}. Following the path from l with field f leads to
-      locations \{l1, ..., ln\}. It means that the field f of the abstract
-      location l may point to \{l1, ..., ln\}. *)
+  (** Abstract memory. Bindings in a map of type [absmem] are of the form (l, f)
+      -> \{l1, ..., ln\}. Following the path [f] from l leads to locations \{l1,
+      ..., ln\}. It means that the field or abstract array index f of the
+      abstract location l may point to \{l1, ..., ln\}. If an abstract location
+      l corresponds to a concrete array in memory, then only one edge labelled
+      "[]" pointing to the reprensetation of the array elements (if they are
+      non-primitve) is going out l (i.e. all array elements are condensed into
+      one abastract element). *)
   type absmem = pointsto_set IdentPairMap.t
 
-  (** Reverse abstract memory. Bindings in a map of type rev_absmem are of the
+  (** Reverse abstract memory. Bindings in a map of type [rev_absmem] are of the
       form l -> \{(f1, \{l1_1, ..., l1_n\}), ..., (fm, \{lm_1, ..., lm_n\})\}.
-      We assume that f1, ..., fm are different for the same binding key l.
-      Following the path from l with field fi leads to locations \{li_1, ...,
-      li_n\}. It means that the abstract location l may be pointed by the field
-      fi of location li_j. This representation is better to traverse all the
-      graph from a given location than a map with bindings of types (f, l) ->
-      \{l1, ..., ln\}. *)
+      We assume that f1, ..., fm are different for the same binding key l. It
+      means that the abstract location l may be pointed by the field or abstract
+      array index fi of location li_j. This representation is better to traverse
+      all the graph from a given location than a map with bindings of types (f,
+      l) -> \{l1, ..., ln\}. *)
   type rev_absmem = (ident * pointsto_set) list IdentMap.t
 
   (** Invalid paths environment. It binds each variables to a set of invalid
@@ -176,13 +180,13 @@ module AbsDom = struct
   type path_map = path_tree IdentMap.t
 
   (** The abstract state. It contains:
-      - The abstract environment st_env and its reverse version st_rev_env;
-      - The abstract memory st_mem and its reverse version st_rev_mem;
-      - The set of locations the function currently being analysed returns
-        st_res;
-      - The invalid paths environment st_inv;
-      - The invalid paths of the result returned by the function currently being
-        analysed st_inv_res. *)
+      - The abstract environment [st_env] and its reverse version [st_rev_env];
+      - The abstract memory [st_mem] and its reverse version [st_rev_mem];
+      - The set of locations [st_res] pointed by the return value of the
+        function;
+      - The invalid paths environment [st_inv];
+      - The invalid paths [st_inv_res] of the return value of the function.
+      - The environment of locked arrays. *)
   type absstate = {
     st_env : absenv;
     st_mem : absmem;
@@ -191,6 +195,7 @@ module AbsDom = struct
     st_res : pointsto_set;
     st_inv : path_map;
     st_inv_res : path_tree option;
+    st_arr_locked : Typed.atom IdentMap.t;
   }
 
   type t =
@@ -228,15 +233,15 @@ module AbsDom = struct
   let env_reverse (ev : absenv) : rev_asbenv =
     IdentMap.fold env_reverse_single ev IdentMap.empty
 
-  (** [add_loc_from_field lip f l] adds the location [l] coming from field [f]
+  (** [add_loc_from_id lip f l] adds the location [l] coming from path [[f]] in
       the reverse memory value [lip]. *)
-  let rec add_loc_from_field (lip : (ident * pointsto_set) list) (f : ident)
+  let rec add_loc_from_id (lip : (ident * pointsto_set) list) (f : ident)
       (l : absloc) : (ident * pointsto_set) list =
     match lip with
     | [] -> [(f, IdentSet.singleton l)]
     | (fi, ls) :: lip' ->
         if Common.ident_eq_dec fi f then (fi, IdentSet.add l ls) :: lip'
-        else (fi, ls) :: add_loc_from_field lip' f l
+        else (fi, ls) :: add_loc_from_id lip' f l
 
   (** [mem_reverse_single (l, f) ls] reverses the binding [(l, f)] -> [ls] into
       the reverse memory [rm]. *)
@@ -248,7 +253,7 @@ module AbsDom = struct
           li
           (fun lr ->
             match lr with
-            | Some lr -> Some (add_loc_from_field lr f l)
+            | Some lr -> Some (add_loc_from_id lr f l)
             | None -> Some [(f, IdentSet.singleton l)])
           accS)
       ls
@@ -359,17 +364,31 @@ module AbsDom = struct
   let inv_union (iv1 : path_map) (iv2 : path_map) : path_map =
     IdentMap.union (fun _ t1 t2 -> Some (PathTree.union t1 t2)) iv1 iv2
 
+  (** [arr_taken_union at1 at2] computes the union of the accessed array
+      indexes. The union fails if the same array in [at1] and [at2] has two
+      different taken indexes. *)
+  let arr_taken_union (at1 : Typed.atom IdentMap.t)
+      (at2 : Typed.atom IdentMap.t) : Typed.atom IdentMap.t option =
+    try
+      Some
+        (IdentMap.union
+           (fun _ i1 i2 -> if i1 <> i2 then failwith "" else Some i1)
+           at1
+           at2)
+    with Failure _ -> None
+
   let make_state (ev : absenv) (m : absmem) (rev : rev_asbenv) (rm : rev_absmem)
-      (r : pointsto_set) (inv : path_map) (inv_r : path_tree option) : absstate
-      =
+      (r : pointsto_set) (iv : path_map) (ivr : path_tree option)
+      (al : Typed.atom IdentMap.t) : absstate =
     {
       st_env = ev;
       st_mem = m;
       st_rev_env = rev;
       st_rev_mem = rm;
       st_res = r;
-      st_inv = inv;
-      st_inv_res = inv_r;
+      st_inv = iv;
+      st_inv_res = ivr;
+      st_arr_locked = al;
     }
 
   let make_state2 (ev : absenv) (m : absmem) (r : pointsto_set) : absstate =
@@ -381,6 +400,7 @@ module AbsDom = struct
       st_res = r;
       st_inv = IdentMap.empty;
       st_inv_res = None;
+      st_arr_locked = IdentMap.empty;
     }
 
   (** [union d1 d2] computes the union of the two abstract domains [d1] and
@@ -400,10 +420,22 @@ module AbsDom = struct
         | None, Some t2 -> Some t2
         | None, None -> None
       in
-      make_state ev m rev rm res inv inv_res
+      (* Check that the domain of locked arrays is the same. *)
+      let arr_locked_locs1 =
+        IdentSet.of_seq (Seq.map fst (IdentMap.to_seq st1.st_arr_locked))
+      in
+      let arr_locked_locs2 =
+        IdentSet.of_seq (Seq.map fst (IdentMap.to_seq st2.st_arr_locked))
+      in
+      if IdentSet.compare arr_locked_locs1 arr_locked_locs2 = 0 then
+        let al_union = arr_taken_union st1.st_arr_locked st2.st_arr_locked in
+        match al_union with
+        | Some al -> AbsState (make_state ev m rev rm res inv inv_res al)
+        | None -> Top
+      else Top
     in
     match (d1, d2) with
-    | AbsState st1, AbsState st2 -> AbsState (aux st1 st2)
+    | AbsState st1, AbsState st2 -> aux st1 st2
     | _, _ -> Top
 
   (* Validity check *)
@@ -435,7 +467,7 @@ type absdom = AbsDom.t
       parameters, and that each of them points to a unique tree-shaped part of
       the memory;
     - The return state which results from the execution of the transfer function
-      on the call state. *)
+      on the call state, projected on the function parameters. *)
 type fun_descr = {
   fd_params : (ident * ctyp) list;
   fd_callstate : AbsDom.absstate;
