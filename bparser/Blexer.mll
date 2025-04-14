@@ -75,6 +75,7 @@ rule read_token = parse
   | "{"           { LBRACE }
   | "}"           { RBRACE }
   | "#"           { HASHTAG }
+  | "\\"          { BACKSLASH }
   | "->"          { ARROW }
   | "<-"          { ARROW_INV }
   | "=="          { OP_EQ }

@@ -154,6 +154,23 @@ Module Typing.
         ret (ABinaryOp op a1' a2' t)
     end.
 
+  Fixpoint typecheck_access (ts: types) (gx: gcontext) (lx: lcontext) (ty: ctyp) (acs: list Syntax.access) : res (ctyp * list Syntax.Typed.access) :=
+    match acs with
+    | nil => ret (ty, nil)
+    | ac :: acs' =>
+        match ac with
+        | Syntax.StructField f =>
+            let* ty' := typecheck_struct_proj ts ty f in
+            let* (r, lr) := typecheck_access ts gx lx ty' acs' in
+            ret (r, (StructField f ty') :: lr)
+        | Syntax.ArrayIndex ai =>
+            let* ai' := typecheck_atom gx lx ai in
+            let* ty' := typecheck_array_get ty (typof_atom ai') in
+            let* (r, lr) := typecheck_access ts gx lx ty' acs' in
+            ret (r, (ArrayIndex ai' ty') :: lr)
+        end
+    end.
+
   Definition typecheck_comp (ts: types) (gx: gcontext) (lx: lcontext) (c: Syntax.comp) : res Imp1Typed.comp :=
     match c with
     | Syntax.CpAtom a =>
@@ -187,6 +204,10 @@ Module Typing.
         let ty2 := typof_atom a2' in
         let* ty := typecheck_struct_update ts ty1 ty2 x in
         ret (CpStructUpdate a1' x a2' ty)
+    | Syntax.CpDeepAccess a acs =>
+        let* a' := typecheck_atom gx lx a in
+        let* (t, acs') := typecheck_access ts gx lx (typof_atom a') acs in
+        ret (CpDeepAccess a' acs' t)
     | Syntax.CpCall a args =>
         let* a' := typecheck_atom gx lx a in
         let tya := typof_atom a' in

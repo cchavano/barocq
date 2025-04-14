@@ -31,6 +31,7 @@ Definition typof_comp (c: comp) : ctyp :=
   | CpArraySet _ _ _ ty
   | CpStructProj _ _ ty
   | CpStructUpdate _ _ _ ty
+  | CpDeepAccess _ _ ty
   | CpCall _ _ ty => ty
   end.
 
@@ -169,6 +170,26 @@ Definition typecheck_struct_update (ts: types) (ty1 ty2: ctyp) (x: ident) : res 
       else failwith "Typing.typecheck_struct_update: type mismatch"
   | _ => failwith "Typing.typecheck_struct_update: struct type expected"
   end.
+
+  Inductive access_ctyp : Type :=
+    | ActypStructField : ident -> access_ctyp
+    | ActypArrayIndex : ctyp -> access_ctyp.
+
+  Fixpoint typecheck_access (ts: types) (gx: gcontext) (lx: lcontext) (ty: ctyp) (acs: list access_ctyp) : res (ctyp * list ctyp) := 
+    match acs with
+    | nil => ret (ty, nil)
+    | ac :: acs' =>
+        match ac with
+        | ActypStructField f =>
+            let* ty' := typecheck_struct_proj ts ty f in
+            let* (r, lr) := typecheck_access ts gx lx ty' acs' in
+            ret (r, ty' :: lr)
+        | ActypArrayIndex ta =>
+            let* ty' := typecheck_array_get ty ta in
+            let* (r, lr) := typecheck_access ts gx lx ty' acs' in
+            ret (r, ty' :: lr)
+        end
+    end.
 
 Fixpoint typecheck_call_rec (tparams targs: list ctyp) (tret: ctyp) : res ctyp :=
   match tparams, targs with

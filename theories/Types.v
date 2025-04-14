@@ -38,6 +38,13 @@ Inductive ctyp : Type :=
   | CStruct : ident -> ctyp
   | CFun : list ctyp -> ctyp -> ctyp.
 
+Definition signed_of_int_ctyp (ty: ctyp) : signedness :=
+  match ty with
+  | CInt32 s
+  | CInt64 s => s
+  | _ => Signed
+  end.
+
 Fixpoint ctyp_eq_dec (t1 t2: ctyp) : { t1 = t2 } + { t1 <> t2 }.
 Proof.
   repeat decide equality.

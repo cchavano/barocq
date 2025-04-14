@@ -24,6 +24,11 @@ let rec expr_to_string_pref (prefix : string) (e : expr) : string =
           (atom_to_string a1)
           (ident_to_string x)
           (PrintSyntax.opt_parens a2)
+    | EDeepAccess (a, acs) ->
+        sprintf
+          "%s%s"
+          (atom_to_string a)
+          (PrintSyntax.access_list_to_string acs)
     | EApp (f, args) ->
         sprintf
           "%s %s"

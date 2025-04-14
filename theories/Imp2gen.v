@@ -16,6 +16,8 @@ Fixpoint transl_statement (s: Imp1Typed.statement) : Imp2.statement :=
       StSetExpr x (EArrayGet a1 a2 ty)
   | Imp1Typed.StSet x (CpStructProj a1 f ty) =>
       StSetExpr x (EStructProj a1 f ty)
+  | Imp1Typed.StSet x (CpDeepAccess a acs ty) =>
+      StSetExpr x (EDeepAccess a acs ty)
   | Imp1Typed.StSet x (CpArraySet a1 a2 a3 _) =>
       StSetEcomp x (EcArraySet a1 a2 a3)
   | Imp1Typed.StSet x (CpStructUpdate a1 f a2 _) =>

@@ -9,6 +9,7 @@ Fixpoint transl_expr (e: BarocqBNF.expr) : ImpBNF.tailcomp :=
   | EArraySet a1 a2 a3 => TcComp (CpArraySet a1 a2 a3)
   | EStructProj a x => TcComp (CpStructProj a x)
   | EStructUpdate a1 x a2 => TcComp (CpStructUpdate a1 x a2)
+  | EDeepAccess a acs => TcComp (CpDeepAccess a acs)
   | EApp a args => TcComp (CpCall a args)
   | ELetIn x e1 e2 =>
       TcBegin (StSetTailcomp x (transl_expr e1)) (transl_expr e2)

@@ -11,7 +11,7 @@
 %token LBRACKET RBRACKET
 %token LBRACKETBAR RBRACKETBAR
 %token LBRACE RBRACE
-%token HASHTAG
+%token HASHTAG BACKSLASH
 %token ARROW
 %token ARROW_INV BIND
 %token OP_PLUS OP_MINUS OP_MUL OP_DIV OP_MOD
@@ -39,6 +39,7 @@
 %nonassoc LPAREN LBRACKET
 %nonassoc DOT
 %nonassoc ARROW
+%nonassoc BACKSLASH
 %nonassoc TYP_ARRAY
 
 %start xprogram
@@ -76,6 +77,7 @@ expr:
   | e1 = expr LBRACKET e2 = expr RBRACKET ARROW_INV e3 = expr { EArraySet (e1, e2, e3) }
   | e1 = expr DOT key = ident { EStructProj (e1, key) }
   | e1 = expr DOT key = ident ARROW_INV e2 = expr { EStructUpdate (e1, key, e2) }
+  | e = expr BACKSLASH acs = nonempty_list(access) BACKSLASH { EDeepAccess (e, acs) }
   | LET x = ident BIND e1 = expr IN e2 = expr { ELetIn (x, e1, e2) }
   | IF e1 = expr THEN e2 = expr ELSE e3 = expr { EIfThenElse (e1, e2, e3) }
   | op = unary_op e = expr { EUnaryOp (op, e) }
@@ -83,6 +85,10 @@ expr:
   | e1 = expr op = binary_op e2 = expr { EBinaryOp (op, e1, e2) }
   | e = expr args = delimited(LPAREN, separated_list(COMMA, expr), RPAREN) { EApp (e, args) }
   | e = delimited(LPAREN, expr, RPAREN) { e }
+
+access:
+  | DOT f = ident { Barocq.StructField f }
+  | LBRACKET e = expr RBRACKET { Barocq.ArrayIndex e }
 
 literal:
   | TRUE { LTrue }

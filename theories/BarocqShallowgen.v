@@ -64,6 +64,61 @@ Module Normalization.
     | _ => MonError.fail
     end.
 
+  Fixpoint split_deep_access_rec (e: Barocq.expr) (acs: list Barocq.access) : Barocq.expr :=
+    match acs with
+    | nil => e
+    | ac :: acs' =>
+        match ac with
+        | Barocq.StructField f =>
+            Barocq.EStructProj (split_deep_access_rec e acs') f
+        | Barocq.ArrayIndex e1 =>
+            Barocq.EArrayGet (split_deep_access_rec e acs') e1
+        end
+    end.
+
+  Fixpoint split_deep_access (e: Barocq.expr) : Barocq.expr :=
+    match e with
+    | Barocq.EDeepAccess e1 acs =>
+        let e1' := split_deep_access e1 in
+        split_deep_access_rec e1' (List.rev' acs)
+    | Barocq.EUnaryOp op e1 =>
+        Barocq.EUnaryOp op (split_deep_access e1)
+    | Barocq.EBinaryOp op e1 e2 =>
+        let e1' := split_deep_access e1 in
+        let e2' := split_deep_access e2 in
+        Barocq.EBinaryOp op e1' e2'
+    | Barocq.EArrayGet e1 e2 =>
+        let e1' := split_deep_access e1 in
+        let e2' := split_deep_access e2 in
+        Barocq.EArrayGet e1' e2'
+    | Barocq.EArraySet e1 e2 e3 =>
+        let e1' := split_deep_access e1 in
+        let e2' := split_deep_access e2 in
+        let e3' := split_deep_access e3 in
+        Barocq.EArraySet e1' e2' e3'
+    | Barocq.EStructProj e1 f =>
+        let e1' := split_deep_access e1 in
+        Barocq.EStructProj e1' f
+    | Barocq.EStructUpdate e1 f e2 =>
+        let e1' := split_deep_access e1 in
+        let e2' := split_deep_access e2 in
+        Barocq.EStructUpdate e1' f e2'
+    | Barocq.EApp e1 args =>
+        let e1' := split_deep_access e1 in
+        let args' := List.map split_deep_access args in
+        Barocq.EApp e1' args'
+    | Barocq.EIfThenElse e1 e2 e3 =>
+        let e1' := split_deep_access e1 in
+        let e2' := split_deep_access e2 in
+        let e3' := split_deep_access e3 in
+        Barocq.EIfThenElse e1' e2' e3'
+    | Barocq.ELetIn x e1 e2 =>
+        let e1' := split_deep_access e1 in
+        let e2' := split_deep_access e2 in
+        Barocq.ELetIn x e1' e2'
+    | _ => e
+    end.
+
   Open Scope state_err_monad_scope.
 
   Definition fresh_var : crmon ident := Common.fresh_var_err "b".
@@ -109,6 +164,7 @@ Module Normalization.
         normalize_exprlist e [e1]
     | Barocq.EStructUpdate e1 k e2 =>
         normalize_exprlist e [e1; e2]
+    | Barocq.EDeepAccess _ _ => fail
     | Barocq.EApp e1 args =>
         normalize_exprlist e (e1 :: args)
     | Barocq.EIfThenElse e1 e2 e3 =>
@@ -130,6 +186,7 @@ Module Normalization.
   Close Scope state_err_monad_scope.
 
   Definition normalize_expr (e: Barocq.expr) : res BNF.expr :=
+    (* let e' := split_deep_access e in *)
     let* ne := normalize_expr_rec e 0 in
     eret (fst ne).
 
@@ -346,10 +403,20 @@ Module Monadification.
         | MBool, MBool => eret ty1
         | MInt32 s1, MInt32 s2
         | MInt64 s1, MInt64 s2 =>
-            if signedness_eq s1 s2 then eret ty1
+            if signedness_eq s1 s2 then eret MBool
             else MonError.fail
-        | _, _ =>
-            MonError.fail
+        | _, _ => MonError.fail
+        end
+    | BopLt
+    | BopLe 
+    | BopGt
+    | BopGe =>
+        match ty1, ty2 with
+        | MInt32 s1, MInt32 s2
+        | MInt64 s1, MInt64 s2 =>
+            if signedness_eq s1 s2 then eret MBool
+            else MonError.fail
+        | _, _ => MonError.fail
         end
     | _ =>
         match ty1, ty2 with
@@ -357,8 +424,7 @@ Module Monadification.
         | MInt64 s1, MInt64 s2 =>
             if signedness_eq s1 s2 then eret ty1
             else MonError.fail
-        | _, _ =>
-          MonError.fail
+        | _, _ => MonError.fail
         end
     end.
 
@@ -501,7 +567,7 @@ Module Monadification.
   Fixpoint monadify_expr_rec (ts: types) (gx: gcontext) (lx: lcontext) (e: BNF.expr) (imp: bool) : res expr :=
     match e with
     | BNF.EAtom a =>
-        let* a' := typecheck_atom ts gx lx a in
+        let catch a' := typecheck_atom ts gx lx a in
         if imp then wrap_atom a'
         else eret (EAtom a' (typof_atom a'))
     | BNF.EArrayGet a1 a2 =>
@@ -612,6 +678,8 @@ Module Monadification.
     |}.
 
 End Monadification.
+
+Open Scope error_monad_scope.
 
 Definition monadify_norm_program (prog: Barocq.program) : res Monadic.program :=
   let* _ := Barocq.Typing.typecheck_program prog in

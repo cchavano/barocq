@@ -89,6 +89,11 @@ let rec expr_to_deep (prefix : string) (e : expr) : string =
         (expr_to_deep "" e1)
         (ident_to_deep x)
         (expr_to_deep "" e2)
+  | EDeepAccess (e1, acs) ->
+      sprintf
+        "EDeepAccess (%s) %s"
+        (expr_to_deep prefix e1)
+        (list_to_string_bracket access_to_deep acs)
   | EApp (e1, args) ->
       sprintf
         "EApp (%s) %s"
@@ -109,6 +114,11 @@ let rec expr_to_deep (prefix : string) (e : expr) : string =
         (expr_to_deep "" e1)
         prefix'
         (expr_to_deep prefix' e2)
+
+and access_to_deep (ac : access) : string =
+  match ac with
+  | StructField f -> sprintf "StructField %s" (ident_to_string f)
+  | ArrayIndex e -> sprintf "ArrayIndex (%s)" (expr_to_deep "" e)
 
 let rec ctyp_to_deep (ty : ctyp) : string =
   match ty with

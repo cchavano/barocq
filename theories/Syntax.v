@@ -45,7 +45,7 @@ Inductive binary_op : Type :=
 
 (** Atoms are pure computations in C *)
 
-Inductive atom :=
+Inductive atom : Type :=
   | ATrue : atom
   | AFalse : atom
   | AInt32 : int -> signedness -> atom
@@ -53,6 +53,12 @@ Inductive atom :=
   | AVar : ident -> atom
   | AUnaryOp : unary_op -> atom -> atom
   | ABinaryOp : binary_op -> atom -> atom -> atom.
+
+(** DeepAccessl list with atomics array indexes. *)
+
+Inductive access : Type :=
+  | StructField : ident -> access
+  | ArrayIndex : atom -> access.
 
 (** * Computations with atomic operands *)
 
@@ -62,6 +68,7 @@ Inductive comp : Type :=
   | CpArraySet : atom -> atom -> atom -> comp
   | CpStructProj : atom -> ident -> comp
   | CpStructUpdate : atom -> ident -> atom -> comp
+  | CpDeepAccess : atom -> list access -> comp
   | CpCall : atom -> list atom -> comp.
 
 (** * Typed syntax *)
@@ -85,12 +92,17 @@ Module Typed.
     | AUnaryOp : unary_op -> atom -> ctyp -> atom
     | ABinaryOp : binary_op -> atom -> atom -> ctyp -> atom.
 
+  Inductive access : Type :=
+    | StructField : ident -> ctyp -> access
+    | ArrayIndex : atom -> ctyp -> access.
+
   Inductive comp : Type := 
     | CpAtom : atom -> ctyp -> comp
     | CpArrayGet : atom -> atom -> ctyp -> comp
     | CpArraySet : atom -> atom -> atom -> ctyp -> comp
     | CpStructProj : atom -> ident -> ctyp -> comp
     | CpStructUpdate : atom -> ident -> atom -> ctyp -> comp
+    | CpDeepAccess : atom -> list access -> ctyp -> comp
     | CpCall : atom -> list atom -> ctyp -> comp.
 
 End Typed.

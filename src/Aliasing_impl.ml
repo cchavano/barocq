@@ -410,6 +410,29 @@ let exec_set_array_set (x : ident) (a : atom) (i : atom) (v : atom)
       else Top
   | _ -> assert false
 
+let rec path_of_access_list (acs : access list) : path =
+  match acs with
+  | [] -> []
+  | StructField (f, _) :: acs' -> f :: path_of_access_list acs'
+  | ArrayIndex (_, _) :: acs' -> _INDEX :: path_of_access_list acs'
+
+let exec_set_deep_access (x : ident) (a : atom) (acs : access list) (ty : ctyp)
+    (st : absstate) : absstate =
+  match a with
+  | AVar (y, _) ->
+      if is_prim ty then
+        (* x inherits the invalid paths given by the access list *)
+        let acs_inv =
+          invalid_paths_with_prefix st.st_inv y (path_of_access_list acs)
+        in
+        match acs_inv with
+        | Some t -> inv_add st x t
+        | None ->
+            (* if variable shadowing occurs, removex x from the map of invalid paths. *)
+            { st with st_inv = IdentMap.remove x st.st_inv }
+      else assert false
+  | _ -> assert false
+
 (** [is_arg v args] checks wether the variable [v] is contained in the argument
     list [args]. *)
 let is_arg (v : ident) (args : atom list) : bool =
@@ -941,6 +964,8 @@ let rec absexec (show_debug : bool) (ts : types) (fe : fenv) (d : absdom)
               r
           | CpArrayGet (a, i, _) -> exec_set_array_get x a i st
           | CpArraySet (a, i, v, _) -> exec_set_array_set x a i v st
+          | CpDeepAccess (a, acs, ty) ->
+              AbsState (exec_set_deep_access x a acs ty st)
       in
       let s', d' = (Imp1.Aliasing_AST.StSet (x, c, d_in, d'), d') in
       debug_info show_debug

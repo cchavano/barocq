@@ -145,7 +145,6 @@ let gen_struct_field_proj_conv_corres (id : ident)
 let gen_struct_field_update_conv_corres (id : ident)
     ((fname, ftyp) : ident * mtyp) : string =
   let id_str = ident_to_string id in
-  (* let struct_var = "s" in *)
   sprintf
     "Theorem transl_struct_%s_update_%s_corres :\n\
      %sforall (s: %s.%s) (v: %s),\n\

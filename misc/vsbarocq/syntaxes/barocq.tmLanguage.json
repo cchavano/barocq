@@ -61,6 +61,11 @@
                     "comment": "binding operator",
                     "name": "keyword.operator.barocq",
                     "match": "[=]"
+                },
+                {
+                    "comment": "deep access operator",
+                    "name": "keyword.operator.barocq",
+                    "match": "[\\\\]"
                 }
             ]
         },

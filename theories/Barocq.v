@@ -19,9 +19,14 @@ Inductive expr : Type :=
   | EArraySet (a i e: expr) : expr                          (* a[i] <- e *)
   | EStructProj (st: expr) (x: ident) : expr                (* st.x *)
   | EStructUpdate (st: expr) (x: ident) (e: expr) : expr    (* st.x <- e *)
+  | EDeepAccess (e: expr) (acs: list access) : expr             (* eX1X2....XN where Xi = .fi or [ei] *)     
   | EApp (e: expr) (args: list expr) : expr                 (* e (args) *)
   | EIfThenElse (e1 e2 e3: expr) : expr                     (* if e1 then e2 else e3 *)
-  | ELetIn (x: ident) (e1 e2: expr) : expr.                 (* let x = e1 in e2 *)
+  | ELetIn (x: ident) (e1 e2: expr) : expr                  (* let x = e1 in e2 *)
+
+with access : Type :=
+  | StructField : ident -> access
+  | ArrayIndex : expr -> access.
 
 (** ** Functions *)
 
@@ -76,9 +81,14 @@ Module Typed.
     | EArraySet : expr -> expr -> expr -> ctyp -> expr
     | EStructProj : expr -> ident -> ctyp -> expr
     | EStructUpdate : expr -> ident -> expr -> ctyp -> expr
+    | EDeepAccess : expr -> list access -> ctyp -> expr
     | EApp : expr -> list expr -> ctyp -> expr
     | EIfThenElse : expr -> expr -> expr -> ctyp -> expr
-    | ELetIn : ident -> expr -> expr -> ctyp -> expr.
+    | ELetIn : ident -> expr -> expr -> ctyp -> expr
+
+    with access : Type :=
+    | StructField : ident -> ctyp -> access
+    | ArrayIndex : expr -> ctyp -> access.
 
   (** ** Functions *)
 
@@ -99,6 +109,61 @@ End Typed.
 
 Module BarocqTyped := Barocq.Typed.
 
+Fixpoint untype_expr (e: BarocqTyped.expr) : Barocq.expr :=
+  match e with
+  | BarocqTyped.ETrue _ => ETrue
+  | BarocqTyped.EFalse _ => EFalse
+  | BarocqTyped.EInt32 i ty => EInt32 i (signed_of_int_ctyp ty)
+  | BarocqTyped.EInt64 i ty => EInt64 i (signed_of_int_ctyp ty)
+  | BarocqTyped.EVar x _ => EVar x
+  | BarocqTyped.EUnaryOp op e1 _ =>
+      let e1' := untype_expr e1 in
+      EUnaryOp op e1'
+  | BarocqTyped.EBinaryOp op e1 e2 _ =>
+      let e1' := untype_expr e1 in
+      let e2' := untype_expr e2 in
+      EBinaryOp op e1' e2'
+  | BarocqTyped.EArrayGet e1 e2 _ =>
+      let e1' := untype_expr e1 in
+      let e2' := untype_expr e2 in
+      EArrayGet e1' e2'
+  | BarocqTyped.EArraySet e1 e2 e3 _ =>
+      let e1' := untype_expr e1 in
+      let e2' := untype_expr e2 in
+      let e3' := untype_expr e3 in
+      EArraySet e1' e2' e3'
+  | BarocqTyped.EStructProj e1 f _ =>
+      let e1' := untype_expr e1 in
+      EStructProj e1' f
+  | BarocqTyped.EStructUpdate e1 f e2 _ =>
+      let e1' := untype_expr e1 in
+      let e2' := untype_expr e2 in
+      EStructUpdate e1' f e2'
+  | BarocqTyped.EDeepAccess e1 acs _ =>
+      let e1' := untype_expr e1 in
+      let acs' := List.map untype_access acs in
+      EDeepAccess e1' acs'
+  | BarocqTyped.EApp e1 args _ =>
+      let e1' := untype_expr e1 in
+      let args' := List.map untype_expr args in
+      EApp e1' args'
+  | BarocqTyped.EIfThenElse e1 e2 e3 _ =>
+      let e1' := untype_expr e1 in
+      let e2' := untype_expr e2 in
+      let e3' := untype_expr e3 in
+      EIfThenElse e1' e2' e3'
+  | BarocqTyped.ELetIn x e1 e2 _ =>
+      let e1' := untype_expr e1 in
+      let e2' := untype_expr e2 in
+      ELetIn x e1' e2'
+  end
+
+with untype_access (ac: BarocqTyped.access) : access :=
+  match ac with
+  | BarocqTyped.StructField f _ => StructField f
+  | BarocqTyped.ArrayIndex e _ => ArrayIndex (untype_expr e)
+  end.
+
 Module Typing.
 
   Import BarocqTyped.
@@ -116,9 +181,28 @@ Module Typing.
     | EArraySet _ _ _ ty
     | EStructProj _ _ ty
     | EStructUpdate _ _ _ ty
+    | EDeepAccess _ _ ty
     | EApp _ _ ty
     | EIfThenElse _ _ _ ty
     | ELetIn _ _ _ ty => ty
+    end.
+
+  Fixpoint typecheck_access (typecheck_expr : types -> gcontext -> lcontext -> Barocq.expr -> res BarocqTyped.expr)
+    (ts: types) (gx: gcontext) (lx: lcontext) (ty: ctyp) (acs: list Barocq.access) : res (ctyp * list Barocq.Typed.access) :=
+    match acs with
+    | nil => ret (ty, nil)
+    | ac :: acs' =>
+        match ac with
+        | Barocq.StructField f =>
+            let* ty' := typecheck_struct_proj ts ty f in
+            let* (r, lr) := typecheck_access typecheck_expr ts gx lx ty' acs' in
+            ret (r, (StructField f ty') :: lr)
+        | Barocq.ArrayIndex ei =>
+            let* ei' := typecheck_expr ts gx lx ei in
+            let* ty' := typecheck_array_get ty (typof_expr ei') in
+            let* (r, lr) := typecheck_access typecheck_expr ts gx lx ty' acs' in
+            ret (r, (ArrayIndex ei' ty') :: lr)
+        end
     end.
 
   Fixpoint typecheck_expr (ts: types) (gx: gcontext) (lx: lcontext) (e: Barocq.expr) : res BarocqTyped.expr :=
@@ -159,6 +243,10 @@ Module Typing.
         let* e2' := typecheck_expr ts gx lx e2 in
         let* t := typecheck_struct_update ts (typof_expr e1') (typof_expr e2') x in
         ret (EStructUpdate e1' x e2' t)
+    | Barocq.EDeepAccess e1 acs =>
+        let* e1' := typecheck_expr ts gx lx e1 in
+        let* (t, acs') := typecheck_access typecheck_expr ts gx lx (typof_expr e1') acs in
+        ret (EDeepAccess e1' acs' t)
     | Barocq.EApp e1 args =>
         let* e1' := typecheck_expr ts gx lx e1 in
         let* args' := mmap (typecheck_expr ts gx lx) args in
@@ -236,6 +324,10 @@ Section DENOT.
 
   Inductive value : Type :=
     | Val (t: typ) (v: eval_typ t) : value.
+
+  Inductive access_value : Type :=
+   | AcvalStructField : ident -> access_value
+   | AcvalArrayIndex : value -> access_value.
 
   Definition genv := ptree value.
 
@@ -577,6 +669,20 @@ Section DENOT.
     | _ => fail
     end.
 
+  Fixpoint eval_access_list (v: value) (acs: list access_value) {struct acs} : res value :=
+    match acs with
+    | nil => OK v
+    | ac :: acs' =>
+        match ac with
+        | AcvalStructField f =>
+            let* v' := eval_struct_proj v f in
+            eval_access_list v' acs'
+        | AcvalArrayIndex va =>
+            let* v' := eval_array_get v va in
+            eval_access_list v' acs'
+        end
+    end.
+    
   Definition eval_ifthenelse (v1 v2 v3: value) : res value :=
     match v1 with
     | Val TBool b => ret (if b then v2 else v3)
@@ -641,12 +747,13 @@ Section DENOT.
         let* v1 := eval_expr te ge le e1 in
         let* v2 := eval_expr te ge le e2 in
         eval_struct_update v1 k v2
+    | EDeepAccess e1 acs =>
+        let* v1 := eval_expr te ge le e1 in
+        let* vacs := mmap (eval_access_expr te ge le) acs in
+        eval_access_list v1 vacs
     | EApp v args =>
         let* f := eval_expr te ge le v in
-        let* vargs :=
-          mmap
-            (fun e => eval_expr te ge le e)
-            args
+        let* vargs := mmap (eval_expr te le ge) args
         in eval_app f vargs
     | EIfThenElse e1 e2 e3 =>
         let* v1 := eval_expr te ge le e1 in
@@ -658,6 +765,14 @@ Section DENOT.
         let '(Val tv v) := v1 in
         let le' := lenv_update le x v1 in
         eval_expr te ge le' e2
+    end
+
+  with eval_access_expr (te: tenv) (ge: genv) (le: lenv) (ac: access) : res access_value :=
+    match ac with
+    | StructField f => ret (AcvalStructField f)
+    | ArrayIndex e =>
+        let* v := eval_expr te ge le e in
+        ret (AcvalArrayIndex v)
     end.
 
   Fixpoint eval_literal (te: tenv) (l: literal) : res value :=

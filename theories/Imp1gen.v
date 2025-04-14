@@ -17,6 +17,12 @@ Fixpoint transl_atom (params: pset) (a: atom) : atom :=
   | _ => a
   end.
 
+Definition transl_access (params: pset) (ac: access) : access :=
+  match ac with
+  | ArrayIndex i => ArrayIndex (transl_atom params i)
+  | _ => ac
+  end.
+
 Definition transl_comp (params: pset) (c: comp) : comp :=
   match c with
   | CpAtom a =>
@@ -37,6 +43,10 @@ Definition transl_comp (params: pset) (c: comp) : comp :=
       let a1' := transl_atom params a1 in
       let a2' := transl_atom params a2 in
       CpStructUpdate a1' f a2'
+  | CpDeepAccess a acs =>
+      let a' := transl_atom params a in
+      let acs' := List.map (transl_access params) acs in
+      CpDeepAccess a' acs'
   | CpCall a args =>
       let a' := transl_atom params a in
       let args' := List.map (transl_atom params) args in
@@ -161,6 +171,7 @@ Module AliasingCheck.
           | CpCall _ args _ =>
               let all_valid := List.forallb (is_valid_atom IN) args in
               if all_valid then eret c else failcheck
+          | CpDeepAccess _ _ _ => eret c (* TODO *)
           end
         in
         eret (Imp1Typed.StSet x c')

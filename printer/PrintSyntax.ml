@@ -75,6 +75,14 @@ let rec atom_to_string (a : atom) : string =
 and opt_parens (a : atom) : string =
   PrintCommon.opt_parens is_simpl_atom atom_to_string a
 
+let access_to_string (ac : access) : string =
+  match ac with
+  | StructField f -> sprintf ".%s" (ident_to_string f)
+  | ArrayIndex i -> sprintf "[%s]" (atom_to_string i)
+
+let access_list_to_string (acs : access list) : string =
+  list_to_string "\\" "\\" "" access_to_string acs
+
 let comp_to_string (c : comp) : string =
   match c with
   | CpAtom a -> atom_to_string a
@@ -94,6 +102,8 @@ let comp_to_string (c : comp) : string =
         (atom_to_string a1)
         (ident_to_string x)
         (opt_parens a2)
+  | CpDeepAccess (a, acs) ->
+      sprintf "%s%s" (atom_to_string a) (access_list_to_string acs)
   | CpCall (f, args) ->
       sprintf
         "%s %s"
@@ -125,6 +135,11 @@ module PrintTyped = struct
   let atom_to_string (a : Syntax.Typed.atom) : string =
     atom_to_string (untype_atom a)
 
+  let untype_access (ac : Syntax.Typed.access) : Syntax.access =
+    match ac with
+    | Typed.StructField (f, _) -> StructField f
+    | Typed.ArrayIndex (a, _) -> ArrayIndex (untype_atom a)
+
   let untype_comp (c : Typed.comp) : comp =
     match c with
     | Typed.CpAtom (a, _) -> CpAtom (untype_atom a)
@@ -134,6 +149,8 @@ module PrintTyped = struct
     | Typed.CpStructProj (a', f, _) -> CpStructProj (untype_atom a', f)
     | Typed.CpStructUpdate (a1, f, a2, _) ->
         CpStructUpdate (untype_atom a1, f, untype_atom a2)
+    | Typed.CpDeepAccess (a, acs, _) ->
+        CpDeepAccess (untype_atom a, List.map untype_access acs)
     | Typed.CpCall (a', args, _) ->
         CpCall (untype_atom a', List.map untype_atom args)
 

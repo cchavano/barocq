@@ -16,6 +16,7 @@ let token_to_string (tok : Bparser.token) : string =
   | LBRACKETBAR -> "LBRACKETBAR"
   | RBRACKETBAR -> "RBRACKETBAR"
   | HASHTAG -> "HASHTAG"
+  | BACKSLASH -> "BACKSLASH"
   | ARROW -> "ARROW"
   | ARROW_INV -> "ARROW_INV"
   | BIND -> "BIND"

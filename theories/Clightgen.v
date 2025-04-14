@@ -104,6 +104,40 @@ Definition deref_pointer (ty: type) : type :=
   | _ => ty
   end.
 
+
+Fixpoint transl_access (globs: pset) (a: atom) (acs: list access) : Clight.expr :=
+  match acs with
+  | nil => transl_atom globs a
+  | ac :: nil =>
+      match ac with
+      | StructField f ty =>
+          let e := transl_atom globs a in
+          let tderef := deref_pointer (typeof e) in
+          let tfield := transl_ctyp ty in
+          Efield (Ederef e tderef) f tfield
+      | ArrayIndex ai ty =>
+          let e := transl_atom globs a in
+          let ei := transl_atom globs ai in
+          let tarith := typeof e in
+          let tderef := transl_ctyp ty in
+          Ederef (Ebinop Oadd e ei tarith) tderef
+      end
+  | ac :: acs' =>
+      match ac with
+      | StructField f ty =>
+        let er := transl_access globs a acs' in
+        let tderef := deref_pointer (typeof er) in
+        let tfield := transl_ctyp ty in
+        Efield (Ederef er tderef) f tfield     
+      | ArrayIndex ai ty =>
+          let er := transl_access globs a acs' in
+          let ei := transl_atom globs ai in
+          let tarith := typeof er in
+          let tderef := transl_ctyp ty in
+          Ederef (Ebinop Oadd er ei tarith) tderef
+      end
+  end.
+
 Definition transl_expr (globs: pset) (e: Imp2.expr) : Clight.expr :=
   match e with
   | EAtom a _ => transl_atom globs a
@@ -118,6 +152,7 @@ Definition transl_expr (globs: pset) (e: Imp2.expr) : Clight.expr :=
       let tderef := deref_pointer (typeof e) in
       let tfield := transl_ctyp ty in
       Efield (Ederef e tderef) f tfield
+  | EDeepAccess a acs _ => transl_access globs a acs
   end.
 
 Definition transl_ecomp (globs: pset) (ec: Imp2.ecomp) : Clight.expr * Clight.statement :=

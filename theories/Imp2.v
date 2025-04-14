@@ -22,12 +22,15 @@ Inductive literal : Type :=
 
 Definition atom : Type := Syntax.Typed.atom.
 
+Definition access : Type := Syntax.Typed.access.
+
 (** ** Expressions ("pure" computations) *)
 
 Inductive expr : Type :=
   | EAtom : atom -> ctyp -> expr
   | EArrayGet : atom -> atom -> ctyp -> expr
-  | EStructProj : atom -> ident -> ctyp -> expr.
+  | EStructProj : atom -> ident -> ctyp -> expr
+  | EDeepAccess : atom -> list access -> ctyp -> expr.
 
 (** ** "Effectul" computations *)
 

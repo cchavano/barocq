@@ -121,14 +121,15 @@ let () =
 
     let prog = Barocq.xprog_to_prog xprog in
 
-    begin
+    let prog_typed =
       match Barocq.Typing.typecheck_program prog with
-      | Errors.OK _ ->
-          if !opt_typecheck then begin
-            printf "Typechecking succeeds\n";
-            exit 0
-          end
+      | Errors.OK p -> p
       | Errors.Error msg -> raise (TypingError (C2C.string_of_errmsg msg))
+    in
+
+    if !opt_typecheck then begin
+      printf "Typechecking succeeds\n";
+      exit 0
     end;
 
     if !opt_print_bbnf then begin
@@ -136,7 +137,7 @@ let () =
         if !flag_bbnf_one_pass then BarocqBNFgen2.normalize_program
         else BarocqBNFgen.normalize_program !flag_simpl_bbnf
       in
-      let bbnf = norm prog in
+      let bbnf = norm prog_typed in
       begin
         match bbnf with
         | Errors.OK prog -> PrintBarocqBNF.print_program stdout prog
@@ -199,10 +200,12 @@ let () =
                     failwith
                       (sprintf
                          "Error: function \"%s\" is not defined"
+                         "Error: function \"%s\" is not defined"
                          !opt_gen_alias_call_state_of)
               end
             | Errors.Error msg ->
                 failwith
+                  (sprintf "Imp1 typing error: %s" (C2C.string_of_errmsg msg))
                   (sprintf "Imp1 typing error: %s" (C2C.string_of_errmsg msg))
           end
         | Errors.Error msg -> raise @@ CompilerError (C2C.string_of_errmsg msg)
@@ -252,6 +255,7 @@ let () =
             | Errors.Error msg ->
                 failwith
                   (sprintf "Imp1 typing error: %s" (C2C.string_of_errmsg msg))
+                  (sprintf "Imp1 typing error: %s" (C2C.string_of_errmsg msg))
           end
         | Errors.Error msg -> raise @@ CompilerError (C2C.string_of_errmsg msg)
       end
@@ -280,7 +284,7 @@ let () =
       match BarocqShallowgen.monadify_norm_program prog with
       | Errors.OK prog ->
           Proofsgen.print_proofs oc prog;
-          printf "Correspondence proofs generated at %s\n" proofs_output;
+          printf "Correspondence proofs generated at %s" proofs_output;
           close_out oc
       | Errors.Error msg ->
           close_out oc;
