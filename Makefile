@@ -2,7 +2,7 @@
 
 THEORY=\
 	Monads.v Error.v MapList.v Common.v Array.v Struct.v Types.v Syntax.v Typing.v \
-	Barocq.v BarocqBNF.v BarocqBNFgen.v BarocqBNFgen2.v ImpBNF.v ImpBNFgen.v \
+	Barocq.v BarocqBNF.v BarocqBNFgen.v ImpBNF.v ImpBNFgen.v \
 	ImpABNF.v ImpABNFgen.v Imp1.v Imp1gen.v Imp2.v Imp2gen.v Clightgen.v Compiler.v \
 	BarocqShallow.v BarocqShallowgen.v
 

@@ -31,10 +31,6 @@ let opt_gen_alias_return_state_of = ref ""
 
 let opt_debug_aliasing = ref false
 
-let flag_simpl_bbnf = ref false
-
-let flag_bbnf_one_pass = ref false
-
 let usage_msg = "Usage: barocq [options] <file> \noptions:"
 
 let options =
@@ -64,12 +60,6 @@ let options =
       Arg.Set_string opt_gen_alias_return_state_of,
       "\tGenerate the aliasing state after a complete execution of the given \
        function" );
-    ( "-fsimplify-bbnf",
-      Arg.Set flag_simpl_bbnf,
-      "\tSimplify the BNF IR (no effect if used with -fbbnf-one-pass)" );
-    ( "-fbbnf-one-pass",
-      Arg.Set flag_bbnf_one_pass,
-      "\tUse a one-pass BNF normalization with simplification" );
     ( "-debug-aliasing",
       Arg.Set opt_debug_aliasing,
       "\tDisplay the alias analysis debugging information on stderr" );
@@ -133,11 +123,7 @@ let () =
     end;
 
     if !opt_print_bbnf then begin
-      let norm =
-        if !flag_bbnf_one_pass then BarocqBNFgen2.normalize_program
-        else BarocqBNFgen.normalize_program !flag_simpl_bbnf
-      in
-      let bbnf = norm prog_typed in
+      let bbnf = BarocqBNFgen.normalize_program prog_typed in
       begin
         match bbnf with
         | Errors.OK prog -> PrintBarocqBNF.print_program stdout prog
@@ -147,11 +133,7 @@ let () =
     end;
 
     if !opt_print_imp1 then begin
-      let comp =
-        if !flag_bbnf_one_pass then Compiler.compile2_to_imp1
-        else Compiler.compile_to_imp1 !flag_simpl_bbnf
-      in
-      let imp1 = comp prog in
+      let imp1 = Compiler.compile_to_imp1 prog in
       begin
         match imp1 with
         | Errors.OK prog -> PrintImp1.print_program stdout prog
@@ -161,11 +143,7 @@ let () =
     end;
 
     if !opt_gen_alias_call_state_of <> "" then begin
-      let comp =
-        if !flag_bbnf_one_pass then Compiler.compile2_to_imp1
-        else Compiler.compile_to_imp1 !flag_simpl_bbnf
-      in
-      let imp1 = comp prog in
+      let imp1 = Compiler.compile_to_imp1 prog in
       begin
         match imp1 with
         | Errors.OK prog -> begin
@@ -211,11 +189,7 @@ let () =
     end;
 
     if !opt_gen_alias_return_state_of <> "" then begin
-      let comp =
-        if !flag_bbnf_one_pass then Compiler.compile2_to_imp1
-        else Compiler.compile_to_imp1 !flag_simpl_bbnf
-      in
-      let imp1 = comp prog in
+      let imp1 = Compiler.compile_to_imp1 prog in
       begin
         match imp1 with
         | Errors.OK prog -> begin
@@ -281,7 +255,7 @@ let () =
       match BarocqShallowgen.monadify_norm_program prog with
       | Errors.OK prog ->
           Proofsgen.print_proofs oc prog;
-          printf "Correspondence proofs generated at %s" proofs_output;
+          printf "Correspondence proofs generated at %s\n" proofs_output;
           close_out oc
       | Errors.Error msg ->
           close_out oc;
@@ -309,12 +283,7 @@ let () =
       close_out oc
     end;
 
-    let comp =
-      if !flag_bbnf_one_pass then Compiler.compile2 !opt_debug_aliasing
-      else Compiler.compile !opt_debug_aliasing !flag_simpl_bbnf
-    in
-
-    match comp prog with
+    match Compiler.compile !opt_debug_aliasing prog with
     | Errors.OK prog ->
         Camlcoq.use_canonical_atoms := true;
         let ids = Clightgen.program_idents prog in

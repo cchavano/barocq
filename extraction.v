@@ -95,7 +95,5 @@ Separate Extraction
   Barocq.eval_struct_ctyp
   Compiler.compile_to_imp1
   Compiler.compile
-  Compiler.compile2_to_imp1
-  Compiler.compile2
   BarocqShallowgen.monadify_norm_program
   Imp1.Aliasing_AST.program.

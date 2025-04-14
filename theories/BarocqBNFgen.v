@@ -1,8 +1,8 @@
 From Coq Require Import PArith String List.
 From compcert Require Import Clightdefs Integers.
-From BarocqComp Require Import Monads Error Common Syntax Types Barocq BarocqBNF.
+From BarocqComp Require Import Error Monads Common Syntax Types Barocq BarocqBNF.
 Import ListNotations.
-Import MonCounter.
+Import MonCounterErr.
 
 Fixpoint split_deep_access_rec (e: BarocqTyped.expr) (acs: list BarocqTyped.access) : BarocqTyped.expr :=
   match acs with
@@ -16,7 +16,7 @@ Fixpoint split_deep_access_rec (e: BarocqTyped.expr) (acs: list BarocqTyped.acce
       end
   end.
 
-Fixpoint split_deep_access (e: Barocq.Typed.expr) : Barocq.Typed.expr :=
+Fixpoint split_deep_access (e: BarocqTyped.expr) : BarocqTyped.expr :=
   match e with
   | BarocqTyped.EDeepAccess e1 acs ty =>
       match ty with
@@ -63,7 +63,6 @@ Fixpoint split_deep_access (e: Barocq.Typed.expr) : Barocq.Typed.expr :=
   | _ => e
   end.
   
-
 Fixpoint atom_of_expr (e: Barocq.expr) : res atom :=
   match e with
   | Barocq.ETrue => eret ATrue
@@ -78,234 +77,156 @@ Fixpoint atom_of_expr (e: Barocq.expr) : res atom :=
       let* a1 := atom_of_expr e1 in
       let* a2 := atom_of_expr e2 in
       eret (ABinaryOp op a1 a2)
-  | _ => fail
+  | _ => MonError.fail
   end.
 
-Open Scope state_monad_scope.
+Definition spread_atomlist (e: Barocq.expr) (la: list atom) : res BarocqBNF.expr :=
+  match e with
+  | Barocq.EUnaryOp op _ =>
+      let* a := nth_err la 0 in
+      eret (EAtom (AUnaryOp op a))
+  | Barocq.EBinaryOp op _ _ =>
+      let* a1 := nth_err la 0 in
+      let* a2 := nth_err la 1 in
+      eret (EAtom (ABinaryOp op a1 a2))
+  | Barocq.EArrayGet _ _ =>
+      let* a1 := nth_err la 0 in
+      let* a2 := nth_err la 1 in
+      eret (EArrayGet a1 a2)
+  | Barocq.EArraySet _ _ _ =>
+      let* a1 := nth_err la 0 in
+      let* a2 := nth_err la 1 in
+      let* a3 := nth_err la 2 in
+      eret (EArraySet a1 a2 a3)
+  | Barocq.EStructProj _ x =>
+      let* a := nth_err la 0 in
+      eret (EStructProj a x)
+  | Barocq.EStructUpdate _ x _ =>
+      let* a1 := nth_err la 0 in
+      let* a2 := nth_err la 1 in
+      eret (EStructUpdate a1 x a2)
+  | Barocq.EApp _ _ =>
+      let* a := nth_err la 0 in
+      let args := tail la in
+      eret (EApp a args)
+  | _ => MonError.fail
+  end.
 
-Definition fresh_var : cmon ident := Common.fresh_var "b".
+Open Scope state_err_monad_scope.
 
-Section NORMEXPR.
+Definition fresh_var : crmon ident := Common.fresh_var_err "b".
 
-  Variable normalize_expr : Barocq.expr -> cmon BarocqBNF.expr.
-  
-  Fixpoint normalize_app (f: ident) (args: list Barocq.expr) (vars: list atom) : cmon BarocqBNF.expr :=
-    match args with
-    | nil => ret (EApp (AVar f) (rev' vars))
-    | e :: args' => 
-        let* xe := fresh_var in
-        let* be := normalize_expr e in
-        let* ber := normalize_app f args' ((AVar xe) :: vars) in
-        ret (ELetIn xe be ber)
-    end.
-
-  Fixpoint normalize_access_list (a: atom) (acs: list Barocq.access) (acs_norm: list Syntax.access)
-    : cmon BarocqBNF.expr :=
+Fixpoint normalize_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
+  let fix normalize_exprlist_rec (e: Barocq.expr) (le: list Barocq.expr) (la: list atom) : crmon BarocqBNF.expr :=
+    match le with
+    | nil => lift_err (spread_atomlist e (rev' la))
+    | e1 :: le' =>
+        match atom_of_expr e1 with
+        | OK a => normalize_exprlist_rec e le' (a :: la)
+        | Error _ =>
+            let* x := fresh_var in
+            let* ne1 := normalize_expr_rec e1 in
+            let* ler := normalize_exprlist_rec e le' (AVar x :: la) in
+            ret (ELetIn x ne1 ler)
+        end
+    end
+  in
+  let normalize_exprlist (e: Barocq.expr) (le: list Barocq.expr) : crmon BarocqBNF.expr :=
+    normalize_exprlist_rec e le nil
+  in
+  let fix normalize_access_list_rec (a: atom) (acs: list Barocq.access) (acs_norm: list Syntax.access)
+    : crmon BarocqBNF.expr :=
     match acs with
     | nil => ret (EDeepAccess a (rev acs_norm))
     | ac :: acs' =>
         match ac with
         | Barocq.StructField f =>
-            normalize_access_list a acs' (Syntax.StructField f :: acs_norm)
+            normalize_access_list_rec a acs' (Syntax.StructField f :: acs_norm)
         | Barocq.ArrayIndex e =>
             match atom_of_expr e with
-            | OK ae => normalize_access_list a acs' ((Syntax.ArrayIndex ae) :: acs_norm)
+            | OK ae => normalize_access_list_rec a acs' ((Syntax.ArrayIndex ae) :: acs_norm)
             | Error _ =>
               let* xe := fresh_var in
-              let* be := normalize_expr e in
-              let* ber := normalize_access_list a acs' ((Syntax.ArrayIndex (AVar xe)) :: acs_norm) in
+              let* be := normalize_expr_rec e in
+              let* ber := normalize_access_list_rec a acs' ((Syntax.ArrayIndex (AVar xe)) :: acs_norm) in
               ret (ELetIn xe be ber)
             end
         end
-    end.
-
-End NORMEXPR.
-
-Fixpoint normalize_expr_rec (e: Barocq.expr) : cmon BarocqBNF.expr :=
+    end
+  in
+  let normalize_deep_access (e: Barocq.expr) (acs: list Barocq.access) : crmon BarocqBNF.expr :=
+    match atom_of_expr e with
+    | OK a => normalize_access_list_rec a acs nil
+    | Error _ =>
+        let* x := fresh_var in
+        let* be := normalize_expr_rec e in
+        let* bacs := normalize_access_list_rec (AVar x) acs nil in
+        ret (ELetIn x be bacs)
+    end
+  in
   match e with
-  | Barocq.ETrue => ret (EAtom ATrue)
-  | Barocq.EFalse => ret (EAtom AFalse)
-  | Barocq.EInt32 i s => ret (EAtom (AInt32 i s))
-  | Barocq.EInt64 i s => ret (EAtom (AInt64 i s))
-  | Barocq.EVar x => ret (EAtom (AVar (transl_user_ident x)))
+  | Barocq.ETrue =>
+      ret (EAtom ATrue)
+  | Barocq.EFalse =>
+      ret (EAtom AFalse)
+  | Barocq.EInt32 i s =>
+      ret (EAtom (AInt32 i s))
+  | Barocq.EInt64 i s =>
+      ret (EAtom (AInt64 i s))
+  | Barocq.EVar x =>
+      ret (EAtom (AVar (transl_user_ident x)))
   | Barocq.EUnaryOp op e1 =>
-      match atom_of_expr e with
-      | OK a => ret (EAtom a)
-      | Error _ =>
-          let* x1 := fresh_var in
-          let* be1 := normalize_expr_rec e1 in
-          ret (ELetIn x1 be1 (EAtom (AUnaryOp op (AVar x1))))
-      end
+      normalize_exprlist e [e1]
   | Barocq.EBinaryOp op e1 e2 =>
-      match atom_of_expr e with
-      | OK a => ret (EAtom a)
-      | Error _ =>
-          let* x1 := fresh_var in
-          let* be1 := normalize_expr_rec e1 in
-          let* x2 := fresh_var in
-          let* be2 := normalize_expr_rec e2 in
-          ret
-            (ELetIn x1 be1
-              (ELetIn x2 be2
-                (EAtom (ABinaryOp op (AVar x1) (AVar x2)))))
-      end
+      normalize_exprlist e [e1; e2]
   | Barocq.EArrayGet e1 e2 =>
-      let* x1 := fresh_var in
-      let* be1 := normalize_expr_rec e1 in
-      let* x2 := fresh_var in
-      let* be2 := normalize_expr_rec e2 in
-      ret
-        (ELetIn x1 be1
-          (ELetIn x2 be2
-            (EArrayGet (AVar x1) (AVar x2))))
+      normalize_exprlist e [e1; e2]
   | Barocq.EArraySet e1 e2 e3 =>
-      let* x1 := fresh_var in
-      let* be1 := normalize_expr_rec e1 in
-      let* x2 := fresh_var in
-      let* be2 := normalize_expr_rec e2 in
-      let* x3:= fresh_var in
-      let* be3 := normalize_expr_rec e3 in
-      ret
-        (ELetIn x1 be1
-          (ELetIn x2 be2
-            (ELetIn x3 be3
-              (EArraySet (AVar x1) (AVar x2) (AVar x3)))))
+      normalize_exprlist e [e1; e2; e3]
   | Barocq.EStructProj e1 k =>
-      let* x1 := fresh_var in
-      let* be1 := normalize_expr_rec e1 in
-      ret
-        (ELetIn x1 be1
-          (EStructProj (AVar x1) k))
+      normalize_exprlist e [e1]
   | Barocq.EStructUpdate e1 k e2 =>
-      let* x1 := fresh_var in
-      let* be1 := normalize_expr_rec e1 in
-      let* x2 := fresh_var in
-      let* be2 := normalize_expr_rec e2 in
-      ret
-        (ELetIn x1 be1
-          (ELetIn x2 be2
-            (EStructUpdate (AVar x1) k (AVar x2))))
+      normalize_exprlist e [e1; e2]
   | Barocq.EDeepAccess e1 acs =>
+      normalize_deep_access e1 acs
+  | Barocq.EApp e1 args =>
+      normalize_exprlist e (e1 :: args)
+  | Barocq.EIfThenElse e1 e2 e3 =>
+      let* ne2 := normalize_expr_rec e2 in
+      let* ne3 := normalize_expr_rec e3 in
       match atom_of_expr e1 with
-      | OK a => normalize_access_list normalize_expr_rec a acs nil
+      | OK a => ret (EIfThenElse a ne2 ne3)
       | Error _ =>
           let* x1 := fresh_var in
-          let* be1 := normalize_expr_rec e1 in
-          let* bacs := normalize_access_list normalize_expr_rec (AVar x1) acs nil in
-          ret (ELetIn x1 be1 bacs)
+          let* ne1 := normalize_expr_rec e1 in
+          ret (ELetIn x1 ne1 (EIfThenElse (AVar x1) ne2 ne3))
       end
-  | Barocq.EApp e1 args =>
-      let* x1 := fresh_var in
-      let* be1 := normalize_expr_rec e1 in
-      let* bapp := normalize_app normalize_expr_rec x1 args nil in
-      ret (ELetIn x1 be1 bapp)
-  | Barocq.EIfThenElse e1 e2 e3 =>
-      let* x1 := fresh_var in
-      let* be1 := normalize_expr_rec e1 in
-      let* be2 := normalize_expr_rec e2 in
-      let* be3 := normalize_expr_rec e3 in
-      ret
-        (ELetIn x1 be1
-          (EIfThenElse (AVar x1) be2 be3))
   | Barocq.ELetIn x e1 e2 =>
-      let* be1 := normalize_expr_rec e1 in
-      let* be2 := normalize_expr_rec e2 in
-      ret (ELetIn (transl_user_ident x) be1 be2)
+      let* ne1 := normalize_expr_rec e1 in
+      let* ne2 := normalize_expr_rec e2 in
+      ret (ELetIn (transl_user_ident x) ne1 ne2)
   end.
 
-Close Scope state_monad_scope.
-      
-Definition normalize_expr (e: BarocqTyped.expr) : BarocqBNF.expr :=
+Close Scope state_err_monad_scope.
+
+Definition normalize_expr (e: BarocqTyped.expr) : res BarocqBNF.expr :=
   let e' := split_deep_access e in
   let eu := untype_expr e' in
-  fst (normalize_expr_rec eu 0).
-
-Fixpoint atom_subst (vars: ptree atom) (a: atom) : atom :=
-  match a with
-  | AVar x =>
-      match tget vars x with
-      | Some a' => a'
-      | None => a
-      end
-  | AUnaryOp op a1 =>
-      AUnaryOp op (atom_subst vars a1)
-  | ABinaryOp op a1 a2 =>
-      ABinaryOp op (atom_subst vars a1) (atom_subst vars a2)
-  | _ => a
-  end.
-
-Fixpoint simplify_expr_rec (vars: ptree atom) (e: BarocqBNF.expr) : BarocqBNF.expr :=
-  match e with
-  | EAtom a => EAtom (atom_subst vars a)
-  | EArrayGet a1 a2 =>
-      let a1' := atom_subst vars a1 in
-      let a2' := atom_subst vars a2 in
-      EArrayGet a1' a2'
-  | EArraySet a1 a2 a3 =>
-      let a1' := atom_subst vars a1 in
-      let a2' := atom_subst vars a2 in
-      let a3' := atom_subst vars a3 in
-      EArraySet a1' a2' a3'
-  | EStructProj a x =>
-      let a' := atom_subst vars a in
-      EStructProj a' x
-  | EStructUpdate a1 x a2 =>
-      let a1' := atom_subst vars a1 in
-      let a2' := atom_subst vars a2 in
-      EStructUpdate a1' x a2'
-  | EDeepAccess a acs =>
-      let a' := atom_subst vars a in
-      let acs' :=
-        map
-          (fun ac =>
-            match ac with
-            | Syntax.StructField f => Syntax.StructField f
-            | Syntax.ArrayIndex ai => Syntax.ArrayIndex (atom_subst vars ai)
-            end)
-        acs
-      in
-      EDeepAccess a' acs'
-  | EApp a args =>
-      let a' := atom_subst vars a in
-      let args' := map (atom_subst vars) args in
-      EApp a' args'
-  | EIfThenElse a e1 e2 =>
-      let a' := atom_subst vars a in
-      let e1' := simplify_expr_rec vars e1 in
-      let e2' := simplify_expr_rec vars e2 in
-      EIfThenElse a' e1' e2'
-  | ELetIn x e1 e2 =>
-      let simpl_let (_: unit) :=
-        let e1' := simplify_expr_rec vars e1 in
-        let e2' := simplify_expr_rec vars e2 in
-        ELetIn x e1' e2'
-      in
-      if prefix "b" (string_of_ident x) then
-        match e1 with
-        | EAtom a =>
-            let vars' := tset vars x (atom_subst vars a) in
-            simplify_expr_rec vars' e2
-        | _ => simpl_let tt
-        end
-      else
-        simpl_let tt
-  end.
-
-Definition simplify_expr (e: BarocqBNF.expr) : BarocqBNF.expr :=
-  simplify_expr_rec tempty e.
+  let* ne := normalize_expr_rec eu 0 in
+  eret (fst ne).
 
 Definition normalize_params (params: list (ident * ctyp)) : list (ident * ctyp) :=
   map (fun '(x, tx) => (transl_user_ident x, tx)) params.
 
-Definition normalize_function (fsimpl: bool) (f: BarocqTyped.function): BarocqBNF.function :=
-  let body_norm := normalize_expr (fn_body f) in
-  {|
+Definition normalize_function (f: BarocqTyped.function) : res BarocqBNF.function :=
+  let* body_norm := normalize_expr (fn_body f) in
+  eret {|
     fn_return := fn_return f;
     fn_params := normalize_params (fn_params f);
-    fn_body := if fsimpl then simplify_expr body_norm else body_norm
+    fn_body := body_norm
   |}.
 
-Fixpoint normalize_program_rec (fsimpl: bool) (ts: types) (prog: BarocqTyped.program) : res BarocqBNF.program :=
+Fixpoint normalize_program_rec (ts: types) (prog: BarocqTyped.program) : res BarocqBNF.program :=
   match prog with
   | nil =>
       eret {|
@@ -316,16 +237,16 @@ Fixpoint normalize_program_rec (fsimpl: bool) (ts: types) (prog: BarocqTyped.pro
       match d with
       | BarocqTyped.DefStruct a fields =>
           let* ts' := types_update ts a fields in
-          normalize_program_rec fsimpl ts' prog'
+          normalize_program_rec ts' prog'
       | BarocqTyped.DefConst x l ty =>
-          let* r := normalize_program_rec fsimpl ts prog' in
+          let* r := normalize_program_rec ts prog' in
           eret {|
             prog_defs := (Syntax.DefConst (transl_user_ident x) l ty) :: (prog_defs r);
             prog_types := (prog_types r)
           |}
       | BarocqTyped.DefFun x f =>
-          let f' := normalize_function fsimpl f in
-          let* r := normalize_program_rec fsimpl ts prog' in
+          let* f' := normalize_function f in
+          let* r := normalize_program_rec ts prog' in
           eret {|
             prog_defs := (Syntax.DefFun (transl_user_ident x) f') :: (prog_defs r);
             prog_types := prog_types r
@@ -333,5 +254,7 @@ Fixpoint normalize_program_rec (fsimpl: bool) (ts: types) (prog: BarocqTyped.pro
       end
   end.
 
-Definition normalize_program (fsimpl: bool) (prog: BarocqTyped.program) : res BarocqBNF.program :=
-  normalize_program_rec fsimpl tempty prog.
+Definition normalize_program (prog: BarocqTyped.program) : res BarocqBNF.program :=
+  normalize_program_rec tempty prog.
+
+    
