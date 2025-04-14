@@ -200,12 +200,10 @@ let () =
                     failwith
                       (sprintf
                          "Error: function \"%s\" is not defined"
-                         "Error: function \"%s\" is not defined"
                          !opt_gen_alias_call_state_of)
               end
             | Errors.Error msg ->
                 failwith
-                  (sprintf "Imp1 typing error: %s" (C2C.string_of_errmsg msg))
                   (sprintf "Imp1 typing error: %s" (C2C.string_of_errmsg msg))
           end
         | Errors.Error msg -> raise @@ CompilerError (C2C.string_of_errmsg msg)
@@ -254,7 +252,6 @@ let () =
               end
             | Errors.Error msg ->
                 failwith
-                  (sprintf "Imp1 typing error: %s" (C2C.string_of_errmsg msg))
                   (sprintf "Imp1 typing error: %s" (C2C.string_of_errmsg msg))
           end
         | Errors.Error msg -> raise @@ CompilerError (C2C.string_of_errmsg msg)

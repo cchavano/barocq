@@ -567,7 +567,7 @@ Module Monadification.
   Fixpoint monadify_expr_rec (ts: types) (gx: gcontext) (lx: lcontext) (e: BNF.expr) (imp: bool) : res expr :=
     match e with
     | BNF.EAtom a =>
-        let catch a' := typecheck_atom ts gx lx a in
+        let* a' := typecheck_atom ts gx lx a in
         if imp then wrap_atom a'
         else eret (EAtom a' (typof_atom a'))
     | BNF.EArrayGet a1 a2 =>
