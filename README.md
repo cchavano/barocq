@@ -13,7 +13,7 @@ A Barocq program can also be translated to a shallow and deep embedding in Coq/R
   - [x] Support for structures
   - [x] Support for arrays
   - [ ] Support for function pointers
-- [ ] Deep access to primitive values
+- [x] Deep access to primitive values
 - [ ] FFI
 - [ ] Update the correspondence proof generator to handle more complex proofs than `reflexivity`
 
