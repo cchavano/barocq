@@ -202,7 +202,7 @@ let make_headers () : string =
     !deepfile
 
 let print_proofs (out : out_channel) (prog : program) : unit =
-  let types = Maps.PTree.elements prog.prog_types in
+  let types = prog.prog_types in
   let defs = prog.prog_defs in
   let s, e =
     match (types, defs) with

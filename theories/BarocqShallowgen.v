@@ -154,26 +154,28 @@ Module Normalization.
     | d :: prog' =>
         match d with
         | Barocq.DefStruct a fields =>
-            let* ts' := types_update ts a fields in
+            let ts' := MapList.add_k ident_eq_dec a fields ts in
             normalize_program_rec ts' prog'
         | Barocq.DefConst x l ty =>
             let* r := normalize_program_rec ts prog' in
             eret {|
-              prog_defs := (Syntax.DefConst (transl_user_ident x) l ty) :: (prog_defs r);
+              prog_defs :=
+                (Syntax.DefConst (transl_user_ident x) l ty) :: (prog_defs r);
               prog_types := (prog_types r)
             |}
         | Barocq.DefFun x f =>
             let* f' := normalize_function f in
             let* r := normalize_program_rec ts prog' in
             eret {|
-              prog_defs := (Syntax.DefFun (transl_user_ident x) f') :: (prog_defs r);
+              prog_defs :=
+                (Syntax.DefFun (transl_user_ident x) f') :: (prog_defs r);
               prog_types := prog_types r
             |}
         end
     end.
-
+    
   Definition normalize_program (prog: Barocq.program) : res BNF.program :=
-    normalize_program_rec tempty prog.
+    normalize_program_rec MapList.empty prog.
 
 End Normalization.
 
@@ -213,6 +215,8 @@ Module Monadification.
   Proof.
     repeat decide equality.
   Defined.
+
+  Definition types : Type := ptree (list (ident * mtyp)).
 
   Definition types_get (ts: types) (x: ident) : res (list (ident * mtyp)) :=
     err_of_opt (tget ts x).
@@ -482,7 +486,9 @@ Module Monadification.
       | AInt32 _ _
       | AInt64 _ _
       | AUnaryOp _ _ _
-      | ABinaryOp _ _ _  _=> eret a
+      | ABinaryOp _ _ _  _
+      | AStructProj _ _ _
+      | AStructUpdate _ _ _ _ => eret a
       | AVar x _ =>
           match ty with
           | MFun _ _ => eta_expand x ty (unwrap_mtyp ty')
@@ -597,11 +603,12 @@ Module Monadification.
     monadify_globdefs_rec ts tempty defs.
 
   Definition monadify_program (prog: BNF.program) : res program :=
-    let ts := PTree.fold (fun acc k lt => tset acc k (map_k monadify_ctyp lt)) (Syntax.prog_types prog) tempty in
-    let* defs := monadify_globdefs ts (Syntax.prog_defs prog) in
+    let ts := MapList.map_k (fun v => MapList.map_k monadify_ctyp v) (BarocqShallow.BNF.prog_types prog) in
+    let ts_map := MapList.fold_left_k (fun acc k v => tset acc k v) ts tempty in
+    let* defs := monadify_globdefs ts_map (BarocqShallow.BNF.prog_defs prog) in
     eret {|
       prog_types := ts;
-      prog_defs := defs
+      prog_defs := defs;
     |}.
 
 End Monadification.

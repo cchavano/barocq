@@ -61,9 +61,9 @@ let rec expr_to_deep (prefix : string) (e : expr) : string =
   | ETrue -> "ETrue"
   | EFalse -> "EFalse"
   | EInt32 (i, s) ->
-      sprintf "EInt32 (%s %s)" (int_to_deep i s) (signedness_to_deep s)
+      sprintf "EInt32 (%s) %s" (int_to_deep i s) (signedness_to_deep s)
   | EInt64 (i, s) ->
-      sprintf "EInt64 (%s %s)" (int_to_deep i s) (signedness_to_deep s)
+      sprintf "EInt64 (%s) %s" (int_to_deep i s) (signedness_to_deep s)
   | EVar x -> sprintf "EVar %s" (ident_to_deep x)
   | EUnaryOp (op, e1) ->
       sprintf "EUnaryOp %s (%s)" (unary_op_to_deep op) (expr_to_deep "" e1)

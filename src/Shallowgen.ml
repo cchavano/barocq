@@ -190,7 +190,7 @@ let expr_to_rocq (e : expr) : string = expr_to_rocq_rec PrintCommon.indent e
 
 let rec is_simpl_mtyp (ty : mtyp) : bool =
   match ty with
-  | MBool | MInt32 _ | MInt64 _ -> true
+  | MBool | MInt32 _ | MInt64 _ | MStruct _ -> true
   | MRes ty' -> is_simpl_mtyp ty'
   | _ -> false
 
@@ -312,7 +312,7 @@ let headers : string =
    Open Scope error_monad_scope.\n\n"
 
 let print_program (out : out_channel) (prog : program) : unit =
-  let types = Maps.PTree.elements prog.prog_types in
+  let types = prog.prog_types in
   let defs = prog.prog_defs in
   let s, e =
     match (types, defs) with

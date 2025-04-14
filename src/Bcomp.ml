@@ -198,12 +198,12 @@ let () =
                 | None ->
                     failwith
                       (sprintf
-                         "Error: function \"%s\" is not defined\n"
+                         "Error: function \"%s\" is not defined"
                          !opt_gen_alias_call_state_of)
               end
             | Errors.Error msg ->
                 failwith
-                  (sprintf "Imp1 typing error: %s\n" (C2C.string_of_errmsg msg))
+                  (sprintf "Imp1 typing error: %s" (C2C.string_of_errmsg msg))
           end
         | Errors.Error msg -> raise @@ CompilerError (C2C.string_of_errmsg msg)
       end
@@ -251,7 +251,7 @@ let () =
               end
             | Errors.Error msg ->
                 failwith
-                  (sprintf "Imp1 typing error: %s\n" (C2C.string_of_errmsg msg))
+                  (sprintf "Imp1 typing error: %s" (C2C.string_of_errmsg msg))
           end
         | Errors.Error msg -> raise @@ CompilerError (C2C.string_of_errmsg msg)
       end
@@ -282,9 +282,9 @@ let () =
           Proofsgen.print_proofs oc prog;
           printf "Correspondence proofs generated at %s\n" proofs_output;
           close_out oc
-      | Errors.Error _ ->
+      | Errors.Error msg ->
           close_out oc;
-          failwith "Error: fail to generate the correspondence proofs\n"
+          failwith "Error: fail to generate the correspondence proofs"
     end;
 
     if !opt_gen_shallow then begin
@@ -295,9 +295,9 @@ let () =
           Shallowgen.print_program oc prog;
           printf "Shallow-embedding generated at %s\n" shallow_output;
           close_out oc
-      | Errors.Error _ ->
+      | Errors.Error msg ->
           close_out oc;
-          failwith "Error: fail to generate the shallow-embedding\n"
+          failwith "Error: fail to generate the shallow-embedding"
     end;
 
     if !opt_gen_deep then begin
