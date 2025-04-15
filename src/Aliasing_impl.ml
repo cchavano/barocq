@@ -607,11 +607,15 @@ let aliased_paths_of_pmap (st : absstate) (pm : path_map) : path_map =
     is a variable. *)
 let rec args_bijection (params : ident list) (args : atom list) :
     ident IdentMap.t =
-  match (args, params) with
+  match (params, args) with
   | [], [] -> IdentMap.empty
-  | AVar (x, ty) :: args', y :: params' ->
+  | y :: params', a :: args' ->
       let r = args_bijection params' args' in
-      if is_prim ty then r else IdentMap.add y x r
+      begin
+        match a with
+        | AVar (x, ty) -> if is_prim ty then r else IdentMap.add y x r
+        | _ -> r
+      end
   | _, _ -> assert false
 
 let rec mem_bijection (ts : types) (edges : (ident * ctyp) list) (loc1 : absloc)

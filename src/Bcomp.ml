@@ -303,5 +303,7 @@ let () =
   | Failure msg -> eprintf "Unexpected error: %s\n" msg
   | Aliasing_impl.UnsupportedFeature msg ->
       eprintf "Compilation error: %s\n" msg
-  | Assert_failure (_, _, _) ->
-      eprintf "Impossible error, please make a bug report.\n"
+  | Assert_failure (src, _, _) ->
+      eprintf
+        "Impossible error coming from %s. Please, make a bug report.\n"
+        src
