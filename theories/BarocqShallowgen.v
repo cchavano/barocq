@@ -186,8 +186,8 @@ Module Normalization.
   Close Scope state_err_monad_scope.
 
   Definition normalize_expr (e: Barocq.expr) : res BNF.expr :=
-    (* let e' := split_deep_access e in *)
-    let* ne := normalize_expr_rec e 0 in
+    let e' := split_deep_access e in
+    let* ne := normalize_expr_rec e' 0 in
     eret (fst ne).
 
   Definition normalize_params (params: list (ident * ctyp)) : list (ident * ctyp) :=
