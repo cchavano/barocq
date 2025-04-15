@@ -19,8 +19,8 @@ Inductive expr : Type :=
   | EArraySet (a i e: expr) : expr                          (* a[i] <- e *)
   | EStructProj (st: expr) (x: ident) : expr                (* st.x *)
   | EStructUpdate (st: expr) (x: ident) (e: expr) : expr    (* st.x <- e *)
-  | EDeepAccess (e: expr) (acs: list access) : expr             (* eX1X2....XN where Xi = .fi or [ei] *)     
-  | EApp (e: expr) (args: list expr) : expr                 (* e (args) *)
+  | EDeepAccess (e: expr) (acs: list access) : expr         (* e\X1X2....Xn\ where Xi = .fi or [ei] *)     
+  | EApp (e: expr) (args: list expr) : expr                 (* e(args) *)
   | EIfThenElse (e1 e2 e3: expr) : expr                     (* if e1 then e2 else e3 *)
   | ELetIn (x: ident) (e1 e2: expr) : expr                  (* let x = e1 in e2 *)
 

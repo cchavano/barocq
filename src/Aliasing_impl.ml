@@ -355,7 +355,8 @@ let exec_set_array_set (x : ident) (a : atom) (i : atom) (v : atom)
         | None, Some _ -> None
         | None, None -> None
       in
-      (* We check that all locations pointed by y (i.e. ly) are locked with the same array index i. *)
+      (* We check that all locations pointed by y (i.e. ly) are locked with the same array index i,
+         or that they are all free. *)
       let all_locked_same_index =
         IdentSet.for_all
           (fun li ->
@@ -364,7 +365,12 @@ let exec_set_array_set (x : ident) (a : atom) (i : atom) (v : atom)
             | None -> false)
           ly
       in
-      if all_locked_same_index then
+      let all_free =
+        IdentSet.for_all
+          (fun li -> IdentMap.find_opt li st.st_arr_locked = None)
+          ly
+      in
+      if all_locked_same_index || all_free then
         let st' =
           match v with
           | AVar (v, ty) ->
