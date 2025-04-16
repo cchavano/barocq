@@ -123,7 +123,7 @@
             "patterns": [
                 {
                     "comment": "function call",
-                    "match": "(\\w+)\\s*\\(^[\\*]",
+                    "match": "(\\w+)\\s*\\([^\\*]",
                     "captures": {
                         "1": { "name": "entity.name.function.barocq" }
                     }
