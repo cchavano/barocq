@@ -56,10 +56,10 @@ let token_to_string (tok : Bparser.token) : string =
   | IF -> "IF"
   | THEN -> "THEN"
   | ELSE -> "ELSE"
-  | LIT_INT32 i -> sprintf "LIT_INT32 %ld" i
-  | LIT_UINT32 i -> sprintf "LIT_UINT32 %lu" i
-  | LIT_INT64 i -> sprintf "LIT_INT64 %Ld" i
-  | LIT_UINT64 i -> sprintf "LIT_UINT64 %Lu" i
+  | LIT_INT32 (i, Types.Signed) -> sprintf "LIT_INT32 %ld" i
+  | LIT_INT32 (i, Types.Unsigned) -> sprintf "LIT_INT32 %lu" i
+  | LIT_INT64 (i, Types.Signed) -> sprintf "LIT_INT64 %Ld" i
+  | LIT_INT64 (i, Types.Unsigned) -> sprintf "LIT_INT64 %Lu" i
   | IDENT id -> sprintf "IDENT %s" id
   | EOF -> "EOF"
 

@@ -4,6 +4,8 @@
   open Barocq
   open Camlcoq
   open Ctypesdefs
+
+  type prefix_op = Plus | Minus
 %}
 
 %token DOT COMMA SEMICOLON COLON
@@ -23,8 +25,8 @@
 %token TYP_BOOL TYP_INT32 TYP_UINT32 TYP_INT64 TYP_UINT64 TYP_ARRAY
 %token STRUCT DEF LET IN
 %token IF THEN ELSE
-%token <int32> LIT_INT32 LIT_UINT32
-%token <int64> LIT_INT64 LIT_UINT64
+%token <int32 * Types.signedness> LIT_INT32
+%token <int64 * Types.signedness> LIT_INT64
 %token <string> IDENT
 %token EOF
 
@@ -68,10 +70,8 @@ param:
 expr:
   | TRUE { ETrue }
   | FALSE { EFalse }
-  | i = LIT_INT32 { EInt32 (coqint_of_camlint i, Signed) }
-  | i = LIT_UINT32 { EInt32 (coqint_of_camlint i, Unsigned) }
-  | i = LIT_INT64 { EInt64 (coqint_of_camlint64 i, Signed) }
-  | i = LIT_UINT64 { EInt64 (coqint_of_camlint64 i, Unsigned) }
+  | i = LIT_INT32 { EInt32 (coqint_of_camlint (fst i), (snd i)) }
+  | i = LIT_INT64 { EInt64 (coqint_of_camlint64 (fst i), (snd i)) }
   | v = ident { EVar v }
   | e1 = expr LBRACKET e2 = expr RBRACKET { EArrayGet (e1, e2) }
   | e1 = expr LBRACKET e2 = expr RBRACKET ARROW_INV e3 = expr { EArraySet (e1, e2, e3) }
@@ -93,13 +93,25 @@ access:
 literal:
   | TRUE { LTrue }
   | FALSE { LFalse }
-  | i = LIT_INT32 { LInt32 (coqint_of_camlint i, Signed) }
-  | i = LIT_UINT32 { LInt32 (coqint_of_camlint i, Unsigned) }
-  | i = LIT_INT64 { LInt64 (coqint_of_camlint64 i, Signed) }
-  | i = LIT_UINT64 { LInt64 (coqint_of_camlint64 i, Unsigned) }
+  | p = prefix_op? i = LIT_INT32
+    {
+      let n = coqint_of_camlint (fst i) in
+      let n = match p with Some Minus -> Camlcoq.Z.neg n | _ -> n in
+      LInt32 (n, snd i)
+    }
+  | p = prefix_op? i = LIT_INT64
+    {
+      let n = coqint_of_camlint64 (fst i) in
+      let n = match p with Some Minus -> Camlcoq.Z.neg n | _ -> n in
+      LInt64 (n, snd i)
+    }
   | a = delimited(LBRACKETBAR, separated_list(SEMICOLON, literal), RBRACKETBAR) { LArray a }
   | st = delimited(LBRACE, separated_nonempty_list(SEMICOLON, literal_field), RBRACE)
     HASHTAG ty = ident { LStruct (st, ty) }
+
+prefix_op:
+  | OP_PLUS { Plus }
+  | OP_MINUS { Minus }
 
 literal_field:
   | key = ident BIND l = literal { (key, l) }

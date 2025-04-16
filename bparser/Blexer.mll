@@ -8,33 +8,33 @@
 
   let keywords = Hashtbl.create 15
 
-  let parse_int_lit (li: string) : token =
-      let n = String.length li in
+  let parse_int_lit (il: string) : token =
+      let n = String.length il in
       (* ===== u64 ===== *)
-      if String.ends_with ~suffix:"UL" li then
-        let li = "0u" ^ String.sub li 0 (n - 2) in
+      if String.ends_with ~suffix:"UL" il then
+        let il = "0u" ^ String.sub il 0 (n - 2) in
         try
-          LIT_UINT64 (Int64.of_string li)
+          LIT_INT64 (Int64.of_string il, Types.Unsigned)
         with Failure _ ->
           error "unsigned 64-bit integer overflow."
       (* ===== i64 ===== *)
-      else if String.ends_with ~suffix:"L" li then
-        let li = String.sub li 0 (n - 1) in
+      else if String.ends_with ~suffix:"L" il then
+        let il = String.sub il 0 (n - 1) in
         try
-          LIT_INT64 (Int64.of_string li)
+          LIT_INT64 ((Int64.of_string il), Types.Signed)
         with Failure _ ->
           error "64-bit integer overflow."
       (* ===== u32 ===== *)
-      else if String.ends_with ~suffix:"U"li  then
-        let li = "0u" ^ String.sub li 0 (n - 1) in
+      else if String.ends_with ~suffix:"U" il then
+        let il = "0u" ^ String.sub il 0 (n - 1) in
         try
-          LIT_UINT32 (Int32.of_string li)
+          LIT_INT32 ((Int32.of_string il), Types.Unsigned)
         with Failure _ ->
           error "unsigned 32-bit integer overflow"
       (* ===== i32 ===== *)
       else
         try
-          LIT_INT32 (Int32.of_string li)
+          LIT_INT32 ((Int32.of_string il), Types.Signed)
         with Failure _ ->
           error "32-bit integer overflow"
 
@@ -54,7 +54,7 @@ let digit = ['0'-'9']
 let letter = ['a'-'z''A'-'Z']
 let space = [' ''\t''\r']
 
-let lit_int = digit+ ['U']? ['L']?
+let int_lit = digit+ ['U']? ['L']?
 let ident_char = (letter | digit | '_' | '\'')
 let ident = letter ident_char* | '_' ident_char+
 
@@ -100,8 +100,8 @@ rule read_token = parse
   | ">"           { OP_GT }
   | "!"           { OP_NOTBOOL }
   | "="           { BIND }
-  | lit_int as li { parse_int_lit li }
-  | ident as id 
+  | int_lit as il { parse_int_lit il }
+  | ident as id
     {
       try (Hashtbl.find keywords id) with 
       Not_found -> IDENT id
