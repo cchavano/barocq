@@ -8,6 +8,8 @@
 
   let keywords = Hashtbl.create 15
 
+  let comment_lvl = ref (-1)
+
   let parse_int_lit (il: string) : token =
       let n = String.length il in
       (* ===== u64 ===== *)
@@ -61,7 +63,8 @@ let ident = letter ident_char* | '_' ident_char+
 rule read_token = parse
   | "\n"          { new_line lexbuf; read_token lexbuf }
   | space+        { read_token lexbuf }
-  | "(*"          { read_comment lexbuf }
+  | "(*"          { incr comment_lvl; read_comment lexbuf }
+  | "*)"          { error "comment end before comment begin" }
   | "."           { DOT }
   | ","           { COMMA }
   | ";"           { SEMICOLON }
@@ -110,7 +113,15 @@ rule read_token = parse
   | _             { error "illegal character" }
 
 and read_comment = parse
-  | "*)"  { read_token lexbuf }
+  | "(*"  { incr comment_lvl; read_comment lexbuf }
+  | "*)"
+    {
+      decr comment_lvl;
+      if !comment_lvl >= 0 then
+        read_comment lexbuf
+      else
+        read_token lexbuf
+    }
   | '\n'  { new_line lexbuf; read_comment lexbuf }
   | eof   { error "unterminated comment" }
   | _     { read_comment lexbuf }
