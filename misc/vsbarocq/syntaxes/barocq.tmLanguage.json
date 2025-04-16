@@ -123,7 +123,7 @@
             "patterns": [
                 {
                     "comment": "function call",
-                    "match": "(\\w+)\\s*\\(",
+                    "match": "(\\w+)\\s*\\(^[\\*]",
                     "captures": {
                         "1": { "name": "entity.name.function.barocq" }
                     }
@@ -146,7 +146,10 @@
                     "comment": "block comment",
                     "begin": "\\(\\*",
                     "end": "\\*\\)",
-                    "name": "comment.block.barocq"
+                    "name": "comment.block.barocq",
+                    "patterns": [
+                        { "include": "#comments" }
+                    ]
                 }
             ]
         }
