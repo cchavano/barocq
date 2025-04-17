@@ -172,19 +172,19 @@ Definition typecheck_struct_update (ts: types) (ty1 ty2: ctyp) (x: ident) : res 
   end.
 
   Inductive access_ctyp : Type :=
-    | ActypStructField : ident -> access_ctyp
-    | ActypArrayIndex : ctyp -> access_ctyp.
+    | ActypAcStructField : ident -> access_ctyp
+    | ActypAcArrayIndex : ctyp -> access_ctyp.
 
   Fixpoint typecheck_access (ts: types) (gx: gcontext) (lx: lcontext) (ty: ctyp) (acs: list access_ctyp) : res (ctyp * list ctyp) := 
     match acs with
     | nil => ret (ty, nil)
     | ac :: acs' =>
         match ac with
-        | ActypStructField f =>
+        | ActypAcStructField f =>
             let* ty' := typecheck_struct_proj ts ty f in
             let* (r, lr) := typecheck_access ts gx lx ty' acs' in
             ret (r, ty' :: lr)
-        | ActypArrayIndex ta =>
+        | ActypAcArrayIndex ta =>
             let* ty' := typecheck_array_get ty ta in
             let* (r, lr) := typecheck_access ts gx lx ty' acs' in
             ret (r, ty' :: lr)

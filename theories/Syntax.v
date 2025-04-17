@@ -57,8 +57,8 @@ Inductive atom : Type :=
 (** DeepAccessl list with atomics array indexes. *)
 
 Inductive access : Type :=
-  | StructField : ident -> access
-  | ArrayIndex : atom -> access.
+  | AcStructField : ident -> access
+  | AcArrayIndex : atom -> access.
 
 (** * Computations with atomic operands *)
 
@@ -93,8 +93,8 @@ Module Typed.
     | ABinaryOp : binary_op -> atom -> atom -> ctyp -> atom.
 
   Inductive access : Type :=
-    | StructField : ident -> ctyp -> access
-    | ArrayIndex : atom -> ctyp -> access.
+    | AcStructField : ident -> ctyp -> access
+    | AcArrayIndex : atom -> ctyp -> access.
 
   Inductive comp : Type := 
     | CpAtom : atom -> ctyp -> comp

@@ -4,65 +4,110 @@ From BarocqComp Require Import Error Monads Common Syntax Types Barocq BarocqBNF
 Import ListNotations.
 Import MonCounterErr.
 
-Fixpoint split_deep_access_rec (e: BarocqTyped.expr) (acs: list BarocqTyped.access) : BarocqTyped.expr :=
+(** Creation of deep accesses. *)
+
+(* The parser does not create deep access expressions. Each deep access
+   eX1X2...Xn is parsed as being (...((eX1)X2)...)Xn, i.e. a sequence of
+   EArrayGet and EStructProj, and not as EDeepAccess.
+   We first create deep access expressions for all deep accesses to a primitive value. *)
+
+Fixpoint access_list_typ (acs: list BarocqTyped.access) : ctyp :=
   match acs with
-  | nil => e
-  | ac :: acs' =>
+  | nil => CBool (* arbitrary type here *)
+  | ac :: nil =>
       match ac with
-      | BarocqTyped.StructField f ty =>
-          BarocqTyped.EStructProj (split_deep_access_rec e acs') f ty
-      | BarocqTyped.ArrayIndex e1 ty =>
-          BarocqTyped.EArrayGet (split_deep_access_rec e acs') e1 ty
+      | BarocqTyped.AcStructField _ ty => ty
+      | BarocqTyped.AcArrayIndex _ ty => ty
       end
+  | _ :: acs' => access_list_typ acs'
   end.
 
-Fixpoint split_deep_access (e: BarocqTyped.expr) : BarocqTyped.expr :=
-  match e with
-  | BarocqTyped.EDeepAccess e1 acs ty =>
-      match ty with
-      | CBool | CInt32 _ | CInt64 _ => e
-      | _ =>
-        let e1' := split_deep_access e1 in
-        split_deep_access_rec e1' (List.rev' acs)
-      end
-  | BarocqTyped.EUnaryOp op e1 ty =>
-      BarocqTyped.EUnaryOp op (split_deep_access e1) ty
-  | BarocqTyped.EBinaryOp op e1 e2 ty =>
-      let e1' := split_deep_access e1 in
-      let e2' := split_deep_access e2 in
-      BarocqTyped.EBinaryOp op e1' e2' ty
-  | BarocqTyped.EArrayGet e1 e2 ty =>
-      let e1' := split_deep_access e1 in
-      let e2' := split_deep_access e2 in
-      BarocqTyped.EArrayGet e1' e2' ty
-  | BarocqTyped.EArraySet e1 e2 e3 ty =>
-      let e1' := split_deep_access e1 in
-      let e2' := split_deep_access e2 in
-      let e3' := split_deep_access e3 in
-      BarocqTyped.EArraySet e1' e2' e3' ty
-  | BarocqTyped.EStructProj e1 f ty =>
-      let e1' := split_deep_access e1 in
-      BarocqTyped.EStructProj e1' f ty
-  | BarocqTyped.EStructUpdate e1 f e2 ty =>
-      let e1' := split_deep_access e1 in
-      let e2' := split_deep_access e2 in
-      BarocqTyped.EStructUpdate e1' f e2' ty
-  | BarocqTyped.EApp e1 args ty =>
-      let e1' := split_deep_access e1 in
-      let args' := List.map split_deep_access args in
-      BarocqTyped.EApp e1' args' ty
-  | BarocqTyped.EIfThenElse e1 e2 e3 ty =>
-      let e1' := split_deep_access e1 in
-      let e2' := split_deep_access e2 in
-      let e3' := split_deep_access e3 in
-      BarocqTyped.EIfThenElse e1' e2' e3' ty
-  | BarocqTyped.ELetIn x e1 e2 ty =>
-      let e1' := split_deep_access e1 in
-      let e2' := split_deep_access e2 in
-      BarocqTyped.ELetIn x e1' e2' ty
-  | _ => e
+Definition create_deep_access_aux
+  (cda: BarocqTyped.expr -> list Barocq.access -> Barocq.expr * (list Barocq.access))
+  (e: BarocqTyped.expr) : Barocq.expr :=
+  match cda e nil with
+  | (e', nil) => e'
+  | (e', _ as acs) =>
+      Barocq.EDeepAccess e' acs
   end.
-  
+
+Fixpoint create_deep_access_rec (e: BarocqTyped.expr) (acs: list Barocq.access) : Barocq.expr * (list Barocq.access) :=
+  match e with
+  | BarocqTyped.ETrue _ => (Barocq.ETrue, acs)
+  | BarocqTyped.EFalse _ => (Barocq.EFalse, acs)
+  | BarocqTyped.EInt32 i (CInt32 s) => (Barocq.EInt32 i s, acs)
+  | BarocqTyped.EInt64 i (CInt64 s) => (Barocq.EInt64 i s, acs)
+  | BarocqTyped.EVar x _ => (Barocq.EVar x, acs)
+  | BarocqTyped.EArrayGet e1 e2 ty =>
+      let e2' := create_deep_access_aux create_deep_access_rec e2 in
+      if orb (ctyp_is_prim ty) (negb (list_is_empty acs)) then
+        create_deep_access_rec e1 (AcArrayIndex e2' :: acs)
+      else
+        let e1' := create_deep_access_aux create_deep_access_rec e1 in
+        (Barocq.EArrayGet e1' e2', acs)
+  | BarocqTyped.EStructProj e1 f ty =>
+      if orb (ctyp_is_prim ty) (negb (list_is_empty acs)) then
+        create_deep_access_rec e1 (AcStructField f :: acs)
+      else
+        let e1' := create_deep_access_aux create_deep_access_rec e1 in
+        (Barocq.EStructProj e1' f, acs)
+  | BarocqTyped.EUnaryOp op e1 _ =>
+      let e1' := create_deep_access_aux create_deep_access_rec e1 in
+      (Barocq.EUnaryOp op e1', acs)
+  | BarocqTyped.EBinaryOp op e1 e2 _ =>
+      let e1' := create_deep_access_aux create_deep_access_rec e1 in
+      let e2' := create_deep_access_aux create_deep_access_rec e2 in
+      (Barocq.EBinaryOp op e1' e2', acs)
+  | BarocqTyped.EArraySet e1 e2 e3 _ =>
+      let e1' := create_deep_access_aux create_deep_access_rec e1 in
+      let e2' := create_deep_access_aux create_deep_access_rec e2 in
+      let e3' := create_deep_access_aux create_deep_access_rec e3 in
+      (Barocq.EArraySet e1' e2' e3', acs)
+  | BarocqTyped.EStructUpdate e1 f e2 _ =>
+      let e1' := create_deep_access_aux create_deep_access_rec e1 in
+      let e2' := create_deep_access_aux create_deep_access_rec e2 in
+      (Barocq.EStructUpdate e1' f e2', acs)
+  | BarocqTyped.EDeepAccess e1 acs1 ty =>
+      (* Should be dead code. *)
+      let e1' := create_deep_access_aux create_deep_access_rec e1 in
+      let acs1' :=
+        List.map
+          (fun ac =>
+            match ac with
+            | BarocqTyped.AcStructField f _ => AcStructField f
+            | BarocqTyped.AcArrayIndex ei _ =>
+                let ei' := create_deep_access_aux create_deep_access_rec ei in
+                AcArrayIndex ei'
+            end)
+          acs1
+      in
+      if orb (ctyp_is_prim ty) (negb (list_is_empty acs)) then
+        (e1', acs1' ++ acs)
+      else
+        (Barocq.EDeepAccess e1' acs1', acs)
+  | BarocqTyped.EApp e1 args _ =>
+      let e1' := create_deep_access_aux create_deep_access_rec e1 in
+      let args' := List.map (create_deep_access_aux create_deep_access_rec) args in
+      (Barocq.EApp e1' args', acs)
+  | BarocqTyped.EIfThenElse e1 e2 e3 _ =>
+      let e1' := create_deep_access_aux create_deep_access_rec e1 in
+      let e2' := create_deep_access_aux create_deep_access_rec e2 in
+      let e3' := create_deep_access_aux create_deep_access_rec e3 in
+      (Barocq.EIfThenElse e1' e2' e3', acs)
+  | BarocqTyped.ELetIn x e1 e2 _ =>
+      let e1' := create_deep_access_aux create_deep_access_rec e1 in
+      let e2' := create_deep_access_aux create_deep_access_rec e2 in
+      (Barocq.ELetIn x e1' e2', acs)
+  | _ =>
+    (* The rest are ill-typed constant integers, we return an arbitraty expression. *)
+    (ETrue, acs)
+  end.
+
+Definition create_deep_access (e: BarocqTyped.expr) : Barocq.expr :=
+  create_deep_access_aux create_deep_access_rec e.
+
+(** Normalization *)
+
 Fixpoint atom_of_expr (e: Barocq.expr) : res atom :=
   match e with
   | Barocq.ETrue => eret ATrue
@@ -140,15 +185,15 @@ Fixpoint normalize_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
     | nil => ret (EDeepAccess a (rev acs_norm))
     | ac :: acs' =>
         match ac with
-        | Barocq.StructField f =>
-            normalize_access_list_rec a acs' (Syntax.StructField f :: acs_norm)
-        | Barocq.ArrayIndex e =>
+        | Barocq.AcStructField f =>
+            normalize_access_list_rec a acs' (Syntax.AcStructField f :: acs_norm)
+        | Barocq.AcArrayIndex e =>
             match atom_of_expr e with
-            | OK ae => normalize_access_list_rec a acs' ((Syntax.ArrayIndex ae) :: acs_norm)
+            | OK ae => normalize_access_list_rec a acs' ((Syntax.AcArrayIndex ae) :: acs_norm)
             | Error _ =>
               let* xe := fresh_var in
               let* be := normalize_expr_rec e in
-              let* ber := normalize_access_list_rec a acs' ((Syntax.ArrayIndex (AVar xe)) :: acs_norm) in
+              let* ber := normalize_access_list_rec a acs' ((Syntax.AcArrayIndex (AVar xe)) :: acs_norm) in
               ret (ELetIn xe be ber)
             end
         end
@@ -210,9 +255,8 @@ Fixpoint normalize_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
 Close Scope state_err_monad_scope.
 
 Definition normalize_expr (e: BarocqTyped.expr) : res BarocqBNF.expr :=
-  let e' := split_deep_access e in
-  let eu := untype_expr e' in
-  let* ne := normalize_expr_rec eu 0 in
+  let e := create_deep_access e in
+  let* ne := normalize_expr_rec e 0 in
   eret (fst ne).
 
 Definition normalize_params (params: list (ident * ctyp)) : list (ident * ctyp) :=
@@ -256,5 +300,3 @@ Fixpoint normalize_program_rec (ts: types) (prog: BarocqTyped.program) : res Bar
 
 Definition normalize_program (prog: BarocqTyped.program) : res BarocqBNF.program :=
   normalize_program_rec tempty prog.
-
-    

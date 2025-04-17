@@ -38,6 +38,12 @@ Inductive ctyp : Type :=
   | CStruct : ident -> ctyp
   | CFun : list ctyp -> ctyp -> ctyp.
 
+Definition ctyp_is_prim (ty: ctyp) : bool :=
+  match ty with
+  | CBool | CInt32 _ | CInt64 _ => true
+  | _ => false
+  end.
+
 Definition signed_of_int_ctyp (ty: ctyp) : signedness :=
   match ty with
   | CInt32 s

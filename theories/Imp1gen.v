@@ -19,7 +19,7 @@ Fixpoint transl_atom (params: pset) (a: atom) : atom :=
 
 Definition transl_access (params: pset) (ac: access) : access :=
   match ac with
-  | ArrayIndex i => ArrayIndex (transl_atom params i)
+  | AcArrayIndex i => AcArrayIndex (transl_atom params i)
   | _ => ac
   end.
 

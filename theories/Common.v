@@ -59,6 +59,12 @@ Fixpoint fold_left_err {A B: Type} (f: A -> B -> res A) (l: list B) (a0: res A) 
       fold_left_err f l' (f a0 x)
   end.
 
+Definition list_is_empty {A: Type} (l: list A) : bool :=
+  match l with
+  | nil => true
+  | _ => false
+  end.
+
 (** * Maps *)
 
 Notation ptree := PTree.t.

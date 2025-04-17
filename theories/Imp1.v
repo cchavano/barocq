@@ -159,15 +159,15 @@ Module Typing.
     | nil => ret (ty, nil)
     | ac :: acs' =>
         match ac with
-        | Syntax.StructField f =>
+        | Syntax.AcStructField f =>
             let* ty' := typecheck_struct_proj ts ty f in
             let* (r, lr) := typecheck_access ts gx lx ty' acs' in
-            ret (r, (StructField f ty') :: lr)
-        | Syntax.ArrayIndex ai =>
+            ret (r, (AcStructField f ty') :: lr)
+        | Syntax.AcArrayIndex ai =>
             let* ai' := typecheck_atom gx lx ai in
             let* ty' := typecheck_array_get ty (typof_atom ai') in
             let* (r, lr) := typecheck_access ts gx lx ty' acs' in
-            ret (r, (ArrayIndex ai' ty') :: lr)
+            ret (r, (AcArrayIndex ai' ty') :: lr)
         end
     end.
 

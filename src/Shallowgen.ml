@@ -154,7 +154,7 @@ let rec expr_to_rocq_rec (prefix : string) (e : expr) : string =
           (expr_to_rocq_rec prefix' e3)
     | ELetIn (x, e1, e2, _) -> (
         match e1 with
-        | ELetIn _ | EIfThenElse _ ->
+        | ELetIn _ | ELetMon _ | EIfThenElse _ ->
             sprintf
               "let %s :=\n%s\n%sin\n%s"
               (ident_to_string x)
@@ -169,9 +169,9 @@ let rec expr_to_rocq_rec (prefix : string) (e : expr) : string =
               (expr_to_rocq_rec prefix e2))
     | ELetMon (x, e1, e2, _) -> (
         match e1 with
-        | ELetIn _ | EIfThenElse _ ->
+        | ELetIn _ | ELetMon _ | EIfThenElse _ ->
             sprintf
-              "let %s :=\n%s\n%sin\n%s"
+              "let* %s :=\n%s\n%sin\n%s"
               (ident_to_string x)
               (expr_to_rocq_rec prefix' e1)
               prefix

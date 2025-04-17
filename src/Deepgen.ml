@@ -117,8 +117,8 @@ let rec expr_to_deep (prefix : string) (e : expr) : string =
 
 and access_to_deep (ac : access) : string =
   match ac with
-  | StructField f -> sprintf "StructField %s" (ident_to_string f)
-  | ArrayIndex e -> sprintf "ArrayIndex (%s)" (expr_to_deep "" e)
+  | AcStructField f -> sprintf "AcStructField %s" (ident_to_string f)
+  | AcArrayIndex e -> sprintf "AcArrayIndex (%s)" (expr_to_deep "" e)
 
 let rec ctyp_to_deep (ty : ctyp) : string =
   match ty with

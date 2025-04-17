@@ -77,7 +77,6 @@ expr:
   | e1 = expr LBRACKET e2 = expr RBRACKET ARROW_INV e3 = expr { EArraySet (e1, e2, e3) }
   | e1 = expr DOT key = ident { EStructProj (e1, key) }
   | e1 = expr DOT key = ident ARROW_INV e2 = expr { EStructUpdate (e1, key, e2) }
-  | e = expr BACKSLASH acs = nonempty_list(access) BACKSLASH { EDeepAccess (e, acs) }
   | LET x = ident BIND e1 = expr IN e2 = expr { ELetIn (x, e1, e2) }
   | IF e1 = expr THEN e2 = expr ELSE e3 = expr { EIfThenElse (e1, e2, e3) }
   | op = unary_op e = expr { EUnaryOp (op, e) }
@@ -87,8 +86,8 @@ expr:
   | e = delimited(LPAREN, expr, RPAREN) { e }
 
 access:
-  | DOT f = ident { Barocq.StructField f }
-  | LBRACKET e = expr RBRACKET { Barocq.ArrayIndex e }
+  | DOT f = ident { Barocq.AcStructField f }
+  | LBRACKET e = expr RBRACKET { Barocq.AcArrayIndex e }
 
 literal:
   | TRUE { LTrue }

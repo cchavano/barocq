@@ -109,12 +109,12 @@ Fixpoint transl_deep_access (globs: pset) (a: atom) (acs: list access) : Clight.
   | nil => transl_atom globs a
   | ac :: nil =>
       match ac with
-      | StructField f ty =>
+      | AcStructField f ty =>
           let e := transl_atom globs a in
           let tderef := deref_pointer (typeof e) in
           let tfield := transl_ctyp ty in
           Efield (Ederef e tderef) f tfield
-      | ArrayIndex ai ty =>
+      | AcArrayIndex ai ty =>
           let e := transl_atom globs a in
           let ei := transl_atom globs ai in
           let tarith := typeof e in
@@ -123,12 +123,12 @@ Fixpoint transl_deep_access (globs: pset) (a: atom) (acs: list access) : Clight.
       end
   | ac :: acs' =>
       match ac with
-      | StructField f ty =>
+      | AcStructField f ty =>
         let er := transl_deep_access globs a acs' in
         let tderef := deref_pointer (typeof er) in
         let tfield := transl_ctyp ty in
         Efield (Ederef er tderef) f tfield     
-      | ArrayIndex ai ty =>
+      | AcArrayIndex ai ty =>
           let er := transl_deep_access globs a acs' in
           let ei := transl_atom globs ai in
           let tarith := typeof er in

@@ -77,8 +77,8 @@ and opt_parens (a : atom) : string =
 
 let access_to_string (ac : access) : string =
   match ac with
-  | StructField f -> sprintf ".%s" (ident_to_string f)
-  | ArrayIndex i -> sprintf "[%s]" (atom_to_string i)
+  | AcStructField f -> sprintf ".%s" (ident_to_string f)
+  | AcArrayIndex i -> sprintf "[%s]" (atom_to_string i)
 
 let access_list_to_string (acs : access list) : string =
   list_to_string "\\" "\\" "" access_to_string acs
@@ -137,8 +137,8 @@ module PrintTyped = struct
 
   let untype_access (ac : Syntax.Typed.access) : Syntax.access =
     match ac with
-    | Typed.StructField (f, _) -> StructField f
-    | Typed.ArrayIndex (a, _) -> ArrayIndex (untype_atom a)
+    | Typed.AcStructField (f, _) -> AcStructField f
+    | Typed.AcArrayIndex (a, _) -> AcArrayIndex (untype_atom a)
 
   let untype_comp (c : Typed.comp) : comp =
     match c with

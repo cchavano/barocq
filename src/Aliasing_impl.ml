@@ -419,8 +419,8 @@ let exec_set_array_set (x : ident) (a : atom) (i : atom) (v : atom)
 let rec path_of_access_list (acs : access list) : path =
   match acs with
   | [] -> []
-  | StructField (f, _) :: acs' -> f :: path_of_access_list acs'
-  | ArrayIndex (_, _) :: acs' -> _INDEX :: path_of_access_list acs'
+  | AcStructField (f, _) :: acs' -> f :: path_of_access_list acs'
+  | AcArrayIndex (_, _) :: acs' -> _INDEX :: path_of_access_list acs'
 
 let exec_set_deep_access (x : ident) (a : atom) (acs : access list) (ty : ctyp)
     (st : absstate) : absstate =

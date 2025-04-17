@@ -10,8 +10,8 @@ Import ListNotations.
 Inductive expr : Type :=
   | ETrue : expr                                            (* true constant *)
   | EFalse : expr                                           (* false constant *)
-  | EInt32 (i: int) (s: signedness) : expr                  (* 32-bit signed/unsigned integer *)
-  | EInt64 (i: int64) (s: signedness) : expr                (* 64-bit signed/unsigned integer *)    
+  | EInt32 (i: int) (s: signedness) : expr                  (* 32-bit signed or unsigned integer *)
+  | EInt64 (i: int64) (s: signedness) : expr                (* 64-bit signed orunsigned integer *)    
   | EVar (x: ident) : expr                                  (* variable *)
   | EUnaryOp (op: unary_op) (e: expr) : expr                (* op e *)
   | EBinaryOp (op: binary_op) (e1 e2 : expr) : expr         (* e1 op e2 *)
@@ -19,14 +19,14 @@ Inductive expr : Type :=
   | EArraySet (a i e: expr) : expr                          (* a[i] <- e *)
   | EStructProj (st: expr) (x: ident) : expr                (* st.x *)
   | EStructUpdate (st: expr) (x: ident) (e: expr) : expr    (* st.x <- e *)
-  | EDeepAccess (e: expr) (acs: list access) : expr         (* e\X1X2....Xn\ where Xi = .fi or [ei] *)     
+  | EDeepAccess (e: expr) (acs: list access) : expr         (* eX1X2....Xn where Xi = .fi or [ei] *)     
   | EApp (e: expr) (args: list expr) : expr                 (* e(args) *)
   | EIfThenElse (e1 e2 e3: expr) : expr                     (* if e1 then e2 else e3 *)
   | ELetIn (x: ident) (e1 e2: expr) : expr                  (* let x = e1 in e2 *)
 
 with access : Type :=
-  | StructField : ident -> access
-  | ArrayIndex : expr -> access.
+  | AcStructField : ident -> access
+  | AcArrayIndex : expr -> access.
 
 (** ** Functions *)
 
@@ -86,9 +86,12 @@ Module Typed.
     | EIfThenElse : expr -> expr -> expr -> ctyp -> expr
     | ELetIn : ident -> expr -> expr -> ctyp -> expr
 
-    with access : Type :=
-    | StructField : ident -> ctyp -> access
-    | ArrayIndex : expr -> ctyp -> access.
+  (* An access is associated with a type.
+     For every deep access e.X1X2...Xn, Xi has type ty
+     iff the expression e.X1...X(i-1)Xi has type ty. *)
+  with access : Type :=
+    | AcStructField : ident -> ctyp -> access
+    | AcArrayIndex : expr -> ctyp -> access.
 
   (** ** Functions *)
 
@@ -99,7 +102,7 @@ Module Typed.
   Inductive globdef : Type :=
     | DefStruct : ident -> list (ident * ctyp) -> globdef
     | DefConst : ident -> literal -> ctyp -> globdef
-    | DefFun : ident -> function -> globdef.    
+    | DefFun : ident -> function -> globdef.
 
   (** ** Programs *)
 
@@ -108,61 +111,6 @@ Module Typed.
 End Typed.
 
 Module BarocqTyped := Barocq.Typed.
-
-Fixpoint untype_expr (e: BarocqTyped.expr) : Barocq.expr :=
-  match e with
-  | BarocqTyped.ETrue _ => ETrue
-  | BarocqTyped.EFalse _ => EFalse
-  | BarocqTyped.EInt32 i ty => EInt32 i (signed_of_int_ctyp ty)
-  | BarocqTyped.EInt64 i ty => EInt64 i (signed_of_int_ctyp ty)
-  | BarocqTyped.EVar x _ => EVar x
-  | BarocqTyped.EUnaryOp op e1 _ =>
-      let e1' := untype_expr e1 in
-      EUnaryOp op e1'
-  | BarocqTyped.EBinaryOp op e1 e2 _ =>
-      let e1' := untype_expr e1 in
-      let e2' := untype_expr e2 in
-      EBinaryOp op e1' e2'
-  | BarocqTyped.EArrayGet e1 e2 _ =>
-      let e1' := untype_expr e1 in
-      let e2' := untype_expr e2 in
-      EArrayGet e1' e2'
-  | BarocqTyped.EArraySet e1 e2 e3 _ =>
-      let e1' := untype_expr e1 in
-      let e2' := untype_expr e2 in
-      let e3' := untype_expr e3 in
-      EArraySet e1' e2' e3'
-  | BarocqTyped.EStructProj e1 f _ =>
-      let e1' := untype_expr e1 in
-      EStructProj e1' f
-  | BarocqTyped.EStructUpdate e1 f e2 _ =>
-      let e1' := untype_expr e1 in
-      let e2' := untype_expr e2 in
-      EStructUpdate e1' f e2'
-  | BarocqTyped.EDeepAccess e1 acs _ =>
-      let e1' := untype_expr e1 in
-      let acs' := List.map untype_access acs in
-      EDeepAccess e1' acs'
-  | BarocqTyped.EApp e1 args _ =>
-      let e1' := untype_expr e1 in
-      let args' := List.map untype_expr args in
-      EApp e1' args'
-  | BarocqTyped.EIfThenElse e1 e2 e3 _ =>
-      let e1' := untype_expr e1 in
-      let e2' := untype_expr e2 in
-      let e3' := untype_expr e3 in
-      EIfThenElse e1' e2' e3'
-  | BarocqTyped.ELetIn x e1 e2 _ =>
-      let e1' := untype_expr e1 in
-      let e2' := untype_expr e2 in
-      ELetIn x e1' e2'
-  end
-
-with untype_access (ac: BarocqTyped.access) : access :=
-  match ac with
-  | BarocqTyped.StructField f _ => StructField f
-  | BarocqTyped.ArrayIndex e _ => ArrayIndex (untype_expr e)
-  end.
 
 Module Typing.
 
@@ -187,21 +135,21 @@ Module Typing.
     | ELetIn _ _ _ ty => ty
     end.
 
-  Fixpoint typecheck_access (typecheck_expr : types -> gcontext -> lcontext -> Barocq.expr -> res BarocqTyped.expr)
+  Fixpoint typecheck_deep_access (typecheck_expr : types -> gcontext -> lcontext -> Barocq.expr -> res BarocqTyped.expr)
     (ts: types) (gx: gcontext) (lx: lcontext) (ty: ctyp) (acs: list Barocq.access) : res (ctyp * list Barocq.Typed.access) :=
     match acs with
     | nil => ret (ty, nil)
     | ac :: acs' =>
         match ac with
-        | Barocq.StructField f =>
+        | Barocq.AcStructField f =>
             let* ty' := typecheck_struct_proj ts ty f in
-            let* (r, lr) := typecheck_access typecheck_expr ts gx lx ty' acs' in
-            ret (r, (StructField f ty') :: lr)
-        | Barocq.ArrayIndex ei =>
+            let* (r, lr) := typecheck_deep_access typecheck_expr ts gx lx ty' acs' in
+            ret (r, (AcStructField f ty') :: lr)
+        | Barocq.AcArrayIndex ei =>
             let* ei' := typecheck_expr ts gx lx ei in
             let* ty' := typecheck_array_get ty (typof_expr ei') in
-            let* (r, lr) := typecheck_access typecheck_expr ts gx lx ty' acs' in
-            ret (r, (ArrayIndex ei' ty') :: lr)
+            let* (r, lr) := typecheck_deep_access typecheck_expr ts gx lx ty' acs' in
+            ret (r, (AcArrayIndex ei' ty') :: lr)
         end
     end.
 
@@ -245,7 +193,7 @@ Module Typing.
         ret (EStructUpdate e1' x e2' t)
     | Barocq.EDeepAccess e1 acs =>
         let* e1' := typecheck_expr ts gx lx e1 in
-        let* (t, acs') := typecheck_access typecheck_expr ts gx lx (typof_expr e1') acs in
+        let* (t, acs') := typecheck_deep_access typecheck_expr ts gx lx (typof_expr e1') acs in
         ret (EDeepAccess e1' acs' t)
     | Barocq.EApp e1 args =>
         let* e1' := typecheck_expr ts gx lx e1 in
@@ -769,8 +717,8 @@ Section DENOT.
 
   with eval_access_expr (te: tenv) (ge: genv) (le: lenv) (ac: access) : res access_value :=
     match ac with
-    | StructField f => ret (AcvalStructField f)
-    | ArrayIndex e =>
+    | AcStructField f => ret (AcvalStructField f)
+    | AcArrayIndex e =>
         let* v := eval_expr te ge le e in
         ret (AcvalArrayIndex v)
     end.
