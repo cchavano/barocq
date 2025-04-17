@@ -16,7 +16,6 @@ let token_to_string (tok : Bparser.token) : string =
   | LBRACKETBAR -> "LBRACKETBAR"
   | RBRACKETBAR -> "RBRACKETBAR"
   | HASHTAG -> "HASHTAG"
-  | BACKSLASH -> "BACKSLASH"
   | ARROW -> "ARROW"
   | ARROW_INV -> "ARROW_INV"
   | BIND -> "BIND"
@@ -63,10 +62,12 @@ let token_to_string (tok : Bparser.token) : string =
   | IDENT id -> sprintf "IDENT %s" id
   | EOF -> "EOF"
 
-let rec print (lexbuf : Lexing.lexbuf) : unit =
-  let token = Blexer.read_token lexbuf in
-  match token with
-  | EOF -> fprintf stdout "EOF\n"
-  | _ ->
-      fprintf stdout "%s\n" (token_to_string token);
-      print lexbuf
+let print (lexbuf : Lexing.lexbuf) : unit =
+  let rec collect lexbuf =
+    match Blexer.read_token lexbuf with
+    | EOF -> [EOF]
+    | _ as tok -> tok :: collect lexbuf
+  in
+  let token_list = collect lexbuf in
+  PrintCommon.print_list stdout "" "" "\n" token_to_string token_list;
+  printf "\n"

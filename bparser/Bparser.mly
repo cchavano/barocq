@@ -13,7 +13,7 @@
 %token LBRACKET RBRACKET
 %token LBRACKETBAR RBRACKETBAR
 %token LBRACE RBRACE
-%token HASHTAG BACKSLASH
+%token HASHTAG
 %token ARROW
 %token ARROW_INV BIND
 %token OP_PLUS OP_MINUS OP_MUL OP_DIV OP_MOD
@@ -41,7 +41,6 @@
 %nonassoc LPAREN LBRACKET
 %nonassoc DOT
 %nonassoc ARROW
-%nonassoc BACKSLASH
 %nonassoc TYP_ARRAY
 
 %start xprogram
