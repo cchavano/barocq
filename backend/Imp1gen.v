@@ -1,5 +1,5 @@
 From Coq Require Import Bool List String.
-From BarocqComp Require Import Error Common Monads Syntax ImpABNF Imp1.
+From BarocqComp Require Import Error Utils Monads Syntax ImpABNF Imp1.
 Import MonCounter.
 
 Definition transl_param (x: ident) : ident :=
@@ -72,7 +72,7 @@ Fixpoint transl_statement (params: pset) (s: ImpABNF.statement) : Imp1.statement
 
 Local Open Scope state_monad_scope.
 
-Definition fresh_var : cmon ident := Common.fresh_var "i".
+Definition fresh_var : cmon ident := Utils.fresh_var "i".
 
 Fixpoint transl_tailcomp_rec (params: pset) (t: ImpABNF.tailcomp) : cmon (Imp1.statement * pset) :=
   match t with

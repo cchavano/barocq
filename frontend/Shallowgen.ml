@@ -289,7 +289,7 @@ let gen_field_setter (id : ident) ((fname, ftyp) : ident * mtyp) (args : string)
 
 let gen_field_setter_arg (id : ident) (x : ident) ((fname, ftyp) : ident * mtyp)
     : string =
-  if Common.ident_eq_dec x fname then "v"
+  if Utils.ident_eq_dec x fname then "v"
   else sprintf "(%s s)" (ident_to_string fname)
 
 let gen_field_setter_args (id : ident) (fields : (ident * mtyp) list)

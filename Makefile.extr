@@ -51,7 +51,7 @@ CDIRS=\
 	lib common $(ARCH) backend cfrontend\
 	driver cparser export debug
 
-BDIRS=extraction $(BDIRS_SOURCE)
+BDIRS=extraction $(MLDIRS)
 
 DIRS=$(addprefix $(BUILD_DIR)/, $(BDIRS)) $(addprefix $(COMPCERT_DIR)/, $(CDIRS))
 
@@ -108,7 +108,7 @@ LIBS_BYTE=$(patsubst %.cmxa,%.cma,$(patsubst %.cmx,%.cmo,$(LIBS)))
 # GENERATED=$(PARSERS:.mly=.mli) $(PARSERS:.mly=.ml) $(LEXERS:.mll=.ml) cparser/pre_parser_messages.ml
 GENERATED=$(PARSERS:.mly=.mli) $(PARSERS:.mly=.ml) $(LEXERS:.mll=.ml)
 
-MLSOURCE=$(addprefix $(BUILD_DIR)/,$(foreach dir,$(BDIRS_SOURCE),$(wildcard $(dir)/*.ml $(dir)/*.mli)))
+MLSOURCE=$(addprefix $(BUILD_DIR)/,$(foreach dir,$(MLDIRS),$(wildcard $(dir)/*.ml $(dir)/*.mli)))
 
 MLFILES=$(GENERATED) $(MLSOURCE)
 
@@ -148,7 +148,7 @@ ifeq ($(wildcard .depend.extr),.depend.extr)
 # 	@echo "Linking $@"
 # 	@$(OCAMLC) -o $@ $(LIBS_BYTE) $+
 
-BAROCQ_OBJS=$(shell $(MODORDER) $(BUILD_DIR)/src/Bcomp.cmx)
+BAROCQ_OBJS=$(shell $(MODORDER) $(BUILD_DIR)/bcomp/Bcomp.cmx)
 
 barocq: $(BAROCQ_OBJS)
 	@echo "LINK $@"
@@ -160,40 +160,29 @@ endif
 
 # Copy ml source files to the build directory
 
-$(BUILD_DIR)/src:
-	@mkdir -p $(BUILD_DIR)/src
-
 $(BUILD_DIR)/bparser:
 	@mkdir -p $(BUILD_DIR)/bparser
 
 $(BUILD_DIR)/printer:
 	@mkdir -p $(BUILD_DIR)/printer
 
-builddir: $(addprefix $(BUILD_DIR)/,$(BDIRS_SOURCE))
+builddir: $(addprefix $(BUILD_DIR)/,$(MLDIRS))
 
-$(BUILD_DIR)/src/%.ml: src/%.ml | builddir
+$(BUILD_DIR)/%.ml: %.ml | builddir
 	@echo COPY $< to $@
-	@cp $< $(BUILD_DIR)/src
+	@cp $< $@
 
-$(BUILD_DIR)/src/%.mli: src/%.mli | builddir
+$(BUILD_DIR)/%.mli: %.mli | builddir
 	@echo COPY $< to $@
-	@cp $< $(BUILD_DIR)/src
+	@cp $< $@
 
 $(BUILD_DIR)/bparser/Bparser.mly: bparser/Bparser.mly | builddir
 	@echo COPY $< to $@
-	@cp $< $(BUILD_DIR)/bparser
+	@cp $< $@
 
 $(BUILD_DIR)/bparser/Blexer.mll: bparser/Blexer.mll | builddir
 	@echo COPY $< to $@
-	@cp $< $(BUILD_DIR)/bparser
-
-$(BUILD_DIR)/printer/%.ml: printer/%.ml | builddir
-	@echo COPY $< to $@
-	@cp $< $(BUILD_DIR)/printer
-
-$(BUILD_DIR)/printer/%.mli: printer/%.mli | builddir
-	@echo COPY $< to $@
-	@cp $< $(BUILD_DIR)/printer
+	@cp $< $@
 
 # End of part that assumes .depend.extr already exists
 

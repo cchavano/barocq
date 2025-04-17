@@ -1,6 +1,6 @@
 From Coq Require Import List String.
 From compcert Require Import Maps.
-From BarocqComp Require Import Monads MapList Common Array Syntax Types Typing Imp1.
+From BarocqComp Require Import Monads MapList Utils Array Syntax Types Typing Imp1.
 Import ListNotations.
 Import Syntax.Typed.
 Import Imp1Typed.
@@ -72,7 +72,7 @@ Section LITTRANSL.
 
 End LITTRANSL.
 
-Definition fresh_var : cmon ident := Common.fresh_var "g".
+Definition fresh_var : cmon ident := Utils.fresh_var "g".
 
 Fixpoint transl_literal_rec (l: Imp1Typed.literal) (defs: list (ident * Imp2.literal)) : cmon (Imp2.literal_base * list (ident * Imp2.literal)) :=
   match l with

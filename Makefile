@@ -1,18 +1,33 @@
 -include Makefile.config
 
-THEORY=\
-	Monads.v Error.v MapList.v Common.v Array.v Struct.v Types.v Syntax.v Typing.v \
-	Barocq.v BarocqBNF.v BarocqBNFgen.v ImpBNF.v ImpBNFgen.v \
-	ImpABNF.v ImpABNFgen.v Imp1.v Imp1gen.v Imp2.v Imp2gen.v Clightgen.v Compiler.v \
-	BarocqShallow.v BarocqShallowgen.v
+COMMON=\
+	Monads.v Error.v Utils.v Array.v Struct.v MapList.v\
+	Types.v Syntax.v Typing.v
 
-VSOURCE=$(addprefix theories/,$(THEORY))
+FRONTEND=\
+	Barocq.v BarocqBNF.v BarocqBNFgen.v BarocqShallow.v BarocqShallowgen.v
 
-VBUILD=$(addprefix $(BUILD_DIR)/theories/,$(THEORY))
+BACKEND=\
+	ImpBNF.v ImpBNFgen.v ImpABNF.v ImpABNFgen.v\
+	Imp1.v Imp1gen.v Imp2.v Imp2gen.v Clightgen.v
 
-EXTRDEP=$(BUILD_DIR)/theories/extractionMachdep.v
+BCOMP=Compiler.v
 
-COQINCLUDES=-R $(BUILD_DIR)/theories BarocqComp
+VDIRS=common frontend backend bcomp
+
+VSOURCE=\
+	$(addprefix common/,$(COMMON)) $(addprefix frontend/,$(FRONTEND))\
+	$(addprefix backend/,$(BACKEND)) $(addprefix bcomp/,$(BCOMP))
+
+VBUILD=$(addprefix $(BUILD_DIR)/, $(VSOURCE))
+
+EXTRDEP=$(BUILD_DIR)/bcomp/extractionMachdep.v
+
+COQINCLUDES=\
+	-R $(BUILD_DIR)/common BarocqComp.common\
+	-R $(BUILD_DIR)/frontend BarocqComp.frontend\
+	-R $(BUILD_DIR)/backend BarocqComp.backend\
+	-R $(BUILD_DIR)/bcomp BarocqComp.bcomp
 COQC=coqc $(COQINCLUDES)
 COQEXEC=coqtop $(COQINCLUDES) -batch -load-vernac-source
 COQDEP=coqdep $(COQINCLUDES)
@@ -22,10 +37,13 @@ all:
 	@test -f .depend || $(MAKE) depend
 	$(MAKE) barocq
 
-$(BUILD_DIR)/theories:
-	@mkdir -p _build/theories
+$(addprefix $(BUILD_DIR)/, VDIRS):
+	@mkdir -p $(BUILD_DIR)/common
+	@mkdir -p $(BUILD_DIR)/frontend
+	@mkdir -p $(BUILD_DIR)/backend
+	@mkdir -p $(BUILD_DIR)/bcomp
 
-builddir: $(BUILD_DIR)/theories
+builddir: $(addprefix $(BUILD_DIR)/, VDIRS)
 
 # Retrieve file from CompCert build folder
 
@@ -35,16 +53,16 @@ compcert.ini :
 
 $(EXTRDEP): | builddir
 	@echo RETRIEVE extractionMachdep.v
-	@cp $(COMPCERT_DIR)/$(ARCH)/extractionMachdep.v $(BUILD_DIR)/theories
+	@cp $(COMPCERT_DIR)/$(ARCH)/extractionMachdep.v $(BUILD_DIR)/bcomp
 	@sed -i 's\Require\From compcert Require\g' $(EXTRDEP)
 
 extrdep: $(EXTRDEP)
 
 # Copy Coq source files to the build directory
 
-$(BUILD_DIR)/theories/%.v: theories/%.v | builddir
+$(BUILD_DIR)/%.v: %.v | builddir
 	@echo COPY $< to $@
-	@cp $< $(BUILD_DIR)/theories
+	@cp $< $@
 
 vbuild: $(VBUILD) extrdep
 
@@ -95,7 +113,7 @@ uninstall:
 
 # Formatting
 
-MLSOURCE=$(foreach dir,$(BDIRS_SOURCE),$(wildcard $(dir)/*.ml $(dir)/*.mli))
+MLSOURCE=$(foreach dir,$(MLDIRS),$(wildcard $(dir)/*.ml $(dir)/*.mli))
 
 format: $(MLSOURCE)
 	@echo OCAMLFORMAT $^
@@ -107,7 +125,10 @@ clean_theories:
 	rm -f $(VBUILD:.v=.vok)
 	rm -f $(VBUILD:.v=.vos)
 	rm -f $(VBUILD:.v=.glob)
-	rm -f $(addprefix $(BUILD_DIR)/theories/.,$(THEORY:.v=.aux))
+	rm -f $(BUILD_DIR)/backend/.*.aux
+	rm -f $(BUILD_DIR)/common/.*.aux
+	rm -f $(BUILD_DIR)/frontend/.*.aux
+	rm -f $(BUILD_DIR)/bcomp/.*.aux
 
 clean:
 	rm -rf $(BUILD_DIR)

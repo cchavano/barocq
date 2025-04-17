@@ -41,7 +41,7 @@ module PathTree = struct
     match ln with
     | [] -> [(x, create p)]
     | (y, ty) :: ln' ->
-        if Common.ident_eq_dec x y then (y, add ty p) :: ln'
+        if Utils.ident_eq_dec x y then (y, add ty p) :: ln'
         else (y, ty) :: add_list x p ln'
 
   (** [union t1 t2] computes the union of [t1] and [t2]. Similarly to [add], if
@@ -240,7 +240,7 @@ module AbsDom = struct
     match lip with
     | [] -> [(f, IdentSet.singleton l)]
     | (fi, ls) :: lip' ->
-        if Common.ident_eq_dec fi f then (fi, IdentSet.add l ls) :: lip'
+        if Utils.ident_eq_dec fi f then (fi, IdentSet.add l ls) :: lip'
         else (fi, ls) :: add_loc_from_id lip' f l
 
   (** [mem_reverse_single (l, f) ls] reverses the binding [(l, f)] -> [ls] into
@@ -294,7 +294,7 @@ module AbsDom = struct
       match lip with
       | [] -> []
       | (fi, ls) :: lip' ->
-          if Common.ident_eq_dec fi f then (fi, IdentSet.remove l ls) :: lip'
+          if Utils.ident_eq_dec fi f then (fi, IdentSet.remove l ls) :: lip'
           else (fi, ls) :: remove_loc_from lip' f l
     in
     let rm =

@@ -1,6 +1,6 @@
 From Coq Require Import List ZArith.
 From compcert Require Import Integers.
-From BarocqComp Require Import Error Common.
+From BarocqComp Require Import Error Utils.
 
 Import ListNotations.
 

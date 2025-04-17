@@ -1,6 +1,6 @@
 From Coq Require Import ZArith String List FMapPositive.
 From compcert Require Import AST Ctypes Clight Clightdefs Cop Maps Integers.
-From BarocqComp Require Import Error MapList Common Types Syntax.
+From BarocqComp Require Import Error MapList Utils Types Syntax.
 Import ClightNotations.
 Import Syntax.Typed.
 From BarocqComp Require Import Imp2.

@@ -1,6 +1,6 @@
 From Coq Require Import List String.
 From compcert Require Import Maps.
-From BarocqComp Require Import Monads Error MapList Types Common Syntax Barocq BarocqShallow.
+From BarocqComp Require Import Monads Error MapList Types Utils Syntax Barocq BarocqShallow.
 Import ListNotations.
 Import MonCounterErr.
 
@@ -66,7 +66,7 @@ Module Normalization.
 
   Open Scope state_err_monad_scope.
 
-  Definition fresh_var : crmon ident := Common.fresh_var_err "b".
+  Definition fresh_var : crmon ident := Utils.fresh_var_err "b".
 
   Fixpoint normalize_expr_rec (e: Barocq.expr) : crmon BNF.expr :=
     let fix normalize_exprlist_rec (e: Barocq.expr) (le: list Barocq.expr) (la: list atom) : crmon BNF.expr :=
@@ -261,7 +261,7 @@ Module Monadification.
 
   Open Scope state_err_monad_scope.
 
-  Definition fresh_var : crmon ident := Common.fresh_var_err "x".
+  Definition fresh_var : crmon ident := Utils.fresh_var_err "x".
 
   Fixpoint make_lambda_args (n: nat) : crmon (list ident) :=
     match n with

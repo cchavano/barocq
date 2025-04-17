@@ -446,7 +446,7 @@ let is_arg (v : ident) (args : atom list) : bool =
     (fun a ->
       match a with
       | Syntax.Typed.AVar (x, _) ->
-          if Common.ident_eq_dec x v then true else false
+          if Utils.ident_eq_dec x v then true else false
       | _ -> false)
     args
 
@@ -474,7 +474,7 @@ let rec is_tree_loc_aux (m : absmem) (curr : absloc) (visited : IdentSet.t) :
     let adjacents =
       IdentPairMap.fold
         (fun (l, f) locs acc ->
-          if Common.ident_eq_dec l curr then
+          if Utils.ident_eq_dec l curr then
             List.append (IdentSet.elements locs) acc
           else acc)
         m
@@ -1140,7 +1140,7 @@ let get_fun_descr (p : program) (fname : string) : fun_descr option =
     | [] -> None
     | DefFun (x, f) :: defs' ->
         let fdescr, _ = gen_fun_descr_and_ast false p.prog_types fe f in
-        if Common.ident_eq_dec x fid then Some fdescr
+        if Utils.ident_eq_dec x fid then Some fdescr
         else aux (IdentMap.add x fdescr fe) defs'
     | _ :: defs' -> aux fe defs'
   in

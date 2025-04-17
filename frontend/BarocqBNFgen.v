@@ -1,6 +1,6 @@
 From Coq Require Import PArith String List.
 From compcert Require Import Clightdefs Integers.
-From BarocqComp Require Import Error Monads Common Syntax Types Barocq BarocqBNF.
+From BarocqComp Require Import Error Monads Utils Syntax Types Barocq BarocqBNF.
 Import ListNotations.
 Import MonCounterErr.
 
@@ -159,7 +159,7 @@ Definition spread_atomlist (e: Barocq.expr) (la: list atom) : res BarocqBNF.expr
 
 Open Scope state_err_monad_scope.
 
-Definition fresh_var : crmon ident := Common.fresh_var_err "b".
+Definition fresh_var : crmon ident := Utils.fresh_var_err "b".
 
 Fixpoint normalize_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
   let fix normalize_exprlist_rec (e: Barocq.expr) (le: list Barocq.expr) (la: list atom) : crmon BarocqBNF.expr :=

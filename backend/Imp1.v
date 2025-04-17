@@ -1,6 +1,6 @@
 From Coq Require Import List String.
 From compcert Require Import Integers Maps.
-From BarocqComp Require Import Error Common Syntax Types Typing Array.
+From BarocqComp Require Import Error Utils Syntax Types Typing Array.
 
 (** * Abstract syntax *)
 

@@ -1,6 +1,6 @@
 From Coq Require Import List String ListDec PArith Bool.
 From compcert Require Import Integers.
-From BarocqComp Require Import Error MapList Common Array Struct Types Typing Syntax.
+From BarocqComp Require Import Error MapList Utils Array Struct Types Typing Syntax.
 Import ListNotations.
 
 (** * Abstract syntax *)

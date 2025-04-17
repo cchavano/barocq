@@ -1,7 +1,7 @@
 From compcert Require Import Integers.
-From BarocqComp Require Import Common Array Types.
+From BarocqComp Require Import Utils Array Types.
 
-Definition ident : Type := Common.ident.
+Definition ident : Type := Utils.ident.
 
 (** * Constant literals *)
 

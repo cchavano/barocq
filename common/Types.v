@@ -1,6 +1,6 @@
 From Coq Require Import List.
 From compcert Require Import Integers.
-From BarocqComp Require Import Error Array Struct Common MapList.
+From BarocqComp Require Import Error Array Struct Utils MapList.
 
 (** * Syntax of types *)
 

@@ -1,4 +1,4 @@
-From BarocqComp Require Import Error Common Barocq BarocqBNFgen.
+From BarocqComp Require Import Error Utils Barocq BarocqBNFgen.
 From BarocqComp Require Import ImpBNFgen ImpABNFgen Imp1 Imp1gen Imp2gen Clightgen.
 
 Definition compile (show_debug: bool) (prog: Barocq.program) : res Clight.program :=
