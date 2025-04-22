@@ -79,7 +79,7 @@ let msg_from_failure (cause : error_cause) : string =
       let plurial = if exp > 1 then "s" else "" in
       let verb = if curr > 1 then "are" else "is" in
       sprintf
-        "the function call expects %d argument%s, but %d %s given"
+        "this function call expects %d argument%s, but %d %s given"
         exp
         plurial
         curr
