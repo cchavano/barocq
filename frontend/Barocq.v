@@ -306,8 +306,10 @@ Section DENOT.
     | UopNotbool, Val TBool b => ret (Val TBool (negb b))
     | UopNotint, Val (TInt32 s) i => ret (Val (TInt32 s) (Int.not i))
     | UopNeg, Val (TInt32 s) i => ret (Val (TInt32 s) (Int.neg i))
+    | UopPlus, Val (TInt32 s) i => ret (Val (TInt32 s) i)
     | UopNotint, Val (TInt64 s) i => ret (Val (TInt64 s) (Int64.neg i))
     | UopNeg, Val (TInt64 s) i => ret (Val (TInt64 s) (Int64.not i))
+    | UopPlus, Val (TInt64 s) i => ret (Val (TInt64 s) i)
     | _, _ => fail
     end.
 

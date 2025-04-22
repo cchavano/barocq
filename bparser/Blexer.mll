@@ -45,6 +45,7 @@
       (fun (s, t) -> Hashtbl.add keywords s t)
       [
         ("true", TRUE); ("false", FALSE);
+        ("type", TYPE);
         ("bool", TYP_BOOL); ("i32", TYP_INT32); ("u32", TYP_UINT32);
         ("i64", TYP_INT64); ("u64", TYP_UINT64); ("array", TYP_ARRAY);
         ("struct", STRUCT); ("def", DEF); ("let", LET); ("in", IN);

@@ -1,11 +1,20 @@
 %{
   open Types
   open Syntax
-  open Barocq
   open Camlcoq
   open Ctypesdefs
+  open SurfaceAST
 
   type prefix_op = Plus | Minus
+
+  let aliases = Hashtbl.create 10
+
+  let () =
+    List.iter
+      (fun (s, t) -> Hashtbl.add aliases s t)
+      [
+        ("hey", CBool)
+      ]
 %}
 
 %token DOT COMMA SEMICOLON COLON
@@ -22,6 +31,7 @@
 %token OP_EQ OP_NEQ OP_LT OP_GT OP_LE OP_GE
 %token OP_ANDBOOL OP_ORBOOL OP_XORBOOL OP_NOTBOOL 
 %token TRUE FALSE
+%token TYPE
 %token TYP_BOOL TYP_INT32 TYP_UINT32 TYP_INT64 TYP_UINT64 TYP_ARRAY
 %token STRUCT DEF LET IN
 %token IF THEN ELSE
@@ -44,7 +54,7 @@
 %nonassoc TYP_ARRAY
 
 %start xprogram
-%type<Barocq.xprogram> xprogram
+%type<SurfaceAST.xprogram> xprogram
 %%
 
 xprogram:
@@ -58,15 +68,16 @@ command:
   | SEMICOLON SEMICOLON { }
 
 topdef:
+  | TYPE id = ident BIND ty = styp { DefAlias (id, ty) }
   | STRUCT id = ident BIND fields = struct_fields { DefStruct (id, fields) }
-  | DEF x = ident COLON ty = ctyp BIND l = literal { DefConst (x, l, ty) }
+  | DEF x = ident COLON ty = styp BIND l = literal { DefConst (x, l, ty) }
   | DEF x = ident params = delimited(LPAREN, separated_list(COMMA, param), RPAREN)
-    COLON ty = ctyp BIND e = expr { DefFun (x, {fn_return = ty; fn_params = params; fn_body = e}) }
+    COLON ty = styp BIND e = expr { DefFun (x, {fn_return = ty; fn_params = params; fn_body = e}) }
 
 param:
-  | x = ident COLON ty = ctyp { (x, ty) }
+  | x = ident COLON ty = styp { (x, ty) }
 
-expr:
+raw_expr:
   | TRUE { ETrue }
   | FALSE { EFalse }
   | i = LIT_INT32 { EInt32 (coqint_of_camlint (fst i), (snd i)) }
@@ -79,33 +90,34 @@ expr:
   | LET x = ident BIND e1 = expr IN e2 = expr { ELetIn (x, e1, e2) }
   | IF e1 = expr THEN e2 = expr ELSE e3 = expr { EIfThenElse (e1, e2, e3) }
   | op = unary_op e = expr { EUnaryOp (op, e) }
-  | OP_PLUS e = expr { e }
   | e1 = expr op = binary_op e2 = expr { EBinaryOp (op, e1, e2) }
   | e = expr args = delimited(LPAREN, separated_list(COMMA, expr), RPAREN) { EApp (e, args) }
+
+expr:
+  | e = raw_expr { Location.make $startpos $endpos e }
   | e = delimited(LPAREN, expr, RPAREN) { e }
 
-access:
-  | DOT f = ident { Barocq.AcStructField f }
-  | LBRACKET e = expr RBRACKET { Barocq.AcArrayIndex e }
-
-literal:
-  | TRUE { LTrue }
-  | FALSE { LFalse }
+raw_literal:
+  | TRUE { SurfaceAST.LTrue }
+  | FALSE { SurfaceAST.LFalse }
   | p = prefix_op? i = LIT_INT32
     {
       let n = coqint_of_camlint (fst i) in
       let n = match p with Some Minus -> Camlcoq.Z.neg n | _ -> n in
-      LInt32 (n, snd i)
+      SurfaceAST.LInt32 (n, snd i)
     }
   | p = prefix_op? i = LIT_INT64
     {
       let n = coqint_of_camlint64 (fst i) in
       let n = match p with Some Minus -> Camlcoq.Z.neg n | _ -> n in
-      LInt64 (n, snd i)
+      SurfaceAST.LInt64 (n, snd i)
     }
-  | a = delimited(LBRACKETBAR, separated_list(SEMICOLON, literal), RBRACKETBAR) { LArray a }
+  | a = delimited(LBRACKETBAR, separated_list(SEMICOLON, literal), RBRACKETBAR) { SurfaceAST.LArray a }
   | st = delimited(LBRACE, separated_nonempty_list(SEMICOLON, literal_field), RBRACE)
-    HASHTAG ty = ident { LStruct (st, ty) }
+    HASHTAG ty = ident { SurfaceAST.LStruct (st, ty) }
+
+literal:
+  | l = raw_literal { Location.make $startpos $endpos l }
 
 prefix_op:
   | OP_PLUS { Plus }
@@ -118,6 +130,7 @@ literal_field:
   | OP_NOTBOOL { UopNotbool }
   | OP_NOTINT { UopNotint }
   | OP_MINUS { UopNeg }
+  | OP_PLUS { UopPlus }
 
 %inline binary_op:
   | OP_ANDBOOL { BopAndbool }
@@ -144,25 +157,25 @@ struct_fields:
   | fields = delimited(LBRACE, nonempty_list(typ_field), RBRACE) { fields }
 
 typ_field:
-  | key = ident COLON ty = ctyp SEMICOLON { (key, ty) }
+  | key = ident COLON ty = styp SEMICOLON { (key, ty) }
 
-ctyp:
-  | TYP_BOOL { CBool }
-  | TYP_INT32 { CInt32 Signed }
-  | TYP_UINT32 { CInt32 Unsigned }
-  | TYP_INT64 { CInt64 Signed }
-  | TYP_UINT64 { CInt64 Unsigned }
-  | TYP_ARRAY ty = ctyp { CArray ty }
-  | ty = ident { CStruct ty }
+styp:
+  | TYP_BOOL { SBool }
+  | TYP_INT32 { SInt32 Signed }
+  | TYP_UINT32 { SInt32 Unsigned }
+  | TYP_INT64 { SInt64 Signed }
+  | TYP_UINT64 { SInt64 Unsigned }
+  | TYP_ARRAY ty = styp { SArray ty }
+  | ty = ident { SStructOrAlias ty }
   | ty = funtyp { ty }
-  | LPAREN ty = ctyp RPAREN { ty }
+  | LPAREN ty = styp RPAREN { ty }
 
 funtyp:
-  | LPAREN RPAREN ARROW tret = ctyp { CFun ([], tret) }
-  | tparam = ctyp ARROW tret = ctyp { CFun ([tparam], tret) }
-  | LPAREN tparam1 = ctyp COMMA tparams = separated_nonempty_list(COMMA, ctyp)
-    RPAREN ARROW tret = ctyp
-    { CFun (tparam1 :: tparams, tret) }
+  | LPAREN RPAREN ARROW tret = styp { SFun ([], tret) }
+  | tparam = styp ARROW tret = styp { SFun ([tparam], tret) }
+  | LPAREN tparam1 = styp COMMA tparams = separated_nonempty_list(COMMA, styp)
+    RPAREN ARROW tret = styp
+    { SFun (tparam1 :: tparams, tret) }
 
 ident:
-  | id = IDENT { ident_of_string (coqstring_of_camlstring id) }
+  | id = IDENT { Location.make $startpos $endpos (ident_of_string (coqstring_of_camlstring id)) }

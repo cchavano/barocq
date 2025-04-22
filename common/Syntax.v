@@ -18,7 +18,8 @@ Inductive literal :=
 Inductive unary_op : Type :=
   | UopNotbool : unary_op
   | UopNotint : unary_op
-  | UopNeg : unary_op.
+  | UopNeg : unary_op
+  | UopPlus: unary_op.
 
 Inductive binary_op : Type :=
   | BopAndbool : binary_op

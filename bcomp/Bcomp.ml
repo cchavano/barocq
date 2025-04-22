@@ -1,33 +1,14 @@
 open Lexing
 open Printf
 
-exception TypingError of string
-
 exception CompilerError of string
 
 let syntax_error_msg lexbuf msg =
   let startpos = Lexing.lexeme_start_p lexbuf in
   let endpos = Lexing.lexeme_end_p lexbuf in
-  let from_single_pos pos =
-    let l = pos.pos_lnum in
-    let c = pos.pos_cnum - pos.pos_bol + 1 in
-    Printf.sprintf "line %d, character %d" l c
-  in
-  let from_interval pos1 pos2 =
-    let l = pos1.pos_lnum in
-    let c1 = pos1.pos_cnum - pos1.pos_bol + 1 in
-    let c2 = pos2.pos_cnum - pos1.pos_bol in
-    Printf.sprintf "line %d, characters %d-%d" l c1 c2
-  in
-  let errloc =
-    if startpos.pos_cnum = endpos.pos_cnum - 1 then from_single_pos startpos
-    else from_interval startpos endpos
-  in
-  let msg = if msg = "" then "" else Printf.sprintf ": %s" msg in
-  Printf.sprintf
-    "Syntax error in file \"%s\", %s%s"
-    startpos.pos_fname
-    errloc
+  sprintf
+    "Syntax error %s: %s"
+    (Location.to_string (Location.make startpos endpos ()))
     msg
 
 let source = ref ""
@@ -146,12 +127,14 @@ let () =
         exit 0
       end;
 
+      let xprog = SurfaceTyping.typecheck_xprogram xprog in
+
       let prog = Barocq.xprog_to_prog xprog in
 
       let prog_typed =
         match Barocq.Typing.typecheck_program prog with
         | Errors.OK p -> p
-        | Errors.Error msg -> raise (TypingError (C2C.string_of_errmsg msg))
+        | Errors.Error msg -> assert false
       in
 
       if !opt_typecheck then begin
@@ -339,7 +322,13 @@ let () =
     | Blexer.Error msg -> eprintf "%s\n" (syntax_error_msg lexbuf msg)
     | Bparser.Error -> eprintf "%s\n" (syntax_error_msg lexbuf "")
     | Interpreter.Error msg -> eprintf "Interpretation error: %s\n" msg
-    | TypingError msg -> eprintf "Typing error: %s\n" msg
+    | SurfaceTyping.Error (cause, loc) -> begin
+        let msg = SurfaceTyping.msg_from_failure cause in
+        match loc with
+        | Some loc ->
+            eprintf "Typing error %s\n> %s\n" (Location.to_string loc) msg
+        | None -> assert false
+      end
     | CompilerError msg -> eprintf "Compilation error: %s\n" msg
     | Failure msg -> eprintf "Unexpected error: %s\n" msg
     | Aliasing_impl.UnsupportedFeature msg ->

@@ -42,6 +42,7 @@ let token_to_string (tok : Bparser.token) : string =
   | OP_LT -> "OP_LT"
   | TRUE -> "TRUE"
   | FALSE -> "FALSE"
+  | TYPE -> "TYPE"
   | TYP_BOOL -> "TYP_BOOL"
   | TYP_INT32 -> "TYP_INT32"
   | TYP_UINT32 -> "TYP_UINT32"

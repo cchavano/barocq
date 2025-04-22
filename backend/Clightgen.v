@@ -46,11 +46,12 @@ Definition transl_literal (l: Imp2.literal) : list AST.init_data :=
   | Imp2.LStruct st _ => map (fun '(_, lx) => transl_literal_base lx) st
   end.
 
-Definition transl_unary_op (op: Syntax.unary_op) : Cop.unary_operation :=
+Definition transl_unary_op (op: Syntax.unary_op) : res Cop.unary_operation :=
   match op with
-  | UopNotbool => Onotbool
-  | UopNotint => Onotint
-  | UopNeg => Oneg
+  | UopNotbool => eret Onotbool
+  | UopNotint => eret Onotint
+  | UopNeg => eret Oneg
+  | UopPlus => fail
   end.
 
 Definition transl_binary_op (op: Syntax.binary_op) : Cop.binary_operation :=
@@ -88,8 +89,10 @@ Fixpoint transl_atom (globs: pset) (a: Syntax.Typed.atom) : Clight.expr :=
   | AUnaryOp op a1 ty =>
       let e := transl_atom globs a1 in
       let t := transl_ctyp ty in
-      let op' := transl_unary_op op in
-      Eunop op' e t
+      match transl_unary_op op with
+      | OK op' => Eunop op' e t
+      | Error _ => e
+      end
   | ABinaryOp op a1 a2 ty =>
       let e1 := transl_atom globs a1 in
       let e2 := transl_atom globs a2 in

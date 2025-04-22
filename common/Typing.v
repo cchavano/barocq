@@ -80,7 +80,9 @@ Definition typecheck_unary_op (op: unary_op) (ty: ctyp) : res ctyp :=
   | UopNotint, CInt32 _
   | UopNotint, CInt64 _
   | UopNeg, CInt32 _
-  | UopNeg, CInt64 _ => ret ty
+  | UopNeg, CInt64 _
+  | UopPlus, CInt32 _
+  | UopPlus, CInt64 _ => ret ty
   | _, _ => failwith "Typing.typecheck_unary_op: type mismatch"
   end.
 

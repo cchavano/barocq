@@ -27,6 +27,7 @@ let unary_op_to_string (op : unary_op) : string =
   | UopNotbool -> "!"
   | UopNotint -> "~"
   | UopNeg -> "-"
+  | UopPlus -> "+"
 
 let binary_op_to_string (op : binary_op) : string =
   match op with

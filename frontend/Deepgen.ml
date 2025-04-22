@@ -27,6 +27,7 @@ let unary_op_to_deep (op : unary_op) : string =
   | UopNotbool -> "UopNotBool"
   | UopNotint -> "UopNotInt"
   | UopNeg -> "UopNeg"
+  | UopPlus -> "UopPlus"
 
 let binary_op_to_deep (op : binary_op) : string =
   match op with

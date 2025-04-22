@@ -24,9 +24,10 @@ let int64_to_rocq (i : Integers.Int64.int) (ty : mtyp) : string =
 
 let unary_op_to_rocq (op : unary_op) : string =
   match op with
-  | UopNotbool -> "negb"
-  | UopNotint -> "Int.not"
-  | UopNeg -> "Int.neg"
+  | UopNotbool -> "negb "
+  | UopNotint -> "Int.not "
+  | UopNeg -> "Int.neg "
+  | UopPlus -> ""
 
 let binary_op_to_rocq (ty : mtyp) (op : binary_op) : string =
   let intmod, suffix =
@@ -85,7 +86,7 @@ let rec atom_to_rocq (a : atom) : string =
   | AInt32 (i, ty) -> int_to_rocq i ty
   | AInt64 (i, ty) -> int64_to_rocq i ty
   | AVar (x, _) -> ident_to_string x
-  | AUnaryOp (op, a, _) -> sprintf "%s %s" (unary_op_to_rocq op) (opt_parens a)
+  | AUnaryOp (op, a, _) -> sprintf "%s%s" (unary_op_to_rocq op) (opt_parens a)
   | ABinaryOp (op, a1, a2, ty) ->
       sprintf
         "%s %s %s"

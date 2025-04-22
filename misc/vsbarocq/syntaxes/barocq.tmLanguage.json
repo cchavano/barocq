@@ -105,6 +105,16 @@
                     }
                 },
                 {
+                    "comment": "type alias definition",
+                    "match": "\\b(type)\\s+(\\w+)\\s+(=)\\s+(\\w+)",
+                    "captures": {
+                        "1": { "name": "keyword.other.barocq" },
+                        "2": { "name": "entity.name.type.barocq" },
+                        "3": { "name": "keyword.operator.barocq" },
+                        "4": { "name": "entity.name.type.barocq" }
+                    }
+                },
+                {
                     "comment": "let-binding",
                     "match": "\\b(let)\\s+(([[:alpha:]](\\w|')*)|([_](\\w|')+))",
                     "captures": {
@@ -118,7 +128,7 @@
             "patterns": [
                 {
                     "comment": "function call",
-                    "match": "(\\w+)\\s*\\([^\\*]",
+                    "match": "(\\w+)\\s*\\(",
                     "captures": {
                         "1": { "name": "entity.name.function.barocq" }
                     }
