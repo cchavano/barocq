@@ -31,7 +31,7 @@ let rec expr_to_string_pref (prefix : string) (e : expr) : string =
           (PrintSyntax.access_list_to_string acs)
     | EApp (f, args) ->
         sprintf
-          "%s %s"
+          "%s%s"
           (atom_to_string f)
           (list_to_string_paren atom_to_string args)
     | EIfThenElse (a, e1, e2) ->

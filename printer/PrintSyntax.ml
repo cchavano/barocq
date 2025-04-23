@@ -107,7 +107,7 @@ let comp_to_string (c : comp) : string =
       sprintf "%s%s" (atom_to_string a) (access_list_to_string acs)
   | CpCall (f, args) ->
       sprintf
-        "%s %s"
+        "%s%s"
         (atom_to_string f)
         (list_to_string_paren atom_to_string args)
 
@@ -185,7 +185,7 @@ let globdef_to_string (lit_to_string : 'a -> string)
         (lit_to_string l)
         csep
   | DefFun (x, f) ->
-      sprintf "def %s %s%s" (ident_to_string x) (func_to_string f) fsep
+      sprintf "def %s%s%s" (ident_to_string x) (func_to_string f) fsep
 
 let struct_def_to_tring (sep : string) (sid : ident)
     (fields : (ident * ctyp) list) : string =
