@@ -546,11 +546,28 @@ Module Monadification.
             let ty2 := typof_expr e2' in
             if mtyp_eq_dec ty1 ty2 then
               eret (EIfThenElse a' e1' e2' ty1)
-            else MonError.fail
+            else
+              (* It is possible that one branch contains monadic operations and not the other one. *)
+              (* In this case, we have to re-monadify the non-monadic branch by setting the imperative 
+                 flag to true. *)
+              match ty1, ty2 with
+              | MRes ty1', _ =>
+                  if mtyp_eq_dec ty1' ty2 then
+                    let* e2' := monadify_expr_rec ts gx lx e2 true in
+                    eret (EIfThenElse a' e1' e2' ty1)
+                  else MonError.fail
+              | _, MRes ty2' =>
+                  if mtyp_eq_dec ty1 ty2' then
+                    let* e1' := monadify_expr_rec ts gx lx e1 true in
+                    eret (EIfThenElse a' e1' e2' ty2)
+                  else MonError.fail
+              | _, _ =>
+                  MonError.fail
+              end
         | _ => MonError.fail
         end
     | BNF.ELetIn x e1 e2 =>
-        let* e1' := monadify_expr_rec ts gx lx e1 imp in
+        let* e1' := monadify_expr_rec ts gx lx e1 false in
         let t := typof_expr e1' in
         match t with
         | MRes tr =>
@@ -559,7 +576,7 @@ Module Monadification.
             eret (ELetMon x e1' e2' (typof_expr e2'))
         | _ =>
             let* lx' := lcontext_update lx x t in
-            let* e2' := monadify_expr_rec ts gx lx' e2 false in
+            let* e2' := monadify_expr_rec ts gx lx' e2 (imp || false) in
             eret (ELetIn x e1' e2' (typof_expr e2'))
         end
     end.
