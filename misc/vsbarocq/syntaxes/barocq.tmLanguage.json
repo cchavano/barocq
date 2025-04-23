@@ -105,13 +105,18 @@
                     }
                 },
                 {
-                    "comment": "type alias definition",
-                    "match": "\\b(type)\\s+(\\w+)\\s+(=)\\s+(\\w+)",
+                    "comment": "type alias definition (left side)",
+                    "match": "\\b(type)\\s+(\\w+)",
                     "captures": {
                         "1": { "name": "keyword.other.barocq" },
-                        "2": { "name": "entity.name.type.barocq" },
-                        "3": { "name": "keyword.operator.barocq" },
-                        "4": { "name": "entity.name.type.barocq" }
+                        "2": { "name": "entity.name.type.barocq" }
+                    }
+                },
+                {
+                    "comment": "type alias definition (right side)",
+                    "match": "\\b(?<=(type)\\s+\\w+\\s+=\\s+)(\\w+)",
+                    "captures": {
+                        "2": { "name": "entity.name.type.barocq" }
                     }
                 },
                 {
@@ -128,7 +133,7 @@
             "patterns": [
                 {
                     "comment": "function call",
-                    "match": "(\\w+)\\s*\\(",
+                    "match": "(\\w+)\\s*\\((?=[^*])",
                     "captures": {
                         "1": { "name": "entity.name.function.barocq" }
                     }

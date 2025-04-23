@@ -9,6 +9,9 @@
 
   let aliases = Hashtbl.create 10
 
+  let ident_of_camlstring x =
+    ident_of_string (coqstring_of_camlstring x)
+
   let () =
     List.iter
       (fun (s, t) -> Hashtbl.add aliases s t)
@@ -68,8 +71,8 @@ command:
   | SEMICOLON SEMICOLON { }
 
 topdef:
-  | TYPE id = ident BIND ty = styp { DefAlias (id, ty) }
-  | STRUCT id = ident BIND fields = struct_fields { DefStruct (id, fields) }
+  | TYPE id = typ_ident BIND ty = styp { DefAlias (id, ty) }
+  | STRUCT id = typ_ident BIND fields = struct_fields { DefStruct (id, fields) }
   | DEF x = ident COLON ty = styp BIND l = literal { DefConst (x, l, ty) }
   | DEF x = ident params = delimited(LPAREN, separated_list(COMMA, param), RPAREN)
     COLON ty = styp BIND e = expr { DefFun (x, {fn_return = ty; fn_params = params; fn_body = e}) }
@@ -166,7 +169,7 @@ styp:
   | TYP_INT64 { SInt64 Signed }
   | TYP_UINT64 { SInt64 Unsigned }
   | TYP_ARRAY ty = styp { SArray ty }
-  | ty = ident { SStructOrAlias ty }
+  | ty = typ_ident { SStructOrAlias ty }
   | ty = funtyp { ty }
   | LPAREN ty = styp RPAREN { ty }
 
@@ -177,5 +180,12 @@ funtyp:
     RPAREN ARROW tret = styp
     { SFun (tparam1 :: tparams, tret) }
 
+typ_ident:
+  | id = IDENT
+    {
+      if String.contains id '\'' then raise Error
+      else Location.make $startpos $endpos (ident_of_camlstring id)
+    }
+
 ident:
-  | id = IDENT { Location.make $startpos $endpos (ident_of_string (coqstring_of_camlstring id)) }
+  | id = IDENT { Location.make $startpos $endpos (ident_of_camlstring id) }

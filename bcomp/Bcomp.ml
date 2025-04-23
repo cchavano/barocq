@@ -6,9 +6,11 @@ exception CompilerError of string
 let syntax_error_msg lexbuf msg =
   let startpos = Lexing.lexeme_start_p lexbuf in
   let endpos = Lexing.lexeme_end_p lexbuf in
+  let sep = if msg = "" then "" else ": " in
   sprintf
-    "Syntax error %s: %s"
+    "Syntax error %s%s%s"
     (Location.to_string (Location.make startpos endpos ()))
+    sep
     msg
 
 let source = ref ""
