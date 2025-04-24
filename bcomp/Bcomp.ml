@@ -133,19 +133,13 @@ let () =
 
       let prog = Barocq.xprog_to_prog xprog in
 
-      let prog_typed =
-        match Barocq.Typing.typecheck_program prog with
-        | Errors.OK p -> p
-        | Errors.Error msg -> assert false
-      in
-
       if !opt_typecheck then begin
         printf "Typechecking succeeded\n";
         exit 0
       end;
 
       if !opt_print_bbnf then begin
-        let bbnf = BarocqBNFgen.normalize_program prog_typed in
+        let bbnf = BarocqBNFgen.norm_program prog in
         begin
           match bbnf with
           | Errors.OK prog -> PrintBarocqBNF.print_program stdout prog

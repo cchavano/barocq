@@ -18,55 +18,55 @@ with statement_depth (s: ImpBNF.statement) : nat :=
   | ImpBNF.StSetTailcomp _ t => 1 + (tailcomp_depth t)
   end.
 
-Fixpoint normalize_statement (fuel: nat) (s: ImpBNF.statement) : res ImpABNF.statement :=
+Fixpoint norm_statement (fuel: nat) (s: ImpBNF.statement) : res ImpABNF.statement :=
   match fuel with
   | O => fail
   | S fuel' =>
       let '(ImpBNF.StSetTailcomp x t) := s in
       match t with
         | ImpBNF.TcBegin s tc =>
-            let* s' := normalize_statement fuel' s in
-            let* sc := normalize_statement fuel' (ImpBNF.StSetTailcomp x tc) in
+            let* s' := norm_statement fuel' s in
+            let* sc := norm_statement fuel' (ImpBNF.StSetTailcomp x tc) in
             ret (StSequence s' sc)
         | ImpBNF.TcIfThenElse a t1 t2 => 
-            let* s1 := normalize_statement fuel' (ImpBNF.StSetTailcomp x t1) in
-            let* s2 := normalize_statement fuel' (ImpBNF.StSetTailcomp x t2) in
+            let* s1 := norm_statement fuel' (ImpBNF.StSetTailcomp x t1) in
+            let* s2 := norm_statement fuel' (ImpBNF.StSetTailcomp x t2) in
             ret (StIfThenElse a s1 s2)
         | ImpBNF.TcComp c => ret (StSet x c)
       end
   end.
 
-Fixpoint normalize_tailcomp (t: ImpBNF.tailcomp) : res ImpABNF.tailcomp :=
+Fixpoint norm_tailcomp (t: ImpBNF.tailcomp) : res ImpABNF.tailcomp :=
   match t with
   | ImpBNF.TcBegin s t1 =>
-      let* s' := normalize_statement (statement_depth s + 1) s in
-      let* t1' := normalize_tailcomp t1 in
+      let* s' := norm_statement (statement_depth s + 1) s in
+      let* t1' := norm_tailcomp t1 in
       ret (TcBegin s' t1')
   | ImpBNF.TcIfThenElse a t1 t2 =>
-      let* t1' := normalize_tailcomp t1 in
-      let* t2' := normalize_tailcomp t2 in
+      let* t1' := norm_tailcomp t1 in
+      let* t2' := norm_tailcomp t2 in
       ret (TcIfThenElse a t1' t2')
   | ImpBNF.TcComp c => ret (TcComp c)
   end.
 
-Definition normalize_function (f: ImpBNF.function) : res ImpABNF.function :=
-  let* body := normalize_tailcomp (fn_body f) in
+Definition norm_function (f: ImpBNF.function) : res ImpABNF.function :=
+  let* body := norm_tailcomp (fn_body f) in
   ret {|
     fn_return := fn_return f;
     fn_params := fn_params f;
     fn_body := body
   |}.
 
-Definition normalize_globdef (def: ImpBNF.globdef) : res ImpABNF.globdef :=
+Definition norm_globdef (def: ImpBNF.globdef) : res ImpABNF.globdef :=
   match def with
   | DefConst x l ty => ret (DefConst x l ty)
   | DefFun x f =>
-      let* f' := normalize_function f in
+      let* f' := norm_function f in
       ret (DefFun x f')
   end.
 
-Definition normalize_program (prog: ImpBNF.program) : res ImpABNF.program :=
-  let* defs := mmap normalize_globdef (prog_defs prog) in
+Definition norm_program (prog: ImpBNF.program) : res ImpABNF.program :=
+  let* defs := mmap norm_globdef (prog_defs prog) in
   let prog' := {|
     prog_defs := defs;
     prog_types := prog_types prog

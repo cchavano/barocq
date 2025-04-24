@@ -74,23 +74,23 @@ Module Normalization.
 
   Definition fresh_var : crmon ident := Utils.fresh_var_err "b".
 
-  Fixpoint normalize_expr_rec (e: Barocq.expr) : crmon BNF.expr :=
-    let fix normalize_exprlist_rec (e: Barocq.expr) (le: list Barocq.expr) (la: list atom) : crmon BNF.expr :=
+  Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BNF.expr :=
+    let fix norm_exprlist_rec (e: Barocq.expr) (le: list Barocq.expr) (la: list atom) : crmon BNF.expr :=
       match le with
       | nil => lift_err (spread_atomlist e (rev' la))
       | e1 :: le' =>
           match atom_of_expr e1 with
-          | OK a => normalize_exprlist_rec e le' (a :: la)
+          | OK a => norm_exprlist_rec e le' (a :: la)
           | Error _ =>
               let* x := fresh_var in
-              let* ne1 := normalize_expr_rec e1 in
-              let* ler := normalize_exprlist_rec e le' (AVar x :: la) in
+              let* ne1 := norm_expr_rec e1 in
+              let* ler := norm_exprlist_rec e le' (AVar x :: la) in
               ret (ELetIn x ne1 ler)
           end
       end
     in
-    let normalize_exprlist (e: Barocq.expr) (le: list Barocq.expr) : crmon BNF.expr :=
-      normalize_exprlist_rec e le nil
+    let norm_exprlist (e: Barocq.expr) (le: list Barocq.expr) : crmon BNF.expr :=
+      norm_exprlist_rec e le nil
     in
     match e with
     | Barocq.ETrue =>
@@ -104,56 +104,56 @@ Module Normalization.
     | Barocq.EVar x =>
         ret (EAtom (AVar (transl_user_ident x)))
     | Barocq.ECast e1 ty =>
-      normalize_exprlist e [e1]
+      norm_exprlist e [e1]
     | Barocq.EUnaryOp op e1 =>
-        normalize_exprlist e [e1]
+        norm_exprlist e [e1]
     | Barocq.EBinaryOp op e1 e2 =>
-        normalize_exprlist e [e1; e2]
+        norm_exprlist e [e1; e2]
     | Barocq.EArrayGet e1 e2 =>
-        normalize_exprlist e [e1; e2]
+        norm_exprlist e [e1; e2]
     | Barocq.EArraySet e1 e2 e3 =>
-        normalize_exprlist e [e1; e2; e3]
+        norm_exprlist e [e1; e2; e3]
     | Barocq.EStructProj e1 k =>
-        normalize_exprlist e [e1]
+        norm_exprlist e [e1]
     | Barocq.EStructUpdate e1 k e2 =>
-        normalize_exprlist e [e1; e2]
+        norm_exprlist e [e1; e2]
     | Barocq.EDeepAccess _ _ => fail
     | Barocq.EApp e1 args =>
-        normalize_exprlist e (e1 :: args)
+        norm_exprlist e (e1 :: args)
     | Barocq.EIfThenElse e1 e2 e3 =>
-        let* ne2 := normalize_expr_rec e2 in
-        let* ne3 := normalize_expr_rec e3 in
+        let* ne2 := norm_expr_rec e2 in
+        let* ne3 := norm_expr_rec e3 in
         match atom_of_expr e1 with
         | OK a => ret (EIfThenElse a ne2 ne3)
         | Error _ =>
             let* x1 := fresh_var in
-            let* ne1 := normalize_expr_rec e1 in
+            let* ne1 := norm_expr_rec e1 in
             ret (ELetIn x1 ne1 (EIfThenElse (AVar x1) ne2 ne3))
         end
     | Barocq.ELetIn x e1 e2 =>
-        let* ne1 := normalize_expr_rec e1 in
-        let* ne2 := normalize_expr_rec e2 in
+        let* ne1 := norm_expr_rec e1 in
+        let* ne2 := norm_expr_rec e2 in
         ret (ELetIn (transl_user_ident x) ne1 ne2)
     end.
 
   Close Scope state_err_monad_scope.
 
-  Definition normalize_expr (e: Barocq.expr) : res BNF.expr :=
-    let* ne := normalize_expr_rec e 0 in
+  Definition norm_expr (e: Barocq.expr) : res BNF.expr :=
+    let* ne := norm_expr_rec e 0 in
     eret (fst ne).
 
-  Definition normalize_params (params: list (ident * ctyp)) : list (ident * ctyp) :=
+  Definition norm_params (params: list (ident * ctyp)) : list (ident * ctyp) :=
     map (fun '(x, tx) => (transl_user_ident x, tx)) params.
 
-  Definition normalize_function (f: Barocq.function) : res BNF.function :=
-    let* body_norm := normalize_expr (fn_body f) in
+  Definition norm_function (f: Barocq.function) : res BNF.function :=
+    let* body_norm := norm_expr (fn_body f) in
     eret {|
       fn_return := fn_return f;
-      fn_params := normalize_params (fn_params f);
+      fn_params := norm_params (fn_params f);
       fn_body := body_norm
     |}.
 
-  Fixpoint normalize_program_rec (ts: types) (prog: Barocq.program) : res BNF.program :=
+  Fixpoint norm_program_rec (ts: types) (prog: Barocq.program) : res BNF.program :=
     match prog with
     | nil =>
         eret {|
@@ -164,17 +164,17 @@ Module Normalization.
         match d with
         | Barocq.DefStruct a fields =>
             let ts' := MapList.add_k ident_eq_dec a fields ts in
-            normalize_program_rec ts' prog'
+            norm_program_rec ts' prog'
         | Barocq.DefConst x l ty =>
-            let* r := normalize_program_rec ts prog' in
+            let* r := norm_program_rec ts prog' in
             eret {|
               prog_defs :=
                 (Syntax.DefConst (transl_user_ident x) l ty) :: (prog_defs r);
               prog_types := (prog_types r)
             |}
         | Barocq.DefFun x f =>
-            let* f' := normalize_function f in
-            let* r := normalize_program_rec ts prog' in
+            let* f' := norm_function f in
+            let* r := norm_program_rec ts prog' in
             eret {|
               prog_defs :=
                 (Syntax.DefFun (transl_user_ident x) f') :: (prog_defs r);
@@ -183,8 +183,8 @@ Module Normalization.
         end
     end.
     
-  Definition normalize_program (prog: Barocq.program) : res BNF.program :=
-    normalize_program_rec MapList.empty prog.
+  Definition norm_program (prog: Barocq.program) : res BNF.program :=
+    norm_program_rec MapList.empty prog.
 
 End Normalization.
 
@@ -681,5 +681,5 @@ Open Scope error_monad_scope.
 
 Definition monadify_norm_program (prog: Barocq.program) : res Monadic.program :=
   let* _ := Barocq.Typing.typecheck_program prog in
-  let* bnf := Normalization.normalize_program prog in
+  let* bnf := Normalization.norm_program prog in
   Monadification.monadify_program bnf.

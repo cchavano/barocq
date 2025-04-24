@@ -54,53 +54,53 @@ Definition transl_unary_op (op: Syntax.unary_op) : res Cop.unary_operation :=
   | UopPlus => fail
   end.
 
-Definition transl_binary_op (op: Syntax.binary_op) : Cop.binary_operation :=
+Definition transl_binary_op (op: Syntax.binary_op) : res Cop.binary_operation :=
   match op with
-  | BopAndbool
-  | BopAndint => Oand
-  | BopOrbool
-  | BopOrint => Oor
-  | BopXorbool
-  | BopXorint => Oxor
-  | BopAdd => Oadd
-  | BopSub => Osub
-  | BopMul => Omul
-  | BopDiv => Odiv
-  | BopMod => Omod
-  | BopShl => Oshl
-  | BopShr => Oshr
-  | BopEq => Oeq
-  | BopNeq => One
-  | BopLt => Olt
-  | BopGt => Ogt
-  | BopLe => Ole
-  | BopGe => Oge
+  | BopAndint => ret Oand
+  | BopOrint => ret Oor
+  | BopXorbool => ret One
+  | BopXorint => ret Oxor
+  | BopAdd => ret Oadd
+  | BopSub => ret Osub
+  | BopMul => ret Omul
+  | BopDiv => ret Odiv
+  | BopMod => ret Omod
+  | BopShl => ret Oshl
+  | BopShr => ret Oshr
+  | BopEq => ret Oeq
+  | BopNeq => ret One
+  | BopLt => ret Olt
+  | BopGt => ret Ogt
+  | BopLe => ret Ole
+  | BopGe => ret Oge
+  | _ => failwith "unsupported boolean operators"
   end.
 
-Fixpoint transl_atom (globs: pset) (a: Syntax.Typed.atom) : Clight.expr :=
+Fixpoint transl_atom (globs: pset) (a: Syntax.Typed.atom) : res Clight.expr :=
   match a with
-  | ATrue _ => Econst_int Int.one tbool
-  | AFalse _ => Econst_int Int.zero tbool
-  | AInt32 i _ => Econst_int i tint
-  | AInt64 i _ => Econst_long i tlong
+  | ATrue _ => ret (Econst_int Int.one tbool)
+  | AFalse _ => ret (Econst_int Int.zero tbool)
+  | AInt32 i _ => ret (Econst_int i tint)
+  | AInt64 i _ => ret (Econst_long i tlong)
   | AVar x ty =>
-      if smem globs x then Evar x (transl_ctyp ty)
-      else Etempvar x (transl_ctyp ty)
+      if smem globs x then ret (Evar x (transl_ctyp ty))
+      else ret (Etempvar x (transl_ctyp ty))
   | ACast a ty =>
-      Ecast (transl_atom globs a) (transl_ctyp ty)
+      let* e := transl_atom globs a in
+      ret (Ecast e (transl_ctyp ty))
   | AUnaryOp op a1 ty =>
-      let e := transl_atom globs a1 in
+      let* e := transl_atom globs a1 in
       let t := transl_ctyp ty in
       match transl_unary_op op with
-      | OK op' => Eunop op' e t
-      | Error _ => e
+      | OK op' => ret (Eunop op' e t)
+      | Error _ => ret e
       end
   | ABinaryOp op a1 a2 ty =>
-      let e1 := transl_atom globs a1 in
-      let e2 := transl_atom globs a2 in
+      let* e1 := transl_atom globs a1 in
+      let* e2 := transl_atom globs a2 in
       let t := transl_ctyp ty in
-      let op' := transl_binary_op op in
-      Ebinop op' e1 e2 t
+      let* op' := transl_binary_op op in
+      ret (Ebinop op' e1 e2 t)
   end.
 
 Definition deref_pointer (ty: type) : type :=
@@ -109,107 +109,107 @@ Definition deref_pointer (ty: type) : type :=
   | _ => ty
   end.
 
-Fixpoint transl_deep_access (globs: pset) (a: atom) (acs: list access) : Clight.expr :=
+Fixpoint transl_deep_access (globs: pset) (a: atom) (acs: list access) : res Clight.expr :=
   match acs with
   | nil => transl_atom globs a
   | ac :: nil =>
       match ac with
       | AcStructField f ty =>
-          let e := transl_atom globs a in
+          let* e := transl_atom globs a in
           let tderef := deref_pointer (typeof e) in
           let tfield := transl_ctyp ty in
-          Efield (Ederef e tderef) f tfield
+          ret (Efield (Ederef e tderef) f tfield)
       | AcArrayIndex ai ty =>
-          let e := transl_atom globs a in
-          let ei := transl_atom globs ai in
+          let* e := transl_atom globs a in
+          let* ei := transl_atom globs ai in
           let tarith := typeof e in
           let tderef := transl_ctyp ty in
-          Ederef (Ebinop Oadd e ei tarith) tderef
+          ret (Ederef (Ebinop Oadd e ei tarith) tderef)
       end
   | ac :: acs' =>
       match ac with
       | AcStructField f ty =>
-        let er := transl_deep_access globs a acs' in
+        let* er := transl_deep_access globs a acs' in
         let tderef := deref_pointer (typeof er) in
         let tfield := transl_ctyp ty in
-        Efield (Ederef er tderef) f tfield     
+        ret (Efield (Ederef er tderef) f tfield)    
       | AcArrayIndex ai ty =>
-          let er := transl_deep_access globs a acs' in
-          let ei := transl_atom globs ai in
+          let* er := transl_deep_access globs a acs' in
+          let* ei := transl_atom globs ai in
           let tarith := typeof er in
           let tderef := transl_ctyp ty in
-          Ederef (Ebinop Oadd er ei tarith) tderef
+          ret (Ederef (Ebinop Oadd er ei tarith) tderef)
       end
   end.
 
-Definition transl_expr (globs: pset) (e: Imp2.expr) : Clight.expr :=
+Definition transl_expr (globs: pset) (e: Imp2.expr) : res Clight.expr :=
   match e with
   | EAtom a _ => transl_atom globs a
   | EArrayGet a1 a2 ty =>
-      let e1 := transl_atom globs a1 in
-      let e2 := transl_atom globs a2 in
+      let* e1 := transl_atom globs a1 in
+      let* e2 := transl_atom globs a2 in
       let tarith := typeof e1 in
       let tderef := transl_ctyp ty in
-      Ederef (Ebinop Oadd e1 e2 tarith) tderef
+      ret (Ederef (Ebinop Oadd e1 e2 tarith) tderef)
   | EStructProj a f ty =>
-      let e := transl_atom globs a in
+      let* e := transl_atom globs a in
       let tderef := deref_pointer (typeof e) in
       let tfield := transl_ctyp ty in
-      Efield (Ederef e tderef) f tfield
+      ret (Efield (Ederef e tderef) f tfield)
   | EDeepAccess a acs _ => transl_deep_access globs a (List.rev' acs)
   end.
 
-Definition transl_ecomp (globs: pset) (ec: Imp2.ecomp) : Clight.expr * Clight.statement :=
+Definition transl_ecomp (globs: pset) (ec: Imp2.ecomp) : res (Clight.expr * Clight.statement) :=
   match ec with
   | EcArraySet a1 a2 a3 =>
-      let e1 := transl_atom globs a1 in
-      let e2 := transl_atom globs a2 in
-      let e3 := transl_atom globs a3 in
+      let* e1 := transl_atom globs a1 in
+      let* e2 := transl_atom globs a2 in
+      let* e3 := transl_atom globs a3 in
       let tarith := typeof e1 in
       let tderef := typeof e3 in
-      (e1, Sassign (Ederef (Ebinop Oadd e1 e2 tarith) tderef) e3)
+      ret (e1, Sassign (Ederef (Ebinop Oadd e1 e2 tarith) tderef) e3)
   | EcStructUpdate a1 f a2 =>
-      let e1 := transl_atom globs a1 in
-      let e2 := transl_atom globs a2 in
+      let* e1 := transl_atom globs a1 in
+      let* e2 := transl_atom globs a2 in
       let tderef := deref_pointer (typeof e1) in
       let tfield := typeof e2 in
-      (e1, Sassign (Efield (Ederef e1 tderef) f tfield) e2)
+      ret (e1, Sassign (Efield (Ederef e1 tderef) f tfield) e2)
   end.
 
-Fixpoint transl_statement (globs: pset) (s: Imp2.statement) : Clight.statement :=
+Fixpoint transl_statement (globs: pset) (s: Imp2.statement) : res Clight.statement :=
   match s with
-  | StSkip => Sskip
+  | StSkip => ret Sskip
   | StSetExpr x e =>
-      let e' := transl_expr globs e in
-      Sset x e'
+      let* e' := transl_expr globs e in
+      ret (Sset x e')
   | StSetEcomp x ec =>
-      let (e, s) := transl_ecomp globs ec in
+      let* (e, s) := transl_ecomp globs ec in
       let sset := Sset x e in
-      Ssequence s sset
+      ret (Ssequence s sset)
   | StCall x a args =>
-      let e := transl_atom globs a in
-      let args' := map (transl_atom globs) args in
-      Scall (Some x) e args'
+      let* e := transl_atom globs a in
+      let* args' := mmap (transl_atom globs) args in
+      ret (Scall (Some x) e args')
   | StIfThenElse a s1 s2 =>
-      let e := transl_atom globs a in
-      let s1' := transl_statement globs s1 in
-      let s2' := transl_statement globs s2 in
-      Sifthenelse e s1' s2'
+      let* e := transl_atom globs a in
+      let* s1' := transl_statement globs s1 in
+      let* s2' := transl_statement globs s2 in
+      ret (Sifthenelse e s1' s2')
   | StSequence s1 s2 =>
-      let s1' := transl_statement globs s1 in
-      let s2' := transl_statement globs s2 in
-      Ssequence s1' s2'
+      let* s1' := transl_statement globs s1 in
+      let* s2' := transl_statement globs s2 in
+      ret (Ssequence s1' s2')
   | StReturn a =>
-      let e := transl_atom globs a in
-      Sreturn (Some e)
+      let* e := transl_atom globs a in
+      ret (Sreturn (Some e))
   end.
 
-Definition transl_function (globs: pset) (f: Imp2.function) : Clight.function :=
+Definition transl_function (globs: pset) (f: Imp2.function) : res Clight.function :=
   let ty := transl_ctyp (fn_return f) in
   let params := map_k transl_ctyp (fn_params f) in
   let temps := map_k transl_ctyp (fn_vars f) in
-  let body := transl_statement globs (fn_body f) in
-  {|
+  let* body := transl_statement globs (fn_body f) in
+  ret {|
     Clight.fn_return := ty;
     Clight.fn_callconv := cc_default;
     Clight.fn_params := params;
@@ -227,9 +227,9 @@ Definition literal_size (l: Imp2.literal) : Z :=
   | _ => Z.of_nat 0
   end.
 
-Fixpoint transl_globdefs_rec (defs: list Imp2.globdef) (globs: pset): list cglobdef :=
+Fixpoint transl_globdefs_rec (defs: list Imp2.globdef) (globs: pset): res (list cglobdef) :=
   match defs with
-  | nil => nil
+  | nil => ret nil
   | DefConst x l ty :: defs' =>
       let init := transl_literal l in
       let t := transl_ctyp_lit ty (literal_size l) in
@@ -245,14 +245,16 @@ Fixpoint transl_globdefs_rec (defs: list Imp2.globdef) (globs: pset): list cglob
         gvar_readonly := false;
         gvar_volatile := false
       |}) in
-      d :: (transl_globdefs_rec defs' (sadd globs x))
+      let* r := transl_globdefs_rec defs' (sadd globs x) in
+      ret (d :: r)
   | DefFun x f :: defs'=>
-      let f' := transl_function globs f in
+      let* f' := transl_function globs f in
       let d := (x, (Gfun (Internal f'))) in
-      d :: (transl_globdefs_rec defs' (sadd globs x))
+      let* r := transl_globdefs_rec defs' (sadd globs x) in
+      ret (d :: r)
   end.
 
-Definition transl_globdefs (defs: list Imp2.globdef) : list cglobdef :=
+Definition transl_globdefs (defs: list Imp2.globdef) : res (list cglobdef) :=
   transl_globdefs_rec defs sempty.
 
 Fixpoint transl_struct_fields (fields: list (ident * ctyp)) : Ctypes.members :=
@@ -300,7 +302,7 @@ Definition globdef_main : cglobdef := (_main, (Gfun (Internal f_main))).
 
 Definition transl_program (prog: Imp2.program) : res Clight.program :=
   let ts := transl_prog_types (prog_types prog) in
-  let defs := (transl_globdefs (prog_defs prog)) ++ (globdef_main :: nil) in
+  let* defs := transl_globdefs (prog_defs prog) in
   let public := public_idents (prog_defs prog) in
   let main := _main in
   match Ctypes.make_program ts defs public main with

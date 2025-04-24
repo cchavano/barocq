@@ -5,7 +5,7 @@ COMMON=\
 	Types.v Syntax.v Typing.v Casting.v
 
 FRONTEND=\
-	Barocq.v BarocqBNF.v BarocqBNFgen.v BarocqShallow.v BarocqShallowgen.v
+	Barocq.v BarocqTransf.v BarocqBNF.v BarocqBNFgen.v BarocqShallow.v BarocqShallowgen.v
 
 BACKEND=\
 	ImpBNF.v ImpBNFgen.v ImpABNF.v ImpABNFgen.v\
