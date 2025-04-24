@@ -22,6 +22,20 @@ let int64_to_rocq (i : Integers.Int64.int) (ty : mtyp) : string =
   in
   sprintf "Int.repr %s%%Z" si
 
+let cast_to_rocq (src_ty : mtyp) (dst_ty : mtyp) : string =
+  let mtyp_to_string ty =
+    match ty with
+    | MBool -> "bool"
+    | MInt32 Signed -> "int"
+    | MInt32 Unsigned -> "uint"
+    | MInt64 Signed -> "int64"
+    | MInt64 Unsigned -> "uint64"
+    | _ -> ""
+  in
+  if src_ty <> dst_ty then
+    sprintf "%s_to_%s" (mtyp_to_string src_ty) (mtyp_to_string dst_ty)
+  else ""
+
 let unary_op_to_rocq (op : unary_op) : string =
   match op with
   | UopNotbool -> "negb "
@@ -86,6 +100,11 @@ let rec atom_to_rocq (a : atom) : string =
   | AInt32 (i, ty) -> int_to_rocq i ty
   | AInt64 (i, ty) -> int64_to_rocq i ty
   | AVar (x, _) -> ident_to_string x
+  | ACast (a1, ty) ->
+      let castfunc =
+        cast_to_rocq (BarocqShallowgen.Monadification.typof_atom a1) ty
+      in
+      sprintf "%s %s" castfunc (opt_parens a1)
   | AUnaryOp (op, a, _) -> sprintf "%s%s" (unary_op_to_rocq op) (opt_parens a)
   | ABinaryOp (op, a1, a2, ty) ->
       sprintf
@@ -308,7 +327,7 @@ let print_struct_setters (out : out_channel) (id : ident)
 let headers : string =
   "From Coq Require Import List BinIntDef.\n\
    From compcert Require Import Integers.\n\
-   From BarocqComp Require Import Error Array.\n\
+   From BarocqComp Require Import Error Array Casting.\n\
    Import ListNotations.\n\n\
    Open Scope error_monad_scope.\n\n"
 

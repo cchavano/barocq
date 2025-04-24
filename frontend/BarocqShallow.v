@@ -17,6 +17,7 @@ Module BNF.
     | AInt32 : int -> signedness -> atom
     | AInt64 : int64 -> signedness -> atom
     | AVar : ident -> atom
+    | ACast : atom -> ctyp -> atom
     | AUnaryOp : unary_op -> atom -> atom
     | ABinaryOp : binary_op -> atom -> atom -> atom
     | AStructProj : atom -> ident -> atom
@@ -77,6 +78,7 @@ Module Monadic.
     | AInt32 : int -> mtyp -> atom
     | AInt64 : int64 -> mtyp -> atom
     | AVar : ident -> mtyp -> atom
+    | ACast : atom -> mtyp -> atom
     | AUnaryOp : unary_op -> atom -> mtyp -> atom
     | ABinaryOp : binary_op -> atom -> atom -> mtyp ->  atom
     | AStructProj : atom -> ident -> mtyp -> atom

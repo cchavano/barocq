@@ -1,6 +1,6 @@
 From Coq Require Import List String ListDec PArith Bool.
 From compcert Require Import Integers.
-From BarocqComp Require Import Error MapList Utils Array Struct Types Typing Syntax.
+From BarocqComp Require Import Error MapList Utils Casting Array Struct Types Typing Syntax.
 Import ListNotations.
 
 (** * Abstract syntax *)
@@ -13,6 +13,7 @@ Inductive expr : Type :=
   | EInt32 (i: int) (s: signedness) : expr                  (* 32-bit signed or unsigned integer *)
   | EInt64 (i: int64) (s: signedness) : expr                (* 64-bit signed orunsigned integer *)    
   | EVar (x: ident) : expr                                  (* variable *)
+  | ECast (e: expr) (ty: ctyp)                              (* e as ty *)
   | EUnaryOp (op: unary_op) (e: expr) : expr                (* op e *)
   | EBinaryOp (op: binary_op) (e1 e2 : expr) : expr         (* e1 op e2 *)
   | EArrayGet (a i: expr) : expr                            (* a[i] *)
@@ -75,6 +76,7 @@ Module Typed.
     | EInt32 : int -> ctyp -> expr
     | EInt64 : int64 -> ctyp -> expr
     | EVar : ident -> ctyp -> expr
+    | ECast : expr -> ctyp -> expr
     | EUnaryOp : unary_op -> expr -> ctyp -> expr
     | EBinaryOp : binary_op -> expr -> expr -> ctyp -> expr
     | EArrayGet : expr -> expr -> ctyp -> expr
@@ -123,6 +125,7 @@ Module Typing.
     | EInt32 _ ty
     | EInt64 _ ty
     | EVar _ ty
+    | ECast _ ty
     | EUnaryOp _ _ ty
     | EBinaryOp _ _ _ ty
     | EArrayGet _ _ ty
@@ -162,6 +165,10 @@ Module Typing.
     | Barocq.EVar x =>
         let* t := typof_var gx lx x in
         ret (EVar x t)
+    | Barocq.ECast e1 ty =>
+        let* e1' := typecheck_expr ts gx lx e1 in
+        let* t := typecheck_cast (typof_expr e1') ty in
+        ret (ECast e1' t)
     | Barocq.EUnaryOp op e1 =>
         let* e1' := typecheck_expr ts gx lx e1 in
         let* t := typecheck_unary_op op (typof_expr e1') in
@@ -299,6 +306,50 @@ Section DENOT.
     match (lenv_get le x) with
     | OK v => ret v
     | Error _ =>  genv_get ge x
+    end.
+
+  Definition eval_cast (v: value) (to: typ) : res value :=
+    match v with
+    | Val TBool b =>
+        match to with
+        | TBool => ret (Val TBool b)
+        | TInt32 s =>
+            let iv := bool_to_int b in
+            ret (Val (TInt32 s) iv)
+        | TInt64 s =>
+            let iv := bool_to_int64 b in
+            ret (Val (TInt64 s) iv)
+        | _ => fail
+        end
+    | Val (TInt32 s) i =>
+        match to with
+        | TBool => ret (Val TBool (int_to_bool i))
+        | TInt32 s' => ret (Val (TInt32 s') i)
+        | TInt64 s' =>
+            let i' :=
+              match s with
+              | Signed => int_to_int64 i
+              | Unsigned => uint_to_int64 i
+              end
+            in
+            ret (Val (TInt64 s') i')
+        | _ => fail
+        end
+    | Val (TInt64 s) i =>
+        match to with
+        | TBool => ret (Val TBool (int64_to_bool i))
+        | TInt32 s' =>
+            let i' :=
+              match s with
+              | Signed => int64_to_int i
+              | Unsigned => uint64_to_int i
+              end
+            in
+            ret (Val (TInt32 s') i')
+        | TInt64 s' => ret (Val (TInt64 s') i)
+        | _ => fail
+        end
+    | _ => fail
     end.
 
   Definition eval_unary_op (op: unary_op) (v: value) : res value :=
@@ -674,6 +725,10 @@ Section DENOT.
     | EInt32 i s => ret (Val (TInt32 s) i)
     | EInt64 i s => ret (Val (TInt64 s) i)
     | EVar x => eval_var ge le x
+    | ECast e1 ty =>
+        let* ty' := ctyp_to_typ te ty in
+        let* v1 := eval_expr te ge le e1 in
+        eval_cast v1 ty'
     | EUnaryOp op e =>
         let* v := eval_expr te ge le e in
         eval_unary_op op v

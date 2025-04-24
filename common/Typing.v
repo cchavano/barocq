@@ -20,6 +20,7 @@ Definition typof_atom (a: atom) : ctyp :=
   | AInt32 _ ty
   | AInt64 _ ty
   | AVar _ ty
+  | ACast _ ty
   | AUnaryOp _ _ ty
   | ABinaryOp _ _ _ ty => ty
   end.
@@ -72,6 +73,16 @@ Definition typof_var (gx: gcontext) (lx: lcontext) (x: ident) : res ctyp :=
   | Error _ =>
       let/catch t := gcontext_get gx x /> "Typing.typof_var: unknown variable" in
       ret t
+  end.
+
+Definition typecheck_cast (from: ctyp) (to: ctyp) : res ctyp :=
+  match from with
+  | CBool | CInt32 _ | CInt64 _ =>
+    match to with
+    | CBool | CInt32 _ | CInt64 _ => ret to
+    | _ => fail
+    end
+  | _ => fail
   end.
 
 Definition typecheck_unary_op (op: unary_op) (ty: ctyp) : res ctyp :=

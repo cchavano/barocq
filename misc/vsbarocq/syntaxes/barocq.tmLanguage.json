@@ -17,7 +17,7 @@
                 {
                     "comment": "reserved keyword",
 				    "name": "keyword.other.barocq",
-				    "match": "\\b(if|then|else|in)\\b"
+				    "match": "\\b(if|then|else|in|as)\\b"
                 }
             ]
 		},
@@ -40,6 +40,13 @@
                     "match": "(#)(\\w+)",
                     "captures": {
                         "1": { "name": "keyword.operator.barocq" },
+                        "2": { "name": "entity.name.type.barocq" }
+                    }
+                },
+                {
+                    "comment": "type cast",
+                    "match": "(?<=(as))\\s+(\\w+)",
+                    "captures": {
                         "2": { "name": "entity.name.type.barocq" }
                     }
                 }

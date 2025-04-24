@@ -16,6 +16,7 @@ type raw_expr =
   | EInt32 of Integers.Int.int * Types.signedness
   | EInt64 of Integers.Int.int * Types.signedness
   | EVar of ident
+  | ECast of expr * styp
   | EUnaryOp of unary_op * expr
   | EBinaryOp of binary_op * expr * expr
   | EArrayGet of expr * expr

@@ -140,6 +140,10 @@ Module Typing.
     | Syntax.AVar x =>
         let* t := typof_var gx lx x in
         ret (AVar x t)
+    | Syntax.ACast a1 ty =>
+        let* a1' := typecheck_atom gx lx a1 in
+        let* t := typecheck_cast (typof_atom a1') ty in
+        ret (ACast a1' t)
     | Syntax.AUnaryOp op a1 =>
         let* a1' := typecheck_atom gx lx a1 in
         let ty1 := typof_atom a1' in

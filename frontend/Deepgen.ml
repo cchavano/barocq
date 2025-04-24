@@ -56,6 +56,19 @@ let signedness_to_deep (s : signedness) : string =
   | Signed -> "Signed"
   | Unsigned -> "Unsigned"
 
+let rec ctyp_to_deep (ty : ctyp) : string =
+  match ty with
+  | CBool -> "CBool"
+  | CInt32 s -> sprintf "CInt32 %s" (signedness_to_deep s)
+  | CInt64 s -> sprintf "CInt64 %s" (signedness_to_deep s)
+  | CArray ta -> sprintf "CArray (%s)" (ctyp_to_deep ta)
+  | CStruct ts -> sprintf "CStruct (%s)" (ident_to_deep ts)
+  | CFun (tparams, tret) ->
+      sprintf
+        "CFun %s (%s)"
+        (list_to_string_bracket ctyp_to_deep tparams)
+        (ctyp_to_deep tret)
+
 let rec expr_to_deep (prefix : string) (e : expr) : string =
   let prefix' = prefix ^ indent in
   match e with
@@ -66,6 +79,8 @@ let rec expr_to_deep (prefix : string) (e : expr) : string =
   | EInt64 (i, s) ->
       sprintf "EInt64 (%s) %s" (int_to_deep i s) (signedness_to_deep s)
   | EVar x -> sprintf "EVar %s" (ident_to_deep x)
+  | ECast (e1, ty) ->
+      sprintf "ECast %s %s" (expr_to_deep prefix e1) (ctyp_to_deep ty)
   | EUnaryOp (op, e1) ->
       sprintf "EUnaryOp %s (%s)" (unary_op_to_deep op) (expr_to_deep "" e1)
   | EBinaryOp (op, e1, e2) ->
@@ -120,19 +135,6 @@ and access_to_deep (ac : access) : string =
   match ac with
   | AcStructField f -> sprintf "AcStructField %s" (ident_to_string f)
   | AcArrayIndex e -> sprintf "AcArrayIndex (%s)" (expr_to_deep "" e)
-
-let rec ctyp_to_deep (ty : ctyp) : string =
-  match ty with
-  | CBool -> "CBool"
-  | CInt32 s -> sprintf "CInt32 %s" (signedness_to_deep s)
-  | CInt64 s -> sprintf "CInt64 %s" (signedness_to_deep s)
-  | CArray ta -> sprintf "CArray (%s)" (ctyp_to_deep ta)
-  | CStruct ts -> sprintf "CStruct (%s)" (ident_to_deep ts)
-  | CFun (tparams, tret) ->
-      sprintf
-        "CFun %s (%s)"
-        (list_to_string_bracket ctyp_to_deep tparams)
-        (ctyp_to_deep tret)
 
 let params_to_deep (params : (ident * ctyp) list) : string =
   list_to_string_bracket

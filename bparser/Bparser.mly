@@ -38,6 +38,7 @@
 %token TYP_BOOL TYP_INT32 TYP_UINT32 TYP_INT64 TYP_UINT64 TYP_ARRAY
 %token STRUCT DEF LET IN
 %token IF THEN ELSE
+%token AS
 %token <int32 * Types.signedness> LIT_INT32
 %token <int64 * Types.signedness> LIT_INT64
 %token <string> IDENT
@@ -50,6 +51,7 @@
 %left OP_PLUS OP_MINUS
 %left OP_MUL OP_DIV OP_MOD
 %left OP_SHL OP_SHR
+%nonassoc AS
 %nonassoc OP_NOTBOOL OP_NOTINT
 %nonassoc LPAREN LBRACKET
 %nonassoc DOT
@@ -86,6 +88,7 @@ raw_expr:
   | i = LIT_INT32 { EInt32 (coqint_of_camlint (fst i), (snd i)) }
   | i = LIT_INT64 { EInt64 (coqint_of_camlint64 (fst i), (snd i)) }
   | v = ident { EVar v }
+  | e = expr AS ty = styp { ECast (e, ty) }
   | e1 = expr LBRACKET e2 = expr RBRACKET { EArrayGet (e1, e2) }
   | e1 = expr LBRACKET e2 = expr RBRACKET ARROW_INV e3 = expr { EArraySet (e1, e2, e3) }
   | e1 = expr DOT key = ident { EStructProj (e1, key) }

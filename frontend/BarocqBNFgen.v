@@ -51,6 +51,9 @@ Fixpoint create_deep_access_rec (e: BarocqTyped.expr) (acs: list Barocq.access) 
       else
         let e1' := create_deep_access_aux create_deep_access_rec e1 in
         (Barocq.EStructProj e1' f, acs)
+  | BarocqTyped.ECast e1 ty =>
+      let e1' := create_deep_access_aux create_deep_access_rec e1 in
+      (Barocq.ECast e1' ty, acs)
   | BarocqTyped.EUnaryOp op e1 _ =>
       let e1' := create_deep_access_aux create_deep_access_rec e1 in
       (Barocq.EUnaryOp op e1', acs)
@@ -115,6 +118,9 @@ Fixpoint atom_of_expr (e: Barocq.expr) : res atom :=
   | Barocq.EInt32 i s => eret (AInt32 i s)
   | Barocq.EInt64 i s => eret (AInt64 i s)
   | Barocq.EVar x => eret (AVar (transl_user_ident x))
+  | Barocq.ECast e1 ty =>
+      let* a1 := atom_of_expr e1 in
+      eret (ACast a1 ty)
   | Barocq.EUnaryOp op e1 =>
       let* a1 := atom_of_expr e1 in
       eret (AUnaryOp op a1)
@@ -127,6 +133,9 @@ Fixpoint atom_of_expr (e: Barocq.expr) : res atom :=
 
 Definition spread_atomlist (e: Barocq.expr) (la: list atom) : res BarocqBNF.expr :=
   match e with
+  | Barocq.ECast _ ty =>
+      let* a := nth_err la 0 in
+      eret (EAtom (ACast a ty))
   | Barocq.EUnaryOp op _ =>
       let* a := nth_err la 0 in
       eret (EAtom (AUnaryOp op a))
@@ -220,6 +229,8 @@ Fixpoint normalize_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
       ret (EAtom (AInt64 i s))
   | Barocq.EVar x =>
       ret (EAtom (AVar (transl_user_ident x)))
+  | Barocq.ECast e1 ty =>
+      normalize_exprlist e [e1]
   | Barocq.EUnaryOp op e1 =>
       normalize_exprlist e [e1]
   | Barocq.EBinaryOp op e1 e2 =>
@@ -251,7 +262,7 @@ Fixpoint normalize_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
       let* ne2 := normalize_expr_rec e2 in
       ret (ELetIn (transl_user_ident x) ne1 ne2)
   end.
-
+  
 Close Scope state_err_monad_scope.
 
 Definition normalize_expr (e: BarocqTyped.expr) : res BarocqBNF.expr :=

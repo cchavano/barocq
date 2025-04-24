@@ -34,6 +34,7 @@ type error_cause =
   | Unknown_type of Syntax.ident
   | Duplicated_struct_field of Syntax.ident * Syntax.ident
   | Duplicated_param of Syntax.ident * Syntax.ident
+  | Forbidden_cast of ctyp * ctyp
 
 let funtyp_to_string (f : 'typ -> string) (tparams : 'typ list) (tret : 'typ) :
     string =
@@ -107,6 +108,11 @@ let msg_from_failure (cause : error_cause) : string =
         "parameter %s is duplicated in the definition of function %s"
         (PrintCommon.ident_to_string p)
         (PrintCommon.ident_to_string f)
+  | Forbidden_cast (t1, t2) ->
+      sprintf
+        "cannot cast a value of type %s to a value of type %s"
+        (PrintTypes.ctyp_to_string t1)
+        (PrintTypes.ctyp_to_string t2)
 
 exception Error of error_cause * unit Location.t option
 
@@ -128,6 +134,35 @@ type tenv = {
   tenv_aliases : ctyp PTree.t;
   tenv_structs : types;
 }
+
+let tenv_get (te : tenv) (tid : ident) : ctyp =
+  match tget te.tenv_aliases tid.content with
+  | Some ty -> ty
+  | None -> begin
+      match types_get te.tenv_structs tid.content with
+      | Errors.OK _ -> CStruct tid.content
+      | Errors.Error _ -> error (Unknown_type tid.content) ~loc:(Some tid)
+    end
+
+let is_type_defined (te : tenv) (tid : Syntax.ident) : bool =
+  match tget te.tenv_aliases tid with
+  | Some _ -> true
+  | None -> begin
+      match types_get te.tenv_structs tid with
+      | Errors.OK _ -> true
+      | Errors.Error _ -> false
+    end
+
+let tenv_update_alias (te : tenv) (alias : ident) (ty : ctyp) : tenv =
+  if is_type_defined te alias.content then
+    error (Already_defined_type alias.content) ~loc:(Some alias)
+  else { te with tenv_aliases = tset te.tenv_aliases alias.content ty }
+
+let tenv_update_structs (te : tenv) (sid : ident)
+    (fields : (Syntax.ident * ctyp) list) : tenv =
+  if is_type_defined te sid.content then
+    error (Already_defined_type sid.content) ~loc:(Some sid)
+  else { te with tenv_structs = tset te.tenv_structs sid.content fields }
 
 let tenv_empty = { tenv_aliases = PTree.empty; tenv_structs = PTree.empty }
 
@@ -190,7 +225,19 @@ let typecheck_struct_proj (ts : types) (st : Syntax.ident) (f : ident) : ctyp =
     end
   | Errors.Error _ -> assert false
 
-let rec typecheck_raw_expr (ts : types) (gx : gcontext) (lx : lcontext)
+let rec styp_to_ctyp (te : tenv) (sty : styp) : ctyp =
+  match sty with
+  | SBool -> CBool
+  | SInt32 s -> CInt32 s
+  | SInt64 s -> CInt64 s
+  | SArray sta -> CArray (styp_to_ctyp te sta)
+  | SStructOrAlias stid -> tenv_get te stid
+  | SFun (stparams, stret) ->
+      let tparams = List.map (styp_to_ctyp te) stparams in
+      let tret = styp_to_ctyp te stret in
+      CFun (tparams, tret)
+
+let rec typecheck_raw_expr (te : tenv) (gx : gcontext) (lx : lcontext)
     (e : raw_expr) : Barocq.expr * ctyp =
   match e with
   | ETrue -> (Barocq.ETrue, CBool)
@@ -198,13 +245,21 @@ let rec typecheck_raw_expr (ts : types) (gx : gcontext) (lx : lcontext)
   | EInt32 (i, s) -> (Barocq.EInt32 (i, s), CInt32 s)
   | EInt64 (i, s) -> (Barocq.EInt64 (i, s), CInt64 s)
   | EVar x -> (Barocq.EVar x.content, typof_var gx lx x)
+  | ECast (e1, sty) ->
+      let ty = styp_to_ctyp te sty in
+      let e1', t1 = typecheck_expr te gx lx e1 in
+      begin
+        match Typing.typecheck_cast t1 ty with
+        | Errors.OK t -> (Barocq.ECast (e1', t), t)
+        | Errors.Error _ -> error (Forbidden_cast (t1, ty))
+      end
   | EUnaryOp (op, e1) ->
       let texp =
         match op with
         | UopNeg | UopNotint | UopPlus -> Expect_int
         | UopNotbool -> Expect_typ CBool
       in
-      let e1', t1 = typecheck_expr_expecting ts gx lx e1 texp in
+      let e1', t1 = typecheck_expr_expecting te gx lx e1 texp in
       let t = typecheck_unary_op op t1 in
       (Barocq.EUnaryOp (op, e1'), t)
   | EBinaryOp (op, e1, e2) ->
@@ -214,14 +269,14 @@ let rec typecheck_raw_expr (ts : types) (gx : gcontext) (lx : lcontext)
         | BopEq | BopNeq -> Expect_int_or_bool
         | _ -> Expect_int
       in
-      let e1', t1 = typecheck_expr_expecting ts gx lx e1 texp in
-      let e2', t2 = typecheck_expr_expecting ts gx lx e2 (Expect_typ t1) in
+      let e1', t1 = typecheck_expr_expecting te gx lx e1 texp in
+      let e2', t2 = typecheck_expr_expecting te gx lx e2 (Expect_typ t1) in
       let t = typecheck_binary_op op t1 t2 in
       (Barocq.EBinaryOp (op, e1', e2'), t)
   | EArrayGet (e1, e2) ->
-      let e1', t1 = typecheck_expr_expecting ts gx lx e1 Expect_array in
+      let e1', t1 = typecheck_expr_expecting te gx lx e1 Expect_array in
       let e2', _ =
-        typecheck_expr_expecting ts gx lx e2 (Expect_typ (CInt32 Unsigned))
+        typecheck_expr_expecting te gx lx e2 (Expect_typ (CInt32 Unsigned))
       in
       begin
         match t1 with
@@ -229,44 +284,44 @@ let rec typecheck_raw_expr (ts : types) (gx : gcontext) (lx : lcontext)
         | _ -> assert false
       end
   | EArraySet (e1, e2, e3) ->
-      let e1', t1 = typecheck_expr_expecting ts gx lx e1 Expect_array in
+      let e1', t1 = typecheck_expr_expecting te gx lx e1 Expect_array in
       let e2', _ =
-        typecheck_expr_expecting ts gx lx e2 (Expect_typ (CInt32 Unsigned))
+        typecheck_expr_expecting te gx lx e2 (Expect_typ (CInt32 Unsigned))
       in
       begin
         match t1 with
         | CArray ta ->
-            let e3', _ = typecheck_expr_expecting ts gx lx e3 (Expect_typ ta) in
+            let e3', _ = typecheck_expr_expecting te gx lx e3 (Expect_typ ta) in
             (Barocq.EArraySet (e1', e2', e3'), t1)
         | _ -> assert false
       end
   | EStructProj (e1, f) ->
-      let e1', t1 = typecheck_expr_expecting ts gx lx e1 Expect_struct in
+      let e1', t1 = typecheck_expr_expecting te gx lx e1 Expect_struct in
       begin
         match t1 with
         | CStruct st ->
-            let tf = typecheck_struct_proj ts st f in
+            let tf = typecheck_struct_proj te.tenv_structs st f in
             (Barocq.EStructProj (e1', f.content), tf)
         | _ -> assert false
       end
   | EStructUpdate (e1, f, e2) ->
-      let e1', t1 = typecheck_expr_expecting ts gx lx e1 Expect_struct in
+      let e1', t1 = typecheck_expr_expecting te gx lx e1 Expect_struct in
       begin
         match t1 with
         | CStruct st ->
-            let tf = typecheck_struct_proj ts st f in
-            let e2', _ = typecheck_expr_expecting ts gx lx e2 (Expect_typ tf) in
+            let tf = typecheck_struct_proj te.tenv_structs st f in
+            let e2', _ = typecheck_expr_expecting te gx lx e2 (Expect_typ tf) in
             (Barocq.EStructUpdate (e1', f.content, e2'), t1)
         | _ -> assert false
       end
   | EApp (e1, args) ->
-      let e1', t1 = typecheck_expr_expecting ts gx lx e1 Expect_function in
+      let e1', t1 = typecheck_expr_expecting te gx lx e1 Expect_function in
       begin
         match t1 with
         | CFun (tparams, tret) ->
             let args', tapp =
               typecheck_app
-                ts
+                te
                 gx
                 lx
                 tparams
@@ -279,29 +334,29 @@ let rec typecheck_raw_expr (ts : types) (gx : gcontext) (lx : lcontext)
         | _ -> assert false
       end
   | EIfThenElse (e1, e2, e3) ->
-      let e1', _ = typecheck_expr_expecting ts gx lx e1 (Expect_typ CBool) in
-      let e2', t2 = typecheck_expr ts gx lx e2 in
-      let e3', _ = typecheck_expr_expecting ts gx lx e3 (Expect_typ t2) in
+      let e1', _ = typecheck_expr_expecting te gx lx e1 (Expect_typ CBool) in
+      let e2', t2 = typecheck_expr te gx lx e2 in
+      let e3', _ = typecheck_expr_expecting te gx lx e3 (Expect_typ t2) in
       (Barocq.EIfThenElse (e1', e2', e3'), t2)
   | ELetIn (x, e1, e2) ->
-      let e1', t1 = typecheck_expr ts gx lx e1 in
+      let e1', t1 = typecheck_expr te gx lx e1 in
       let lx' =
         match Typing.lcontext_update lx x.content t1 with
         | Errors.OK lx' -> lx'
         | Errors.Error _ -> error (Variable_shadowing_diff_type (x.content, t1))
       in
-      let e2', t2 = typecheck_expr ts gx lx' e2 in
+      let e2', t2 = typecheck_expr te gx lx' e2 in
       (Barocq.ELetIn (x.content, e1', e2'), t2)
 
-and typecheck_expr (ts : types) (gx : gcontext) (lx : lcontext) (e : expr) :
+and typecheck_expr (te : tenv) (gx : gcontext) (lx : lcontext) (e : expr) :
     Barocq.expr * ctyp =
-  try typecheck_raw_expr ts gx lx e.content
+  try typecheck_raw_expr te gx lx e.content
   with Error (cause, loc) -> update_error_loc cause loc e
 
-and typecheck_expr_expecting (ts : types) (gx : gcontext) (lx : lcontext)
+and typecheck_expr_expecting (te : tenv) (gx : gcontext) (lx : lcontext)
     (e : expr) (texp : expected_typ) : Barocq.expr * ctyp =
   try
-    let ((e', ty) as r) = typecheck_raw_expr ts gx lx e.content in
+    let ((e', ty) as r) = typecheck_raw_expr te gx lx e.content in
     match texp with
     | Expect_typ t ->
         if t = ty then r else error (Type_mismatch (texp, Current_typ ty))
@@ -332,57 +387,16 @@ and typecheck_expr_expecting (ts : types) (gx : gcontext) (lx : lcontext)
       end
   with Error (cause, loc) -> update_error_loc cause loc e
 
-and typecheck_app (ts : types) (gx : gcontext) (lx : lcontext)
+and typecheck_app (te : tenv) (gx : gcontext) (lx : lcontext)
     (tparams : ctyp list) (tret : ctyp) (args : expr list) (arity : int)
     (nbargs : int) : Barocq.expr list * ctyp =
   match (tparams, args) with
   | [], [] -> ([], tret)
   | tp :: tparams', a :: args' ->
-      let a', _ = typecheck_expr_expecting ts gx lx a (Expect_typ tp) in
-      let r, t = typecheck_app ts gx lx tparams' tret args' arity nbargs in
+      let a', _ = typecheck_expr_expecting te gx lx a (Expect_typ tp) in
+      let r, t = typecheck_app te gx lx tparams' tret args' arity nbargs in
       (a' :: r, t)
   | _, _ -> error (Wrong_argument_number (arity, nbargs))
-
-let is_type_defined (te : tenv) (tid : Syntax.ident) : bool =
-  match tget te.tenv_aliases tid with
-  | Some _ -> true
-  | None -> begin
-      match types_get te.tenv_structs tid with
-      | Errors.OK _ -> true
-      | Errors.Error _ -> false
-    end
-
-let tenv_get (te : tenv) (tid : ident) : ctyp =
-  match tget te.tenv_aliases tid.content with
-  | Some ty -> ty
-  | None -> begin
-      match types_get te.tenv_structs tid.content with
-      | Errors.OK _ -> CStruct tid.content
-      | Errors.Error _ -> error (Unknown_type tid.content) ~loc:(Some tid)
-    end
-
-let rec styp_to_ctyp (te : tenv) (sty : styp) : ctyp =
-  match sty with
-  | SBool -> CBool
-  | SInt32 s -> CInt32 s
-  | SInt64 s -> CInt64 s
-  | SArray sta -> CArray (styp_to_ctyp te sta)
-  | SStructOrAlias stid -> tenv_get te stid
-  | SFun (stparams, stret) ->
-      let tparams = List.map (styp_to_ctyp te) stparams in
-      let tret = styp_to_ctyp te stret in
-      CFun (tparams, tret)
-
-let tenv_update_alias (te : tenv) (alias : ident) (ty : ctyp) : tenv =
-  if is_type_defined te alias.content then
-    error (Already_defined_type alias.content) ~loc:(Some alias)
-  else { te with tenv_aliases = tset te.tenv_aliases alias.content ty }
-
-let tenv_update_structs (te : tenv) (sid : ident)
-    (fields : (Syntax.ident * ctyp) list) : tenv =
-  if is_type_defined te sid.content then
-    error (Already_defined_type sid.content) ~loc:(Some sid)
-  else { te with tenv_structs = tset te.tenv_structs sid.content fields }
 
 let rec typecheck_literal (te : tenv) (ty : ctyp) (l : literal) : Syntax.literal
     =
@@ -473,12 +487,7 @@ let typecheck_function (te : tenv) (gx : gcontext) (x : ident) (f : func) :
           params
       in
       let body, _ =
-        typecheck_expr_expecting
-          te.tenv_structs
-          gx
-          lx
-          f.fn_body
-          (Expect_typ tret)
+        typecheck_expr_expecting te gx lx f.fn_body (Expect_typ tret)
       in
       let f' =
         {
@@ -545,7 +554,7 @@ let typecheck_command (te : tenv) (gx : gcontext) (cmd : command) :
         | None -> (None, te', gx')
       end
   | CmdExpr e ->
-      let e', _ = typecheck_expr te.tenv_structs gx PTree.empty e in
+      let e', _ = typecheck_expr te gx PTree.empty e in
       (Some (Barocq.CmdExpr e'), te, gx)
 
 let typecheck_xprogram (xprog : xprogram) : Barocq.xprogram =

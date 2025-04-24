@@ -52,6 +52,7 @@ Inductive atom : Type :=
   | AInt32 : int -> signedness -> atom
   | AInt64 : int64 -> signedness -> atom
   | AVar : ident -> atom
+  | ACast : atom -> ctyp -> atom
   | AUnaryOp : unary_op -> atom -> atom
   | ABinaryOp : binary_op -> atom -> atom -> atom.
 
@@ -90,6 +91,7 @@ Module Typed.
     | AInt32 : int -> ctyp -> atom
     | AInt64 : int64 -> ctyp -> atom
     | AVar : ident -> ctyp -> atom
+    | ACast : atom -> ctyp -> atom
     | AUnaryOp : unary_op -> atom -> ctyp -> atom
     | ABinaryOp : binary_op -> atom -> atom -> ctyp -> atom.
 

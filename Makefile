@@ -2,7 +2,7 @@
 
 COMMON=\
 	Monads.v Error.v Utils.v Array.v Struct.v MapList.v\
-	Types.v Syntax.v Typing.v
+	Types.v Syntax.v Typing.v Casting.v
 
 FRONTEND=\
 	Barocq.v BarocqBNF.v BarocqBNFgen.v BarocqShallow.v BarocqShallowgen.v

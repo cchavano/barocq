@@ -15,6 +15,9 @@ Module Normalization.
     | Barocq.EInt32 i s => eret (AInt32 i s)
     | Barocq.EInt64 i s => eret (AInt64 i s)
     | Barocq.EVar x => eret (AVar (transl_user_ident x))
+    | Barocq.ECast e1 ty =>
+        let* a1 := atom_of_expr e1 in
+        eret (ACast a1 ty)
     | Barocq.EUnaryOp op e1 =>
         let* a1 := atom_of_expr e1 in
         eret (AUnaryOp op a1)
@@ -34,6 +37,9 @@ Module Normalization.
 
   Definition spread_atomlist (e: Barocq.expr) (la: list atom) : res BNF.expr :=
     match e with
+    | Barocq.ECast _ ty =>
+        let* a := nth_err la 0 in
+        eret (EAtom (ACast a ty))
     | Barocq.EUnaryOp op _ =>
         let* a := nth_err la 0 in
         eret (EAtom (AUnaryOp op a))
@@ -97,6 +103,8 @@ Module Normalization.
         ret (EAtom (AInt64 i s))
     | Barocq.EVar x =>
         ret (EAtom (AVar (transl_user_ident x)))
+    | Barocq.ECast e1 ty =>
+      normalize_exprlist e [e1]
     | Barocq.EUnaryOp op e1 =>
         normalize_exprlist e [e1]
     | Barocq.EBinaryOp op e1 e2 =>
@@ -191,6 +199,7 @@ Module Monadification.
     | AInt32 _ ty
     | AInt64 _ ty
     | AVar _ ty
+    | ACast _ ty
     | AUnaryOp _ _ ty
     | ABinaryOp _ _ _ ty
     | AStructProj  _ _ ty
@@ -322,6 +331,16 @@ Module Monadification.
     | Error _ => gcontext_get gx x
     end.
 
+  Definition typecheck_cast (from: mtyp) (to: mtyp) : res mtyp :=
+    match from with
+    | MBool | MInt32 _ | MInt64 _ =>
+      match to with
+      | MBool | MInt32 _ | MInt64 _ => eret to
+      | _ => MonError.fail
+      end
+    | _ => MonError.fail
+    end.
+
   Definition typecheck_unary_op (op: unary_op) (ty: mtyp) : res mtyp :=
     match op, ty with
     | UopNotbool, MBool
@@ -416,6 +435,30 @@ Module Monadification.
     | _ => MonError.fail
     end.
 
+  (* Fixpoint ctyp_to_mtyp (ty: ctyp) : mtyp :=
+    match ty with
+    | CBool => MBool
+    | CInt32 s => MInt32 s
+    | CInt64 s => MInt64 s
+    | CArray ta => MArray (ctyp_to_mtyp ta)
+    | CStruct ts => MStruct ts
+    | CFun tparams tret =>
+        let tparams' := List.map ctyp_to_mtyp tparams in
+        let tret' := ctyp_to_mtyp tret in
+        MFun tparams' tret'
+    end.  *)
+
+  Fixpoint monadify_ctyp (ty: ctyp) : mtyp :=
+    match ty with
+    | CBool => MBool
+    | CInt32 s => MInt32 s
+    | CInt64 s => MInt64 s
+    | CArray ta => MArray (monadify_ctyp ta)
+    | CStruct s => MStruct s
+    | CFun tparams tret =>
+        MFun (map monadify_ctyp tparams) (MRes (monadify_ctyp tret))
+    end.
+
   Fixpoint typecheck_atom (ts: types) (gx: gcontext) (lx: lcontext) (a: BNF.atom) : res atom :=
     match a with
     | BNF.ATrue => eret (ATrue MBool)
@@ -425,6 +468,10 @@ Module Monadification.
     | BNF.AVar x =>
         let* t := typof_var gx lx x in
         eret (AVar x t)
+    | BNF.ACast a1 ty =>
+        let* a1' := typecheck_atom ts gx lx a1 in
+        let t := monadify_ctyp ty in
+        eret (ACast a1' t)
     | BNF.AUnaryOp op a1 =>
         let* a1' := typecheck_atom ts gx lx a1 in
         let ty1 := typof_atom a1' in
@@ -495,6 +542,7 @@ Module Monadification.
       | AFalse _
       | AInt32 _ _
       | AInt64 _ _
+      | ACast _ _
       | AUnaryOp _ _ _
       | ABinaryOp _ _ _  _
       | AStructProj _ _ _
@@ -583,17 +631,6 @@ Module Monadification.
   
   Definition monadify_expr (ts: types) (gx: gcontext) (lx: lcontext) (e: BNF.expr) : res expr :=
     monadify_expr_rec ts gx lx e false.
-
-  Fixpoint monadify_ctyp (ty: ctyp) : mtyp :=
-    match ty with
-    | CBool => MBool
-    | CInt32 s => MInt32 s
-    | CInt64 s => MInt64 s
-    | CArray ta => MArray (monadify_ctyp ta)
-    | CStruct s => MStruct s
-    | CFun tparams tret =>
-        MFun (map monadify_ctyp tparams) (MRes (monadify_ctyp tret))
-    end.
 
   Definition monadify_function (ts: types) (gx: gcontext) (f: BNF.function) : res function :=
     let params := map_k monadify_ctyp (Syntax.fn_params f) in

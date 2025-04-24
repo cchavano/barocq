@@ -86,6 +86,8 @@ Fixpoint transl_atom (globs: pset) (a: Syntax.Typed.atom) : Clight.expr :=
   | AVar x ty =>
       if smem globs x then Evar x (transl_ctyp ty)
       else Etempvar x (transl_ctyp ty)
+  | ACast a ty =>
+      Ecast (transl_atom globs a) (transl_ctyp ty)
   | AUnaryOp op a1 ty =>
       let e := transl_atom globs a1 in
       let t := transl_ctyp ty in

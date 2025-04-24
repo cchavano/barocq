@@ -65,6 +65,8 @@ let rec atom_to_string (a : atom) : string =
   | AInt64 (i, Signed) -> i64_to_string i
   | AInt64 (i, Unsigned) -> u64_to_string i
   | AVar x -> ident_to_string x
+  | ACast (a1, ty) ->
+      sprintf "%s as %s" (opt_parens a1) (PrintTypes.ctyp_to_string ty)
   | AUnaryOp (op, a) -> sprintf "%s %s" (unary_op_to_string op) (opt_parens a)
   | ABinaryOp (op, a1, a2) ->
       sprintf
@@ -129,6 +131,7 @@ module PrintTyped = struct
         | _ -> assert false
       end
     | Typed.AVar (x, _) -> AVar x
+    | Typed.ACast (a1, ty) -> ACast (untype_atom a1, ty)
     | Typed.AUnaryOp (op, a', _) -> AUnaryOp (op, untype_atom a')
     | Typed.ABinaryOp (op, a1, a2, _) ->
         ABinaryOp (op, untype_atom a1, untype_atom a2)

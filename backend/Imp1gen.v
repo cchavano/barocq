@@ -10,6 +10,8 @@ Fixpoint transl_atom (params: pset) (a: atom) : atom :=
   | AVar x =>
       if smem params x then AVar (transl_param x)
       else (AVar x)
+  | ACast a1 ty =>
+      ACast (transl_atom params a1) ty
   | AUnaryOp op a1 =>
       AUnaryOp op (transl_atom params a1)
   | ABinaryOp op a1 a2 =>
