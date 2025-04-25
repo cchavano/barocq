@@ -57,7 +57,7 @@ Fixpoint rename_idents_expr (params: pset) (e: Barocq.expr) : Barocq.expr :=
   | EApp e1 args =>
       let e1' := rename_idents_expr params e1 in
       let args' := List.map (rename_idents_expr params) args in
-      EApp e1' args
+      EApp e1' args'
   | EIfThenElse e1 e2 e3 =>
       let e1' := rename_idents_expr params e1 in
       let e2' := rename_idents_expr params e2 in
