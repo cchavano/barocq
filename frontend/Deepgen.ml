@@ -177,15 +177,15 @@ let globdef_to_coqdef (def : globdef) : string =
   let s1, s2, s3 =
     match def with
     | DefStruct (id, fields) ->
-        ( sprintf "_struct_%s" (ident_to_string id),
+        ( sprintf "struct_%s" (ident_to_string id),
           "list (ident * ctyp)",
           fields_to_deep fields )
     | DefConst (id, l, _) ->
-        ( sprintf "_const_%s" (ident_to_string id),
+        ( sprintf "const_%s" (ident_to_string id),
           "Syntax.literal",
           literal_to_deep l )
     | DefFun (id, f) ->
-        ( sprintf "_fun_%s" (ident_to_string id),
+        ( sprintf "fun_%s" (ident_to_string id),
           "Barocq.function",
           function_to_deep f )
   in
@@ -210,15 +210,15 @@ let headers : string =
 let globdef_to_deep (def : globdef) : string =
   match def with
   | DefStruct (id, fields) ->
-      sprintf "DefStruct %s _struct_%s" (ident_to_deep id) (ident_to_string id)
+      sprintf "DefStruct %s struct_%s" (ident_to_deep id) (ident_to_string id)
   | DefConst (id, l, ty) ->
       sprintf
-        "DefConst %s _const_%s (%s)"
+        "DefConst %s const_%s (%s)"
         (ident_to_deep id)
         (ident_to_string id)
         (ctyp_to_deep ty)
   | DefFun (id, f) ->
-      sprintf "DefFun %s _fun_%s" (ident_to_deep id) (ident_to_string id)
+      sprintf "DefFun %s fun_%s" (ident_to_deep id) (ident_to_string id)
 
 let print_program (out : out_channel) (prog : program) : unit =
   fprintf out "%s" headers;

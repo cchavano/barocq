@@ -12,7 +12,7 @@ Fixpoint atom_of_expr (e: Barocq.expr) : res atom :=
   | Barocq.EFalse => eret AFalse
   | Barocq.EInt32 i s => eret (AInt32 i s)
   | Barocq.EInt64 i s => eret (AInt64 i s)
-  | Barocq.EVar x => eret (AVar (transl_user_ident x))
+  | Barocq.EVar x => eret (AVar x)
   | Barocq.ECast e1 ty =>
       let* a1 := atom_of_expr e1 in
       eret (ACast a1 ty)
@@ -123,7 +123,7 @@ Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
   | Barocq.EInt64 i s =>
       ret (EAtom (AInt64 i s))
   | Barocq.EVar x =>
-      ret (EAtom (AVar (transl_user_ident x)))
+      ret (EAtom (AVar x))
   | Barocq.ECast e1 ty =>
       norm_exprlist e [e1]
   | Barocq.EUnaryOp op e1 =>
@@ -155,7 +155,7 @@ Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
   | Barocq.ELetIn x e1 e2 =>
       let* ne1 := norm_expr_rec e1 in
       let* ne2 := norm_expr_rec e2 in
-      ret (ELetIn (transl_user_ident x) ne1 ne2)
+      ret (ELetIn x ne1 ne2)
   end.
   
 Close Scope state_err_monad_scope.
@@ -164,14 +164,11 @@ Definition norm_expr (e: Barocq.expr) : res BarocqBNF.expr :=
   let* ne := norm_expr_rec e 0 in
   eret (fst ne).
 
-Definition norm_params (params: list (ident * ctyp)) : list (ident * ctyp) :=
-  map (fun '(x, tx) => (transl_user_ident x, tx)) params.
-
 Definition norm_function (f: Barocq.function) : res BarocqBNF.function :=
   let* body_norm := norm_expr (fn_body f) in
   eret {|
     fn_return := fn_return f;
-    fn_params := norm_params (fn_params f);
+    fn_params := fn_params f;
     fn_body := body_norm
   |}.
 
@@ -190,14 +187,14 @@ Fixpoint norm_program_rec (ts: types) (prog: Barocq.program) : res BarocqBNF.pro
       | Barocq.DefConst x l ty =>
           let* r := norm_program_rec ts prog' in
           eret {|
-            prog_defs := (Syntax.DefConst (transl_user_ident x) l ty) :: (prog_defs r);
+            prog_defs := (Syntax.DefConst x l ty) :: (prog_defs r);
             prog_types := (prog_types r)
           |}
       | Barocq.DefFun x f =>
           let* f' := norm_function f in
           let* r := norm_program_rec ts prog' in
           eret {|
-            prog_defs := (Syntax.DefFun (transl_user_ident x) f') :: (prog_defs r);
+            prog_defs := (Syntax.DefFun x f') :: (prog_defs r);
             prog_types := prog_types r
           |}
       end

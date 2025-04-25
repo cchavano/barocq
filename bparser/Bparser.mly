@@ -12,6 +12,13 @@
   let ident_of_camlstring x =
     ident_of_string (coqstring_of_camlstring x)
 
+  (* We reject type identifiers
+      - containing <'> because this is not a valid character for C identifiers;
+      - beginning with <_> to avoid inteferences with names defined in the
+        C compiler that will be used on the generated C files. *)
+  let valid_typ_ident tid =
+    (not (String.contains tid '\'')) && (String.get tid 0 <> '_')
+
   let () =
     List.iter
       (fun (s, t) -> Hashtbl.add aliases s t)
@@ -186,8 +193,10 @@ funtyp:
 typ_ident:
   | id = IDENT
     {
-      if String.contains id '\'' then raise Error
-      else Location.make $startpos $endpos (ident_of_camlstring id)
+      if valid_typ_ident id then
+        Location.make $startpos $endpos (ident_of_camlstring id)
+      else
+        raise Error
     }
 
 ident:

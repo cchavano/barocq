@@ -1,6 +1,6 @@
 From Coq Require Import List String.
 From compcert Require Import Maps.
-From BarocqComp Require Import Monads Error MapList Types Utils Syntax Barocq BarocqShallow.
+From BarocqComp Require Import Monads Error MapList Types Utils Syntax Barocq BarocqTransf BarocqShallow.
 Import ListNotations.
 Import MonCounterErr.
 
@@ -14,7 +14,7 @@ Module Normalization.
     | Barocq.EFalse => eret AFalse
     | Barocq.EInt32 i s => eret (AInt32 i s)
     | Barocq.EInt64 i s => eret (AInt64 i s)
-    | Barocq.EVar x => eret (AVar (transl_user_ident x))
+    | Barocq.EVar x => eret (AVar x)
     | Barocq.ECast e1 ty =>
         let* a1 := atom_of_expr e1 in
         eret (ACast a1 ty)
@@ -102,7 +102,7 @@ Module Normalization.
     | Barocq.EInt64 i s =>
         ret (EAtom (AInt64 i s))
     | Barocq.EVar x =>
-        ret (EAtom (AVar (transl_user_ident x)))
+        ret (EAtom (AVar x))
     | Barocq.ECast e1 ty =>
       norm_exprlist e [e1]
     | Barocq.EUnaryOp op e1 =>
@@ -133,7 +133,7 @@ Module Normalization.
     | Barocq.ELetIn x e1 e2 =>
         let* ne1 := norm_expr_rec e1 in
         let* ne2 := norm_expr_rec e2 in
-        ret (ELetIn (transl_user_ident x) ne1 ne2)
+        ret (ELetIn x ne1 ne2)
     end.
 
   Close Scope state_err_monad_scope.
@@ -142,14 +142,11 @@ Module Normalization.
     let* ne := norm_expr_rec e 0 in
     eret (fst ne).
 
-  Definition norm_params (params: list (ident * ctyp)) : list (ident * ctyp) :=
-    map (fun '(x, tx) => (transl_user_ident x, tx)) params.
-
   Definition norm_function (f: Barocq.function) : res BNF.function :=
     let* body_norm := norm_expr (fn_body f) in
     eret {|
       fn_return := fn_return f;
-      fn_params := norm_params (fn_params f);
+      fn_params := fn_params f;
       fn_body := body_norm
     |}.
 
@@ -169,7 +166,7 @@ Module Normalization.
             let* r := norm_program_rec ts prog' in
             eret {|
               prog_defs :=
-                (Syntax.DefConst (transl_user_ident x) l ty) :: (prog_defs r);
+                (Syntax.DefConst x l ty) :: (prog_defs r);
               prog_types := (prog_types r)
             |}
         | Barocq.DefFun x f =>
@@ -177,7 +174,7 @@ Module Normalization.
             let* r := norm_program_rec ts prog' in
             eret {|
               prog_defs :=
-                (Syntax.DefFun (transl_user_ident x) f') :: (prog_defs r);
+                (Syntax.DefFun x f') :: (prog_defs r);
               prog_types := prog_types r
             |}
         end
@@ -680,6 +677,6 @@ End Monadification.
 Open Scope error_monad_scope.
 
 Definition monadify_norm_program (prog: Barocq.program) : res Monadic.program :=
-  let* _ := Barocq.Typing.typecheck_program prog in
+  let prog := BarocqTransf.rename_idents_program prog in
   let* bnf := Normalization.norm_program prog in
   Monadification.monadify_program bnf.

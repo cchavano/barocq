@@ -39,7 +39,7 @@ let gen_function_corres (fid : ident) (f : coq_function) : string =
   in
   let deep_fun_id =
     let str = ident_to_string fid in
-    String.sub str 1 (String.length str - 1)
+    String.sub str 2 (String.length str - 2)
   in
   let deep_call =
     sprintf
@@ -58,7 +58,7 @@ let gen_function_corres (fid : ident) (f : coq_function) : string =
     gen_shallow_call_ret base f.fn_return
   in
   sprintf
-    "Theorem fun%s_corres :\n%s%s%s =\n%s%s.\nProof.\n%sreflexivity.\nQed."
+    "Theorem fun_%s_corres :\n%s%s%s =\n%s%s.\nProof.\n%sreflexivity.\nQed."
     (ident_to_string fid)
     forall
     indent
@@ -70,7 +70,7 @@ let gen_function_corres (fid : ident) (f : coq_function) : string =
 let gen_const_corres (cid : ident) (l : literal) (ty : mtyp) =
   let deep_const_id =
     let str = ident_to_string cid in
-    String.sub str 1 (String.length str - 1)
+    String.sub str 2 (String.length str - 2)
   in
   let shallow_const =
     match ty with
@@ -88,7 +88,7 @@ let gen_const_corres (cid : ident) (l : literal) (ty : mtyp) =
       shallow_const
   in
   sprintf
-    "Theorem const%s_corres :\n%s%s.\nProof.\n%sreflexivity.\nQed."
+    "Theorem const_%s_corres :\n%s%s.\nProof.\n%sreflexivity.\nQed."
     (ident_to_string cid)
     indent
     thm

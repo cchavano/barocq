@@ -73,7 +73,9 @@ Definition transl_binary_op (op: Syntax.binary_op) : res Cop.binary_operation :=
   | BopGt => ret Ogt
   | BopLe => ret Ole
   | BopGe => ret Oge
-  | _ => failwith "unsupported boolean operators"
+  | BopAndbool
+  | BopOrbool =>
+      failwith "Clightgen.transl_binary_op: unsupported boolean operator"
   end.
 
 Fixpoint transl_atom (globs: pset) (a: Syntax.Typed.atom) : res Clight.expr :=

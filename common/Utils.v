@@ -17,7 +17,7 @@ Definition prefix_ident (p: string) (x: ident) : ident :=
   ident_of_string sx'.
 
 Definition transl_user_ident (x: ident) : ident :=
-  prefix_ident "_" x.
+  prefix_ident "u_" x.
 
 Definition ident_of_nat (n: nat) : ident :=
   let str := NilEmpty.string_of_uint (Nat.to_uint n) in
