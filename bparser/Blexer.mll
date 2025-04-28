@@ -14,7 +14,11 @@
       let n = String.length il in
       (* ===== u64 ===== *)
       if String.ends_with ~suffix:"UL" il then
-        let il = "0u" ^ String.sub il 0 (n - 2) in
+        let il =
+          let n = String.sub il 0 (n - 2) in
+          if String.starts_with ~prefix:"0x" il then n
+          else "0u" ^ n
+        in
         try
           LIT_INT64 (Int64.of_string il, Types.Unsigned)
         with Failure _ ->
@@ -28,7 +32,11 @@
           error "64-bit integer overflow."
       (* ===== u32 ===== *)
       else if String.ends_with ~suffix:"U" il then
-        let il = "0u" ^ String.sub il 0 (n - 1) in
+        let il =
+          let n = String.sub il 0 (n - 1) in
+          if String.starts_with ~prefix:"0x" il then n
+          else "0u" ^ n
+        in
         try
           LIT_INT32 ((Int32.of_string il), Types.Unsigned)
         with Failure _ ->
@@ -54,10 +62,12 @@
 }
 
 let digit = ['0'-'9']
+let xdigit = digit | ['a'-'f''A'-'F']
 let letter = ['a'-'z''A'-'Z']
 let space = [' ''\t''\r']
 
-let int_lit = digit+ ['U']? ['L']?
+let dec_int_lit = digit (digit | '_')* ['U']? ['L']?
+let hex_int_lit = ("0x" | "0X") xdigit (xdigit | '_')* ['U']? ['L']?
 let ident_char = (letter | digit | '_' | '\'')
 let ident = letter ident_char* | '_' ident_char+
 
@@ -103,7 +113,8 @@ rule read_token = parse
   | ">"           { OP_GT }
   | "!"           { OP_NOTBOOL }
   | "="           { BIND }
-  | int_lit as il { parse_int_lit il }
+  | hex_int_lit as il { parse_int_lit il }
+  | dec_int_lit as il { parse_int_lit il }
   | ident as id
     {
       try (Hashtbl.find keywords id) with 

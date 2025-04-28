@@ -81,7 +81,12 @@
                 {
                     "comment": "decimal integer literal",
                     "name": "constant.numeric.integer.barocq",
-                    "match": "\\d+[U]?[L]?"
+                    "match": "\\b\\d(\\d|_)*[U]?[L]?\\b"
+                },
+                {
+                    "comment": "hexadecimal integer literal",
+                    "name": "constant.numeric.integer.barocq",
+                    "match": "\\b(0x|0X)[[:xdigit:]][[:xdigit:]|_]*[U]?[L]?\\b"
                 }
             ]
         },
