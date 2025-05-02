@@ -18,8 +18,8 @@ Inductive expr : Type :=
   | EBinaryOp (op: binary_op) (e1 e2 : expr) : expr         (* e1 op e2 *)
   | EArrayGet (a i: expr) : expr                            (* a[i] *)
   | EArraySet (a i e: expr) : expr                          (* a[i] <- e *)
-  | EStructProj (st: expr) (x: ident) : expr                (* st.x *)
-  | EStructUpdate (st: expr) (x: ident) (e: expr) : expr    (* st.x <- e *)
+  | EStructProj (st: expr) (f: ident) : expr                (* st.f *)
+  | EStructUpdate (st: expr) (f: ident) (e: expr) : expr    (* st.f <- e *)
   | EDeepAccess (e: expr) (acs: list access) : expr         (* eX1X2....Xn where Xi = .fi or [ei] *)     
   | EApp (e: expr) (args: list expr) : expr                 (* e(args) *)
   | EIfThenElse (e1 e2 e3: expr) : expr                     (* if e1 then e2 else e3 *)
@@ -36,33 +36,33 @@ Definition function : Type := Syntax.function expr.
 (** ** Global definitions *)
 
 Inductive globdef : Type :=
-  | DefStruct (a: ident) (fields: list (ident * ctyp)) : globdef    (* struct a = { x1: t1; ...; xn: tn; } *)
-  | DefConst (x: ident) (l: literal) (ty: ctyp) : globdef           (* def x : ty = l *)
-  | DefFun (x: ident) (f: function) : globdef.                      (* def f (p1: t1, ..., pn: tn) : ty = e *)
-
-(** ** Programs *)
+  | DefStruct (a: ident) (fields: list (ident * ctyp)) : globdef  (* struct a = { x1: t1; ...; xn: tn; } *)
+  | DefConst (x: ident) (l: literal) (ty: ctyp) : globdef         (* def x : ty = l *)
+  | DefFun (x: ident) (f: function) : globdef.                    (* def f (p1: t1, ..., pn: tn) : ty = e *)
 
 (** We differentiate between "programs" that only contain definitions and 
-    "executable (= interpretable) programs" which also contains top-level
-    expressions to be evaluated. Only definitions are compiled down to C. *)
-
-Definition program : Type := list globdef.
+    "interpretable programs" which also contains top-level expressions to be evaluated.
+    Only definitions are compiled down to C. *)
 
 Inductive command : Type :=
   | CmdDef (def: globdef) : command      (* top level definition *)
   | CmdExpr (e: expr) : command.         (* top level expression to be evaluated *)
 
-Definition xprogram : Type := list command.
+(** ** Programs *)
 
-Definition xprog_to_prog (xprog: xprogram) : program :=
-  fold_right
+Definition program : Type := list globdef.
+
+Definition iprogram : Type := list command.
+
+Definition iprog_to_prog (iprog: iprogram) : program :=
+  List.fold_right
     (fun cmd acc =>
-      match cmd with
-      | CmdDef def => def :: acc 
-      | CmdExpr e => acc
-      end)
+        match cmd with
+        | CmdDef d => d :: acc
+        | _ => acc
+        end)
     nil
-    xprog.
+    iprog.
 
 Module Typed.
 
@@ -108,7 +108,7 @@ Module Typed.
 
   (** ** Programs *)
 
-  Definition program : Type := list globdef.
+  Definition program := list globdef.
 
 End Typed.
 
@@ -138,25 +138,25 @@ Module Typing.
     | ELetIn _ _ _ ty => ty
     end.
 
-  Fixpoint typecheck_deep_access (typecheck_expr : types -> gcontext -> lcontext -> Barocq.expr -> res BarocqTyped.expr)
-    (ts: types) (gx: gcontext) (lx: lcontext) (ty: ctyp) (acs: list Barocq.access) : res (ctyp * list Barocq.Typed.access) :=
+  Fixpoint typecheck_deep_access (typecheck_expr : senv -> gcontext -> lcontext -> Barocq.expr -> res BarocqTyped.expr)
+    (se: senv) (gx: gcontext) (lx: lcontext) (ty: ctyp) (acs: list Barocq.access) : res (ctyp * list Barocq.Typed.access) :=
     match acs with
     | nil => ret (ty, nil)
     | ac :: acs' =>
         match ac with
         | Barocq.AcStructField f =>
-            let* ty' := typecheck_struct_proj ts ty f in
-            let* (r, lr) := typecheck_deep_access typecheck_expr ts gx lx ty' acs' in
+            let* ty' := typecheck_struct_proj se ty f in
+            let* (r, lr) := typecheck_deep_access typecheck_expr se gx lx ty' acs' in
             ret (r, (AcStructField f ty') :: lr)
         | Barocq.AcArrayIndex ei =>
-            let* ei' := typecheck_expr ts gx lx ei in
+            let* ei' := typecheck_expr se gx lx ei in
             let* ty' := typecheck_array_get ty (typof_expr ei') in
-            let* (r, lr) := typecheck_deep_access typecheck_expr ts gx lx ty' acs' in
+            let* (r, lr) := typecheck_deep_access typecheck_expr se gx lx ty' acs' in
             ret (r, (AcArrayIndex ei' ty') :: lr)
         end
     end.
 
-  Fixpoint typecheck_expr (ts: types) (gx: gcontext) (lx: lcontext) (e: Barocq.expr) : res BarocqTyped.expr :=
+  Fixpoint typecheck_expr (se: senv) (gx: gcontext) (lx: lcontext) (e: Barocq.expr) : res BarocqTyped.expr :=
     match e with
     | Barocq.ETrue => ret (ETrue CBool)
     | Barocq.EFalse => ret (EFalse CBool)
@@ -166,52 +166,52 @@ Module Typing.
         let* t := typof_var gx lx x in
         ret (EVar x t)
     | Barocq.ECast e1 ty =>
-        let* e1' := typecheck_expr ts gx lx e1 in
+        let* e1' := typecheck_expr se gx lx e1 in
         let* t := typecheck_cast (typof_expr e1') ty in
         ret (ECast e1' t)
     | Barocq.EUnaryOp op e1 =>
-        let* e1' := typecheck_expr ts gx lx e1 in
+        let* e1' := typecheck_expr se gx lx e1 in
         let* t := typecheck_unary_op op (typof_expr e1') in
         ret (EUnaryOp op e1' t)
     | Barocq.EBinaryOp op e1 e2 =>
-        let* e1' := typecheck_expr ts gx lx e1 in
-        let* e2' := typecheck_expr ts gx lx e2 in
+        let* e1' := typecheck_expr se gx lx e1 in
+        let* e2' := typecheck_expr se gx lx e2 in
         let* t := typecheck_binary_op op (typof_expr e1') (typof_expr e2') in
         ret (EBinaryOp op e1' e2' t)
     | Barocq.EArrayGet e1 e2 =>
-        let* e1' := typecheck_expr ts gx lx e1 in
-        let* e2' := typecheck_expr ts gx lx e2 in
+        let* e1' := typecheck_expr se gx lx e1 in
+        let* e2' := typecheck_expr se gx lx e2 in
         let* t := typecheck_array_get (typof_expr e1') (typof_expr e2') in
         ret (EArrayGet e1' e2' t)
     | Barocq.EArraySet e1 e2 e3 =>
-        let* e1' := typecheck_expr ts gx lx e1 in
-        let* e2' := typecheck_expr ts gx lx e2 in
-        let* e3' := typecheck_expr ts gx lx e3 in
+        let* e1' := typecheck_expr se gx lx e1 in
+        let* e2' := typecheck_expr se gx lx e2 in
+        let* e3' := typecheck_expr se gx lx e3 in
         let* t := typecheck_array_set (typof_expr e1') (typof_expr e2') (typof_expr e3') in
         ret (EArraySet e1' e2' e3' t)
     | Barocq.EStructProj e1 x =>
-        let* e1' := typecheck_expr ts gx lx e1 in
-        let* t := typecheck_struct_proj ts (typof_expr e1') x in
+        let* e1' := typecheck_expr se gx lx e1 in
+        let* t := typecheck_struct_proj se (typof_expr e1') x in
         ret (EStructProj e1' x t)
     | Barocq.EStructUpdate e1 x e2 =>
-        let* e1' := typecheck_expr ts gx lx e1 in
-        let* e2' := typecheck_expr ts gx lx e2 in
-        let* t := typecheck_struct_update ts (typof_expr e1') (typof_expr e2') x in
+        let* e1' := typecheck_expr se gx lx e1 in
+        let* e2' := typecheck_expr se gx lx e2 in
+        let* t := typecheck_struct_update se (typof_expr e1') (typof_expr e2') x in
         ret (EStructUpdate e1' x e2' t)
     | Barocq.EDeepAccess e1 acs =>
-        let* e1' := typecheck_expr ts gx lx e1 in
-        let* (t, acs') := typecheck_deep_access typecheck_expr ts gx lx (typof_expr e1') acs in
+        let* e1' := typecheck_expr se gx lx e1 in
+        let* (t, acs') := typecheck_deep_access typecheck_expr se gx lx (typof_expr e1') acs in
         ret (EDeepAccess e1' acs' t)
     | Barocq.EApp e1 args =>
-        let* e1' := typecheck_expr ts gx lx e1 in
-        let* args' := mmap (typecheck_expr ts gx lx) args in
+        let* e1' := typecheck_expr se gx lx e1 in
+        let* args' := mmap (typecheck_expr se gx lx) args in
         let targs := map typof_expr args' in 
         let* t := typecheck_call (typof_expr e1') targs in
         ret (EApp e1' args' t)
     | Barocq.EIfThenElse e1 e2 e3 =>
-        let* e1' := typecheck_expr ts gx lx e1 in
-        let* e2' := typecheck_expr ts gx lx e2 in
-        let* e3' := typecheck_expr ts gx lx e3 in
+        let* e1' := typecheck_expr se gx lx e1 in
+        let* e2' := typecheck_expr se gx lx e2 in
+        let* e3' := typecheck_expr se gx lx e3 in
         let '(ty1, ty2, ty3) := (typof_expr e1', typof_expr e2', typof_expr e3') in
         match ty1 with
         | CBool =>
@@ -221,20 +221,20 @@ Module Typing.
         | _ => fail
         end
     | Barocq.ELetIn x e1 e2 =>
-        let* e1' := typecheck_expr ts gx lx e1 in
+        let* e1' := typecheck_expr se gx lx e1 in
         let* lx' := lcontext_update lx x (typof_expr e1') in
-        let* e2' := typecheck_expr ts gx lx' e2 in
+        let* e2' := typecheck_expr se gx lx' e2 in
         ret (ELetIn x e1' e2' (typof_expr e2'))
     end.
 
-  Definition typecheck_function (ts: types) (gx: gcontext) (f: Barocq.function) : res BarocqTyped.function :=
+  Definition typecheck_function (se: senv) (gx: gcontext) (f: Barocq.function) : res BarocqTyped.function :=
     let* lx :=
       fold_left_err
         (fun acc '(x, tx) => lcontext_update acc x tx)
         (fn_params f)
         (ret tempty)
     in
-    let* body := typecheck_expr ts gx lx (fn_body f) in
+    let* body := typecheck_expr se gx lx (fn_body f) in
     if ctyp_eq_dec (typof_expr body) (fn_return f) then
       ret {|
         fn_return := fn_return f;
@@ -243,26 +243,26 @@ Module Typing.
       |}
     else failwith "Barocq.Typing.typecheck_function: return type mismatch".
 
-  Fixpoint typecheck_globdefs (ts: types) (gx: gcontext) (defs: list Barocq.globdef) : res (list BarocqTyped.globdef) :=
+  Fixpoint typecheck_globdefs (se: senv) (gx: gcontext) (defs: list Barocq.globdef) : res (list BarocqTyped.globdef) :=
     match defs with
     | nil => ret nil
     | Barocq.DefStruct x fields :: defs' =>
-        let* ts' := types_update ts x fields in
-        let* rd := typecheck_globdefs ts' gx defs' in
+        let* se' := senv_update se x fields in
+        let* rd := typecheck_globdefs se' gx defs' in
         ret ((DefStruct x fields) :: rd)
     | Barocq.DefConst x l ty :: defs' =>
-        let* l' := typecheck_literal ts l in
+        let* l' := typecheck_literal se l in
         if ctyp_eq_dec ty (Typing.typof_literal l') then
           let* gx' := gcontext_update gx x ty in
-          let* rd := typecheck_globdefs ts gx' defs' in
+          let* rd := typecheck_globdefs se gx' defs' in
           ret (DefConst x l ty :: rd)
         else
           failwith "Barocq.Typing.typecheck_globdef: type mismatch in constant definition"
     | Barocq.DefFun x f :: defs' =>
-        let* f' := typecheck_function ts gx f in
+        let* f' := typecheck_function se gx f in
         let tf := cfun_typ (fn_params f') (fn_return f') in
         let* gx' := gcontext_update gx x tf in
-        let* rd := typecheck_globdefs ts gx' defs' in
+        let* rd := typecheck_globdefs se gx' defs' in
         ret (DefFun x f' :: rd)
     end.
 
@@ -384,30 +384,30 @@ Section DENOT.
     | BopAdd =>
         match v1, v2 with
         | Val (TInt32 s1) i1, Val (TInt32 s2) i2 =>
-            if signedness_eq s1 s2 then ret (Val (TInt32 s1) (Int.add i1 i2))
+            if signedness_eq_dec s1 s2 then ret (Val (TInt32 s1) (Int.add i1 i2))
             else fail
         | Val (TInt64 s1) i1, Val (TInt64 s2) i2 =>
-            if signedness_eq s1 s2 then ret (Val (TInt64 s1) (Int64.add i1 i2))
+            if signedness_eq_dec s1 s2 then ret (Val (TInt64 s1) (Int64.add i1 i2))
             else fail
         | _, _ => fail
         end
     | BopSub =>
         match v1, v2 with
         | Val (TInt32 s1) i1, Val (TInt32 s2) i2 =>
-            if signedness_eq s1 s2 then ret (Val (TInt32 s1) (Int.sub i1 i2))
+            if signedness_eq_dec s1 s2 then ret (Val (TInt32 s1) (Int.sub i1 i2))
             else fail
         | Val (TInt64 s1) i1, Val (TInt64 s2) i2 =>
-            if signedness_eq s1 s2 then ret (Val (TInt64 s1) (Int64.sub i1 i2))
+            if signedness_eq_dec s1 s2 then ret (Val (TInt64 s1) (Int64.sub i1 i2))
             else fail
         | _, _ => fail
         end
     | BopMul =>
         match v1, v2 with
         | Val (TInt32 s1) i1, Val (TInt32 s2) i2 =>
-            if signedness_eq s1 s2 then ret (Val (TInt32 s1) (Int.mul i1 i2))
+            if signedness_eq_dec s1 s2 then ret (Val (TInt32 s1) (Int.mul i1 i2))
             else fail
         | Val (TInt64 s1) i1, Val (TInt64 s2) i2 =>
-            if signedness_eq s1 s2 then ret (Val (TInt64 s1) (Int64.mul i1 i2))
+            if signedness_eq_dec s1 s2 then ret (Val (TInt64 s1) (Int64.mul i1 i2))
             else fail
         | _, _ => fail
         end
@@ -438,40 +438,40 @@ Section DENOT.
     | BopAndint =>
         match v1, v2 with
         | Val (TInt32 s1) i1, Val (TInt32 s2) i2 =>
-            if signedness_eq s1 s2 then ret (Val (TInt32 s1) (Int.and i1 i2))
+            if signedness_eq_dec s1 s2 then ret (Val (TInt32 s1) (Int.and i1 i2))
             else fail
         | Val (TInt64 s1) i1, Val (TInt64 s2) i2 =>
-            if signedness_eq s1 s2 then ret (Val (TInt64 s1) (Int64.and i1 i2))
+            if signedness_eq_dec s1 s2 then ret (Val (TInt64 s1) (Int64.and i1 i2))
             else fail
         | _, _ => fail
         end
     | BopOrint =>
         match v1, v2 with
         | Val (TInt32 s1) i1, Val (TInt32 s2) i2 =>
-            if signedness_eq s1 s2 then ret (Val (TInt32 s1) (Int.or i1 i2))
+            if signedness_eq_dec s1 s2 then ret (Val (TInt32 s1) (Int.or i1 i2))
             else fail
         | Val (TInt64 s1) i1, Val (TInt64 s2) i2 =>
-            if signedness_eq s1 s2 then ret (Val (TInt64 s1) (Int64.or i1 i2))
+            if signedness_eq_dec s1 s2 then ret (Val (TInt64 s1) (Int64.or i1 i2))
             else fail
         | _, _ => fail
         end
     | BopXorint =>
         match v1, v2 with
         | Val (TInt32 s1) i1, Val (TInt32 s2) i2 =>
-            if signedness_eq s1 s2 then ret (Val (TInt32 s1) (Int.xor i1 i2))
+            if signedness_eq_dec s1 s2 then ret (Val (TInt32 s1) (Int.xor i1 i2))
             else fail
         | Val (TInt64 s1) i1, Val (TInt64 s2) i2 =>
-            if signedness_eq s1 s2 then ret (Val (TInt64 s1) (Int64.xor i1 i2))
+            if signedness_eq_dec s1 s2 then ret (Val (TInt64 s1) (Int64.xor i1 i2))
             else fail
         | _, _ => fail
         end
     | BopShl =>
         match v1, v2 with
         | Val (TInt32 s1) i1, Val (TInt32 s2) i2 =>
-            if signedness_eq s1 s2 then ret (Val (TInt32 s1) (Int.shl i1 i2))
+            if signedness_eq_dec s1 s2 then ret (Val (TInt32 s1) (Int.shl i1 i2))
             else fail
         | Val (TInt64 s1) i1, Val (TInt64 s2) i2 =>
-            if signedness_eq s1 s2 then ret (Val (TInt64 s1) (Int64.shl i1 i2))
+            if signedness_eq_dec s1 s2 then ret (Val (TInt64 s1) (Int64.shl i1 i2))
             else fail
         | _, _ => fail
         end
@@ -491,10 +491,10 @@ Section DENOT.
         match v1, v2 with
         | Val TBool b1, Val TBool b2 => ret (Val TBool (eqb b1 b2))
         | Val (TInt32 s1) i1, Val (TInt32 s2) i2 =>
-            if signedness_eq s1 s2 then ret (Val TBool (Int.eq i1 i2))
+            if signedness_eq_dec s1 s2 then ret (Val TBool (Int.eq i1 i2))
             else fail
         | Val (TInt64 s1) i1, Val (TInt64 s2) i2 =>
-            if signedness_eq s1 s2 then ret (Val TBool (Int64.eq i1 i2))
+            if signedness_eq_dec s1 s2 then ret (Val TBool (Int64.eq i1 i2))
             else fail
         | _, _ => fail
         end
@@ -584,7 +584,7 @@ Section DENOT.
     - apply (ret tt).
     - apply fail.
     - apply fail.
-    - destruct (ident_eq_dec x y).
+    - destruct (Ident.eq_dec x y).
       + subst. destruct (typ_eq_dec tv t).
         * subst. destruct (eval_struct_lit_rec lv' fields') as [st |].
           -- unfold eval_structtyp in *. simpl in *.
@@ -631,7 +631,7 @@ Section DENOT.
     - simpl in H. discriminate.
     - unfold typof_field in *. unfold find_k_err in *.
       unfold type_of_field in *. unfold find_k in *.
-      simpl. simpl in H. unfold ident_eq_dec in H.
+      simpl. simpl in H. unfold Ident.eq_dec in H.
       unfold key_eq_dec. destruct (Pos.eq_dec x k).
       + inversion H. reflexivity.
       + apply (IHfields' k t0 H). 
@@ -818,7 +818,7 @@ Section DENOT.
   Defined.
 
   Definition build_fun_value (te: tenv) (ge: genv) (params: list (ident * ctyp)) (tret: ctyp) (e: expr) : res value :=
-    if nodup_k ident_eq_dec params then
+    if nodup_k Ident.eq_dec params then
       let* tret' := ctyp_to_typ te tret in
       let* params' := map_k_err (ctyp_to_typ te) params in
       ret (Val (TFun (map (fun x => snd x) params') tret') (build_funval te ge params' tret' e))
@@ -827,8 +827,8 @@ Section DENOT.
   Definition fields_ctyp_to_typ (te: tenv) (fields: list (ident * ctyp)) : res (list (ident * typ)) :=
     map_k_err (ctyp_to_typ te) fields.
 
-  Fixpoint interpret_rec (te: tenv) (ge: genv) (xprog: xprogram) : res (list value) :=
-    match xprog with
+  Fixpoint interpret_rec (te: tenv) (ge: genv) (cmds: list Barocq.command) : res (list value) :=
+    match cmds with
     | nil => ret nil
     | c :: xprog' =>
         match c with
@@ -855,11 +855,11 @@ Section DENOT.
         end
     end.
 
-  Definition interpret (xprog: xprogram) : res (list value) :=
-    interpret_rec tempty tempty xprog.
+  Definition interpret (iprog: iprogram) : res (list value) :=
+    interpret_rec tempty tempty iprog.
 
-  Fixpoint eval_def_rec (te: tenv) (ge: genv) (prog: program) (x: ident) : res value :=
-    match prog with
+  Fixpoint eval_def_rec (te: tenv) (ge: genv) (defs: list Barocq.globdef) (x: ident) : res value :=
+    match defs with
     | nil => fail
     | DefStruct a fields :: prog' =>
         let* fields' := fields_ctyp_to_typ te fields in
@@ -867,7 +867,7 @@ Section DENOT.
         eval_def_rec te' ge prog' x
     | DefConst y l ty :: prog' =>
         let* vv := eval_literal te l in
-        if ident_eq_dec x y then ret vv
+        if Ident.eq_dec x y then ret vv
         else
           let '(Val tv v) := vv in
           let* ty' := ctyp_to_typ te ty in
@@ -877,7 +877,7 @@ Section DENOT.
           else fail
     | DefFun y f :: prog' =>
         let* fv := build_fun_value te ge (fn_params f) (fn_return f) (fn_body f) in
-        if ident_eq_dec x y then ret fv
+        if Ident.eq_dec x y then ret fv
         else
           let* ge' := genv_update ge y fv in
           eval_def_rec te ge' prog' x
@@ -898,12 +898,12 @@ Section DENOT.
     - simpl. apply tt.
   Defined.
 
-  Fixpoint eval_struct_ctyp_rec (te: tenv) (prog: program) (t: ident) : res typ :=
-    match prog with
+  Fixpoint eval_struct_ctyp_rec (te: tenv) (defs: list Barocq.globdef) (t: ident) : res typ :=
+    match defs with
     | nil => fail
     | DefStruct a fields :: prog' =>
         let* fields' := fields_ctyp_to_typ te fields in
-        if ident_eq_dec a t then ret (TStruct a fields')
+        if Ident.eq_dec a t then ret (TStruct a fields')
         else
           let* te' := tenv_update te a fields' in
           eval_struct_ctyp_rec te' prog' t
@@ -912,7 +912,7 @@ Section DENOT.
     end.
 
   Definition eval_struct_ctyp (prog: program) (t: ident) : Type :=
-    match (eval_struct_ctyp_rec tempty prog t) with
+    match eval_struct_ctyp_rec tempty prog t with
     | OK t' => eval_typ t'
     | Error _ => unit
     end.

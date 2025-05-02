@@ -1,7 +1,11 @@
 From compcert Require Import Integers.
-From BarocqComp Require Import Utils Array Types.
+From BarocqComp Require Import Utils Array Ident Types.
 
-Definition ident : Type := Utils.ident.
+(** * Identfitiers *)
+
+Definition ident : Type := Ident.t.
+
+(* Definition ident : Type := Ident.Extended.t. *)
 
 (** * Constant literals *)
 
@@ -56,7 +60,7 @@ Inductive atom : Type :=
   | AUnaryOp : unary_op -> atom -> atom
   | ABinaryOp : binary_op -> atom -> atom -> atom.
 
-(** DeepAccessl list with atomics array indexes. *)
+(** Deep accesses with atomics array indexes. *)
 
 Inductive access : Type :=
   | AcStructField : ident -> access
@@ -113,9 +117,9 @@ End Typed.
 (** * Functions *)
 
 Record function (B: Type) : Type := mk_function {
-  fn_return: ctyp;
-  fn_params: list (ident * ctyp);
-  fn_body: B
+  fn_return : ctyp;
+  fn_params : list (ident * ctyp);
+  fn_body : B
 }.
 
 (** * Global definitions *)
@@ -124,11 +128,16 @@ Inductive globdef (C F: Type) : Type :=
   | DefConst : ident -> C -> ctyp -> globdef C F
   | DefFun : ident -> F -> globdef C F.
 
-(** Programs *)
+(** * Programs *)
 
-Record program (G: Type): Type := mk_program {
+Record struct_def := mk_struct_def {
+  sd_name : ident;
+  sd_fields : list (ident * ctyp)
+}.
+
+Record program (G: Type) : Type := mk_program {
   prog_defs : list G;
-  prog_types : types
+  prog_types : list struct_def;
 }.
 
 Arguments DefConst {C} {F}.

@@ -275,11 +275,11 @@ and opt_parens (l : literal) : string =
 let field_typ_to_rocq ((fname, ftyp) : ident * mtyp) : string =
   sprintf "%s%s: %s" indent (ident_to_string fname) (mtyp_to_rocq ftyp)
 
-let structtyp_to_rocq (id : ident) (fields : (ident * mtyp) list) : string =
+let struct_def_to_rocq (st : struct_def) : string =
   sprintf
     "Record %s := {\n%s\n}."
-    (ident_to_string id)
-    (list_to_string "" "" ";\n" field_typ_to_rocq fields)
+    (ident_to_string st.sd_name)
+    (list_to_string "" "" ";\n" field_typ_to_rocq st.sd_fields)
 
 let globdef_to_rocq (def : globdef) : string =
   match def with
@@ -309,20 +309,18 @@ let gen_field_setter (id : ident) ((fname, ftyp) : ident * mtyp) (args : string)
 
 let gen_field_setter_arg (id : ident) (x : ident) ((fname, ftyp) : ident * mtyp)
     : string =
-  if Utils.ident_eq_dec x fname then "v"
-  else sprintf "(%s s)" (ident_to_string fname)
+  if x = fname then "v" else sprintf "(%s s)" (ident_to_string fname)
 
 let gen_field_setter_args (id : ident) (fields : (ident * mtyp) list)
     (x : ident) : string =
   list_to_string "" "" " " (fun field -> gen_field_setter_arg id x field) fields
 
-let print_struct_setters (out : out_channel) (id : ident)
-    (fields : (ident * mtyp) list) : unit =
+let print_struct_setters (out : out_channel) (st : struct_def) : unit =
   List.iter
     (fun field ->
-      let args = gen_field_setter_args id fields (fst field) in
-      fprintf out "%s\n\n" (gen_field_setter id field args))
-    fields
+      let args = gen_field_setter_args st.sd_name st.sd_fields (fst field) in
+      fprintf out "%s\n\n" (gen_field_setter st.sd_name field args))
+    st.sd_fields
 
 let headers : string =
   "From Coq Require Import List BinIntDef.\n\
@@ -342,6 +340,6 @@ let print_program (out : out_channel) (prog : program) : unit =
     | [], _ :: _ -> ("", "\n")
   in
   fprintf out "%s" headers;
-  print_list out "" s "\n\n" (fun (x, tx) -> structtyp_to_rocq x tx) types;
-  List.iter (fun (id, fields) -> print_struct_setters out id fields) types;
+  print_list out "" s "\n\n" struct_def_to_rocq types;
+  List.iter (print_struct_setters out) types;
   print_list out "" e "\n\n" globdef_to_rocq defs

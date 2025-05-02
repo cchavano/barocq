@@ -3,6 +3,7 @@ open Bparser
 
 let token_to_string (tok : Bparser.token) : string =
   match tok with
+  | MODULE -> "MODULE"
   | DOT -> "DOT"
   | COMMA -> "COMMA"
   | SEMICOLON -> "SEMICOLON"

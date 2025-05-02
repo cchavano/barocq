@@ -65,4 +65,3 @@ Definition uint64_to_uint (i: int64) : int :=
   uint64_to_int i.
 
 Definition uint64_to_int64 (i: int64) : int64 := i.
-

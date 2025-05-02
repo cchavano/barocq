@@ -2,15 +2,11 @@
   open Types
   open Syntax
   open Camlcoq
-  open Ctypesdefs
   open SurfaceAST
 
   type prefix_op = Plus | Minus
 
   let aliases = Hashtbl.create 10
-
-  let ident_of_camlstring x =
-    ident_of_string (coqstring_of_camlstring x)
 
   (* We reject type identifiers
       - containing <'> because this is not a valid character for C identifiers;
@@ -18,6 +14,11 @@
         C compiler that will be used on the generated C files. *)
   let valid_typ_ident tid =
     (not (String.contains tid '\'')) && (String.get tid 0 <> '_')
+
+  (* A module name must begin with an uppercase and cannot contain <'>. *)
+  let valid_modul_ident mid =
+    let re = Str.regexp {|^\([A-Z][a-zA-Z0-9_]*\)$|} in
+    Str.string_match re mid 0
 
   let () =
     List.iter
@@ -27,6 +28,7 @@
       ]
 %}
 
+%token MODULE
 %token DOT COMMA SEMICOLON COLON
 %token LPAREN RPAREN
 %token LBRACKET RBRACKET
@@ -65,12 +67,14 @@
 %nonassoc ARROW
 %nonassoc TYP_ARRAY
 
-%start xprogram
-%type<SurfaceAST.xprogram> xprogram
+%start imodul
+%type<SurfaceAST.imodul> imodul
 %%
 
-xprogram:
-  | xprog = list(command) EOF { xprog }
+imodul:
+  | MODULE mname = mod_ident SEMICOLON SEMICOLON
+    cmds = list(command) EOF
+    { { imd_name = mname; imd_cmds = cmds } }
 
 command:
   | def = topdef endcmd { CmdDef def }
@@ -94,7 +98,7 @@ raw_expr:
   | FALSE { EFalse }
   | i = LIT_INT32 { EInt32 (coqint_of_camlint (fst i), (snd i)) }
   | i = LIT_INT64 { EInt64 (coqint_of_camlint64 (fst i), (snd i)) }
-  | v = ident { EVar v }
+  | v = cident { EVar v }
   | e = expr AS ty = styp { ECast (e, ty) }
   | e1 = expr LBRACKET e2 = expr RBRACKET { EArrayGet (e1, e2) }
   | e1 = expr LBRACKET e2 = expr RBRACKET ARROW_INV e3 = expr { EArraySet (e1, e2, e3) }
@@ -127,7 +131,7 @@ raw_literal:
     }
   | a = delimited(LBRACKETBAR, separated_list(SEMICOLON, literal), RBRACKETBAR) { SurfaceAST.LArray a }
   | st = delimited(LBRACE, separated_nonempty_list(SEMICOLON, literal_field), RBRACE)
-    HASHTAG ty = ident { SurfaceAST.LStruct (st, ty) }
+    HASHTAG cid = cident { SurfaceAST.LStruct (st, cid) }
 
 literal:
   | l = raw_literal { Location.make $startpos $endpos l }
@@ -179,7 +183,7 @@ styp:
   | TYP_INT64 { SInt64 Signed }
   | TYP_UINT64 { SInt64 Unsigned }
   | TYP_ARRAY ty = styp { SArray ty }
-  | ty = typ_ident { SStructOrAlias ty }
+  | ty = cident { SStructOrAlias ty }
   | ty = funtyp { ty }
   | LPAREN ty = styp RPAREN { ty }
 
@@ -190,14 +194,27 @@ funtyp:
     RPAREN ARROW tret = styp
     { SFun (tparam1 :: tparams, tret) }
 
-typ_ident:
+mod_ident:
   | id = IDENT
     {
-      if valid_typ_ident id then
-        Location.make $startpos $endpos (ident_of_camlstring id)
+      if valid_modul_ident id then
+        Location.make $startpos $endpos id
       else
         raise Error
     }
 
+typ_ident:
+  | id = IDENT
+    {
+      if valid_typ_ident id then
+        Location.make $startpos $endpos id
+      else
+        raise Error
+    }
+
+cident:
+  | id = ident { IdLocal id }
+  | mname = mod_ident COLON COLON id = ident { IdExtern (mname, id) }
+
 ident:
-  | id = IDENT { Location.make $startpos $endpos (ident_of_camlstring id) }
+  | id = IDENT { Location.make $startpos $endpos id }

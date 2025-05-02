@@ -32,6 +32,6 @@ Definition transl_globdef (def: BarocqBNF.globdef) : ImpBNF.globdef :=
 
 Definition transl_program (prog: BarocqBNF.program) : ImpBNF.program :=
   {|
-    prog_defs := map transl_globdef (prog_defs prog);
-    prog_types := prog_types prog
+    prog_defs := List.map transl_globdef (prog_defs prog);
+    prog_types := prog_types prog;
   |}.

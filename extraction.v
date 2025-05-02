@@ -90,7 +90,7 @@ Separate Extraction
   Clightgen.program_idents
   Barocq.Typing.typecheck_program
   Barocq.interpret
-  Barocq.xprog_to_prog
+  Barocq.iprog_to_prog
   Barocq.eval_def
   Barocq.eval_struct_ctyp
   Compiler.compile_to_imp1

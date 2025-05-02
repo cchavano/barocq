@@ -1,6 +1,10 @@
 From Coq Require Import List.
 From compcert Require Import Integers.
-From BarocqComp Require Import Error Array Struct Utils MapList.
+From BarocqComp Require Import Error Array Struct Ident MapList.
+
+Definition ident := Ident.t.
+
+(* Definition ident := Ident.Extended.t. *)
 
 (** * Syntax of types *)
 
@@ -10,7 +14,7 @@ Inductive signedness : Type :=
   | Signed
   | Unsigned.
 
-Lemma signedness_eq: forall (s1 s2: signedness), {s1 = s2} + {s1 <> s2}.
+Lemma signedness_eq_dec: forall (s1 s2: signedness), {s1 = s2} + {s1 <> s2}.
 Proof.
   decide equality.
 Defined.
@@ -62,10 +66,10 @@ Definition cfun_typ (params: list (ident * ctyp)) (tret: ctyp) : ctyp :=
 (** * Type of a struct field *)
 
 Definition typof_field (k: ident) (fields: list (ident * typ)) : res typ :=
-  find_k_err ident_eq_dec k fields.
+  find_k_err Ident.eq_dec k fields.
 
 Definition ctypof_field (k: ident) (fields: list (ident * ctyp)) : res ctyp :=
-  find_k_err ident_eq_dec k fields.
+  find_k_err Ident.eq_dec k fields.
 
 (** * Conversion of a typ to a Coq Type *)
 
@@ -104,49 +108,3 @@ Definition typ_cast {t1 t2: typ} (Heq: t1 = t2) (x: eval_typ t1) : eval_typ t2.
 Proof.
   subst. exact x.
 Defined.
-
-(** * Type alias environments *)
-
-(** ** Alias to concrete struct types *)
-
-Definition types : Type := ptree (list (ident * ctyp)).
-
-Definition types_get (ts: types) (x: ident) : res (list (ident * ctyp)) :=
-  err_of_opt (tget ts x).
-
-Definition types_update (ts: types) (x: ident) (fields: list (ident * ctyp)) : res types :=
-  match types_get ts x with
-  | OK _ => fail
-  | Error _ => ret (tset ts x fields)
-  end.
- 
-(** ** Alias to plain struct types *)
-
-Definition tenv : Type := ptree (list (ident * typ)).
-
-Definition tenv_get (te: tenv) (x: ident) : res (list (ident * typ)) := err_of_opt (tget te x).
-
-(** ** Conversion of concrete types to plain types *)
-
-Definition tenv_update (te: tenv) (x: ident) (fields: list (ident * typ)) : res tenv :=
-  match tenv_get te x with
-  | OK _ => fail
-  | Error _ => ret (tset te x fields)
-  end.
-
-Fixpoint ctyp_to_typ (te: tenv) (ty: ctyp) : res typ :=
-  match ty with
-  | CBool => ret TBool
-  | CInt32 s => ret (TInt32 s)
-  | CInt64 s => ret (TInt64 s)
-  | CArray ta =>
-      let* bta := ctyp_to_typ te ta in 
-      ret (TArray bta)
-  | CStruct tx =>
-      let* fields := tenv_get te tx in
-      ret (TStruct tx fields)
-  | CFun tparams tret =>
-      let* tparams' := mmap (ctyp_to_typ te) tparams in
-      let* tret' := ctyp_to_typ te tret in
-      ret (TFun tparams' tret')
-  end.

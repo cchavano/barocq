@@ -43,14 +43,9 @@ Module BNF.
 
   (** ** Programs *)
 
-  Definition types : Type := MapList.t ident (list (ident * ctyp)).
-
-  (* The set of types is recorded in an association list and not in a traditionnal map,
-     to preserve the order in which type definitions appear in the source file
-     (needed for the shallow-embedding generation). *)
   Record program : Type := mk_program {
     prog_defs : list globdef;
-    prog_types : types
+    prog_types : list struct_def
   }.
 
 End BNF.
@@ -115,11 +110,14 @@ Module Monadic.
 
   (** ** Programs *)
 
-  Definition types : Type := MapList.t ident (list (ident * mtyp)).
+  Record struct_def := mk_struct_def {
+    sd_name : ident;
+    sd_fields : list (ident * mtyp)
+  }.
 
   Record program : Type := mk_program {
     prog_defs : list globdef;
-    prog_types : types
+    prog_types : list struct_def
   }.
 
 End Monadic.

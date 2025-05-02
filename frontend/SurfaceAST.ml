@@ -1,13 +1,22 @@
 open Syntax
 
-type ident = Syntax.ident Location.t
+type ident = string Location.t
 
+(** Composed identifiers. A composed identifier refers to either an identifer
+    local to a module (global definition / type, paramater or local variable) or
+    to an external one. *)
+type cident =
+  | IdLocal of ident
+  | IdExtern of ident * ident
+
+(** Surface types. At parsing, a type identifier cannot yet be distinguished
+    between a struct type or an alias. *)
 type styp =
   | SBool
   | SInt32 of Types.signedness
   | SInt64 of Types.signedness
   | SArray of styp
-  | SStructOrAlias of ident
+  | SStructOrAlias of cident
   | SFun of styp list * styp
 
 type raw_expr =
@@ -15,7 +24,7 @@ type raw_expr =
   | EFalse
   | EInt32 of Integers.Int.int * Types.signedness
   | EInt64 of Integers.Int.int * Types.signedness
-  | EVar of ident
+  | EVar of cident
   | ECast of expr * styp
   | EUnaryOp of unary_op * expr
   | EBinaryOp of binary_op * expr * expr
@@ -41,7 +50,7 @@ type raw_literal =
   | LInt32 of Integers.Int.int * Types.signedness
   | LInt64 of Integers.Int64.int * Types.signedness
   | LArray of literal list
-  | LStruct of (ident * literal) list * ident
+  | LStruct of (ident * literal) list * cident
 
 and literal = raw_literal Location.t
 
@@ -51,10 +60,20 @@ type globdef =
   | DefConst of ident * literal * styp
   | DefFun of ident * func
 
-type program = globdef list
+type modul = {
+  md_name : ident;
+  md_defs : globdef list;
+}
+
+type program = modul list
 
 type command =
   | CmdDef of globdef
   | CmdExpr of expr
 
-type xprogram = command list
+type imodul = {
+  imd_name : ident;
+  imd_cmds : command list;
+}
+
+type iprogram = imodul list

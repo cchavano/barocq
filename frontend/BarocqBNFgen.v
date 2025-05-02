@@ -1,6 +1,6 @@
 From Coq Require Import PArith String List.
 From compcert Require Import Clightdefs Integers.
-From BarocqComp Require Import Error Monads Utils Syntax Types Barocq BarocqTransf BarocqBNF.
+From BarocqComp Require Import Error Monads Utils Syntax Types Typing Barocq BarocqTransf BarocqBNF.
 Import ListNotations.
 Import MonCounterErr.
 
@@ -172,34 +172,28 @@ Definition norm_function (f: Barocq.function) : res BarocqBNF.function :=
     fn_body := body_norm
   |}.
 
-Fixpoint norm_program_rec (ts: types) (prog: Barocq.program) : res BarocqBNF.program :=
-  match prog with
-  | nil =>
-      eret {|
-        prog_defs := nil;
-        prog_types := ts
-      |}
-  | d :: prog' =>
+Fixpoint norm_program_rec (defs: list Barocq.globdef) : res (list BarocqBNF.globdef * list struct_def) :=
+  match defs with
+  | nil => eret (nil, nil)
+  | d :: defs' =>
       match d with
       | Barocq.DefStruct a fields =>
-          let* ts' := types_update ts a fields in
-          norm_program_rec ts' prog'
+          let* (defr, structs) := norm_program_rec defs' in
+          eret (defr, {| sd_name := a; sd_fields := fields |} :: structs)
       | Barocq.DefConst x l ty =>
-          let* r := norm_program_rec ts prog' in
-          eret {|
-            prog_defs := (Syntax.DefConst x l ty) :: (prog_defs r);
-            prog_types := (prog_types r)
-          |}
+          let* (defr, structs) := norm_program_rec defs' in
+          eret (Syntax.DefConst x l ty :: defr, structs)
       | Barocq.DefFun x f =>
           let* f' := norm_function f in
-          let* r := norm_program_rec ts prog' in
-          eret {|
-            prog_defs := (Syntax.DefFun x f') :: (prog_defs r);
-            prog_types := prog_types r
-          |}
+          let* (defr, structs):= norm_program_rec defs' in
+          eret (Syntax.DefFun x f' :: defr, structs)
       end
   end.
 
 Definition norm_program (prog: Barocq.program) : res BarocqBNF.program :=
   let* prog := BarocqTransf.transf_program prog in
-  norm_program_rec tempty prog.
+  let* (defs, structs) := norm_program_rec prog in
+  eret {|
+    Syntax.prog_defs := defs;
+    Syntax.prog_types := structs
+  |}.

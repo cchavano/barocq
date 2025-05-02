@@ -3,6 +3,8 @@ open Printf
 
 exception CompilerError of string
 
+exception SyntaxError of lexbuf * string
+
 let syntax_error_msg lexbuf msg =
   let startpos = Lexing.lexeme_start_p lexbuf in
   let endpos = Lexing.lexeme_end_p lexbuf in
@@ -13,9 +15,9 @@ let syntax_error_msg lexbuf msg =
     sep
     msg
 
-let source = ref ""
+let source_files = ref []
 
-let c_output = ref ""
+let c_output = ref "a.c"
 
 let opt_interp = ref false
 
@@ -41,17 +43,17 @@ let opt_gen_alias_return_state_of = ref ""
 
 let opt_debug_aliasing = ref false
 
-let usage_msg = "Usage: barocq [options] <file> \noptions:"
+let usage_msg = "Usage: barocq [options] <files> \noptions:"
 
 let options =
   [
-    ("-interp", Arg.Set opt_interp, "\t\tInterpret the given file");
+    ("-interp", Arg.Set opt_interp, "\t\tInterpret the given files");
     ( "-parse",
       Arg.Set opt_parse,
-      "\t\tParse the given file (stop after parsing)" );
+      "\t\tParse the given files (stop after parsing)" );
     ( "-typecheck",
       Arg.Set opt_typecheck,
-      "\t\tTypecheck the input program (do not compile)" );
+      "\t\tTypecheck the input files (do not compile)" );
     ("-o", Arg.Set_string c_output, "<file>\t\tGenerate C output in <file>");
     ( "-print-tokens",
       Arg.Set opt_print_tokens,
@@ -78,7 +80,8 @@ let options =
       "\tDisplay the alias analysis debugging information on stderr" );
   ]
 
-let set_source (file : string) : unit = source := file
+let set_source_files (file : string) : unit =
+  source_files := file :: !source_files
 
 let get_raw_filename (file : string) : string =
   Filename.remove_extension (Filename.basename file)
@@ -88,8 +91,8 @@ let get_full_filename (file : string) (suffix : string) : string =
   let dirname = Filename.dirname file in
   Printf.sprintf "%s/%s%s" dirname rawname suffix
 
-let set_c_filename (file : string) : unit =
-  if !c_output = "" then c_output := get_full_filename file ".c" else ()
+(* let set_c_filename (file : string) : unit =
+  if !c_output = "" then c_output := get_full_filename file ".c" else () *)
 
 let rec record_idents (ids : string list) : unit =
   match ids with
@@ -98,239 +101,259 @@ let rec record_idents (ids : string list) : unit =
       let _ = Camlcoq.intern_string h in
       record_idents t
 
-let () =
-  Arg.parse options set_source usage_msg;
+let init_lexbuf (file : string) (lexbuf : lexbuf) : unit =
+  lexbuf.lex_curr_p <-
+    { pos_fname = file; pos_lnum = 1; pos_bol = 0; pos_cnum = 0 }
 
-  if !source = "" then begin
+let parse_one_file (file : string) : SurfaceAST.imodul =
+  let input = open_in file in
+  let lexbuf = from_channel input in
+  init_lexbuf file lexbuf;
+  try
+    let imod = Bparser.imodul Blexer.read_token lexbuf in
+    close_in input;
+    imod
+  with
+  | Blexer.Error msg -> raise (SyntaxError (lexbuf, msg))
+  | Bparser.Error -> raise (SyntaxError (lexbuf, ""))
+
+let parse_all_files (files : string list) : SurfaceAST.iprogram =
+  List.map parse_one_file files
+
+let print_tokens (files : string list) : unit =
+  let aux file =
+    let input = open_in file in
+    let lexbuf = from_channel input in
+    init_lexbuf file lexbuf;
+    try
+      printf "Start of file \"%s\" ========\n" file;
+      PrintTokens.print lexbuf;
+      close_in input;
+      printf "End of file \"%s\" ========\n" file
+    with
+    | Blexer.Error msg -> raise (SyntaxError (lexbuf, msg))
+    | Bparser.Error -> raise (SyntaxError (lexbuf, ""))
+  in
+  List.iter aux files
+
+let () =
+  Arg.parse options set_source_files usage_msg;
+
+  if !source_files = [] then begin
     eprintf "Error: no source file provided\n";
     exit 1
   end;
 
+  source_files := List.rev !source_files;
+
   try
-    let input = open_in !source in
+    if !opt_print_tokens then begin
+      print_tokens !source_files;
+      exit 0
+    end;
 
-    let lexbuf = from_channel input in
+    let s_iprog = parse_all_files !source_files in
 
-    try
-      lexbuf.lex_curr_p <-
-        { pos_fname = !source; pos_lnum = 1; pos_bol = 0; pos_cnum = 0 };
+    if !opt_parse then begin
+      printf "Parsing succeeded\n";
+      exit 0
+    end;
 
-      if !opt_print_tokens then begin
-        PrintTokens.print lexbuf;
-        exit 0
-      end;
+    let iprog = SurfaceTyping.typecheck_iprogram s_iprog in
 
-      let xprog = Bparser.xprogram Blexer.read_token lexbuf in
+    let prog = Barocq.iprog_to_prog iprog in
 
-      close_in input;
+    if !opt_typecheck then begin
+      printf "Typechecking succeeded\n";
+      exit 0
+    end;
 
-      if !opt_parse then begin
-        printf "Parsing succeeded\n";
-        exit 0
-      end;
-
-      let xprog = SurfaceTyping.typecheck_xprogram xprog in
-
-      let prog = Barocq.xprog_to_prog xprog in
-
-      if !opt_typecheck then begin
-        printf "Typechecking succeeded\n";
-        exit 0
-      end;
-
-      if !opt_print_bbnf then begin
-        let bbnf = BarocqBNFgen.norm_program prog in
-        begin
-          match bbnf with
-          | Errors.OK prog -> PrintBarocqBNF.print_program stdout prog
-          | Errors.Error msg ->
-              raise @@ CompilerError (C2C.string_of_errmsg msg)
-        end;
-        exit 0
-      end;
-
-      if !opt_print_imp1 then begin
-        let imp1 = Compiler.compile_to_imp1 prog in
-        begin
-          match imp1 with
-          | Errors.OK prog -> PrintImp1.print_program stdout prog
-          | Errors.Error msg ->
-              raise @@ CompilerError (C2C.string_of_errmsg msg)
-        end;
-        exit 0
-      end;
-
-      if !opt_gen_alias_call_state_of <> "" then begin
-        let imp1 = Compiler.compile_to_imp1 prog in
-        begin
-          match imp1 with
-          | Errors.OK prog -> begin
-              match Imp1.Typing.typecheck_program prog with
-              | Errors.OK prog -> begin
-                  let fid = "_" ^ !opt_gen_alias_call_state_of in
-                  match Aliasing_impl.get_fun_descr prog fid with
-                  | Some fdescr ->
-                      let dotfile =
-                        get_full_filename
-                          !source
-                          (sprintf "%s_call_state.dot" fid)
-                      in
-                      let dotfile_rev =
-                        get_full_filename
-                          !source
-                          (sprintf "%s_call_state_rev.dot" fid)
-                      in
-                      let out = open_out dotfile in
-                      let out_rev = open_out dotfile_rev in
-                      Aliasing_impl.DotExport.print_state
-                        out
-                        (Aliasing_defs.AbsDom.AbsState
-                           fdescr.Aliasing_defs.fd_callstate);
-                      Aliasing_impl.DotExport.print_rev_state
-                        out_rev
-                        (Aliasing_defs.AbsDom.AbsState
-                           fdescr.Aliasing_defs.fd_callstate);
-                      close_out out;
-                      close_out out_rev
-                  | None ->
-                      failwith
-                        (sprintf
-                           "Error: function \"%s\" is not defined"
-                           !opt_gen_alias_call_state_of)
-                end
-              | Errors.Error msg ->
-                  failwith
-                    (sprintf "Imp1 typing error: %s" (C2C.string_of_errmsg msg))
-            end
-          | Errors.Error msg ->
-              raise @@ CompilerError (C2C.string_of_errmsg msg)
-        end
-      end;
-
-      if !opt_gen_alias_return_state_of <> "" then begin
-        let imp1 = Compiler.compile_to_imp1 prog in
-        begin
-          match imp1 with
-          | Errors.OK prog -> begin
-              match Imp1.Typing.typecheck_program prog with
-              | Errors.OK prog -> begin
-                  let fid = "_" ^ !opt_gen_alias_return_state_of in
-                  match Aliasing_impl.get_fun_descr prog fid with
-                  | Some fdescr ->
-                      let dotfile =
-                        get_full_filename
-                          !source
-                          (sprintf "%s_return_state.dot" fid)
-                      in
-                      let dotfile_rev =
-                        get_full_filename
-                          !source
-                          (sprintf "%s_return_state_rev.dot" fid)
-                      in
-                      let out = open_out dotfile in
-                      let out_rev = open_out dotfile_rev in
-                      Aliasing_impl.DotExport.print_state
-                        out
-                        fdescr.Aliasing_defs.fd_returnstate;
-                      Aliasing_impl.DotExport.print_rev_state
-                        out_rev
-                        fdescr.Aliasing_defs.fd_returnstate;
-                      close_out out;
-                      close_out out_rev
-                  | None ->
-                      failwith
-                        (sprintf
-                           "Error: function \"%s\" is not defined"
-                           !opt_gen_alias_call_state_of)
-                end
-              | Errors.Error msg ->
-                  failwith
-                    (sprintf "Imp1 typing error: %s" (C2C.string_of_errmsg msg))
-            end
-          | Errors.Error msg ->
-              raise @@ CompilerError (C2C.string_of_errmsg msg)
-        end
-      end;
-
+    if !opt_print_bbnf then begin
+      let bbnf = BarocqBNFgen.norm_program prog in
       begin
-        if !opt_interp then
-          let _ = Interpreter.interpret xprog in
-          exit 0
+        match bbnf with
+        | Errors.OK prog -> PrintBarocqBNF.print_program stdout prog
+        | Errors.Error msg -> raise @@ CompilerError (C2C.string_of_errmsg msg)
       end;
+      exit 0
+    end;
 
-      if !opt_gen_corres then begin
-        opt_gen_shallow := true;
-        opt_gen_deep := true;
-        let rawname = get_raw_filename !source in
-        let coqlib =
-          let bytes = String.to_bytes rawname in
-          Bytes.fill bytes 0 1 (Char.uppercase_ascii (String.get rawname 0));
-          Bytes.to_string bytes
-        in
-        Proofsgen.coqlib := coqlib;
-        Proofsgen.shallowfile := rawname ^ "_Shallow";
-        Proofsgen.deepfile := rawname ^ "_Deep";
-        let proofs_output = get_full_filename !source "_Corres.v" in
-        let oc = open_out proofs_output in
-        match BarocqShallowgen.monadify_norm_program prog with
-        | Errors.OK prog ->
-            Proofsgen.print_proofs oc prog;
-            printf "Correspondence proofs generated at %s\n" proofs_output;
-            close_out oc
-        | Errors.Error msg ->
-            close_out oc;
-            failwith "Error: fail to generate the correspondence proofs"
+    if !opt_print_imp1 then begin
+      let imp1 = Compiler.compile_to_imp1 prog in
+      begin
+        match imp1 with
+        | Errors.OK prog -> PrintImp1.print_program stdout prog
+        | Errors.Error msg -> raise @@ CompilerError (C2C.string_of_errmsg msg)
       end;
+      exit 0
+    end;
 
-      if !opt_gen_shallow then begin
-        let shallow_output = get_full_filename !source "_Shallow.v" in
-        let oc = open_out shallow_output in
-        match BarocqShallowgen.monadify_norm_program prog with
-        | Errors.OK prog ->
-            Shallowgen.print_program oc prog;
-            printf "Shallow-embedding generated at %s\n" shallow_output;
-            close_out oc
-        | Errors.Error msg ->
-            close_out oc;
-            failwith "Error: fail to generate the shallow-embedding"
-      end;
-
-      if !opt_gen_deep then begin
-        let deep_output = get_full_filename !source "_Deep.v" in
-        let oc = open_out deep_output in
-        Deepgen.print_program oc prog;
-        printf "Deep-embedding generated at %s\n" deep_output;
-        close_out oc
-      end;
-
-      match Compiler.compile !opt_debug_aliasing prog with
-      | Errors.OK prog ->
-          Camlcoq.use_canonical_atoms := true;
-          let ids = Clightgen.program_idents prog in
-          record_idents (List.map PrintCommon.ident_to_string ids);
-          set_c_filename !source;
-          PrintClight.destination := Some !c_output;
-          PrintClight.print_if_2 prog;
-          printf "C file generated at %s\n" !c_output
-      | Errors.Error msg -> raise @@ CompilerError (C2C.string_of_errmsg msg)
-    with
-    | Sys_error msg -> eprintf "System error: %s\n" msg
-    | Blexer.Error msg -> eprintf "%s\n" (syntax_error_msg lexbuf msg)
-    | Bparser.Error -> eprintf "%s\n" (syntax_error_msg lexbuf "")
-    | Interpreter.Error msg -> eprintf "Interpretation error: %s\n" msg
-    | SurfaceTyping.Error (cause, loc) -> begin
-        let msg = SurfaceTyping.msg_from_failure cause in
-        match loc with
-        | Some loc ->
-            eprintf "Typing error %s\n> %s\n" (Location.to_string loc) msg
-        | None -> assert false
+    if !opt_gen_alias_call_state_of <> "" then begin
+      let imp1 = Compiler.compile_to_imp1 prog in
+      begin
+        match imp1 with
+        | Errors.OK prog -> begin
+            match Imp1.Typing.typecheck_program prog with
+            | Errors.OK prog -> begin
+                let fid = "_" ^ !opt_gen_alias_call_state_of in
+                match Aliasing_impl.get_fun_descr prog fid with
+                | Some fdescr ->
+                    let dotfile =
+                      get_full_filename
+                        !c_output
+                        (sprintf "%s_call_state.dot" fid)
+                    in
+                    let dotfile_rev =
+                      get_full_filename
+                        !c_output
+                        (sprintf "%s_call_state_rev.dot" fid)
+                    in
+                    let out = open_out dotfile in
+                    let out_rev = open_out dotfile_rev in
+                    Aliasing_impl.DotExport.print_state
+                      out
+                      (Aliasing_defs.AbsDom.AbsState
+                         fdescr.Aliasing_defs.fd_callstate);
+                    Aliasing_impl.DotExport.print_rev_state
+                      out_rev
+                      (Aliasing_defs.AbsDom.AbsState
+                         fdescr.Aliasing_defs.fd_callstate);
+                    close_out out;
+                    close_out out_rev
+                | None ->
+                    failwith
+                      (sprintf
+                         "Error: function \"%s\" is not defined"
+                         !opt_gen_alias_call_state_of)
+              end
+            | Errors.Error msg ->
+                failwith
+                  (sprintf "Imp1 typing error: %s" (C2C.string_of_errmsg msg))
+          end
+        | Errors.Error msg -> raise @@ CompilerError (C2C.string_of_errmsg msg)
       end
-    | CompilerError msg -> eprintf "Compilation error: %s\n" msg
-    | Failure msg -> eprintf "Unexpected error: %s\n" msg
-    | Aliasing_impl.UnsupportedFeature msg ->
-        eprintf "Compilation error: %s\n" msg
-    | Assert_failure (src, _, _) ->
-        eprintf
-          "Impossible error coming from %s. Please, make a bug report.\n"
-          src
-  with Sys_error msg -> eprintf "System error: %s\n" msg
+    end;
+
+    if !opt_gen_alias_return_state_of <> "" then begin
+      let imp1 = Compiler.compile_to_imp1 prog in
+      begin
+        match imp1 with
+        | Errors.OK prog -> begin
+            match Imp1.Typing.typecheck_program prog with
+            | Errors.OK prog -> begin
+                let fid = "_" ^ !opt_gen_alias_return_state_of in
+                match Aliasing_impl.get_fun_descr prog fid with
+                | Some fdescr ->
+                    let dotfile =
+                      get_full_filename
+                        !c_output
+                        (sprintf "%s_return_state.dot" fid)
+                    in
+                    let dotfile_rev =
+                      get_full_filename
+                        !c_output
+                        (sprintf "%s_return_state_rev.dot" fid)
+                    in
+                    let out = open_out dotfile in
+                    let out_rev = open_out dotfile_rev in
+                    Aliasing_impl.DotExport.print_state
+                      out
+                      fdescr.Aliasing_defs.fd_returnstate;
+                    Aliasing_impl.DotExport.print_rev_state
+                      out_rev
+                      fdescr.Aliasing_defs.fd_returnstate;
+                    close_out out;
+                    close_out out_rev
+                | None ->
+                    failwith
+                      (sprintf
+                         "Error: function \"%s\" is not defined"
+                         !opt_gen_alias_call_state_of)
+              end
+            | Errors.Error msg ->
+                failwith
+                  (sprintf "Imp1 typing error: %s" (C2C.string_of_errmsg msg))
+          end
+        | Errors.Error msg -> raise @@ CompilerError (C2C.string_of_errmsg msg)
+      end
+    end;
+
+    begin
+      if !opt_interp then
+        let _ = Interpreter.interpret iprog in
+        exit 0
+    end;
+
+    if !opt_gen_corres then begin
+      opt_gen_shallow := true;
+      opt_gen_deep := true;
+      let rawname = get_raw_filename !c_output in
+      let coqlib =
+        let bytes = String.to_bytes rawname in
+        Bytes.fill bytes 0 1 (Char.uppercase_ascii (String.get rawname 0));
+        Bytes.to_string bytes
+      in
+      Proofsgen.coqlib := coqlib;
+      Proofsgen.shallowfile := rawname ^ "_Shallow";
+      Proofsgen.deepfile := rawname ^ "_Deep";
+      let proofs_output = get_full_filename !c_output "_Corres.v" in
+      let oc = open_out proofs_output in
+      match BarocqShallowgen.monadify_norm_program prog with
+      | Errors.OK prog ->
+          Proofsgen.print_proofs oc prog;
+          printf "Correspondence proofs generated at %s\n" proofs_output;
+          close_out oc
+      | Errors.Error msg ->
+          close_out oc;
+          failwith "Error: fail to generate the correspondence proofs"
+    end;
+
+    if !opt_gen_shallow then begin
+      let shallow_output = get_full_filename !c_output "_Shallow.v" in
+      let oc = open_out shallow_output in
+      match BarocqShallowgen.monadify_norm_program prog with
+      | Errors.OK prog ->
+          Shallowgen.print_program oc prog;
+          printf "Shallow-embedding generated at %s\n" shallow_output;
+          close_out oc
+      | Errors.Error msg ->
+          close_out oc;
+          failwith "Error: fail to generate the shallow-embedding"
+    end;
+
+    if !opt_gen_deep then begin
+      let deep_output = get_full_filename !c_output "_Deep.v" in
+      let oc = open_out deep_output in
+      Deepgen.print_program oc prog;
+      printf "Deep-embedding generated at %s\n" deep_output;
+      close_out oc
+    end;
+
+    match Compiler.compile !opt_debug_aliasing prog with
+    | Errors.OK prog ->
+        Camlcoq.use_canonical_atoms := true;
+        let ids = Clightgen.program_idents prog in
+        record_idents (List.map PrintCommon.ident_to_string ids);
+        PrintClight.destination := Some !c_output;
+        PrintClight.print_if_2 prog;
+        printf "C file generated at %s\n" !c_output
+    | Errors.Error msg -> raise @@ CompilerError (C2C.string_of_errmsg msg)
+  with
+  | Sys_error msg -> eprintf "System error: %s\n" msg
+  | SyntaxError (lexbuf, msg) -> eprintf "%s\n" (syntax_error_msg lexbuf msg)
+  | Interpreter.Error msg -> eprintf "Interpretation error: %s\n" msg
+  | SurfaceTyping.Error (cause, loc) -> begin
+      let msg = SurfaceTyping.msg_from_failure cause in
+      match loc with
+      | Some loc ->
+          eprintf "Typing error %s\n> %s\n" (Location.to_string loc) msg
+      | None -> assert false
+    end
+  | CompilerError msg -> eprintf "Compilation error: %s\n" msg
+  | Failure msg -> eprintf "Unexpected error: %s\n" msg
+  | Aliasing_impl.UnsupportedFeature msg ->
+      eprintf "Compilation error: %s\n" msg
+  | Assert_failure (src, _, _) ->
+      eprintf
+        "Impossible error coming from %s. Please, make a bug report.\n"
+        src

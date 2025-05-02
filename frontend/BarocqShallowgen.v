@@ -150,38 +150,30 @@ Module Normalization.
       fn_body := body_norm
     |}.
 
-  Fixpoint norm_program_rec (ts: types) (prog: Barocq.program) : res BNF.program :=
-    match prog with
-    | nil =>
-        eret {|
-          prog_defs := nil;
-          prog_types := ts
-        |}
-    | d :: prog' =>
+  Fixpoint norm_program_rec (defs: list Barocq.globdef) : res (list BarocqShallow.BNF.globdef * list struct_def) :=
+    match defs with
+    | nil => eret (nil, nil)
+    | d :: defs' =>
         match d with
         | Barocq.DefStruct a fields =>
-            let ts' := MapList.add_k ident_eq_dec a fields ts in
-            norm_program_rec ts' prog'
+            let* (defr, structs) := norm_program_rec defs' in
+            eret (defr, {| sd_name := a; sd_fields := fields |} :: structs)
         | Barocq.DefConst x l ty =>
-            let* r := norm_program_rec ts prog' in
-            eret {|
-              prog_defs :=
-                (Syntax.DefConst x l ty) :: (prog_defs r);
-              prog_types := (prog_types r)
-            |}
+            let* (defr, structs) := norm_program_rec defs' in
+            eret (Syntax.DefConst x l ty :: defr, structs)
         | Barocq.DefFun x f =>
             let* f' := norm_function f in
-            let* r := norm_program_rec ts prog' in
-            eret {|
-              prog_defs :=
-                (Syntax.DefFun x f') :: (prog_defs r);
-              prog_types := prog_types r
-            |}
+            let* (defr, structs):= norm_program_rec defs' in
+            eret (Syntax.DefFun x f' :: defr, structs)
         end
     end.
     
   Definition norm_program (prog: Barocq.program) : res BNF.program :=
-    norm_program_rec MapList.empty prog.
+    let* (defs, structs) := norm_program_rec prog in
+    eret {|
+      prog_defs := defs;
+      prog_types := structs
+    |}.
 
 End Normalization.
 
@@ -223,15 +215,15 @@ Module Monadification.
     repeat decide equality.
   Defined.
 
-  Definition types : Type := ptree (list (ident * mtyp)).
+  Definition senv : Type := ptree (list (ident * mtyp)).
 
-  Definition types_get (ts: types) (x: ident) : res (list (ident * mtyp)) :=
-    err_of_opt (tget ts x).
+  Definition senv_get (se: senv) (x: ident) : res (list (ident * mtyp)) :=
+    err_of_opt (tget se x).
 
-  Definition types_update (ts: types) (x: ident) (fields: list (ident * mtyp)) : res types :=
-    match types_get ts x with
+  Definition senv_update (se: senv) (x: ident) (fields: list (ident * mtyp)) : res senv :=
+    match senv_get se x with
     | OK _ => MonError.fail
-    | Error _ => eret (tset ts x fields)
+    | Error _ => eret (tset se x fields)
     end.
 
   Definition gcontext : Type := ptree mtyp.
@@ -293,7 +285,7 @@ Module Monadification.
         if mtyp_eq_dec ta1 ta2 then ret (AApp f l ty2)
         else fail
     | MStruct s1, MStruct s2 =>
-        if ident_eq_dec s1 s2 then ret (AApp f l ty2)
+        if Ident.eq_dec s1 s2 then ret (AApp f l ty2)
         else fail
     | MFun t1 tr1, MFun t2 tr2 =>
         if mtyp_list_eq_dec t1 t2 then
@@ -363,7 +355,7 @@ Module Monadification.
         | MBool, MBool => eret ty1
         | MInt32 s1, MInt32 s2
         | MInt64 s1, MInt64 s2 =>
-            if signedness_eq s1 s2 then eret MBool
+            if signedness_eq_dec s1 s2 then eret MBool
             else MonError.fail
         | _, _ => MonError.fail
         end
@@ -374,7 +366,7 @@ Module Monadification.
         match ty1, ty2 with
         | MInt32 s1, MInt32 s2
         | MInt64 s1, MInt64 s2 =>
-            if signedness_eq s1 s2 then eret MBool
+            if signedness_eq_dec s1 s2 then eret MBool
             else MonError.fail
         | _, _ => MonError.fail
         end
@@ -382,7 +374,7 @@ Module Monadification.
         match ty1, ty2 with
         | MInt32 s1, MInt32 s2
         | MInt64 s1, MInt64 s2 =>
-            if signedness_eq s1 s2 then eret ty1
+            if signedness_eq_dec s1 s2 then eret ty1
             else MonError.fail
         | _, _ => MonError.fail
         end
@@ -412,38 +404,25 @@ Module Monadification.
     end.      
 
   Definition mtypof_field (k: ident) (fields: list (ident * mtyp)) : res mtyp :=
-    find_k_err ident_eq_dec k fields.
+    find_k_err Ident.eq_dec k fields.
 
-  Definition typecheck_struct_proj (ts: types) (ty: mtyp) (x: ident) : res mtyp :=
+  Definition typecheck_struct_proj (se: senv) (ty: mtyp) (x: ident) : res mtyp :=
     match ty with
     | MStruct t =>
-        let* fields := types_get ts t in
+        let* fields := senv_get se t in
         mtypof_field x fields
     | _ => MonError.fail
     end.
 
-  Definition typecheck_struct_update (ts: types) (ty1: mtyp) (a2: atom) (x: ident) : res (atom * mtyp) :=
+  Definition typecheck_struct_update (se: senv) (ty1: mtyp) (a2: atom) (x: ident) : res (atom * mtyp) :=
     match ty1 with
     | MStruct t =>
-        let* fields := types_get ts t in
+        let* fields := senv_get se t in
         let* tx := mtypof_field x fields in
         let* a2' := typecheck_atom_against a2 tx in
         eret (a2', ty1)
     | _ => MonError.fail
     end.
-
-  (* Fixpoint ctyp_to_mtyp (ty: ctyp) : mtyp :=
-    match ty with
-    | CBool => MBool
-    | CInt32 s => MInt32 s
-    | CInt64 s => MInt64 s
-    | CArray ta => MArray (ctyp_to_mtyp ta)
-    | CStruct ts => MStruct ts
-    | CFun tparams tret =>
-        let tparams' := List.map ctyp_to_mtyp tparams in
-        let tret' := ctyp_to_mtyp tret in
-        MFun tparams' tret'
-    end.  *)
 
   Fixpoint monadify_ctyp (ty: ctyp) : mtyp :=
     match ty with
@@ -456,7 +435,7 @@ Module Monadification.
         MFun (map monadify_ctyp tparams) (MRes (monadify_ctyp tret))
     end.
 
-  Fixpoint typecheck_atom (ts: types) (gx: gcontext) (lx: lcontext) (a: BNF.atom) : res atom :=
+  Fixpoint typecheck_atom (se : senv) (gx: gcontext) (lx: lcontext) (a: BNF.atom) : res atom :=
     match a with
     | BNF.ATrue => eret (ATrue MBool)
     | BNF.AFalse => eret (AFalse MBool)
@@ -466,32 +445,32 @@ Module Monadification.
         let* t := typof_var gx lx x in
         eret (AVar x t)
     | BNF.ACast a1 ty =>
-        let* a1' := typecheck_atom ts gx lx a1 in
+        let* a1' := typecheck_atom se gx lx a1 in
         let t := monadify_ctyp ty in
         eret (ACast a1' t)
     | BNF.AUnaryOp op a1 =>
-        let* a1' := typecheck_atom ts gx lx a1 in
+        let* a1' := typecheck_atom se gx lx a1 in
         let ty1 := typof_atom a1' in
         let* t := typecheck_unary_op op ty1 in
         eret (AUnaryOp op a1' t)
     | BNF.ABinaryOp op a1 a2 =>
-        let* a1' := typecheck_atom ts gx lx a1 in
-        let* a2' := typecheck_atom ts gx lx a2 in
+        let* a1' := typecheck_atom se gx lx a1 in
+        let* a2' := typecheck_atom se gx lx a2 in
         let ty1 := typof_atom a1' in
         let ty2 := typof_atom a2' in
         let* t := typecheck_binary_op op ty1 ty2 in
         eret (ABinaryOp op a1' a2' t)
     | BNF.AStructProj a1 x =>
-        let* a1' := typecheck_atom ts gx lx a1 in
+        let* a1' := typecheck_atom se gx lx a1 in
         let ty1 := typof_atom a1' in
-        let* t := typecheck_struct_proj ts ty1 x in
+        let* t := typecheck_struct_proj se ty1 x in
         eret (AStructProj a1' x t)
     | BNF.AStructUpdate a1 x a2 =>
-        let* a1' := typecheck_atom ts gx lx a1 in
-        let* a2' := typecheck_atom ts gx lx a2 in
+        let* a1' := typecheck_atom se gx lx a1 in
+        let* a2' := typecheck_atom se gx lx a2 in
         let ty1 := typof_atom a1' in
         let ty2 := typof_atom a2' in
-        let* (a2', t) := typecheck_struct_update ts ty1 a2' x in
+        let* (a2', t) := typecheck_struct_update se ty1 a2' x in
         eret (AStructUpdate a1' x a2' t)
     end.
 
@@ -553,40 +532,40 @@ Module Monadification.
       end
     in eret (ERet a' ty').
 
-  Fixpoint monadify_expr_rec (ts: types) (gx: gcontext) (lx: lcontext) (e: BNF.expr) (imp: bool) : res expr :=
+  Fixpoint monadify_expr_rec (se: senv) (gx: gcontext) (lx: lcontext) (e: BNF.expr) (imp: bool) : res expr :=
     match e with
     | BNF.EAtom a =>
-        let* a' := typecheck_atom ts gx lx a in
+        let* a' := typecheck_atom se gx lx a in
         if imp then wrap_atom a'
         else eret (EAtom a' (typof_atom a'))
     | BNF.EArrayGet a1 a2 =>
-        let* a1' := typecheck_atom ts gx lx a1 in
-        let* a2' := typecheck_atom ts gx lx a2 in
+        let* a1' := typecheck_atom se gx lx a1 in
+        let* a2' := typecheck_atom se gx lx a2 in
         let ty1 := typof_atom a1' in
         let ty2 := typof_atom a2' in
         let* t := typecheck_array_get ty1 ty2 in
         eret (EArrayGet a1' a2' t)
     | BNF.EArraySet a1 a2 a3 =>
-        let* a1' := typecheck_atom ts gx lx a1 in
-        let* a2' := typecheck_atom ts gx lx a2 in
-        let* a3' := typecheck_atom ts gx lx a3 in
+        let* a1' := typecheck_atom se gx lx a1 in
+        let* a2' := typecheck_atom se gx lx a2 in
+        let* a3' := typecheck_atom se gx lx a3 in
         let ty1 := typof_atom a1' in
         let ty2 := typof_atom a2' in
         let ty3 := typof_atom a3' in
         let* (a3', t) := typecheck_array_set ty1 ty2 a3' in
         eret (EArraySet a1' a2' a3' t)
     | BNF.EApp a1 args =>
-        let* a1' := typecheck_atom ts gx lx a1 in
+        let* a1' := typecheck_atom se gx lx a1 in
         let ty1 := typof_atom a1' in
-        let* args' := mmap (typecheck_atom ts gx lx) args in
+        let* args' := mmap (typecheck_atom se gx lx) args in
         let* (args1, t) := typecheck_call ty1 args' in
         eret (EApp a1' args1 t)
     | BNF.EIfThenElse a e1 e2 =>
-        let* a' := typecheck_atom ts gx lx a in
+        let* a' := typecheck_atom se gx lx a in
         match (typof_atom a') with
         | MBool =>
-            let* e1' := monadify_expr_rec ts gx lx e1 imp in
-            let* e2' := monadify_expr_rec ts gx lx e2 imp in
+            let* e1' := monadify_expr_rec se gx lx e1 imp in
+            let* e2' := monadify_expr_rec se gx lx e2 imp in
             let ty1 := typof_expr e1' in
             let ty2 := typof_expr e2' in
             if mtyp_eq_dec ty1 ty2 then
@@ -598,12 +577,12 @@ Module Monadification.
               match ty1, ty2 with
               | MRes ty1', _ =>
                   if mtyp_eq_dec ty1' ty2 then
-                    let* e2' := monadify_expr_rec ts gx lx e2 true in
+                    let* e2' := monadify_expr_rec se gx lx e2 true in
                     eret (EIfThenElse a' e1' e2' ty1)
                   else MonError.fail
               | _, MRes ty2' =>
                   if mtyp_eq_dec ty1 ty2' then
-                    let* e1' := monadify_expr_rec ts gx lx e1 true in
+                    let* e1' := monadify_expr_rec se gx lx e1 true in
                     eret (EIfThenElse a' e1' e2' ty2)
                   else MonError.fail
               | _, _ =>
@@ -612,24 +591,24 @@ Module Monadification.
         | _ => MonError.fail
         end
     | BNF.ELetIn x e1 e2 =>
-        let* e1' := monadify_expr_rec ts gx lx e1 false in
+        let* e1' := monadify_expr_rec se gx lx e1 false in
         let t := typof_expr e1' in
         match t with
         | MRes tr =>
             let* lx' := lcontext_update lx x tr in
-            let* e2' := monadify_expr_rec ts gx lx' e2 true in
+            let* e2' := monadify_expr_rec se gx lx' e2 true in
             eret (ELetMon x e1' e2' (typof_expr e2'))
         | _ =>
             let* lx' := lcontext_update lx x t in
-            let* e2' := monadify_expr_rec ts gx lx' e2 (imp || false) in
+            let* e2' := monadify_expr_rec se gx lx' e2 (imp || false) in
             eret (ELetIn x e1' e2' (typof_expr e2'))
         end
     end.
   
-  Definition monadify_expr (ts: types) (gx: gcontext) (lx: lcontext) (e: BNF.expr) : res expr :=
-    monadify_expr_rec ts gx lx e false.
+  Definition monadify_expr (se: senv) (gx: gcontext) (lx: lcontext) (e: BNF.expr) : res expr :=
+    monadify_expr_rec se gx lx e false.
 
-  Definition monadify_function (ts: types) (gx: gcontext) (f: BNF.function) : res function :=
+  Definition monadify_function (se: senv) (gx: gcontext) (f: BNF.function) : res function :=
     let params := map_k monadify_ctyp (Syntax.fn_params f) in
     let* lx :=
       fold_left_err
@@ -637,38 +616,50 @@ Module Monadification.
         params
         (eret tempty)
     in
-    let* body := monadify_expr ts gx lx (Syntax.fn_body f) in
+    let* body := monadify_expr se gx lx (Syntax.fn_body f) in
     eret {|
       fn_return := typof_expr body;
       fn_params := params;
       fn_body := body
     |}.
 
-  Fixpoint monadify_globdefs_rec (ts: types) (gx: gcontext) (defs: list BNF.globdef) : res (list globdef) :=
+  Fixpoint monadify_globdefs_rec (se: senv) (gx: gcontext) (defs: list BNF.globdef) : res (list globdef) :=
     match defs with
     | nil => eret nil
     | Syntax.DefConst x l ty :: defs' =>
         let ty' := monadify_ctyp ty in
         let* gx' := gcontext_update gx x ty' in
-        let* r := monadify_globdefs_rec ts gx' defs' in
+        let* r := monadify_globdefs_rec se gx' defs' in
         eret (DefConst x l ty' :: r) 
     | Syntax.DefFun x f :: defs' =>
-        let* f' := monadify_function ts gx f in
+        let* f' := monadify_function se gx f in
         let tf := MFun (map snd (fn_params f')) (fn_return f') in
         let* gx' := gcontext_update gx x tf in
-        let* r := monadify_globdefs_rec ts gx' defs' in
+        let* r := monadify_globdefs_rec se gx' defs' in
         eret (DefFun x f' :: r)
     end.
 
-  Definition monadify_globdefs (ts: types) (defs: list BNF.globdef) : res (list globdef) :=
-    monadify_globdefs_rec ts tempty defs.
+  Definition monadify_globdefs (se: senv) (defs: list BNF.globdef) : res (list globdef) :=
+    monadify_globdefs_rec se tempty defs.
 
   Definition monadify_program (prog: BNF.program) : res program :=
-    let ts := MapList.map_k (fun v => MapList.map_k monadify_ctyp v) (BarocqShallow.BNF.prog_types prog) in
-    let ts_map := MapList.fold_left_k (fun acc k v => tset acc k v) ts tempty in
-    let* defs := monadify_globdefs ts_map (BarocqShallow.BNF.prog_defs prog) in
+    let structs :=
+      List.map
+        (fun st =>
+          let fields := MapList.map_k monadify_ctyp (Syntax.sd_fields st) in
+          {| sd_name := Syntax.sd_name st; sd_fields := fields |})
+        (BNF.prog_types prog)
+    in
+    let* se :=
+      Utils.fold_left_err
+        (fun acc st =>
+          senv_update acc (Monadic.sd_name st) (Monadic.sd_fields st))
+        structs
+        (eret tempty)
+    in
+    let* defs := monadify_globdefs se (BarocqShallow.BNF.prog_defs prog) in
     eret {|
-      prog_types := ts;
+      prog_types := structs;
       prog_defs := defs;
     |}.
 
@@ -677,6 +668,6 @@ End Monadification.
 Open Scope error_monad_scope.
 
 Definition monadify_norm_program (prog: Barocq.program) : res Monadic.program :=
-  let prog := BarocqTransf.rename_idents_program prog in
+  (* let prog := BarocqTransf.rename_idents_program prog in *)
   let* bnf := Normalization.norm_program prog in
   Monadification.monadify_program bnf.

@@ -3,6 +3,52 @@ From BarocqComp Require Import Error MapList Utils Types Syntax Array.
 Import ListNotations.
 Import Syntax.Typed.
 
+(** * Environments for types *)
+
+(** ** Struct name to concrete struct fields *)
+
+Definition senv : Type := ptree (list (ident * ctyp)).
+
+Definition senv_get (se: senv) (x: ident) : res (list (ident * ctyp)) :=
+  err_of_opt (tget se x).
+
+Definition senv_update (se: senv) (x: ident) (fields: list (ident * ctyp)) : res senv :=
+  match senv_get se x with
+  | OK _ => fail
+  | Error _ => ret (tset se x fields)
+  end.
+ 
+(** ** Struct name to plain struct fields *)
+
+Definition tenv : Type := ptree (list (ident * typ)).
+
+Definition tenv_get (te: tenv) (x: ident) : res (list (ident * typ)) := err_of_opt (tget te x).
+
+(** ** Conversion of concrete types to plain types *)
+
+Definition tenv_update (te: tenv) (x: ident) (fields: list (ident * typ)) : res tenv :=
+  match tenv_get te x with
+  | OK _ => fail
+  | Error _ => ret (tset te x fields)
+  end.
+
+Fixpoint ctyp_to_typ (te: tenv) (ty: ctyp) : res typ :=
+  match ty with
+  | CBool => ret TBool
+  | CInt32 s => ret (TInt32 s)
+  | CInt64 s => ret (TInt64 s)
+  | CArray ta =>
+      let* ta' := ctyp_to_typ te ta in 
+      ret (TArray ta')
+  | CStruct tx =>
+      let* fields := tenv_get te tx in
+      ret (TStruct tx fields)
+  | CFun tparams tret =>
+      let* tparams' := mmap (ctyp_to_typ te) tparams in
+      let* tret' := ctyp_to_typ te tret in
+      ret (TFun tparams' tret')
+  end.
+
 Definition typof_literal (l: literal) : ctyp :=
   match l with
   | LTrue ty => ty
@@ -112,7 +158,7 @@ Definition typecheck_binary_op (op: binary_op) (ty1 ty2: ctyp) : res ctyp :=
       | CBool, CBool => ret ty1
       | CInt32 s1, CInt32 s2
       | CInt64 s1, CInt64 s2 =>
-          if signedness_eq s1 s2 then ret CBool
+          if signedness_eq_dec s1 s2 then ret CBool
           else failwith "Typing.typecheck_binary_op: integer signedness mismatch"
       | _, _ =>
           failwith "Typing.typecheck_binary_op: type mismatch"
@@ -124,7 +170,7 @@ Definition typecheck_binary_op (op: binary_op) (ty1 ty2: ctyp) : res ctyp :=
       match ty1, ty2 with
       | CInt32 s1, CInt32 s2
       | CInt64 s1, CInt64 s2 =>
-          if signedness_eq s1 s2 then ret CBool
+          if signedness_eq_dec s1 s2 then ret CBool
           else failwith "Typing.typecheck_binary_op: integer signedness mismatch"
       | _, _ =>
         failwith "Typing.typecheck_binary_op: type mismatch"
@@ -133,7 +179,7 @@ Definition typecheck_binary_op (op: binary_op) (ty1 ty2: ctyp) : res ctyp :=
       match ty1, ty2 with
       | CInt32 s1, CInt32 s2
       | CInt64 s1, CInt64 s2 =>
-          if signedness_eq s1 s2 then ret ty1
+          if signedness_eq_dec s1 s2 then ret ty1
           else failwith "Typing.typecheck_binary_op: integer signedness mismatch"
       | _, _ =>
         failwith "Typing.typecheck_binary_op: type mismatch"
@@ -162,20 +208,20 @@ Definition typecheck_array_set (ty1 ty2 ty3: ctyp) : res ctyp :=
   | _ => failwith "Typing.typecheck_array_set: array type expected"
   end.
 
-Definition typecheck_struct_proj (ts: types) (ty: ctyp) (x: ident) : res ctyp :=
+Definition typecheck_struct_proj (se: senv) (ty: ctyp) (x: ident) : res ctyp :=
   match ty with
   | CStruct t =>
-      let/catch fields := types_get ts t
+      let/catch fields := senv_get se t
         /> "Typing.typecheck_struct_proj: unknown struct type"
       in
       ctypof_field x fields
   | _ => failwith "Typing.typecheck_struct_proj: struct type expected"
   end.
 
-Definition typecheck_struct_update (ts: types) (ty1 ty2: ctyp) (x: ident) : res ctyp :=
+Definition typecheck_struct_update (se: senv) (ty1 ty2: ctyp) (x: ident) : res ctyp :=
   match ty1 with
   | CStruct t =>
-      let/catch fields := types_get ts t
+      let/catch fields := senv_get se t
         /> "Typing.typecheck_struct_proj: unknown struct type"
       in
       let* tx := ctypof_field x fields in
@@ -188,18 +234,18 @@ Definition typecheck_struct_update (ts: types) (ty1 ty2: ctyp) (x: ident) : res 
     | ActypAcStructField : ident -> access_ctyp
     | ActypAcArrayIndex : ctyp -> access_ctyp.
 
-  Fixpoint typecheck_access (ts: types) (gx: gcontext) (lx: lcontext) (ty: ctyp) (acs: list access_ctyp) : res (ctyp * list ctyp) := 
+  Fixpoint typecheck_access (se: senv) (gx: gcontext) (lx: lcontext) (ty: ctyp) (acs: list access_ctyp) : res (ctyp * list ctyp) := 
     match acs with
     | nil => ret (ty, nil)
     | ac :: acs' =>
         match ac with
         | ActypAcStructField f =>
-            let* ty' := typecheck_struct_proj ts ty f in
-            let* (r, lr) := typecheck_access ts gx lx ty' acs' in
+            let* ty' := typecheck_struct_proj se ty f in
+            let* (r, lr) := typecheck_access se gx lx ty' acs' in
             ret (r, ty' :: lr)
         | ActypAcArrayIndex ta =>
             let* ty' := typecheck_array_get ty ta in
-            let* (r, lr) := typecheck_access ts gx lx ty' acs' in
+            let* (r, lr) := typecheck_access se gx lx ty' acs' in
             ret (r, ty' :: lr)
         end
     end.
@@ -228,7 +274,7 @@ Fixpoint typecheck_array_lit (a: array literal) : res ctyp :=
   | l :: nil => ret (typof_literal l)
   | l :: a' =>
       let* t := typecheck_array_lit a' in
-      if eq_dec_bool ctyp_eq_dec (typof_literal l) t then ret t
+      if ctyp_eq_dec (typof_literal l) t then ret t
       else failwith "Typing.typecheck_array_lit: type mismatch"
   end.
 
@@ -237,23 +283,24 @@ Fixpoint typecheck_struct_lit (l1: list (ident * literal)) (l2: list (ident * ct
   | nil, nil => true
   | (x1, l1) :: l1', (x2, tx2) :: l2' =>
       let tx1 := typof_literal l1 in
-      (eq_dec_bool ctyp_eq_dec tx1 tx2) && typecheck_struct_lit l1' l2'
+      if ctyp_eq_dec tx1 tx2 then typecheck_struct_lit l1' l2'
+      else false
   | _, _ => false
   end.
 
-Fixpoint typecheck_literal (ts: types) (l: Syntax.literal) : res literal :=
+Fixpoint typecheck_literal (se: senv) (l: Syntax.literal) : res literal :=
   match l with
   | Syntax.LTrue => ret (LTrue CBool)
   | Syntax.LFalse => ret (LFalse CBool)
   | Syntax.LInt32 i s => ret (LInt32 i (CInt32 s))
   | Syntax.LInt64 i s => ret (LInt64 i (CInt64 s))
   | Syntax.LArray a =>
-      let* a' := mmap (typecheck_literal ts) a in
+      let* a' := mmap (typecheck_literal se) a in
       let* t := typecheck_array_lit a' in
       ret (LArray a' (CArray t))
   | Syntax.LStruct st x =>
-      let* st' := map_k_err (typecheck_literal ts) st in
-      let* t := types_get ts x in
+      let* st' := map_k_err (typecheck_literal se) st in
+      let* t := senv_get se x in
       if typecheck_struct_lit st' t then ret (LStruct st' (CStruct x))
       else failwith "Typing.typecheck_literal: struct type mismatch"
   end.

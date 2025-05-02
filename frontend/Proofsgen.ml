@@ -37,10 +37,7 @@ let gen_function_corres (fid : ident) (f : coq_function) : string =
     | _ ->
         sprintf "%sforall %s,\n" indent (Shallowgen.param_list_to_rocq params)
   in
-  let deep_fun_id =
-    let str = ident_to_string fid in
-    String.sub str 2 (String.length str - 2)
-  in
+  let deep_fun_id = ident_to_string fid in
   let deep_call =
     sprintf
       "eval_def %s.prog %s %s"
@@ -68,10 +65,7 @@ let gen_function_corres (fid : ident) (f : coq_function) : string =
     indent
 
 let gen_const_corres (cid : ident) (l : literal) (ty : mtyp) =
-  let deep_const_id =
-    let str = ident_to_string cid in
-    String.sub str 2 (String.length str - 2)
-  in
+  let deep_const_id = ident_to_string cid in
   let shallow_const =
     match ty with
     | MStruct id ->
@@ -108,8 +102,8 @@ let struct_to_rocq_struct (st : ident list) (arg : string) : string =
     st
     "tt"
 
-let gen_struct_conv (id : ident) (fields : (ident * mtyp) list) : string =
-  let id_str = ident_to_string id in
+let gen_struct_conv (st : struct_def) : string =
+  let id_str = ident_to_string st.sd_name in
   sprintf
     "Definition transl_struct_%s (s: %s.%s) : eval_struct_ctyp %s.prog %s :=\n\
      %s%s."
@@ -117,9 +111,9 @@ let gen_struct_conv (id : ident) (fields : (ident * mtyp) list) : string =
     !shallowfile
     id_str
     !deepfile
-    (Deepgen.ident_to_deep id)
+    (Deepgen.ident_to_deep st.sd_name)
     indent
-    (struct_to_rocq_struct (List.map fst fields) "s")
+    (struct_to_rocq_struct (List.map fst st.sd_fields) "s")
 
 let gen_struct_field_proj_conv_corres (id : ident)
     ((fname, ftyp) : ident * mtyp) : string =
@@ -169,8 +163,7 @@ let gen_struct_field_update_conv_corres (id : ident)
     (ident_to_string fname)
     indent
 
-let gen_struct_conv_corres (id : ident) (fields : (ident * mtyp) list) : string
-    =
+let gen_struct_conv_corres (st : struct_def) : string =
   list_to_string
     ""
     ""
@@ -178,9 +171,9 @@ let gen_struct_conv_corres (id : ident) (fields : (ident * mtyp) list) : string
     (fun field ->
       sprintf
         "%s\n\n%s"
-        (gen_struct_field_proj_conv_corres id field)
-        (gen_struct_field_update_conv_corres id field))
-    fields
+        (gen_struct_field_proj_conv_corres st.sd_name field)
+        (gen_struct_field_update_conv_corres st.sd_name field))
+    st.sd_fields
 
 let gen_globdef_corres (def : globdef) : string =
   match def with
@@ -212,19 +205,7 @@ let print_proofs (out : out_channel) (prog : program) : unit =
   in
   fprintf out "%s" (make_headers ());
   fprintf out "(** * Struct conversions **)\n\n";
-  print_list
-    out
-    ""
-    s
-    "\n\n"
-    (fun (id, fields) -> gen_struct_conv id fields)
-    types;
-  print_list
-    out
-    ""
-    s
-    "\n\n"
-    (fun (id, fields) -> gen_struct_conv_corres id fields)
-    types;
+  print_list out "" s "\n\n" gen_struct_conv types;
+  print_list out "" s "\n\n" gen_struct_conv_corres types;
   fprintf out "(** * Program correspondence proofs **)\n\n";
   print_list out "" e "\n\n" gen_globdef_corres defs

@@ -1,6 +1,5 @@
 open Printf
 open Types
-open Utils
 open PrintCommon
 
 let structtyp_to_string (f : 'typ -> string) (fields : (ident * 'typ) list) :

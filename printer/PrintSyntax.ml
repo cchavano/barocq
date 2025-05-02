@@ -190,18 +190,17 @@ let globdef_to_string (lit_to_string : 'a -> string)
   | DefFun (x, f) ->
       sprintf "def %s%s%s" (ident_to_string x) (func_to_string f) fsep
 
-let struct_def_to_tring (sep : string) (sid : ident)
-    (fields : (ident * ctyp) list) : string =
+let struct_def_to_tring (sep : string) (st : struct_def) : string =
   sprintf
     "struct %s = %s%s"
-    (ident_to_string sid)
-    (structtyp_to_string ctyp_to_string fields)
+    (ident_to_string st.sd_name)
+    (structtyp_to_string ctyp_to_string st.sd_fields)
     sep
 
 let print_program (out : out_channel) (ssep : string)
     (def_to_string : 'a -> string) (prog : 'a program) : unit =
-  let types = Maps.PTree.elements prog.prog_types in
   let defs = prog.prog_defs in
+  let types = prog.prog_types in
   let s, e =
     match (types, defs) with
     | [], [] -> ("", "")
@@ -209,11 +208,5 @@ let print_program (out : out_channel) (ssep : string)
     | _ :: _, _ :: _ -> ("\n\n", "\n")
     | [], _ :: _ -> ("", "\n")
   in
-  print_list
-    out
-    ""
-    s
-    "\n\n"
-    (fun (x, tx) -> struct_def_to_tring ssep x tx)
-    types;
+  print_list out "" s "\n\n" (struct_def_to_tring ssep) types;
   print_list out "" e "\n\n" def_to_string defs

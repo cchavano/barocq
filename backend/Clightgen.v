@@ -271,8 +271,8 @@ Fixpoint transl_struct_fields (fields: list (ident * ctyp)) : Ctypes.members :=
 Definition transl_struct_ctyp (x: ident) (fields: list (ident * ctyp)) : Ctypes.composite_definition :=
   Composite x Struct (transl_struct_fields fields) noattr.
 
-Definition transl_prog_types (ts: types) : list Ctypes.composite_definition :=
-  map (fun '(x, tx) => transl_struct_ctyp x tx) (PTree.elements ts).
+Definition transl_prog_types (structs: list struct_def) : list Ctypes.composite_definition :=
+  map (fun st => transl_struct_ctyp (sd_name st) (sd_fields st)) structs.
 
 Fixpoint public_idents (defs: list Imp2.globdef) : list ident :=
   match defs with
@@ -288,7 +288,7 @@ Definition _main : ident := $"main".
 
 Close Scope string_scope.
 
-Definition f_main : Clight.function := {|
+(* Definition f_main : Clight.function := {|
   Clight.fn_return := tint;
   Clight.fn_callconv := cc_default;
   Clight.fn_params := nil;
@@ -300,7 +300,7 @@ Definition f_main : Clight.function := {|
       (Sreturn (Some (Econst_int (Int.repr 0) tint))))
 |}.
 
-Definition globdef_main : cglobdef := (_main, (Gfun (Internal f_main))).
+Definition globdef_main : cglobdef := (_main, (Gfun (Internal f_main))). *)
 
 Definition transl_program (prog: Imp2.program) : res Clight.program :=
   let ts := transl_prog_types (prog_types prog) in

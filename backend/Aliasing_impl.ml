@@ -2,6 +2,7 @@ open Printf
 open Types
 open Syntax
 open Syntax.Typed
+open Typing
 open Monads
 open Imp1
 open Imp1Typed
@@ -195,7 +196,7 @@ let exec_set_struct_proj (x : ident) (a : atom) (f : ident) (ty : ctyp)
 
 (** [exec_set_struct_update ts x a f v st] computes the transfer function for
     the statement [set x := y.f <- v] on [st]. *)
-let exec_set_struct_update (ts : types) (x : ident) (a : atom) (f : ident)
+let exec_set_struct_update (se : senv) (x : ident) (a : atom) (f : ident)
     (v : atom) (st : absstate) : absstate =
   match a with
   | AVar (y, CStruct sy) ->
@@ -223,7 +224,7 @@ let exec_set_struct_update (ts : types) (x : ident) (a : atom) (f : ident)
       let y_inv =
         match invalid_paths_with_prefix st.st_inv y [] with
         | Some (Leaf | Node []) -> begin
-            match types_get ts sy with
+            match senv_get se sy with
             | Errors.OK fields ->
                 let ln =
                   List.fold_left
@@ -445,8 +446,7 @@ let is_arg (v : ident) (args : atom list) : bool =
   List.exists
     (fun a ->
       match a with
-      | Syntax.Typed.AVar (x, _) ->
-          if Utils.ident_eq_dec x v then true else false
+      | Syntax.Typed.AVar (x, _) -> if x = v then true else false
       | _ -> false)
     args
 
@@ -474,9 +474,7 @@ let rec is_tree_loc_aux (m : absmem) (curr : absloc) (visited : IdentSet.t) :
     let adjacents =
       IdentPairMap.fold
         (fun (l, f) locs acc ->
-          if Utils.ident_eq_dec l curr then
-            List.append (IdentSet.elements locs) acc
-          else acc)
+          if l = curr then List.append (IdentSet.elements locs) acc else acc)
         m
         []
     in
@@ -618,13 +616,13 @@ let rec args_bijection (params : ident list) (args : atom list) :
       end
   | _, _ -> assert false
 
-let rec mem_bijection (ts : types) (edges : (ident * ctyp) list) (loc1 : absloc)
+let rec mem_bijection (se : senv) (edges : (ident * ctyp) list) (loc1 : absloc)
     (loc2 : absloc) (m1 : absmem) (m2 : absmem) (bij : ident IdentMap.t) :
     ident IdentMap.t =
   match edges with
   | [] -> bij
   | (eid, etyp) :: edges' ->
-      if is_prim etyp then mem_bijection ts edges' loc1 loc2 m1 m2 bij
+      if is_prim etyp then mem_bijection se edges' loc1 loc2 m1 m2 bij
       else
         let l1 = IdentPairMap.find (loc1, eid) m1 in
         let l2 = IdentPairMap.find (loc2, eid) m2 in
@@ -634,17 +632,17 @@ let rec mem_bijection (ts : types) (edges : (ident * ctyp) list) (loc1 : absloc)
           let edges_e =
             match etyp with
             | CStruct sid -> begin
-                match types_get ts sid with
+                match senv_get se sid with
                 | Errors.OK fields -> fields
                 | Errors.Error _ -> assert false
               end
             | CArray ta -> [(_INDEX, ta)]
             | _ -> assert false
           in
-          mem_bijection ts edges_e lv1 lv2 m1 m2 (IdentMap.add lv1 lv2 bij)
+          mem_bijection se edges_e lv1 lv2 m1 m2 (IdentMap.add lv1 lv2 bij)
         else failwith "mem_bijection error"
 
-let locs_bijection (ts : types) (v1 : ident) (v2 : ident) (ty : ctyp)
+let locs_bijection (se : senv) (v1 : ident) (v2 : ident) (ty : ctyp)
     (st1 : absstate) (st2 : absstate) : ident IdentMap.t =
   let l1 = IdentMap.find v1 st1.st_env in
   let l2 = IdentMap.find v2 st2.st_env in
@@ -654,7 +652,7 @@ let locs_bijection (ts : types) (v1 : ident) (v2 : ident) (ty : ctyp)
     let edges =
       match ty with
       | CStruct sid -> begin
-          match types_get ts sid with
+          match senv_get se sid with
           | Errors.OK fields -> fields
           | Errors.Error _ -> assert false
         end
@@ -662,7 +660,7 @@ let locs_bijection (ts : types) (v1 : ident) (v2 : ident) (ty : ctyp)
       | _ -> assert false
     in
     mem_bijection
-      ts
+      se
       edges
       lv1
       lv2
@@ -676,7 +674,7 @@ let locs_bijection (ts : types) (v1 : ident) (v2 : ident) (ty : ctyp)
     map which associate each paramater in [params] to its corresponding argument
     in [args], and associated each location of [stcallee] to its corresponding
     location in [stcaller]. [ts] is the struct types environment. *)
-let funcall_bijection (show_debug : bool) (ts : types)
+let funcall_bijection (show_debug : bool) (se : senv)
     (params : (ident * ctyp) list) (args : atom list) (stcallee : absstate)
     (stcaller : absstate) : ident IdentMap.t * ident IdentMap.t =
   let vars_bij = args_bijection (List.map fst params) args in
@@ -693,7 +691,7 @@ let funcall_bijection (show_debug : bool) (ts : types)
         IdentMap.union
           (fun _ v1 v2 ->
             if v1 <> v2 then failwith "no bijection possible" else Some v1)
-          (locs_bijection ts v (IdentMap.find v vars_bij) ty stcallee stcaller)
+          (locs_bijection se v (IdentMap.find v vars_bij) ty stcallee stcaller)
           acc)
       IdentMap.empty
       (List.fold_right
@@ -759,7 +757,7 @@ let rec vars_of_atom (a : atom) : IdentSet.t =
 (** [exec_set_call x a args ty fe st nctr] computes the transfer function for
     the statement [set x = a (args)] on [st]. [fe] is the function descriptor
     environment. [ty] is the type of the return value. *)
-let exec_set_call (show_debug : bool) (ts : types) (x : ident) (a : atom)
+let exec_set_call (show_debug : bool) (se : senv) (x : ident) (a : atom)
     (args : atom list) (ty : ctyp) (fe : fenv) (st : absstate) : absdom =
   match a with
   | AVar (y, _) ->
@@ -790,7 +788,7 @@ let exec_set_call (show_debug : bool) (ts : types) (x : ident) (a : atom)
       let vars_bij, locs_bij =
         funcall_bijection
           show_debug
-          ts
+          se
           fdescr.fd_params
           args
           fdescr.fd_callstate
@@ -938,7 +936,7 @@ let print_dom_debug (show_debug : bool) (d : absdom) (suffix : string)
 (** [absexec ts fe ce d s] computes the transfer function for the statement [s]
     on [d]. [fe] is the function descriptor environement. [ts] is the struct
     types environment. *)
-let rec absexec (show_debug : bool) (ts : types) (fe : fenv) (d : absdom)
+let rec absexec (show_debug : bool) (se : senv) (fe : fenv) (d : absdom)
     (s : Imp1Typed.statement) : Imp1.Aliasing_AST.statement * absdom =
   match s with
   | StSet (x, c) ->
@@ -960,13 +958,13 @@ let rec absexec (show_debug : bool) (ts : types) (fe : fenv) (d : absdom)
           | CpStructProj (a, f, ty) ->
               AbsState (exec_set_struct_proj x a f ty st)
           | CpStructUpdate (a, f, v, _) ->
-              AbsState (exec_set_struct_update ts x a f v st)
+              AbsState (exec_set_struct_update se x a f v st)
           | CpCall (a, args, ty) ->
               debug_info show_debug
               @@ sprintf
                    "Entering function call \"%s\" ==========\n"
                    (PrintSyntax.PrintTyped.comp_to_string c);
-              let r = exec_set_call show_debug ts x a args ty fe st in
+              let r = exec_set_call show_debug se x a args ty fe st in
               debug_info show_debug
               @@ sprintf
                    "Exiting function call \"%s\" ===========\n"
@@ -983,13 +981,13 @@ let rec absexec (show_debug : bool) (ts : types) (fe : fenv) (d : absdom)
       print_dom_debug show_debug d' "OUT" None;
       (s', d')
   | StIfThenElse (a, s1, s2) ->
-      let s1', d1 = absexec show_debug ts fe d s1 in
-      let s2', d2 = absexec show_debug ts fe d s2 in
+      let s1', d1 = absexec show_debug se fe d s1 in
+      let s2', d2 = absexec show_debug se fe d s2 in
       let d' = AbsDom.union d1 d2 in
       (Imp1.Aliasing_AST.StIfThenElse (a, s1', s2'), d')
   | StSequence (s1, s2) ->
-      let s1', d1 = absexec show_debug ts fe d s1 in
-      let s2', d2 = absexec show_debug ts fe d1 s2 in
+      let s1', d1 = absexec show_debug se fe d s1 in
+      let s2', d2 = absexec show_debug se fe d1 s2 in
       (Imp1.Aliasing_AST.StSequence (s1', s2'), d2)
   | StReturn a ->
       print_dom_debug show_debug d "IN" None;
@@ -1008,8 +1006,7 @@ let rec absexec (show_debug : bool) (ts : types) (fe : fenv) (d : absdom)
 
 (** [gen_valid_call_state ts params] generates a valid call state w.r.t. the
     function parameters [params]. *)
-let gen_valid_call_state (ts : types) (params : (ident * ctyp) list) : absstate
-    =
+let gen_valid_call_state (se : senv) (params : (ident * ctyp) list) : absstate =
   let gen_field_loc_id lid fname =
     ident_of_string
       (sprintf "%s_%s" (ident_to_string lid) (ident_to_string fname))
@@ -1033,7 +1030,7 @@ let gen_valid_call_state (ts : types) (params : (ident * ctyp) list) : absstate
       let mem = gen_val_mem_layout lid' ta in
       IdentPairMap.add (lid, _INDEX) (IdentSet.singleton lid') mem
   and gen_struct_mem_layout lid sid =
-    match types_get ts sid with
+    match senv_get se sid with
     | Errors.OK fields ->
         List.fold_left
           (fun acc (fname, ftyp) ->
@@ -1076,11 +1073,11 @@ let is_param (v : ident) (params : (ident * ctyp) list) : bool =
   List.exists (fun (pid, _) -> v = pid) params
 
 (** [gen_fun_descr _ ts fe f] generates the function descriptor for [f]. *)
-let gen_fun_descr_and_ast (show_debug : bool) (ts : types) (fe : fenv)
+let gen_fun_descr_and_ast (show_debug : bool) (se : senv) (fe : fenv)
     (f : coq_function) : fun_descr * Imp1.Aliasing_AST.statement =
-  let callstate = gen_valid_call_state ts f.fn_params in
+  let callstate = gen_valid_call_state se f.fn_params in
   let ast, returnstate =
-    absexec show_debug ts fe (AbsState callstate) f.fn_body
+    absexec show_debug se fe (AbsState callstate) f.fn_body
   in
   (* We filter the returned environment and set of invalid paths to only keep the bindings
      for which the key is a function paramater. *)
@@ -1131,6 +1128,12 @@ let gen_fun_descr_and_ast (show_debug : bool) (ts : types) (fe : fenv)
   | Top -> debug_info show_debug @@ sprintf "INV_RET: Top\n");
   (fdescr, ast)
 
+let senv_from_struct_defs (l : struct_def list) : senv =
+  List.fold_left
+    (fun acc st -> Utils.tset acc st.sd_name st.sd_fields)
+    Maps.PTree.empty
+    l
+
 (** [get_fun_descr p fname] returns the function descriptor of [fname] if a
     function is defined with this name in the program [p]. *)
 let get_fun_descr (p : program) (fname : string) : fun_descr option =
@@ -1139,23 +1142,23 @@ let get_fun_descr (p : program) (fname : string) : fun_descr option =
     match defs with
     | [] -> None
     | DefFun (x, f) :: defs' ->
-        let fdescr, _ = gen_fun_descr_and_ast false p.prog_types fe f in
-        if Utils.ident_eq_dec x fid then Some fdescr
-        else aux (IdentMap.add x fdescr fe) defs'
+        let se = senv_from_struct_defs p.prog_types in
+        let fdescr, _ = gen_fun_descr_and_ast false se fe f in
+        if x = fid then Some fdescr else aux (IdentMap.add x fdescr fe) defs'
     | _ :: defs' -> aux fe defs'
   in
   aux IdentMap.empty p.prog_defs
 
 (** [gen_aliasing_function ts fe f] generates the AST corresponding to the
     function [f] with the aliasing information. *)
-let gen_aliasing_function (show_debug : bool) (ts : types) (fe : fenv)
+let gen_aliasing_function (show_debug : bool) (se : senv) (fe : fenv)
     (x : ident) (f : Imp1Typed.coq_function) :
     (Imp1.Aliasing_AST.coq_function * fenv) option =
-  let stcall = gen_valid_call_state ts f.fn_params in
+  let stcall = gen_valid_call_state se f.fn_params in
   let args = List.map (fun (v, ty) -> Syntax.Typed.AVar (v, ty)) f.fn_params in
   assert (args_pointsto_unique stcall args);
   assert (wf_args stcall args);
-  let fdescr, body' = gen_fun_descr_and_ast show_debug ts fe f in
+  let fdescr, body' = gen_fun_descr_and_ast show_debug se fe f in
   let fe' = IdentMap.add x fdescr fe in
   match fdescr.fd_returnstate with
   | AbsState st' ->
@@ -1170,14 +1173,14 @@ let gen_aliasing_function (show_debug : bool) (ts : types) (fe : fenv)
 (** [gen_aliasing_globdef ts fe def] generates the aliasing AST for the global
     definition [def]. It also returns the new function descriptor environment if
     the global def is a function. *)
-let gen_aliasing_globdef (ts : types) (fe : fenv) (def : Imp1Typed.globdef)
+let gen_aliasing_globdef (se : senv) (fe : fenv) (def : Imp1Typed.globdef)
     (show_debug : bool) : (Imp1.Aliasing_AST.globdef * fenv) option =
   match def with
   | DefFun (x, f) ->
       debug_info show_debug
       @@ sprintf "Analysing function %s...\n\n" (ident_to_string x);
       let r =
-        match gen_aliasing_function show_debug ts fe x f with
+        match gen_aliasing_function show_debug se fe x f with
         | Some (f', fe') -> Some (DefFun (x, f'), fe')
         | None -> None
       in
@@ -1194,7 +1197,8 @@ let gen_aliasing_program (show_debug : bool) (prog : Imp1Typed.program) :
     match defs with
     | [] -> Some []
     | d :: defs' -> begin
-        match gen_aliasing_globdef prog.prog_types fe d show_debug with
+        let se = senv_from_struct_defs prog.prog_types in
+        match gen_aliasing_globdef se fe d show_debug with
         | Some (d', fe') -> begin
             match aux fe' defs' with
             | Some r -> Some (d' :: r)

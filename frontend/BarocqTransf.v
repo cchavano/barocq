@@ -5,8 +5,8 @@ From BarocqComp Require Import Error Utils Types Syntax Barocq.
 
 (** ** Identifier renaming *)
 
-Definition transl_user_ident (params: pset) (x: ident) : ident :=
-  if smem params x then prefix_ident "p_" x
+(* Definition transl_user_ident (params: pset) (x: ident) : ident :=
+  if smem params x then Ident.prefix_with "p_" x
   else Utils.transl_user_ident x.
 
 Fixpoint rename_idents_expr (params: pset) (e: Barocq.expr) : Barocq.expr :=
@@ -72,7 +72,7 @@ Fixpoint rename_idents_expr (params: pset) (e: Barocq.expr) : Barocq.expr :=
 
 Definition rename_idents_function (f: Barocq.function) : Barocq.function :=
   let pids := List.fold_left (fun acc p => sadd acc (fst p)) (fn_params f) sempty in
-  let params' := List.map (fun '(pid, ptyp) => (prefix_ident "p_" pid, ptyp)) (fn_params f) in
+  let params' := List.map (fun '(pid, ptyp) => (Ident.prefix_with "p_" pid, ptyp)) (fn_params f) in
   {|
     fn_return := fn_return f;
     fn_params := params';
@@ -81,16 +81,19 @@ Definition rename_idents_function (f: Barocq.function) : Barocq.function :=
 
 Definition rename_idents_globdef (def: Barocq.globdef) : Barocq.globdef :=
   match def with
-  | DefConst x l ty => DefConst (Utils.transl_user_ident x) l ty
-  | DefFun x f =>
+  | DefConst mn x l ty => DefConst mn (Utils.transl_user_ident x) l ty
+  | DefFun mn x f =>
       let x' := Utils.transl_user_ident x in
       let f' := rename_idents_function f in
-      DefFun x' f'
+      DefFun mn x' f'
   | _ => def
   end.
 
 Definition rename_idents_program (prog: Barocq.program) : Barocq.program :=
-  List.map rename_idents_globdef prog.
+  {|
+    prog_defs := List.map rename_idents_globdef (prog_defs prog);
+    prog_extern := prog_extern prog
+  |}. *)
 
 (** ** Transformation of logical AND/OR expressions *)
 
@@ -293,7 +296,7 @@ Definition create_deep_access_program (prog: BarocqTyped.program) : Barocq.progr
 (** ** Combination of the two transformations *)
 
 Definition transf_program (prog: Barocq.program) : res Barocq.program :=
-  let prog := rename_idents_program prog in
+  (* let prog := rename_idents_program prog in *)
   let prog := transf_logical_program prog in
   let* prog := Barocq.Typing.typecheck_program prog in
   ret (create_deep_access_program prog).

@@ -35,7 +35,7 @@ Fixpoint all_vars (s: Imp1Typed.statement) : list (ident * ctyp) :=
   | Imp1Typed.StReturn _ => nil
   | Imp1Typed.StSet x c => (x, typof_comp c) :: nil
   | Imp1Typed.StIfThenElse _ s1 s2
-  | Imp1Typed.StSequence s1 s2 => merge_k ident_eq_dec (all_vars s1) (all_vars s2)
+  | Imp1Typed.StSequence s1 s2 => merge_k Ident.eq_dec (all_vars s1) (all_vars s2)
   end.
 
 Definition transl_function (f: Imp1Typed.function) : Imp2.function :=
@@ -128,5 +128,5 @@ Definition transl_globdefs (defs: list Imp1Typed.globdef) : list Imp2.globdef :=
 Definition transl_program (prog: Imp1Typed.program) : Imp2.program :=
   {|
     prog_defs := transl_globdefs (prog_defs prog);
-    prog_types := prog_types prog
+    prog_types := prog_types prog;
   |}.
