@@ -374,6 +374,20 @@ let transl_var_name (mname : string) (lx : lcontext) (x : cident) : Syntax.ident
 let transl_field_name (f : ident) : Syntax.ident =
   PrintCommon.ident_of_string f.content
 
+let rec transl_ctyp (ty : ctyp) : Types.ctyp =
+  match ty with
+  | CBool -> Types.CBool
+  | CInt32 s -> Types.CInt32 s
+  | CInt64 s -> Types.CInt64 s
+  | CArray ta -> Types.CArray (transl_ctyp ta)
+  | CStruct (mname, sid) ->
+      let sid' = PrintCommon.ident_of_string (sprintf "%s_%s" mname sid) in
+      Types.CStruct sid'
+  | CFun (tparams, tret) ->
+      let tparams' = List.map transl_ctyp tparams in
+      let tret' = transl_ctyp tret in
+      Types.CFun (tparams', tret')
+
 let rec typecheck_raw_expr (gte : gtenv) (gx : gcontext) (lx : lcontext)
     (e : raw_expr) : Barocq.expr * ctyp =
   match e with
@@ -387,7 +401,7 @@ let rec typecheck_raw_expr (gte : gtenv) (gx : gcontext) (lx : lcontext)
   | ECast (e1, sty) ->
       let ty = styp_to_ctyp gte sty in
       let e1', t1 = typecheck_expr gte gx lx e1 in
-      (e1', typecheck_cast t1 ty)
+      (Barocq.ECast (e1', transl_ctyp ty), typecheck_cast t1 ty)
   | EUnaryOp (op, e1) ->
       let texp =
         match op with
@@ -415,7 +429,7 @@ let rec typecheck_raw_expr (gte : gtenv) (gx : gcontext) (lx : lcontext)
           gte
           gx
           lx
-          e1
+          e2
           (Expect_typ (CInt32 Types.Unsigned))
       in
       begin
@@ -530,7 +544,7 @@ and typecheck_app (gte : gtenv) (gx : gcontext) (lx : lcontext)
     Barocq.expr list * ctyp =
   let arity = List.length tparams in
   let nbargs = List.length args in
-  let rec aux tparams targs =
+  let rec aux tparams args =
     match (tparams, args) with
     | [], [] -> ([], tret)
     | tp :: tparams', a :: args' ->
@@ -540,20 +554,6 @@ and typecheck_app (gte : gtenv) (gx : gcontext) (lx : lcontext)
     | _, _ -> error (Wrong_argument_number (arity, nbargs))
   in
   aux tparams args
-
-let rec transl_ctyp (ty : ctyp) : Types.ctyp =
-  match ty with
-  | CBool -> Types.CBool
-  | CInt32 s -> Types.CInt32 s
-  | CInt64 s -> Types.CInt64 s
-  | CArray ta -> Types.CArray (transl_ctyp ta)
-  | CStruct (mname, sid) ->
-      let sid' = PrintCommon.ident_of_string (sprintf "%s_%s" mname sid) in
-      Types.CStruct sid'
-  | CFun (tparams, tret) ->
-      let tparams' = List.map transl_ctyp tparams in
-      let tret' = transl_ctyp tret in
-      Types.CFun (tparams', tret')
 
 let rec typecheck_literal (gte : gtenv) (ty : ctyp) (l : literal) :
     Syntax.literal =
@@ -650,7 +650,7 @@ let typecheck_function (gte : gtenv) (gx : gcontext) (x : ident) (f : func) :
           lcontext_empty
           params
       in
-      let body, _ =
+      let body, tb =
         typecheck_expr_expecting gte gx lx f.fn_body (Expect_typ tret)
       in
       let bparams =
