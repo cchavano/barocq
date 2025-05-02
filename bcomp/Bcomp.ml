@@ -31,6 +31,8 @@ let opt_print_bbnf = ref false
 
 let opt_print_imp1 = ref false
 
+let opt_gen_header = ref false
+
 let opt_gen_shallow = ref false
 
 let opt_gen_deep = ref false
@@ -60,6 +62,7 @@ let options =
       "\tPrint parsed tokens (stop after lexing)" );
     ("-print-bbnf", Arg.Set opt_print_bbnf, "\t\tPretty-print B-normal form IR");
     ("-print-imp1", Arg.Set opt_print_imp1, "\t\tPretty-print Imp1 IR");
+    ("-gen-header", Arg.Set opt_gen_header, "\t\tGenerate the C header file");
     ( "-gen-shallow",
       Arg.Set opt_gen_shallow,
       "\t\tGenerate the Rocq shallow-embedding" );
@@ -135,6 +138,18 @@ let print_tokens (files : string list) : unit =
     | Bparser.Error -> raise (SyntaxError (lexbuf, ""))
   in
   List.iter aux files
+
+let print_header file prog =
+  let aux p prog =
+    Format.fprintf p "@[<v 0>";
+    List.iter (PrintCsyntax.declare_composite p) prog.Ctypes.prog_types;
+    List.iter (PrintCsyntax.define_composite p) prog.Ctypes.prog_types;
+    List.iter (PrintClight.print_globdecl p) prog.Ctypes.prog_defs;
+    Format.fprintf p "@]@."
+  in
+  let oc = open_out file in
+  aux (Format.formatter_of_out_channel oc) prog;
+  close_out oc
 
 let () =
   Arg.parse options set_source_files usage_msg;
@@ -335,8 +350,15 @@ let () =
         let ids = Clightgen.program_idents prog in
         record_idents (List.map PrintCommon.ident_to_string ids);
         PrintClight.destination := Some !c_output;
+        (* Program printing *)
         PrintClight.print_if_2 prog;
-        printf "C file generated at %s\n" !c_output
+        printf "C file generated at %s\n" (get_full_filename !c_output ".c");
+        (* Header printing *)
+        if !opt_gen_header then begin
+          let header_file = get_full_filename !c_output ".h" in
+          print_header header_file prog;
+          printf "Header file generated at %s\n" header_file
+        end
     | Errors.Error msg -> raise @@ CompilerError (C2C.string_of_errmsg msg)
   with
   | Sys_error msg -> eprintf "System error: %s\n" msg
