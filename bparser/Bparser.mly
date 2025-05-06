@@ -8,14 +8,7 @@
 
   let aliases = Hashtbl.create 10
 
-  (* We reject type identifiers
-      - containing <'> because this is not a valid character for C identifiers;
-      - beginning with <_> to avoid inteferences with names defined in the
-        C compiler that will be used on the generated C files. *)
-  let valid_typ_ident tid =
-    (not (String.contains tid '\'')) && (String.get tid 0 <> '_')
-
-  (* A module name must begin with an uppercase and cannot contain <'>. *)
+  (* A module name must begin with an uppercase letter. *)
   let valid_modul_ident mid =
     let re = Str.regexp {|^\([A-Z][a-zA-Z0-9_]*\)$|} in
     Str.string_match re mid 0
@@ -84,8 +77,8 @@ command:
   | SEMICOLON SEMICOLON { }
 
 topdef:
-  | TYPE id = typ_ident BIND ty = styp { DefAlias (id, ty) }
-  | STRUCT id = typ_ident BIND fields = struct_fields { DefStruct (id, fields) }
+  | TYPE id = ident BIND ty = styp { DefAlias (id, ty) }
+  | STRUCT id = ident BIND fields = struct_fields { DefStruct (id, fields) }
   | DEF x = ident COLON ty = styp BIND l = literal { DefConst (x, l, ty) }
   | DEF x = ident params = delimited(LPAREN, separated_list(COMMA, param), RPAREN)
     COLON ty = styp BIND e = expr { DefFun (x, {fn_return = ty; fn_params = params; fn_body = e}) }
@@ -198,15 +191,6 @@ mod_ident:
   | id = IDENT
     {
       if valid_modul_ident id then
-        Location.make $startpos $endpos id
-      else
-        raise Error
-    }
-
-typ_ident:
-  | id = IDENT
-    {
-      if valid_typ_ident id then
         Location.make $startpos $endpos id
       else
         raise Error

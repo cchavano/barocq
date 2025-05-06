@@ -69,7 +69,7 @@ let space = [' ''\t''\r']
 
 let dec_int_lit = digit (digit | '_')* ['U']? ['L']?
 let hex_int_lit = ("0x" | "0X") xdigit (xdigit | '_')* ['U']? ['L']?
-let ident_char = (letter | digit | '_' | '\'')
+let ident_char = (letter | digit | '_')
 let ident = letter ident_char* | '_' ident_char+
 
 rule read_token = parse
