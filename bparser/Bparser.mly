@@ -27,7 +27,6 @@
 %token LBRACKET RBRACKET
 %token LBRACKETBAR RBRACKETBAR
 %token LBRACE RBRACE
-%token HASHTAG
 %token ARROW
 %token ARROW_INV BIND
 %token OP_PLUS OP_MINUS OP_MUL OP_DIV OP_MOD
@@ -38,6 +37,7 @@
 %token TRUE FALSE
 %token TYPE
 %token TYP_BOOL TYP_INT32 TYP_UINT32 TYP_INT64 TYP_UINT64 TYP_ARRAY
+%token COMPUTE
 %token STRUCT DEF LET IN
 %token IF THEN ELSE
 %token AS
@@ -70,10 +70,10 @@ imodul:
     { { imd_name = mname; imd_cmds = cmds } }
 
 command:
-  | def = topdef SEMISEMI? { CmdDef def }
-  | e = expr SEMISEMI? { CmdExpr e }
+  | def = globdef SEMISEMI? { CmdDef def }
+  | COMPUTE e = expr SEMISEMI? { CmdExpr e }
 
-topdef:
+globdef:
   | TYPE id = ident BIND ty = styp { DefAlias (id, ty) }
   | STRUCT id = ident BIND fields = struct_fields { DefStruct (id, fields) }
   | DEF x = ident COLON ty = styp BIND l = literal { DefConst (x, l, ty) }
@@ -120,8 +120,8 @@ raw_literal:
       SurfaceAST.LInt64 (n, snd i)
     }
   | a = delimited(LBRACKETBAR, separated_list(SEMICOLON, literal), RBRACKETBAR) { SurfaceAST.LArray a }
-  | st = delimited(LBRACE, separated_nonempty_list(SEMICOLON, literal_field), RBRACE)
-    HASHTAG cid = cident { SurfaceAST.LStruct (st, cid) }
+  | st = delimited(LBRACE, nonempty_list(literal_field), RBRACE)
+    { SurfaceAST.LStruct st }
 
 literal:
   | l = raw_literal { Location.make $startpos $endpos l }
@@ -131,7 +131,7 @@ prefix_op:
   | OP_MINUS { Minus }
 
 literal_field:
-  | key = ident BIND l = literal { (key, l) }
+  | key = ident BIND l = literal SEMICOLON { (key, l) }
 
 %inline unary_op:
   | OP_NOTBOOL { UopNotbool }

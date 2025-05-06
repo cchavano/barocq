@@ -41,6 +41,7 @@ type error_cause =
   | Duplicated_struct_field of string * string
   | Duplicated_param of string * string
   | Duplicated_module of string
+  | Missing_struct_fields of string list
 
 exception Error of error_cause * unit Location.t option
 
@@ -115,6 +116,10 @@ let msg_from_failure (cause : error_cause) : string =
   | Module_not_found mname -> sprintf "module %s not found" mname
   | Duplicated_module mname ->
       sprintf "a module with name %s already exists" mname
+  | Missing_struct_fields mfields ->
+      sprintf
+        "the following struct fields are missing: %s"
+        (PrintCommon.list_to_string "" "" ", " (fun x -> x) mfields)
 
 let error ?(loc : 'a Location.t option = None) (c : error_cause) =
   let loc =
@@ -574,27 +579,29 @@ let rec typecheck_literal (gte : gtenv) (ty : ctyp) (l : literal) :
     | LArray a, CArray ta ->
         let a' = List.map (typecheck_literal gte ta) a in
         Syntax.LArray a'
-    | LStruct (st, cid), CStruct (mname, sid) ->
-        let ty1 = gtenv_get gte cid in
-        begin
-          match ty1 with
-          | CStruct (mname1, sid1) ->
-              if mname = mname1 && sid = sid1 then
-                let fields = gtenv_get_fields gte cid in
-                let sid' =
-                  if mname = !curr_mname then sid else compose_idents mname sid
-                in
-                let st' = typecheck_struct_lit gte sid' st fields in
-                let ty1' = transl_ctyp ty in
-                let sid =
-                  match ty1' with
-                  | Types.CStruct sid -> sid
-                  | _ -> assert false
-                in
-                Syntax.LStruct (st', sid)
-              else error (Type_mismatch (Expect_typ ty, Current_typ ty1))
-          | _ -> error (Type_mismatch (Expect_struct, Current_typ ty1))
-        end
+    | LStruct st, CStruct (mname, sid) ->
+        let fields, sid' =
+          let te, sid' =
+            if mname <> !curr_mname then
+              match IdentMap.find_opt mname gte.gtenv_extern with
+              | Some te -> (te, compose_idents mname sid)
+              | None -> assert false (* Ill-typed environment *)
+            else (gte.gtenv_local, sid)
+          in
+          let fields =
+            match IdentMap.find_opt sid te.tenv_structs with
+            | Some fields -> fields
+            | None -> assert false (* Ill-typed environment *)
+          in
+          (fields, sid')
+        in
+        let st' = typecheck_struct_lit gte sid' st fields in
+        let sid =
+          match transl_ctyp ty with
+          | Types.CStruct sid -> sid
+          | _ -> assert false
+        in
+        Syntax.LStruct (st', sid)
     | (LTrue | LFalse), _ ->
         error (Type_mismatch (Expect_typ ty, Current_typ CBool))
     | LInt32 (_, s), _ ->
@@ -609,12 +616,20 @@ and typecheck_struct_lit (gte : gtenv) (sid : string)
     (st : (ident * literal) list) (fields : (string * ctyp) list) :
     (Syntax.ident * Syntax.literal) list =
   match st with
-  | [] -> []
+  | [] ->
+      if List.length fields = 0 then []
+      else error (Missing_struct_fields (List.map fst fields))
   | (fname, lit) :: st' -> begin
       match List.assoc_opt fname.content fields with
       | Some ftyp ->
           let lit' = typecheck_literal gte ftyp lit in
-          let r = typecheck_struct_lit gte sid st' fields in
+          let r =
+            typecheck_struct_lit
+              gte
+              sid
+              st'
+              (List.remove_assoc fname.content fields)
+          in
           let fname' = transl_field_name fname in
           (fname', lit') :: r
       | None -> error (Unknown_field (fname.content, sid)) ~loc:(Some fname)

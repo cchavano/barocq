@@ -52,7 +52,7 @@
     List.iter
       (fun (s, t) -> Hashtbl.add keywords s t)
       [
-        ("module", MODULE);
+        ("module", MODULE); ("compute", COMPUTE);
         ("true", TRUE); ("false", FALSE);
         ("type", TYPE); ("as", AS);
         ("bool", TYP_BOOL); ("i32", TYP_INT32); ("u32", TYP_UINT32);
@@ -90,7 +90,6 @@ rule read_token = parse
   | "]"           { RBRACKET }
   | "{"           { LBRACE }
   | "}"           { RBRACE }
-  | "#"           { HASHTAG }
   | "->"          { ARROW }
   | "<-"          { ARROW_INV }
   | "=="          { OP_EQ }

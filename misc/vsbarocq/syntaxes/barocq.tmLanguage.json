@@ -17,7 +17,7 @@
                 {
                     "comment": "reserved keyword",
 				    "name": "keyword.other.barocq",
-				    "match": "\\b(module|type|struct|def|let|in|if|then|else|as)\\b"
+				    "match": "\\b(module|type|struct|def|let|in|if|then|else|as|compute)\\b"
                 }
             ]
 		},
@@ -151,17 +151,7 @@
                     "comment": "hexadecimal integer literal",
                     "name": "constant.numeric.integer.barocq",
                     "match": "\\b(0x|0X)[[:xdigit:]][[:xdigit:]|_]*[U]?[L]?\\b"
-                },
-				{
-					"comment": "struct literal type",
-					"match": "(?<=})(#)((\\w+)(::))?(\\w+)",
-					"captures": {
-						"1": { "name": "keyword.operator.barocq" },
-						"3": { "name": "entity.name.namespace.barocq" },
-						"4": { "name": "keyword.operator.barocq" },
-						"5": { "name": "entity.name.type.barocq" }
-					}
-				}
+                }
             ]
         },
 		"identifiers": {

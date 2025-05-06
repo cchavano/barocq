@@ -4,6 +4,7 @@ open Bparser
 let token_to_string (tok : Bparser.token) : string =
   match tok with
   | MODULE -> "MODULE"
+  | COMPUTE -> "COMPUTE"
   | DOT -> "DOT"
   | COMMA -> "COMMA"
   | SEMICOLON -> "SEMICOLON"
@@ -17,7 +18,6 @@ let token_to_string (tok : Bparser.token) : string =
   | RBRACKET -> "RBRACKET"
   | LBRACKETBAR -> "LBRACKETBAR"
   | RBRACKETBAR -> "RBRACKETBAR"
-  | HASHTAG -> "HASHTAG"
   | ARROW -> "ARROW"
   | ARROW_INV -> "ARROW_INV"
   | BIND -> "BIND"

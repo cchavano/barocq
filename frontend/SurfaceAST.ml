@@ -50,7 +50,7 @@ type raw_literal =
   | LInt32 of Integers.Int.int * Types.signedness
   | LInt64 of Integers.Int64.int * Types.signedness
   | LArray of literal list
-  | LStruct of (ident * literal) list * cident
+  | LStruct of (ident * literal) list
 
 and literal = raw_literal Location.t
 
