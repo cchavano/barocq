@@ -22,7 +22,7 @@
 %}
 
 %token MODULE
-%token DOT COMMA SEMICOLON COLON
+%token DOT COMMA SEMICOLON COLON SEMISEMI
 %token LPAREN RPAREN
 %token LBRACKET RBRACKET
 %token LBRACKETBAR RBRACKETBAR
@@ -65,16 +65,13 @@
 %%
 
 imodul:
-  | MODULE mname = mod_ident SEMICOLON SEMICOLON
+  | MODULE mname = mod_ident SEMISEMI?
     cmds = list(command) EOF
     { { imd_name = mname; imd_cmds = cmds } }
 
 command:
-  | def = topdef endcmd { CmdDef def }
-  | e = expr endcmd { CmdExpr e }
-
-%inline endcmd:
-  | SEMICOLON SEMICOLON { }
+  | def = topdef SEMISEMI? { CmdDef def }
+  | e = expr SEMISEMI? { CmdExpr e }
 
 topdef:
   | TYPE id = ident BIND ty = styp { DefAlias (id, ty) }

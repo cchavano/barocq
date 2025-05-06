@@ -77,6 +77,7 @@ rule read_token = parse
   | space+        { read_token lexbuf }
   | "(*"          { incr comment_lvl; read_comment lexbuf }
   | "*)"          { error "comment end before comment begin" }
+  | ";;"          { SEMISEMI }
   | "."           { DOT }
   | ","           { COMMA }
   | ";"           { SEMICOLON }

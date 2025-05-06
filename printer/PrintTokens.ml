@@ -8,6 +8,7 @@ let token_to_string (tok : Bparser.token) : string =
   | COMMA -> "COMMA"
   | SEMICOLON -> "SEMICOLON"
   | COLON -> "COLON"
+  | SEMISEMI -> "SEMISEMI"
   | LPAREN -> "LPAREN"
   | RPAREN -> "RPAREN"
   | LBRACE -> "LBRACE"
