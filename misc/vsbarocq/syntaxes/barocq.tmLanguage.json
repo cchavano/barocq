@@ -26,12 +26,12 @@
                 {
                     "comment": "infix operator",
                     "name": "keyword.operator.barocq",
-                    "match": "<-|[.+\\-\\*/%\\^<>!&\\|]"
+                    "match": "<-|[.+\\-\\*/%\\^<>&\\|]"
                 },
                 {
                     "comment": "prefix operator",
                     "name": "keyword.operator.barocq",
-                    "match": "[+\\-]"
+                    "match": "[+\\-!~]"
                 },
                 {
                     "comment": "binding operator",

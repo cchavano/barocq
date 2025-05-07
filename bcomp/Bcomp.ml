@@ -142,12 +142,12 @@ let print_tokens (files : string list) : unit =
 let print_header file prog =
   let aux p prog =
     Format.fprintf p "@[<v 0>";
-    List.iter (PrintCsyntax.declare_composite p) prog.Ctypes.prog_types;
     List.iter (PrintCsyntax.define_composite p) prog.Ctypes.prog_types;
     List.iter (PrintClight.print_globdecl p) prog.Ctypes.prog_defs;
     Format.fprintf p "@]@."
   in
   let oc = open_out file in
+  Printf.fprintf oc "#pragma once\n\n";
   aux (Format.formatter_of_out_channel oc) prog;
   close_out oc
 
