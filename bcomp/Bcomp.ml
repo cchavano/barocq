@@ -123,7 +123,7 @@ let parse_one_file (file : string) : SurfaceAST.imodul =
 let parse_all_files (files : string list) : SurfaceAST.iprogram =
   List.map parse_one_file files
 
-let print_tokens (files : string list) : unit =
+let print_token_stream (files : string list) : unit =
   let aux file =
     let input = open_in file in
     let lexbuf = from_channel input in
@@ -139,18 +139,6 @@ let print_tokens (files : string list) : unit =
   in
   List.iter aux files
 
-let print_header file prog =
-  let aux p prog =
-    Format.fprintf p "@[<v 0>";
-    List.iter (PrintCsyntax.define_composite p) prog.Ctypes.prog_types;
-    List.iter (PrintClight.print_globdecl p) prog.Ctypes.prog_defs;
-    Format.fprintf p "@]@."
-  in
-  let oc = open_out file in
-  Printf.fprintf oc "#pragma once\n\n";
-  aux (Format.formatter_of_out_channel oc) prog;
-  close_out oc
-
 let () =
   begin
     Arg.parse options set_source_files usage_msg;
@@ -164,7 +152,7 @@ let () =
 
     try
       if !opt_print_tokens then begin
-        print_tokens !source_files;
+        print_token_stream !source_files;
         exit 0
       end;
 
@@ -361,7 +349,7 @@ let () =
           (* Header printing *)
           if !opt_gen_header then begin
             let header_file = get_full_filename !c_output ".h" in
-            print_header header_file prog;
+            PrintHeader.print header_file prog;
             printf "Header file generated at %s\n" header_file
           end;
           exit 0
