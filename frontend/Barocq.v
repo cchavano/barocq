@@ -602,25 +602,52 @@ Section DENOT.
       * apply fail.
   Defined.
 
-  Definition eval_array_get (v1 v2: value) : res value :=
-    match v1, v2 with
-    | Val (TArray t) a, Val (TInt32 Unsigned) i=>
-        let* v := Array.get a i in
-        ret (Val t v)
-    | _, _ => fail
-    end.
+  Definition eval_array_get (v1 v2: value) : res value.
+    destruct v1 as [ta a]. destruct v2 as [t2 i].
+    destruct ta.
+    4:
+    {
+      destruct Archi.ptr64 eqn:Earch.
+        - destruct (typ_eq_dec t2 (TInt64 Unsigned)).
+          + subst. simpl in i. simpl in a. destruct (Array.get a i).
+            * apply (ret (Val ta e)).
+            * apply fail. 
+          + apply fail.
+        - destruct (typ_eq_dec t2 (TInt32 Unsigned)).
+          + subst. simpl in i. simpl in a.
+            destruct (Array.get a (uint_to_uint64 i)).
+              * apply (ret (Val ta e)).
+              * apply fail.
+          + apply fail.
+    }
+    all: apply fail.
+  Defined.
 
-  Definition eval_array_set (v1 v2 v3: value) : res value :=
-    match v1, v2, v3 with
-    | Val (TArray ta) a, Val (TInt32 Unsigned) i, Val t v =>
-        match (typ_eq_dec t ta) with
-        | left eq =>
-            let* a' := Array.set a i (typ_cast eq v) in
-            ret (Val (TArray ta) a')
-        | _ => fail
-        end
-    | _, _, _ => fail
-    end.
+  Compute (eval_array_get (Val (TArray TBool) [true; false]) (Val (TInt64 Unsigned) Int64.one)).
+
+  Definition eval_array_set (v1 v2 v3: value) : res value.
+    destruct v1 as [ta a]. destruct v2 as [t2 i]. destruct v3 as [t v].
+    destruct ta.
+    4 :
+    {
+      destruct Archi.ptr64 eqn:Earch.
+      - destruct (typ_eq_dec t2 (TInt64 Unsigned)).
+        + destruct (typ_eq_dec ta t).
+          * subst. simpl in i. simpl in a. destruct (Array.set a i v).
+            -- apply (ret (Val (TArray t) a0)).
+            -- apply fail.
+          * apply fail.
+        + apply fail.
+      - destruct (typ_eq_dec t2 (TInt32 Unsigned)).
+        + destruct (typ_eq_dec ta t).
+          * subst. simpl in i. simpl in a. destruct (Array.set a (uint_to_uint64 i) v).
+            -- apply (ret (Val (TArray t) a0)).
+            -- apply fail.
+          * apply fail.
+        + apply fail.
+    }
+    all: apply fail.
+  Defined.
 
   Lemma typof_field_is_type :
     forall (fields: list (ident * typ)) k t,

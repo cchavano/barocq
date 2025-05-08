@@ -393,6 +393,9 @@ let rec transl_ctyp (ty : ctyp) : Types.ctyp =
       let tret' = transl_ctyp tret in
       Types.CFun (tparams', tret')
 
+let arr_index_ctyp : ctyp =
+  if Archi.ptr64 then CInt64 Types.Unsigned else CInt32 Types.Unsigned
+
 let rec typecheck_raw_expr (gte : gtenv) (gx : gcontext) (lx : lcontext)
     (e : raw_expr) : Barocq.expr * ctyp =
   match e with
@@ -430,12 +433,7 @@ let rec typecheck_raw_expr (gte : gtenv) (gx : gcontext) (lx : lcontext)
   | EArrayGet (e1, e2) ->
       let e1', t1 = typecheck_expr_expecting gte gx lx e1 Expect_array in
       let e2', _ =
-        typecheck_expr_expecting
-          gte
-          gx
-          lx
-          e2
-          (Expect_typ (CInt32 Types.Unsigned))
+        typecheck_expr_expecting gte gx lx e2 (Expect_typ arr_index_ctyp)
       in
       begin
         match t1 with
@@ -445,12 +443,7 @@ let rec typecheck_raw_expr (gte : gtenv) (gx : gcontext) (lx : lcontext)
   | EArraySet (e1, e2, e3) ->
       let e1', t1 = typecheck_expr_expecting gte gx lx e1 Expect_array in
       let e2', _ =
-        typecheck_expr_expecting
-          gte
-          gx
-          lx
-          e2
-          (Expect_typ (CInt32 Types.Unsigned))
+        typecheck_expr_expecting gte gx lx e2 (Expect_typ arr_index_ctyp)
       in
       begin
         match t1 with

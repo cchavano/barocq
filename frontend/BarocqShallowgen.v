@@ -181,6 +181,9 @@ Module Monadification.
 
   Import Monadic.
 
+  Definition arr_index_mtyp : mtyp :=
+    if Archi.ptr64 then MInt64 Unsigned else MInt32 Unsigned.
+
   Definition typof_atom (a: atom) : mtyp :=
     match a with
     | ATrue ty
@@ -381,9 +384,12 @@ Module Monadification.
     end.
 
   Definition typecheck_array_get (ty1 ty2: mtyp) : res mtyp :=
-    match ty1, ty2 with
-    | MArray ta, MInt32 Unsigned => eret (MRes ta)
-    | _, _ => MonError.fail
+    match ty1 with
+    | MArray ta => 
+        if mtyp_eq_dec ty2 arr_index_mtyp then
+          eret (MRes ta)
+        else MonError.fail
+    | _ => MonError.fail
     end.
 
   Definition typecheck_atom_against (a: atom) (ty: mtyp) : res atom :=
@@ -396,12 +402,14 @@ Module Monadification.
 
   Definition typecheck_array_set (ty1 ty2: mtyp) (a3: atom) : res (atom * mtyp) :=
     let tr := MRes ty1 in
-    match ty1, ty2 with
-    | MArray ta, MInt32 Unsigned =>
-        let* a3' := typecheck_atom_against a3 ta in
-        eret (a3', tr)
-    | _, _ => MonError.fail
-    end.      
+    match ty1 with
+    | MArray ta =>
+        if mtyp_eq_dec ty2 arr_index_mtyp then
+          let* a3' := typecheck_atom_against a3 ta in
+          eret (a3', tr)
+        else MonError.fail
+    | _ => MonError.fail
+    end.
 
   Definition mtypof_field (k: ident) (fields: list (ident * mtyp)) : res mtyp :=
     find_k_err Ident.eq_dec k fields.

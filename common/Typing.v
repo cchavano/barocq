@@ -186,25 +186,21 @@ Definition typecheck_binary_op (op: binary_op) (ty1 ty2: ctyp) : res ctyp :=
       end
   end.
 
-Definition typecheck_array_get (ty1 ty2: ctyp) : res ctyp :=
+Definition typecheck_array_get (ty1 ty2: ctyp) : res ctyp :=    
   match ty1 with
   | CArray ta =>
-      match ty2 with
-      | CInt32 Unsigned => ret ta
-      | _ => failwith "Typing.typecheck_array_get: u32 expected for array indexes"
-      end
+      if ctyp_eq_dec ty2 arr_index_ctyp then ret ta
+      else failwith "Typing.typecheck_array_get: array index type mismatch"
   | _ => failwith "Typing.typecheck_array_get: array typed expected"
   end.
 
 Definition typecheck_array_set (ty1 ty2 ty3: ctyp) : res ctyp :=
   match ty1 with
   | CArray ta =>
-      match ty2 with
-      | CInt32 Unsigned =>
-          if ctyp_eq_dec ta ty3 then ret ty1
-          else failwith "Typing.typecheck_array_set: type mismatch"
-      | _ => failwith "Typing.typecheck_array_set: u32 type expected for array indexes"
-      end
+      if ctyp_eq_dec ty2 arr_index_ctyp then
+        if ctyp_eq_dec ta ty3 then ret ty1
+        else failwith "Typing.typecheck_array_set: type mismatch"
+      else failwith "Typing.typecheck_array_set: array index type mismatch"
   | _ => failwith "Typing.typecheck_array_set: array type expected"
   end.
 

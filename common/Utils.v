@@ -30,8 +30,8 @@ Close Scope state_err_monad_scope.
 
 (** * Arithmetic *)
 
-Definition uint_to_nat (i: int) : nat :=
-  Z.to_nat (Int.unsigned i).
+Definition uint64_to_nat (i: int64) : nat :=
+  Z.to_nat (Int64.unsigned i).
 
 (** * Lists *)
 

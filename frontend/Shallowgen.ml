@@ -11,6 +11,9 @@ let int_to_rocq (i : Integers.Int.int) (ty : mtyp) : string =
     | MInt32 Unsigned -> u32_to_string i
     | _ -> assert false
   in
+  let si =
+    if Integers.Int.lt i Integers.Int.zero then sprintf "(%s)" si else si
+  in
   sprintf "Int.repr %s%%Z" si
 
 let int64_to_rocq (i : Integers.Int64.int) (ty : mtyp) : string =
@@ -20,7 +23,10 @@ let int64_to_rocq (i : Integers.Int64.int) (ty : mtyp) : string =
     | MInt64 Unsigned -> u64_to_string i
     | _ -> assert false
   in
-  sprintf "Int.repr %s%%Z" si
+  let si =
+    if Integers.Int64.lt i Integers.Int64.zero then sprintf "(%s)" si else si
+  in
+  sprintf "Int64.repr %s%%Z" si
 
 let cast_to_rocq (src_ty : mtyp) (dst_ty : mtyp) : string =
   let mtyp_to_string ty =
@@ -151,13 +157,17 @@ let rec expr_to_rocq_rec (prefix : string) (e : expr) : string =
     match e with
     | EAtom (a, _) -> atom_to_rocq a
     | EArrayGet (a1, a2, _) ->
-        sprintf "Array.get %s %s" (opt_parens a1) (opt_parens a2)
+        let sa2 =
+          if Archi.ptr64 then opt_parens a2
+          else sprintf "(uint_to_uint64 %s)" (opt_parens a2)
+        in
+        sprintf "Array.get %s %s" (opt_parens a1) sa2
     | EArraySet (a1, a2, a3, _) ->
-        sprintf
-          "Array.set %s %s %s"
-          (opt_parens a1)
-          (opt_parens a2)
-          (opt_parens a3)
+        let sa2 =
+          if Archi.ptr64 then opt_parens a2
+          else sprintf "(uint_to_uint64 %s)" (opt_parens a2)
+        in
+        sprintf "Array.set %s %s %s" (opt_parens a1) sa2 (opt_parens a3)
     | EApp (a1, args, _) ->
         let sargs =
           match args with

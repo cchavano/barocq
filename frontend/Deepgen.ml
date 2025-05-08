@@ -12,6 +12,9 @@ let int_to_deep (i : Integers.Int.int) (s : signedness) : string =
     | Signed -> i32_to_string i
     | Unsigned -> u32_to_string i
   in
+  let si =
+    if Integers.Int.lt i Integers.Int.zero then sprintf "(%s)" si else si
+  in
   sprintf "Int.repr %s%%Z" si
 
 let int64_to_deep (i : Integers.Int64.int) (s : signedness) : string =
@@ -20,7 +23,10 @@ let int64_to_deep (i : Integers.Int64.int) (s : signedness) : string =
     | Signed -> i64_to_string i
     | Unsigned -> u64_to_string i
   in
-  sprintf "Int.repr %s%%Z" si
+  let si =
+    if Integers.Int64.lt i Integers.Int64.zero then sprintf "(%s)" si else si
+  in
+  sprintf "Int64.repr %s%%Z" si
 
 let unary_op_to_deep (op : unary_op) : string =
   match op with
@@ -77,7 +83,7 @@ let rec expr_to_deep (prefix : string) (e : expr) : string =
   | EInt32 (i, s) ->
       sprintf "EInt32 (%s) %s" (int_to_deep i s) (signedness_to_deep s)
   | EInt64 (i, s) ->
-      sprintf "EInt64 (%s) %s" (int_to_deep i s) (signedness_to_deep s)
+      sprintf "EInt64 (%s) %s" (int64_to_deep i s) (signedness_to_deep s)
   | EVar x -> sprintf "EVar %s" (ident_to_deep x)
   | ECast (e1, ty) ->
       sprintf "ECast %s %s" (expr_to_deep prefix e1) (ctyp_to_deep ty)

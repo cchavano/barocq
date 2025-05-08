@@ -14,13 +14,13 @@ let i32_to_string (i : Integers.Int.int) : string =
   sprintf "%ld" (camlint_of_coqint i)
 
 let u32_to_string (i : Integers.Int.int) : string =
-  sprintf "%luU" (camlint_of_coqint i)
+  sprintf "%lu" (camlint_of_coqint i)
 
 let i64_to_string (i : Integers.Int64.int) : string =
-  sprintf "%LdL" (camlint64_of_coqint i)
+  sprintf "%Ld" (camlint64_of_coqint i)
 
 let u64_to_string (i : Integers.Int64.int) : string =
-  sprintf "%LuUL" (camlint64_of_coqint i)
+  sprintf "%Lu" (camlint64_of_coqint i)
 
 let list_to_string (b : string) (e : string) (s : string) (f : 'a -> string)
     (l : 'a list) : string =

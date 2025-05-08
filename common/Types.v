@@ -71,6 +71,14 @@ Definition typof_field (k: ident) (fields: list (ident * typ)) : res typ :=
 Definition ctypof_field (k: ident) (fields: list (ident * ctyp)) : res ctyp :=
   find_k_err Ident.eq_dec k fields.
 
+(* Type for array indexes *)
+
+Definition arr_index_ctyp : ctyp :=
+  if Archi.ptr64 then CInt64 Unsigned else CInt32 Unsigned.
+
+Definition arr_index_typ : typ :=
+  if Archi.ptr64 then TInt64 Unsigned else TInt32 Unsigned.
+
 (** * Conversion of a typ to a Coq Type *)
 
 Section EVALTYP.
