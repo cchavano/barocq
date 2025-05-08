@@ -24,7 +24,7 @@ Section ARRAYS.
   
   Fixpoint set_rec (l: list A) (n: nat) (x: A) {struct n} : list A :=
     match n, l with
-    | O, y :: l' => y :: l'
+    | O, y :: l' => x :: l'
     | S n', y :: l' => y :: (set_rec l' n' x)
     | _ , _ => nil
     end.
