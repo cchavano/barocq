@@ -46,7 +46,17 @@
                     "comment": "builtin type",
                     "name": "entity.name.type.barocq",
                     "match": "\\b(bool|i32|u32|i64|u64|array)\\b"
+                },
+				{
+                    "comment": "type cast",
+                    "match": "(?<=(as))\\s+((\\w+)(::))?(\\w+)",
+                    "captures": {
+						"3": { "name": "entity.name.namespace.barocq" },
+						"4": { "name": "keyword.operator.barocq" },
+                        "5": { "name": "entity.name.type.barocq" }
+                    }
                 }
+
 			]
 		},
 		"types_decl": {
