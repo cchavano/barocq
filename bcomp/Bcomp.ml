@@ -45,6 +45,8 @@ let opt_gen_alias_return_state_of = ref ""
 
 let opt_debug_aliasing = ref false
 
+let dot_png_cmd = sprintf "dot -Tpng %s > %s.png"
+
 let usage_msg = "Usage: barocq [options] <files> \noptions:"
 
 let options =
@@ -201,19 +203,11 @@ let () =
           | Errors.OK prog -> begin
               match Imp1.Typing.typecheck_program prog with
               | Errors.OK prog -> begin
-                  let fid = "_" ^ !opt_gen_alias_call_state_of in
+                  let fid = !opt_gen_alias_call_state_of in
                   match Aliasing_impl.get_fun_descr prog fid with
                   | Some fdescr ->
-                      let dotfile =
-                        get_full_filename
-                          !c_output
-                          (sprintf "%s_call_state.dot" fid)
-                      in
-                      let dotfile_rev =
-                        get_full_filename
-                          !c_output
-                          (sprintf "%s_call_state_rev.dot" fid)
-                      in
+                      let dotfile = sprintf "%s_call_state.dot" fid in
+                      let dotfile_rev = sprintf "%s_call_state_rev.dot" fid in
                       let out = open_out dotfile in
                       let out_rev = open_out dotfile_rev in
                       Aliasing_impl.DotExport.print_state
@@ -225,12 +219,14 @@ let () =
                         (Aliasing_defs.AbsDom.AbsState
                            fdescr.Aliasing_defs.fd_callstate);
                       close_out out;
-                      close_out out_rev
+                      close_out out_rev;
+                      let _ = Unix.system (dot_png_cmd dotfile dotfile) in
+                      let _ =
+                        Unix.system (dot_png_cmd dotfile_rev dotfile_rev)
+                      in
+                      ()
                   | None ->
-                      failwith
-                        (sprintf
-                           "Error: function \"%s\" is not defined"
-                           !opt_gen_alias_call_state_of)
+                      failwith (sprintf "function \"%s\" is not defined" fid)
                 end
               | Errors.Error msg ->
                   failwith
@@ -248,19 +244,11 @@ let () =
           | Errors.OK prog -> begin
               match Imp1.Typing.typecheck_program prog with
               | Errors.OK prog -> begin
-                  let fid = "_" ^ !opt_gen_alias_return_state_of in
+                  let fid = !opt_gen_alias_return_state_of in
                   match Aliasing_impl.get_fun_descr prog fid with
                   | Some fdescr ->
-                      let dotfile =
-                        get_full_filename
-                          !c_output
-                          (sprintf "%s_return_state.dot" fid)
-                      in
-                      let dotfile_rev =
-                        get_full_filename
-                          !c_output
-                          (sprintf "%s_return_state_rev.dot" fid)
-                      in
+                      let dotfile = sprintf "%s_return_state.dot" fid in
+                      let dotfile_rev = sprintf "%s_return_state_rev.dot" fid in
                       let out = open_out dotfile in
                       let out_rev = open_out dotfile_rev in
                       Aliasing_impl.DotExport.print_state
@@ -270,12 +258,14 @@ let () =
                         out_rev
                         fdescr.Aliasing_defs.fd_returnstate;
                       close_out out;
-                      close_out out_rev
+                      close_out out_rev;
+                      let _ = Unix.system (dot_png_cmd dotfile dotfile) in
+                      let _ =
+                        Unix.system (dot_png_cmd dotfile_rev dotfile_rev)
+                      in
+                      ()
                   | None ->
-                      failwith
-                        (sprintf
-                           "Error: function \"%s\" is not defined"
-                           !opt_gen_alias_call_state_of)
+                      failwith (sprintf "function \"%s\" is not defined" fid)
                 end
               | Errors.Error msg ->
                   failwith

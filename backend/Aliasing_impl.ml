@@ -417,12 +417,16 @@ let exec_set_array_set (x : ident) (a : atom) (i : atom) (v : atom)
       else Top
   | _ -> assert false
 
+(** [path_of_access_list acs] transforms th access list [acs] into a path. *)
 let rec path_of_access_list (acs : access list) : path =
   match acs with
   | [] -> []
   | AcStructField (f, _) :: acs' -> f :: path_of_access_list acs'
   | AcArrayIndex (_, _) :: acs' -> _INDEX :: path_of_access_list acs'
 
+(** [exec_set_deep_access x a acs ty st] executes the transfer function for the
+    statement [set x := a\acs\ on [st]]. [ty] is the type of the value returned
+    by the deep access. *)
 let exec_set_deep_access (x : ident) (a : atom) (acs : access list) (ty : ctyp)
     (st : absstate) : absstate =
   match a with
@@ -457,8 +461,8 @@ let pointsto_unique (st : absstate) (x : ident) : bool =
   | Some locs -> IdentSet.cardinal locs = 1
   | None -> true
 
-(** [args_points_unique st args] checks wether all function arguments points to
-    only abstract location [st]. *)
+(** [args_points_unique st args] checks wether each function's arguments points
+    to only one abstract location in [st]. *)
 let args_pointsto_unique (st : absstate) (args : atom list) : bool =
   List.for_all
     (fun (a : atom) ->
@@ -754,6 +758,82 @@ let rec vars_of_atom (a : atom) : IdentSet.t =
       IdentSet.union (vars_of_atom a1) (vars_of_atom a2)
   | _ -> set_empty
 
+(** [proj_mem m root pmem visited] extracts the sub-memory of [m] reachable from
+    [root]. [pmem] is the accumulator for the resulting memory and [visited] is
+    the one for all visited locations. *)
+let rec proj_mem (m : absmem) (root : absloc) (pmem : absmem)
+    (visited : IdentSet.t) : absmem * IdentSet.t =
+  if IdentSet.mem root visited then (pmem, visited)
+  else
+    let pmem', visited' =
+      IdentPairMap.fold
+        (fun (l, f) locs (accM, accV) ->
+          if l = root then
+            IdentSet.fold
+              (fun loc (accM1, accV1) ->
+                let accM1' =
+                  IdentPairMap.update
+                    (l, f)
+                    (fun li ->
+                      match li with
+                      | Some li -> Some (IdentSet.add loc li)
+                      | None -> Some (IdentSet.singleton loc))
+                    accM1
+                in
+                proj_mem m loc accM1' accV1)
+              locs
+              (accM, accV)
+          else (accM, accV))
+        m
+        (pmem, visited)
+    in
+    (pmem', IdentSet.add root visited')
+
+(** [proj_state st vars] builds the projection of [st] on the variables [vars].
+*)
+let proj_state (st : absstate) (vars : var_set) : absstate =
+  (* The environment is projected on the variables *)
+  let ev = IdentMap.filter (fun k _ -> IdentSet.mem k vars) st.st_env in
+  let rev = env_reverse ev in
+  (* The invalid path environment is projected on the variables *)
+  let inv = IdentMap.filter (fun k _ -> IdentSet.mem k vars) st.st_inv in
+  let inv_res = st.st_inv_res in
+  (* To build the memory projection, we make a DFS from all the locations pointed by
+     the variables. *)
+  let roots =
+    IdentMap.fold
+      (fun _ locs roots -> IdentSet.union locs roots)
+      ev
+      IdentSet.empty
+  in
+  let m, visited =
+    IdentSet.fold
+      (fun root (m, visited) -> proj_mem st.st_mem root m visited)
+      roots
+      (IdentPairMap.empty, IdentSet.empty)
+  in
+  let rm = mem_reverse m in
+  (* The locked arrays environment is projected on all locations contained
+     in the projection of the memory. *)
+  let arr_locked =
+    IdentMap.filter (fun k _ -> IdentSet.mem k visited) st.st_arr_locked
+  in
+  (* The set of retruned locations is projected on all locations contained
+     in the projection of the memory. *)
+  let res = IdentSet.filter (fun r -> IdentSet.mem r visited) st.st_res in
+  make_state ev m rev rm res inv inv_res arr_locked
+
+(** [build_call_state st args] build the state for a function call with
+    arguments [args] from [st]. *)
+let build_call_state (st : absstate) (args : atom list) : absstate =
+  let vars_in_params : var_set =
+    IdentMap.to_seq st.st_env |> Seq.map fst
+    |> Seq.filter (fun v -> is_arg v args)
+    |> IdentSet.of_seq
+  in
+  let stcall = proj_state st vars_in_params in
+  { stcall with st_res = IdentSet.empty; st_arr_locked = IdentMap.empty }
+
 (** [exec_set_call x a args ty fe st nctr] computes the transfer function for
     the statement [set x = a (args)] on [st]. [fe] is the function descriptor
     environment. [ty] is the type of the return value. *)
@@ -766,24 +846,8 @@ let exec_set_call (show_debug : bool) (se : senv) (x : ident) (a : atom)
         | Some descr -> descr
         | None -> raise unsupported
       in
-      (* The call state is built by filtering the environment and invalid paths on the function arguments.
-         We also remove the information about locked arrays because the associtaed indexes are only valid
-         in the caller scope. The memory stays the same, it is just that some part of it will be inaccessible. *)
-      let ev_call = IdentMap.filter (fun k _ -> is_arg k args) st.st_env in
-      let rev_call = env_reverse ev_call in
-      let inv_call = IdentMap.filter (fun k _ -> is_arg k args) st.st_inv in
-      let stcall =
-        make_state
-          ev_call
-          st.st_mem
-          rev_call
-          st.st_rev_mem
-          set_empty
-          inv_call
-          None
-          IdentMap.empty
-      in
-      (* We then build the bijections for the variables and the locations between the current call state,
+      let stcall = build_call_state st args in
+      (* We build the bijections for the variables and the locations between the current call state,
          and the pre-requisite call state of the callee. *)
       let vars_bij, locs_bij =
         funcall_bijection
@@ -794,9 +858,12 @@ let exec_set_call (show_debug : bool) (se : senv) (x : ident) (a : atom)
           fdescr.fd_callstate
           stcall
       in
-      (* We check that all arguments are valid. *)
+      (* Before calling the function, we must check the following things: 
+         - All arguments are completely valid;
+         - Each non-primitive argument points to only one abstract location;
+         - Each argument points to a tree-shaped part of the memory;
+         - There is no inter-aliasing between arguments. *)
       let args_validity = List.for_all (is_valid_atom (AbsState stcall)) args in
-      (* We also check that arguments respect the form imposed by the call state of the callee. *)
       if
         args_pointsto_unique stcall args && wf_args stcall args && args_validity
       then
@@ -808,7 +875,7 @@ let exec_set_call (show_debug : bool) (se : senv) (x : ident) (a : atom)
              The merge operation is the following:
              - The new environment is the one of the inital state + the new binding for x that points to
                the result locations of the return state (stret.st_res). 
-               As function arguments are renamed during compilation, we never assign an argument to another value.
+               As function parameters are renamed by the frontend, we never assign an argument to another value.
                So for every key "v" in stret.st_env, s.t. "v" was an argument, the points-to set of "v" is the same
                in stret.st_env and st.st_env.
              - If a pair (l, f) is a key of the return state memory, it means that it was accessible from the arguments.
@@ -821,9 +888,7 @@ let exec_set_call (show_debug : bool) (se : senv) (x : ident) (a : atom)
                + The invalid paths of the initial state;
                + The invalid paths of the return state;
                + The paths that were aliased with some arguments that themselves contained invalid paths when the function returns.
-             - The locked arrays are the one of the initial state. Every array passed as an argument
-               to a function will be invalidated after the call if the function returns a non-primitive value.
-               (c.f. gen_fun_descr_and ast). *)
+             - The locked arrays are the one of the initial state. *)
           let st' = if is_prim ty then st else env_add st x stret.st_res in
           let m_ret =
             IdentPairMap.merge
@@ -866,6 +931,38 @@ let exec_set_call (show_debug : bool) (se : senv) (x : ident) (a : atom)
       else Top
   | _ -> assert false
 
+(** [invalidate_parent_arrays st] invalidates the paths leading to all arrays
+    for which an element is contained in the returned locations [st.st_res]. *)
+let invalidate_parent_arrays (st : absstate) =
+  (* Get all "[]"-linked parent locations of locations contained in res *)
+  let parent_arrays =
+    IdentSet.fold
+      (fun loc acc ->
+        let parent_assoc_list =
+          match IdentMap.find_opt loc st.st_rev_mem with
+          | Some assoc_list -> assoc_list
+          | None -> []
+        in
+        let parent_arrays =
+          match List.assoc_opt _INDEX parent_assoc_list with
+          | Some locs -> locs
+          | _ -> IdentSet.empty
+        in
+        IdentSet.union acc parent_arrays)
+      st.st_res
+      IdentSet.empty
+  in
+  (* Compute the invalid paths from the parent arrays. *)
+  let inv =
+    IdentSet.fold
+      (fun loc accS ->
+        let paths = paths_to_loc st loc in
+        inv_union accS paths)
+      parent_arrays
+      IdentMap.empty
+  in
+  { st with st_inv = inv_union st.st_inv inv }
+
 (** [exec_return a st] computes the transfer function for the statement [ret a]
     on [st]. *)
 let exec_return (a : atom) (st : absstate) : absstate =
@@ -886,7 +983,13 @@ let exec_return (a : atom) (st : absstate) : absstate =
     | None, Some ti -> Some ti
     | None, None -> None
   in
-  { st' with st_inv_res = inv_res }
+  let st' = { st' with st_inv_res = inv_res } in
+  (* We must invalidate the paths leading to arrays for which an element is returned, 
+     because otherwise we loset the track of the source of the element.
+     This makes the corresponding arrays unsuable after the function call and prevents
+     the user from writing programs that would make sharing in arrays possible
+     via a function call. *)
+  invalidate_parent_arrays st'
 
 let locked_arrays_to_string (st : absstate) : string =
   let arr_locked_var =
@@ -991,16 +1094,16 @@ let rec absexec (show_debug : bool) (se : senv) (fe : fenv) (d : absdom)
       (Imp1.Aliasing_AST.StSequence (s1', s2'), d2)
   | StReturn a ->
       print_dom_debug show_debug d "IN" None;
+      debug_info show_debug
+      @@ sprintf ">> %s\n" (PrintImp1.PrintTyped.statement_to_string_pref "" s);
       let d' =
         let* st = d in
         let st' = exec_return a st in
         if is_tree_locs st'.st_mem (IdentSet.elements st.st_res) then
-          AbsState (exec_return a st)
+          AbsState st'
         else Top
       in
       let s', d' = (Imp1.Aliasing_AST.StReturn (a, d, d'), d') in
-      debug_info show_debug
-      @@ sprintf ">> %s\n" (PrintImp1.PrintTyped.statement_to_string_pref "" s);
       print_dom_debug show_debug d' "OUT" (Some a);
       (s', d')
 
@@ -1072,6 +1175,11 @@ let gen_valid_call_state (se : senv) (params : (ident * ctyp) list) : absstate =
 let is_param (v : ident) (params : (ident * ctyp) list) : bool =
   List.exists (fun (pid, _) -> v = pid) params
 
+let build_return_state (st : absstate) (params : (ident * ctyp) list) : absstate
+    =
+  let streturn = proj_state st (IdentSet.of_list (List.map fst params)) in
+  { streturn with st_arr_locked = IdentMap.empty }
+
 (** [gen_fun_descr _ ts fe f] generates the function descriptor for [f]. *)
 let gen_fun_descr_and_ast (show_debug : bool) (se : senv) (fe : fenv)
     (f : coq_function) : fun_descr * Imp1.Aliasing_AST.statement =
@@ -1083,18 +1191,18 @@ let gen_fun_descr_and_ast (show_debug : bool) (se : senv) (fe : fenv)
      for which the key is a function paramater. *)
   let returnstate =
     let* retstate = returnstate in
-    let ev_ret =
+    (* let ev_ret =
       IdentMap.filter (fun v _ -> is_param v f.fn_params) retstate.st_env
     in
     let rev_ret = env_reverse ev_ret in
     let inv_ret =
       IdentMap.filter (fun v _ -> is_param v f.fn_params) retstate.st_inv
-    in
+    in *)
     (* Arrays are treated linearly when used in a function call so we invalidate all parameters
        which type is array, if the returned value is not primivite.
        Thus, if a function returns a (non-primitive) sub element of an array, the array will be
         unusable after the function call. *)
-    let all_array_params =
+    (* let all_array_params =
       List.fold_right
         (fun (fid, ftyp) acc ->
           match ftyp with
@@ -1102,17 +1210,18 @@ let gen_fun_descr_and_ast (show_debug : bool) (se : senv) (fe : fenv)
           | _ -> acc)
         f.fn_params
         []
-    in
-    let inv_ret =
+    in *)
+    (* let inv_ret =
       if is_prim f.fn_return then inv_ret
       else
         List.fold_left
           (fun acc a -> IdentMap.add a Leaf acc)
           inv_ret
           all_array_params
-    in
-    AbsState
-      { retstate with st_env = ev_ret; st_rev_env = rev_ret; st_inv = inv_ret }
+    in *)
+    (* AbsState
+      { retstate with st_env = ev_ret; st_rev_env = rev_ret; st_inv = inv_ret } *)
+    AbsState (build_return_state retstate f.fn_params)
   in
   let fdescr =
     {
