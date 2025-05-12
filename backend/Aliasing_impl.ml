@@ -31,6 +31,28 @@ let rec is_valid_atom (d : t) (a : atom) : bool =
   | ABinaryOp (op, a1, a2, _) -> is_valid_atom d a1 && is_valid_atom d a2
   | _ -> true
 
+let _INDEX : ident = ident_of_string "[]"
+
+(** [access_list_to_path acs] encodes a list of accesses into a path. *)
+let rec access_list_to_path (acs : access list) : path =
+  match acs with
+  | [] -> []
+  | AcArrayIndex _ :: acs' -> _INDEX :: access_list_to_path acs'
+  | AcStructField (f, _) :: acs' -> f :: access_list_to_path acs'
+
+(** [is_valid_deep_access d a acs] checks that the deep access from [a] with
+    access list [acs] is valid in [d].*)
+let is_valid_deep_access (d : t) (a : atom) (acs : access list) : bool =
+  let rec aux acs =
+    match acs with
+    | [] -> true
+    | Syntax.Typed.AcArrayIndex (i, _) :: acs' -> is_valid_atom d i && aux acs'
+    | Syntax.Typed.AcStructField _ :: acs' -> aux acs'
+  in
+  match a with
+  | AVar (x, _) -> aux acs && is_valid_path d x (access_list_to_path acs)
+  | _ -> assert false
+
 (** [paths_to_string paths] transforms an invalid path map into a string. *)
 let paths_to_string (paths : path_map) : string =
   list_to_string_bracket
@@ -267,8 +289,6 @@ let exec_set_struct_update (se : senv) (x : ident) (a : atom) (f : ident)
       in
       { st' with st_inv = inv' }
   | _ -> assert false
-
-let _INDEX : ident = ident_of_string "[]"
 
 (** [exec_set_array_get x a i st] executes the transfer function for the
     statement [set x := a[i]] on [st]. If an element of the array [a] has

@@ -79,6 +79,8 @@ Module AliasingCheck.
 
   Parameter is_valid_return : ABSDOM -> bool.
 
+  Parameter is_valid_deep_access : ABSDOM -> atom -> list access -> bool.
+
   Parameter gen_aliasing_program : bool -> Imp1Typed.program -> res Imp1.Aliasing_AST.program.
 
   Definition failcheck {A: Type} : MonError.M A := failwith "Imp1gen.AliasingCheck.check_statement".
@@ -86,35 +88,26 @@ Module AliasingCheck.
   Fixpoint check_statement (s: Imp1.Aliasing_AST.statement) : res Imp1Typed.statement :=
     match s with
     | StSet x c IN _ =>
-        let* c' :=
-          match c with
-          | CpAtom a _ =>
-              if is_valid_atom IN a then eret c
-              else failcheck
+          let valid_comp := match c with
+          | CpAtom a _ => is_valid_atom IN a
           | CpArrayGet a i _ =>
-              if is_valid_atom IN a &&
-                 is_valid_atom IN i 
-              then eret c
-              else failcheck
+              is_valid_atom IN a
+              && is_valid_atom IN i 
           | CpArraySet _ i v _ =>
-              if is_valid_atom IN i &&
-                 is_valid_atom IN v
-              then eret c
-              else failcheck
+              is_valid_atom IN i
+              && is_valid_atom IN v
           | CpStructProj (AVar y _) f _ =>
-              if is_valid_path IN y (make_path (cons f nil)) then eret c
-              else failcheck
-          | CpStructProj _ _ _ => fail
-          | CpStructUpdate _ _ v _ =>
-              if is_valid_atom IN v then eret c
-              else failcheck
+              is_valid_path IN y (make_path (cons f nil))
+          | CpStructProj _ _ _ => false
+          | CpStructUpdate _ _ v _ => is_valid_atom IN v
           | CpCall _ args _ =>
-              let all_valid := List.forallb (is_valid_atom IN) args in
-              if all_valid then eret c else failcheck
-          | CpDeepAccess _ _ _ => eret c (* TODO *)
+              List.forallb (is_valid_atom IN) args
+          | CpDeepAccess a acs _ =>
+              is_valid_deep_access IN a acs
           end
         in
-        eret (Imp1Typed.StSet x c')
+        if valid_comp then eret (Imp1Typed.StSet x c)
+        else failcheck
   | StIfThenElse a s1 s2 =>
       let* s1' := check_statement s1 in
       let* s2' := check_statement s2 in

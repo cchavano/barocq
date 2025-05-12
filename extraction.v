@@ -23,40 +23,13 @@ Extraction Blacklist List String Int Array.
 (* Extraction directory *)
 Set Extraction Output Directory "_build/extraction".
 
-(* Separate Extraction
-  BinPos.Pos.pred
-  BinInt.Z.succ
-  Integers.Ptrofs.signedBSDOM => "Aliasing_defs.AbsDom.t".
-Extract Constant Imp1gen.
-  Machregs.mreg
-  Machregs.register_names
-  Machregs.register_by_name
-  Archi.win64
-  AST.builtin_arg
-  AST.builtin_res
-  (* Memdata *)
-  Csyntax
-  (* Initializers *)
-  Clight.program
-  Ctyping
-  Ctypes.layout_struct
-  Ctypes.signature_of_type
-  Ctypes.make_program
-  Ctypesdefs.string_of_ident
-  Ctypesdefs.ident_of_string
-  Barocq.xprogram
-  Barocq.interpret
-  Barocq.xprog_to_prog
-  Clightgen.program_idents
-  Compiler.compile_to_imp1
-  Compiler.compile. *)
-
 Extract Constant Imp1.Aliasing_AST.ABSDOM => "Aliasing_defs.AbsDom.t".
 Extract Constant Imp1gen.AliasingCheck.path => "Aliasing_defs.path".
 Extract Inlined Constant Imp1gen.AliasingCheck.make_path => "".
 Extract Constant Imp1gen.AliasingCheck.is_valid_path => "Aliasing_defs.AbsDom.is_valid_path".
 Extract Constant Imp1gen.AliasingCheck.is_valid_atom => "Aliasing_impl.is_valid_atom".
 Extract Constant Imp1gen.AliasingCheck.is_valid_return => "Aliasing_defs.AbsDom.is_valid_return".
+Extract Constant Imp1gen.AliasingCheck.is_valid_deep_access => "Aliasing_impl.is_valid_deep_access".
 Extract Constant Imp1gen.AliasingCheck.gen_aliasing_program => "Aliasing_impl.gen_aliasing_program".
 
 Separate Extraction
