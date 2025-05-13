@@ -663,7 +663,10 @@ let rec mem_bijection (se : senv) (edges : (ident * ctyp) list) (loc1 : absloc)
             | CArray ta -> [(_INDEX, ta)]
             | _ -> assert false
           in
-          mem_bijection se edges_e lv1 lv2 m1 m2 (IdentMap.add lv1 lv2 bij)
+          let bij' =
+            mem_bijection se edges_e lv1 lv2 m1 m2 (IdentMap.add lv1 lv2 bij)
+          in
+          mem_bijection se edges' loc1 loc2 m1 m2 bij'
         else failwith "mem_bijection error"
 
 let locs_bijection (se : senv) (v1 : ident) (v2 : ident) (ty : ctyp)
