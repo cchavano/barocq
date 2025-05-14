@@ -532,6 +532,14 @@ let is_tree_var (st : absstate) (x : ident) : bool =
   | Some locs -> is_tree_locs st.st_mem (IdentSet.elements locs)
   | None -> false
 
+let rec vars_of_atom (a : atom) : IdentSet.t =
+  match a with
+  | AVar (x, _) -> IdentSet.singleton x
+  | AUnaryOp (_, a1, _) -> vars_of_atom a1
+  | ABinaryOp (_, a1, a2, _) ->
+      IdentSet.union (vars_of_atom a1) (vars_of_atom a2)
+  | _ -> set_empty
+
 (** [wf_args st args] checks that all arguments [args] are well-formed at
     function call, i.e. that each arguments point to trees and that there is not
     inter-aliasing between arguments. *)
@@ -539,13 +547,7 @@ let wf_args (st : absstate) (args : atom list) : bool =
   let all_roots args =
     List.fold_left
       (fun acc (a : atom) ->
-        match a with
-        | AVar (x, ty) -> begin
-            match IdentMap.find_opt x st.st_env with
-            | Some locs -> List.append (IdentSet.elements locs) acc
-            | None -> acc
-          end
-        | _ -> acc)
+        List.append (IdentSet.elements (vars_of_atom a)) acc)
       []
       args
   in
@@ -772,14 +774,6 @@ let apply_state_bijection (vars_bij : ident IdentMap.t)
      When apply_state_bijection is used after a function call (see set_call),
     this field is not meaningful anymore, so with set it as being empty. *)
   make_state ev m rev rm res inv inv_res IdentMap.empty
-
-let rec vars_of_atom (a : atom) : IdentSet.t =
-  match a with
-  | AVar (x, _) -> IdentSet.singleton x
-  | AUnaryOp (_, a1, _) -> vars_of_atom a1
-  | ABinaryOp (_, a1, a2, _) ->
-      IdentSet.union (vars_of_atom a1) (vars_of_atom a2)
-  | _ -> set_empty
 
 (** [proj_mem m root pmem visited] extracts the sub-memory of [m] reachable from
     [root]. [pmem] is the accumulator for the resulting memory and [visited] is
