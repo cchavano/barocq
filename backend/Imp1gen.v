@@ -54,6 +54,8 @@ Definition transl_globdef (def: ImpABNF.globdef) : Imp1.globdef :=
   match def with
   | DefConst x l ty => DefConst x l ty
   | DefFun x f => DefFun x (transl_function f)
+  | DeclConst x ty => DeclConst x ty
+  | DeclFun f tparams tret => DeclFun f tparams tret
   end.
 
 Definition transl_program (prog: ImpABNF.program) : Imp1.program :=
@@ -88,22 +90,23 @@ Module AliasingCheck.
   Fixpoint check_statement (s: Imp1.Aliasing_AST.statement) : res Imp1Typed.statement :=
     match s with
     | StSet x c IN _ =>
-          let valid_comp := match c with
-          | CpAtom a _ => is_valid_atom IN a
-          | CpArrayGet a i _ =>
-              is_valid_atom IN a
-              && is_valid_atom IN i 
-          | CpArraySet _ i v _ =>
-              is_valid_atom IN i
-              && is_valid_atom IN v
-          | CpStructProj (AVar y _) f _ =>
-              is_valid_path IN y (make_path (cons f nil))
-          | CpStructProj _ _ _ => false
-          | CpStructUpdate _ _ v _ => is_valid_atom IN v
-          | CpCall _ args _ =>
-              List.forallb (is_valid_atom IN) args
-          | CpDeepAccess a acs _ =>
-              is_valid_deep_access IN a acs
+        let valid_comp :=
+          match c with
+            | CpAtom a _ => is_valid_atom IN a
+            | CpArrayGet a i _ =>
+                is_valid_atom IN a
+                && is_valid_atom IN i 
+            | CpArraySet _ i v _ =>
+                is_valid_atom IN i
+                && is_valid_atom IN v
+            | CpStructProj (AVar y _) f _ =>
+                is_valid_path IN y (make_path (cons f nil))
+            | CpStructProj _ _ _ => false
+            | CpStructUpdate _ _ v _ => is_valid_atom IN v
+            | CpCall _ args _ =>
+                List.forallb (is_valid_atom IN) args
+            | CpDeepAccess a acs _ =>
+                is_valid_deep_access IN a acs
           end
         in
         if valid_comp then eret (Imp1Typed.StSet x c)
@@ -135,6 +138,8 @@ Module AliasingCheck.
     | DefFun x f =>
         let* f' := check_function f in
         eret (DefFun x f')
+    | DeclConst x ty => eret (DeclConst x ty)
+    | DeclFun f tparams tret => eret (DeclFun f tparams tret)
     end.
 
   Definition check_program (prog: Imp1.Aliasing_AST.program) : res Imp1Typed.program :=

@@ -10,6 +10,8 @@
 
   let comment_lvl = ref (-1)
 
+  let string_buf = Buffer.create 10
+
   let parse_int_lit (il: string) : token =
       let n = String.length il in
       (* ===== u64 ===== *)
@@ -54,11 +56,11 @@
       [
         ("module", MODULE); ("compute", COMPUTE);
         ("true", TRUE); ("false", FALSE);
-        ("type", TYPE); ("as", AS);
         ("bool", TYP_BOOL); ("i32", TYP_INT32); ("u32", TYP_UINT32);
         ("i64", TYP_INT64); ("u64", TYP_UINT64); ("array", TYP_ARRAY);
-        ("struct", STRUCT); ("def", DEF); ("let", LET); ("in", IN);
-        ("if", IF); ("then", THEN); ("else", ELSE)
+        ("type", TYPE); ("of", OF); ("defn", DEFN); ("decl", DECL);
+        ("let", LET); ("in", IN); ("as", AS);
+        ("if", IF); ("then", THEN); ("else", ELSE);
       ]
 }
 
@@ -78,18 +80,8 @@ rule read_token = parse
   | "(*"          { incr comment_lvl; read_comment lexbuf }
   | "*)"          { error "comment end before comment begin" }
   | ";;"          { SEMISEMI }
-  | "."           { DOT }
-  | ","           { COMMA }
-  | ";"           { SEMICOLON }
-  | ":"           { COLON }
-  | "("           { LPAREN }
-  | ")"           { RPAREN }
   | "[|"          { LBRACKETBAR }
   | "|]"          { RBRACKETBAR }
-  | "["           { LBRACKET }
-  | "]"           { RBRACKET }
-  | "{"           { LBRACE }
-  | "}"           { RBRACE }
   | "->"          { ARROW }
   | "<-"          { ARROW_INV }
   | "=="          { OP_EQ }
@@ -100,7 +92,17 @@ rule read_token = parse
   | ">>"          { OP_SHR }
   | "&&"          { OP_ANDBOOL }
   | "||"          { OP_ORBOOL }
-  | "^^"          { OP_XORBOOL }            
+  | "^^"          { OP_XORBOOL }   
+  | "."           { DOT }
+  | ","           { COMMA }
+  | ";"           { SEMICOLON }
+  | ":"           { COLON }
+  | "("           { LPAREN }
+  | ")"           { RPAREN } 
+  | "["           { LBRACKET }
+  | "]"           { RBRACKET }
+  | "{"           { LBRACE }
+  | "}"           { RBRACE }        
   | "+"           { OP_PLUS }
   | "-"           { OP_MINUS }
   | "*"           { OP_MUL }
@@ -114,8 +116,15 @@ rule read_token = parse
   | ">"           { OP_GT }
   | "!"           { OP_NOTBOOL }
   | "="           { BIND }
+  | "\""
+    {
+      Buffer.clear string_buf;
+      read_string lexbuf;
+      LIT_STRING (Buffer.contents string_buf)
+    }
   | hex_int_lit as il { parse_int_lit il }
   | dec_int_lit as il { parse_int_lit il }
+  | "@read"       { AT_READONLY }
   | ident as id
     {
       try (Hashtbl.find keywords id) with 
@@ -123,6 +132,11 @@ rule read_token = parse
     }
   | eof           { EOF }
   | _             { error "illegal character" }
+
+and read_string = parse
+  | letter as l { Buffer.add_char string_buf l; read_string lexbuf }
+  | "\""        { () } 
+  | eof         { error "unterminated string literal" }
 
 and read_comment = parse
   | "(*"  { incr comment_lvl; read_comment lexbuf }
@@ -134,6 +148,6 @@ and read_comment = parse
       else
         read_token lexbuf
     }
-  | '\n'  { new_line lexbuf; read_comment lexbuf }
+  | "\n"  { new_line lexbuf; read_comment lexbuf }
   | eof   { error "unterminated comment" }
   | _     { read_comment lexbuf }

@@ -120,14 +120,14 @@ module PrintTyped = struct
     | Typed.AFalse _ -> AFalse
     | Typed.AInt32 (i, ty) -> begin
         match ty with
-        | CInt32 Signed -> AInt32 (i, Signed)
-        | CInt32 Unsigned -> AInt32 (i, Unsigned)
+        | BInt32 Signed -> AInt32 (i, Signed)
+        | BInt32 Unsigned -> AInt32 (i, Unsigned)
         | _ -> assert false
       end
     | Typed.AInt64 (i, ty) -> begin
         match ty with
-        | CInt64 Signed -> AInt64 (i, Signed)
-        | CInt64 Unsigned -> AInt64 (i, Unsigned)
+        | BInt64 Signed -> AInt64 (i, Signed)
+        | BInt64 Unsigned -> AInt64 (i, Unsigned)
         | _ -> assert false
       end
     | Typed.AVar (x, _) -> AVar x
@@ -162,10 +162,10 @@ module PrintTyped = struct
     comp_to_string (untype_comp c)
 end
 
-let param_to_string (param : ident * ctyp) : string =
+let param_to_string (param : ident * btyp) : string =
   sprintf "%s : %s" (ident_to_string (fst param)) (ctyp_to_string (snd param))
 
-let param_list_to_string (params : (ident * ctyp) list) : string =
+let param_list_to_string (params : (ident * btyp) list) : string =
   list_to_string_paren param_to_string params
 
 let function_to_string (body_to_string : 'a -> string) (f : 'a coq_function) :
@@ -182,22 +182,35 @@ let globdef_to_string (lit_to_string : 'a -> string)
   match def with
   | DefConst (x, l, ty) ->
       sprintf
-        "def %s : %s = %s%s"
+        "defn %s : %s = %s%s"
         (ident_to_string x)
         (ctyp_to_string ty)
         (lit_to_string l)
         csep
   | DefFun (x, f) ->
-      sprintf "def %s%s%s" (ident_to_string x) (func_to_string f) fsep
+      sprintf "defn %s%s%s" (ident_to_string x) (func_to_string f) fsep
+  | DeclConst (x, ty) ->
+      sprintf "decl %s : %s%s" (ident_to_string x) (ctyp_to_string ty) csep
+  | DeclFun (x, tparams, tret) ->
+      sprintf
+        "decl %s : %s%s"
+        (ident_to_string x)
+        (ctyp_to_string (mk_fun_ctyp tparams tret))
+        fsep
 
 let struct_def_to_tring (sep : string) (st : struct_def) : string =
   sprintf
-    "struct %s = %s%s"
+    "type %s = %s%s"
     (ident_to_string st.sd_name)
     (structtyp_to_string ctyp_to_string st.sd_fields)
     sep
 
-let print_program (out : out_channel) (ssep : string)
+let type_def_to_string (sep : string) (td : type_def) : string =
+  match td with
+  | TdStruct sd -> struct_def_to_tring sep sd
+  | TdAbstract (t, _) -> sprintf "type %s" (ident_to_string t)
+
+let print_program (out : out_channel) (tsep : string)
     (def_to_string : 'a -> string) (prog : 'a program) : unit =
   let defs = prog.prog_defs in
   let types = prog.prog_types in
@@ -208,5 +221,5 @@ let print_program (out : out_channel) (ssep : string)
     | _ :: _, _ :: _ -> ("\n\n", "\n")
     | [], _ :: _ -> ("", "\n")
   in
-  print_list out "" s "\n\n" (struct_def_to_tring ssep) types;
+  print_list out "" s "\n\n" (type_def_to_string tsep) types;
   print_list out "" e "\n\n" def_to_string defs

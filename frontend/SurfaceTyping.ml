@@ -6,16 +6,17 @@ open SurfaceAST
 (** Name of the module being analyzed. *)
 let curr_mname : string ref = ref ""
 
-type ctyp =
-  | CBool
-  | CInt32 of Types.signedness
-  | CInt64 of Types.signedness
-  | CArray of ctyp
-  | CStruct of string * string
-  | CFun of ctyp list * ctyp
+type btyp =
+  | BBool
+  | BInt32 of Types.signedness
+  | BInt64 of Types.signedness
+  | BArray of btyp
+  | BStruct of string * string
+  | BAbs of string * string
+  | BFun of btyp list * btyp
 
 type expected_typ =
-  | Expect_typ of ctyp
+  | Expect_typ of btyp
   | Expect_int
   | Expect_int_or_bool
   | Expect_array
@@ -23,19 +24,19 @@ type expected_typ =
   | Expect_function
 
 type current_typ =
-  | Current_typ of ctyp
+  | Current_typ of btyp
   | Current_array
   | Current_struct
 
 type error_cause =
   | Type_mismatch of expected_typ * current_typ
-  | Forbidden_cast of ctyp * ctyp
+  | Forbidden_cast of btyp * btyp
   | Undefined_ident of string
   | Undefined_type of string
   | Unknown_field of string * string
   | Module_not_found of string
   | Wrong_argument_number of int * int
-  | Variable_shadowing_diff_type of string * ctyp
+  | Variable_shadowing_diff_type of string * btyp
   | Already_defined_type of string
   | Already_defined_glob of string
   | Duplicated_struct_field of string * string
@@ -45,26 +46,26 @@ type error_cause =
 
 exception Error of error_cause * unit Location.t option
 
-let rec ctyp_to_string (ty : ctyp) : string =
+let rec ctyp_to_string (ty : btyp) : string =
   match ty with
-  | CBool -> "bool"
-  | CInt32 Types.Signed -> "i32"
-  | CInt32 Types.Unsigned -> "u32"
-  | CInt64 Types.Signed -> "i64"
-  | CInt64 Types.Unsigned -> "u64"
-  | CArray (CArray t) -> sprintf "array (%s)" (ctyp_to_string t)
-  | CArray t -> sprintf "array %s" (ctyp_to_string t)
-  | CStruct (mname, sid) ->
-      if mname = !curr_mname then sid else sprintf "%s::%s" mname sid
-  | CFun (tparams, tret) ->
+  | BBool -> "bool"
+  | BInt32 Types.Signed -> "i32"
+  | BInt32 Types.Unsigned -> "u32"
+  | BInt64 Types.Signed -> "i64"
+  | BInt64 Types.Unsigned -> "u64"
+  | BArray (BArray t) -> sprintf "array (%s)" (ctyp_to_string t)
+  | BArray t -> sprintf "array %s" (ctyp_to_string t)
+  | BStruct (mname, cid) | BAbs (mname, cid) ->
+      if mname = !curr_mname then cid else sprintf "%s::%s" mname cid
+  | BFun (tparams, tret) ->
       PrintTypes.funtyp_to_string ctyp_to_string tparams tret
 
 let msg_from_failure (cause : error_cause) : string =
   match cause with
   | Undefined_ident x -> sprintf "undefined identifier %s" x
-  | Type_mismatch (ety, cty) ->
+  | Type_mismatch (ety, ty) ->
       let prefix =
-        match cty with
+        match ty with
         | Current_typ ty ->
             sprintf "this expression has type %s" (ctyp_to_string ty)
         | Current_array -> sprintf "this expression is an array"
@@ -72,10 +73,10 @@ let msg_from_failure (cause : error_cause) : string =
       in
       let suffix =
         match ety with
-        | Expect_typ cty ->
+        | Expect_typ ty ->
             sprintf
               "but an expression was expected of type %s"
-              (ctyp_to_string cty)
+              (ctyp_to_string ty)
         | Expect_int -> sprintf "but an integer expression was expected"
         | Expect_int_or_bool ->
             sprintf "but a boolean or integer expression was expected"
@@ -136,16 +137,22 @@ let update_error_loc (cause : error_cause) (loc1 : unit Location.t option)
   | None -> error cause ~loc:(Some loc2)
 
 module IdentMap = Map.Make (String)
+module IdentSet = Set.Make (String)
 
-type senv = (string * ctyp) list IdentMap.t
+type senv = (string * btyp) list IdentMap.t
 
 type tenv = {
-  tenv_aliases : ctyp IdentMap.t;
+  tenv_aliases : btyp IdentMap.t;
   tenv_structs : senv;
+  tenv_abstracts : IdentSet.t;
 }
 
 let tenv_empty =
-  { tenv_aliases = IdentMap.empty; tenv_structs = IdentMap.empty }
+  {
+    tenv_aliases = IdentMap.empty;
+    tenv_structs = IdentMap.empty;
+    tenv_abstracts = IdentSet.empty;
+  }
 
 type gtenv = {
   gtenv_local : tenv;
@@ -161,16 +168,20 @@ let compose_loc_idents (mname : ident) (id : ident) : ident =
   let v = compose_idents mname.content id.content in
   Location.make mname.startpos id.endpos v
 
-let tenv_get (mname : string) (te : tenv) (tid : ident) : ctyp =
+let tenv_get (mname : string) (te : tenv) (tid : ident) : btyp =
   match IdentMap.find_opt tid.content te.tenv_aliases with
   | Some ty -> ty
   | None -> begin
       match IdentMap.find_opt tid.content te.tenv_structs with
-      | Some _ -> CStruct (mname, tid.content)
-      | None -> error (Undefined_type tid.content) ~loc:(Some tid)
+      | Some _ -> BStruct (mname, tid.content)
+      | None -> begin
+          match IdentSet.find_opt tid.content te.tenv_abstracts with
+          | Some _ -> BAbs (mname, tid.content)
+          | None -> error (Undefined_type tid.content) ~loc:(Some tid)
+        end
     end
 
-let gtenv_get (gte : gtenv) (cid : cident) : ctyp =
+let gtenv_get (gte : gtenv) (cid : cident) : btyp =
   match cid with
   | IdLocal tid -> tenv_get !curr_mname gte.gtenv_local tid
   | IdExtern (mname, tid) -> begin
@@ -184,10 +195,10 @@ let gtenv_get (gte : gtenv) (cid : cident) : ctyp =
       | None -> error (Module_not_found mname.content) ~loc:(Some mname)
     end
 
-let gtenv_get_fields (gte : gtenv) (cid : cident) : (string * ctyp) list =
+let gtenv_get_fields (gte : gtenv) (cid : cident) : (string * btyp) list =
   let ty = gtenv_get gte cid in
   match ty with
-  | CStruct (mname, sid) ->
+  | BStruct (mname, sid) ->
       let se, sid' =
         if mname = !curr_mname then (gte.gtenv_local.tenv_structs, sid)
         else
@@ -211,29 +222,37 @@ let is_local_type_defined (te : tenv) (tid : string) : bool =
       | None -> false
     end
 
-let tenv_update_aliases (te : tenv) (alias : ident) (ty : ctyp) : tenv =
+let tenv_update_aliases (te : tenv) (alias : ident) (ty : btyp) : tenv =
   if is_local_type_defined te alias.content then
     error (Already_defined_type alias.content) ~loc:(Some alias)
   else { te with tenv_aliases = IdentMap.add alias.content ty te.tenv_aliases }
 
 let tenv_update_structs (te : tenv) (sid : ident)
-    (fields : (string * ctyp) list) : tenv =
+    (fields : (string * btyp) list) : tenv =
   if is_local_type_defined te sid.content then
     error (Already_defined_type sid.content) ~loc:(Some sid)
   else
     { te with tenv_structs = IdentMap.add sid.content fields te.tenv_structs }
 
-let gtenv_update_local_aliases (gte : gtenv) (alias : ident) (ty : ctyp) : gtenv
+let tenv_update_abstracts (te : tenv) (tid : ident) : tenv =
+  if is_local_type_defined te tid.content then
+    error (Already_defined_type tid.content) ~loc:(Some tid)
+  else { te with tenv_abstracts = IdentSet.add tid.content te.tenv_abstracts }
+
+let gtenv_update_local_aliases (gte : gtenv) (alias : ident) (ty : btyp) : gtenv
     =
   { gte with gtenv_local = tenv_update_aliases gte.gtenv_local alias ty }
 
 let gtenv_update_local_structs (gte : gtenv) (sid : ident)
-    (fields : (string * ctyp) list) : gtenv =
+    (fields : (string * btyp) list) : gtenv =
   { gte with gtenv_local = tenv_update_structs gte.gtenv_local sid fields }
 
+let gtenv_update_local_abstracts (gte : gtenv) (tid : ident) : gtenv =
+  { gte with gtenv_local = tenv_update_abstracts gte.gtenv_local tid }
+
 type gcontext = {
-  gx_local : ctyp IdentMap.t;
-  gx_extern : ctyp IdentMap.t IdentMap.t;
+  gx_local : btyp IdentMap.t;
+  gx_extern : btyp IdentMap.t IdentMap.t;
 }
 
 let gcontext_empty = { gx_local = IdentMap.empty; gx_extern = IdentMap.empty }
@@ -242,11 +261,11 @@ type var_kind =
   | VarLocal
   | VarParam
 
-type lcontext = (ctyp * var_kind) IdentMap.t
+type lcontext = (btyp * var_kind) IdentMap.t
 
 let lcontext_empty = IdentMap.empty
 
-let gcontext_get (gx : gcontext) (cid : cident) : ctyp =
+let gcontext_get (gx : gcontext) (cid : cident) : btyp =
   match cid with
   | IdLocal id -> begin
       match IdentMap.find_opt id.content gx.gx_local with
@@ -265,19 +284,19 @@ let gcontext_get (gx : gcontext) (cid : cident) : ctyp =
       | None -> error (Module_not_found mname.content) ~loc:(Some mname)
     end
 
-let gcontext_update_local (gx : gcontext) (x : ident) (ty : ctyp) : gcontext =
+let gcontext_update_local (gx : gcontext) (x : ident) (ty : btyp) : gcontext =
   match IdentMap.find_opt x.content gx.gx_local with
   | Some _ -> error (Already_defined_glob x.content) ~loc:(Some x)
   | None -> { gx with gx_local = IdentMap.add x.content ty gx.gx_local }
 
-let lcontext_update (lx : lcontext) (x : ident) (ty : ctyp) : lcontext =
+let lcontext_update (lx : lcontext) (x : ident) (ty : btyp) : lcontext =
   match IdentMap.find_opt x.content lx with
   | Some (ty1, _) ->
       if ty1 = ty then IdentMap.add x.content (ty, VarLocal) lx
       else error (Variable_shadowing_diff_type (x.content, ty)) ~loc:(Some x)
   | None -> IdentMap.add x.content (ty, VarLocal) lx
 
-let typof_var (gx : gcontext) (lx : lcontext) (x : cident) : ctyp =
+let typof_var (gx : gcontext) (lx : lcontext) (x : cident) : btyp =
   match x with
   | IdLocal x' -> begin
       match IdentMap.find_opt x'.content lx with
@@ -286,53 +305,53 @@ let typof_var (gx : gcontext) (lx : lcontext) (x : cident) : ctyp =
     end
   | IdExtern _ -> gcontext_get gx x
 
-let typecheck_unary_op (op : unary_op) (ty : ctyp) : ctyp =
+let typecheck_unary_op (op : unary_op) (ty : btyp) : btyp =
   match (op, ty) with
-  | UopNotbool, CBool
-  | UopNotint, CInt32 _
-  | UopNotint, CInt64 _
-  | UopNeg, (CInt32 _ | CInt64 _)
-  | UopPlus, (CInt32 _ | CInt64 _) -> ty
+  | UopNotbool, BBool
+  | UopNotint, BInt32 _
+  | UopNotint, BInt64 _
+  | UopNeg, (BInt32 _ | BInt64 _)
+  | UopPlus, (BInt32 _ | BInt64 _) -> ty
   | _, _ -> assert false
 
-let typecheck_binary_op (op : binary_op) (ty1 : ctyp) (ty2 : ctyp) : ctyp =
+let typecheck_binary_op (op : binary_op) (ty1 : btyp) (ty2 : btyp) : btyp =
   match op with
   | BopAndbool | BopOrbool | BopXorbool -> begin
       match (ty1, ty2) with
-      | CBool, CBool -> CBool
+      | BBool, BBool -> BBool
       | _, _ -> assert false
     end
   | BopEq | BopNeq -> begin
       match (ty1, ty2) with
-      | CBool, CBool -> CBool
-      | CInt32 s1, CInt32 s2 | CInt64 s1, CInt64 s2 ->
-          if s1 = s2 then CBool else assert false
+      | BBool, BBool -> BBool
+      | BInt32 s1, BInt32 s2 | BInt64 s1, BInt64 s2 ->
+          if s1 = s2 then BBool else assert false
       | _, _ -> assert false
     end
   | BopLt | BopLe | BopGt | BopGe -> begin
       match (ty1, ty2) with
-      | CInt32 s1, CInt32 s2 | CInt64 s1, CInt64 s2 ->
-          if s1 = s2 then CBool else assert false
+      | BInt32 s1, BInt32 s2 | BInt64 s1, BInt64 s2 ->
+          if s1 = s2 then BBool else assert false
       | _, _ -> assert false
     end
   | _ -> begin
       match (ty1, ty2) with
-      | CInt32 s1, CInt32 s2 | CInt64 s1, CInt64 s2 ->
+      | BInt32 s1, BInt32 s2 | BInt64 s1, BInt64 s2 ->
           if s1 = s2 then ty1 else assert false
       | _, _ -> assert false
     end
 
-let typecheck_cast (from_ty : ctyp) (to_ty : ctyp) : ctyp =
+let typecheck_cast (from_ty : btyp) (to_ty : btyp) : btyp =
   match from_ty with
-  | CBool | CInt32 _ | CInt64 _ -> begin
+  | BBool | BInt32 _ | BInt64 _ -> begin
       match to_ty with
-      | CBool | CInt32 _ | CInt64 _ -> to_ty
+      | BBool | BInt32 _ | BInt64 _ -> to_ty
       | _ -> error (Forbidden_cast (from_ty, to_ty))
     end
   | _ -> error (Forbidden_cast (from_ty, to_ty))
 
 let typecheck_struct_proj (gte : gtenv) (mname : string) (sid : string)
-    (f : ident) : ctyp =
+    (f : ident) : btyp =
   let se, sid' =
     if mname = !curr_mname then (gte.gtenv_local.tenv_structs, sid)
     else
@@ -348,17 +367,17 @@ let typecheck_struct_proj (gte : gtenv) (mname : string) (sid : string)
     end
   | None -> assert false (* Ill-typed environment *)
 
-let rec styp_to_ctyp (gte : gtenv) (sty : styp) : ctyp =
+let rec styp_to_ctyp (gte : gtenv) (sty : styp) : btyp =
   match sty with
-  | SBool -> CBool
-  | SInt32 s -> CInt32 s
-  | SInt64 s -> CInt64 s
-  | SArray sta -> CArray (styp_to_ctyp gte sta)
-  | SStructOrAlias stid -> gtenv_get gte stid
+  | SBool -> BBool
+  | SInt32 s -> BInt32 s
+  | SInt64 s -> BInt64 s
+  | SArray sta -> BArray (styp_to_ctyp gte sta)
+  | SIdent stid -> gtenv_get gte stid
   | SFun (stparams, stret) ->
-      let tparams = List.map (styp_to_ctyp gte) stparams in
+      let tparams = List.map (fun (_, sty) -> styp_to_ctyp gte sty) stparams in
       let tret = styp_to_ctyp gte stret in
-      CFun (tparams, tret)
+      BFun (tparams, tret)
 
 let transl_var_name (mname : string) (lx : lcontext) (x : cident) : Syntax.ident
     =
@@ -379,30 +398,33 @@ let transl_var_name (mname : string) (lx : lcontext) (x : cident) : Syntax.ident
 let transl_field_name (f : ident) : Syntax.ident =
   PrintCommon.ident_of_string f.content
 
-let rec transl_ctyp (ty : ctyp) : Types.ctyp =
+let rec transl_ctyp (ty : btyp) : Types.btyp =
   match ty with
-  | CBool -> Types.CBool
-  | CInt32 s -> Types.CInt32 s
-  | CInt64 s -> Types.CInt64 s
-  | CArray ta -> Types.CArray (transl_ctyp ta)
-  | CStruct (mname, sid) ->
+  | BBool -> Types.BBool
+  | BInt32 s -> Types.BInt32 s
+  | BInt64 s -> Types.BInt64 s
+  | BArray ta -> Types.BArray (transl_ctyp ta)
+  | BStruct (mname, sid) ->
       let sid' = PrintCommon.ident_of_string (sprintf "%s_%s" mname sid) in
-      Types.CStruct sid'
-  | CFun (tparams, tret) ->
+      Types.BStruct sid'
+  | BAbs (mname, cid) ->
+      let cid' = PrintCommon.ident_of_string (sprintf "%s_%s" mname cid) in
+      Types.BAbs cid'
+  | BFun (tparams, tret) ->
       let tparams' = List.map transl_ctyp tparams in
       let tret' = transl_ctyp tret in
-      Types.CFun (tparams', tret')
+      Types.BFun (tparams', tret')
 
-let arr_index_ctyp : ctyp =
-  if Archi.ptr64 then CInt64 Types.Unsigned else CInt32 Types.Unsigned
+let arr_index_ctyp : btyp =
+  if Archi.ptr64 then BInt64 Types.Unsigned else BInt32 Types.Unsigned
 
 let rec typecheck_raw_expr (gte : gtenv) (gx : gcontext) (lx : lcontext)
-    (e : raw_expr) : Barocq.expr * ctyp =
+    (e : raw_expr) : Barocq.expr * btyp =
   match e with
-  | ETrue -> (Barocq.ETrue, CBool)
-  | EFalse -> (Barocq.EFalse, CBool)
-  | EInt32 (i, s) -> (Barocq.EInt32 (i, s), CInt32 s)
-  | EInt64 (i, s) -> (Barocq.EInt64 (i, s), CInt64 s)
+  | ETrue -> (Barocq.ETrue, BBool)
+  | EFalse -> (Barocq.EFalse, BBool)
+  | EInt32 (i, s) -> (Barocq.EInt32 (i, s), BInt32 s)
+  | EInt64 (i, s) -> (Barocq.EInt64 (i, s), BInt64 s)
   | EVar x ->
       let x' = transl_var_name !curr_mname lx x in
       (Barocq.EVar x', typof_var gx lx x)
@@ -414,7 +436,7 @@ let rec typecheck_raw_expr (gte : gtenv) (gx : gcontext) (lx : lcontext)
       let texp =
         match op with
         | UopNeg | UopNotint | UopPlus -> Expect_int
-        | UopNotbool -> Expect_typ CBool
+        | UopNotbool -> Expect_typ BBool
       in
       let e1', t1 = typecheck_expr_expecting gte gx lx e1 texp in
       let t = typecheck_unary_op op t1 in
@@ -422,7 +444,7 @@ let rec typecheck_raw_expr (gte : gtenv) (gx : gcontext) (lx : lcontext)
   | EBinaryOp (op, e1, e2) ->
       let texp =
         match op with
-        | BopAndbool | BopOrbool | BopXorbool -> Expect_typ CBool
+        | BopAndbool | BopOrbool | BopXorbool -> Expect_typ BBool
         | BopEq | BopNeq -> Expect_int_or_bool
         | _ -> Expect_int
       in
@@ -437,7 +459,7 @@ let rec typecheck_raw_expr (gte : gtenv) (gx : gcontext) (lx : lcontext)
       in
       begin
         match t1 with
-        | CArray ta -> (Barocq.EArrayGet (e1', e2'), ta)
+        | BArray ta -> (Barocq.EArrayGet (e1', e2'), ta)
         | _ -> assert false
       end
   | EArraySet (e1, e2, e3) ->
@@ -447,7 +469,7 @@ let rec typecheck_raw_expr (gte : gtenv) (gx : gcontext) (lx : lcontext)
       in
       begin
         match t1 with
-        | CArray ta ->
+        | BArray ta ->
             let e3', _ =
               typecheck_expr_expecting gte gx lx e3 (Expect_typ ta)
             in
@@ -458,7 +480,7 @@ let rec typecheck_raw_expr (gte : gtenv) (gx : gcontext) (lx : lcontext)
       let e1', t1 = typecheck_expr_expecting gte gx lx e1 Expect_struct in
       begin
         match t1 with
-        | CStruct (mname, sid) ->
+        | BStruct (mname, sid) ->
             let f' = transl_field_name f in
             let t = typecheck_struct_proj gte mname sid f in
             (Barocq.EStructProj (e1', f'), t)
@@ -468,7 +490,7 @@ let rec typecheck_raw_expr (gte : gtenv) (gx : gcontext) (lx : lcontext)
       let e1', t1 = typecheck_expr_expecting gte gx lx e1 Expect_struct in
       begin
         match t1 with
-        | CStruct (mname, sid) ->
+        | BStruct (mname, sid) ->
             let f' = transl_field_name f in
             let tf = typecheck_struct_proj gte mname sid f in
             let e2', _ =
@@ -481,13 +503,13 @@ let rec typecheck_raw_expr (gte : gtenv) (gx : gcontext) (lx : lcontext)
       let e1', t1 = typecheck_expr_expecting gte gx lx e1 Expect_function in
       begin
         match t1 with
-        | CFun (tparams, tret) ->
+        | BFun (tparams, tret) ->
             let args', t = typecheck_app gte gx lx tparams tret args in
             (Barocq.EApp (e1', args'), t)
         | _ -> assert false
       end
   | EIfThenElse (e1, e2, e3) ->
-      let e1', _ = typecheck_expr_expecting gte gx lx e1 (Expect_typ CBool) in
+      let e1', _ = typecheck_expr_expecting gte gx lx e1 (Expect_typ BBool) in
       let e2', t2 = typecheck_expr gte gx lx e2 in
       let e3', _ = typecheck_expr_expecting gte gx lx e3 (Expect_typ t2) in
       (Barocq.EIfThenElse (e1', e2', e3'), t2)
@@ -499,12 +521,12 @@ let rec typecheck_raw_expr (gte : gtenv) (gx : gcontext) (lx : lcontext)
       (Barocq.ELetIn (x', e1', e2'), t2)
 
 and typecheck_expr (gte : gtenv) (gx : gcontext) (lx : lcontext) (e : expr) :
-    Barocq.expr * ctyp =
+    Barocq.expr * btyp =
   try typecheck_raw_expr gte gx lx e.content
   with Error (cause, loc) -> update_error_loc cause loc e
 
 and typecheck_expr_expecting (gte : gtenv) (gx : gcontext) (lx : lcontext)
-    (e : expr) (texp : expected_typ) : Barocq.expr * ctyp =
+    (e : expr) (texp : expected_typ) : Barocq.expr * btyp =
   try
     let ((e', ty) as r) = typecheck_raw_expr gte gx lx e.content in
     match texp with
@@ -512,34 +534,34 @@ and typecheck_expr_expecting (gte : gtenv) (gx : gcontext) (lx : lcontext)
         if t = ty then r else error (Type_mismatch (texp, Current_typ ty))
     | Expect_int -> begin
         match ty with
-        | CInt32 _ | CInt64 _ -> r
+        | BInt32 _ | BInt64 _ -> r
         | _ -> error (Type_mismatch (texp, Current_typ ty))
       end
     | Expect_int_or_bool -> begin
         match ty with
-        | CBool | CInt32 _ | CInt64 _ -> r
+        | BBool | BInt32 _ | BInt64 _ -> r
         | _ -> error (Type_mismatch (texp, Current_typ ty))
       end
     | Expect_array -> begin
         match ty with
-        | CArray _ -> r
+        | BArray _ -> r
         | _ -> error (Type_mismatch (texp, Current_typ ty))
       end
     | Expect_struct -> begin
         match ty with
-        | CStruct _ -> r
+        | BStruct _ -> r
         | _ -> error (Type_mismatch (texp, Current_typ ty))
       end
     | Expect_function -> begin
         match ty with
-        | CFun _ -> r
+        | BFun _ -> r
         | _ -> error (Type_mismatch (texp, Current_typ ty))
       end
   with Error (cause, loc) -> update_error_loc cause loc e
 
 and typecheck_app (gte : gtenv) (gx : gcontext) (lx : lcontext)
-    (tparams : ctyp list) (tret : ctyp) (args : expr list) :
-    Barocq.expr list * ctyp =
+    (tparams : btyp list) (tret : btyp) (args : expr list) :
+    Barocq.expr list * btyp =
   let arity = List.length tparams in
   let nbargs = List.length args in
   let rec aux tparams args =
@@ -553,26 +575,26 @@ and typecheck_app (gte : gtenv) (gx : gcontext) (lx : lcontext)
   in
   aux tparams args
 
-let rec typecheck_literal (gte : gtenv) (ty : ctyp) (l : literal) :
+let rec typecheck_literal (gte : gtenv) (ty : btyp) (l : literal) :
     Syntax.literal =
   try
     match (l.content, ty) with
-    | LTrue, CBool -> Syntax.LTrue
-    | LFalse, CBool -> Syntax.LFalse
-    | LInt32 (i, sl), CInt32 st ->
+    | LTrue, BBool -> Syntax.LTrue
+    | LFalse, BBool -> Syntax.LFalse
+    | LInt32 (i, sl), BInt32 st ->
         if sl = st then Syntax.LInt32 (i, sl)
         else
           error
-            (Type_mismatch (Expect_typ (CInt32 st), Current_typ (CInt32 sl)))
-    | LInt64 (i, sl), CInt64 st ->
+            (Type_mismatch (Expect_typ (BInt32 st), Current_typ (BInt32 sl)))
+    | LInt64 (i, sl), BInt64 st ->
         if sl = st then Syntax.LInt64 (i, sl)
         else
           error
-            (Type_mismatch (Expect_typ (CInt64 st), Current_typ (CInt64 sl)))
-    | LArray a, CArray ta ->
+            (Type_mismatch (Expect_typ (BInt64 st), Current_typ (BInt64 sl)))
+    | LArray a, BArray ta ->
         let a' = List.map (typecheck_literal gte ta) a in
         Syntax.LArray a'
-    | LStruct st, CStruct (mname, sid) ->
+    | LStruct st, BStruct (mname, sid) ->
         let fields, sid' =
           let te, sid' =
             if mname <> !curr_mname then
@@ -591,22 +613,22 @@ let rec typecheck_literal (gte : gtenv) (ty : ctyp) (l : literal) :
         let st' = typecheck_struct_lit gte sid' st fields in
         let sid =
           match transl_ctyp ty with
-          | Types.CStruct sid -> sid
+          | Types.BStruct sid -> sid
           | _ -> assert false
         in
         Syntax.LStruct (st', sid)
     | (LTrue | LFalse), _ ->
-        error (Type_mismatch (Expect_typ ty, Current_typ CBool))
+        error (Type_mismatch (Expect_typ ty, Current_typ BBool))
     | LInt32 (_, s), _ ->
-        error (Type_mismatch (Expect_typ ty, Current_typ (CInt32 s)))
+        error (Type_mismatch (Expect_typ ty, Current_typ (BInt32 s)))
     | LInt64 (_, s), _ ->
-        error (Type_mismatch (Expect_typ ty, Current_typ (CInt64 s)))
+        error (Type_mismatch (Expect_typ ty, Current_typ (BInt64 s)))
     | LArray _, _ -> error (Type_mismatch (Expect_typ ty, Current_array))
     | LStruct _, _ -> error (Type_mismatch (Expect_typ ty, Current_struct))
   with Error (cause, loc) -> update_error_loc cause loc l
 
 and typecheck_struct_lit (gte : gtenv) (sid : string)
-    (st : (ident * literal) list) (fields : (string * ctyp) list) :
+    (st : (ident * literal) list) (fields : (string * btyp) list) :
     (Syntax.ident * Syntax.literal) list =
   match st with
   | [] ->
@@ -640,7 +662,7 @@ let find_duplicate_ident (l : ident list) : ident option =
   aux (List.rev l)
 
 let typecheck_function (gte : gtenv) (gx : gcontext) (x : ident) (f : func) :
-    Barocq.coq_function * ctyp =
+    Barocq.coq_function * btyp =
   match find_duplicate_ident (List.map fst f.fn_params) with
   | Some p -> error (Duplicated_param (p.content, x.content)) ~loc:(Some p)
   | None ->
@@ -651,7 +673,7 @@ let typecheck_function (gte : gtenv) (gx : gcontext) (x : ident) (f : func) :
             (pid.content, styp_to_ctyp gte ptyp))
           f.fn_params
       in
-      let ty = CFun (List.map snd params, tret) in
+      let ty = BFun (List.map snd params, tret) in
       let lx =
         List.fold_left
           (fun acc (pid, ptyp) -> IdentMap.add pid (ptyp, VarParam) acc)
@@ -687,7 +709,7 @@ let typecheck_globdef (gte : gtenv) (gx : gcontext) (def : globdef) :
   | DefAlias (alias, sty) ->
       let ty = styp_to_ctyp gte sty in
       (None, gtenv_update_local_aliases gte alias ty, gx)
-  | DefStruct (sid, fields) -> begin
+  | DefType (sid, fields) -> begin
       match find_duplicate_ident (List.map fst fields) with
       | Some fname ->
           error
@@ -710,7 +732,7 @@ let typecheck_globdef (gte : gtenv) (gx : gcontext) (def : globdef) :
               fields'
           in
           let gte' = gtenv_update_local_structs gte sid fields' in
-          (Some (Barocq.DefStruct (bsid, bfields)), gte', gx)
+          (Some (Barocq.DefType (bsid, bfields)), gte', gx)
     end
   | DefConst (id, l, sty) ->
       let ty = styp_to_ctyp gte sty in
@@ -724,6 +746,30 @@ let typecheck_globdef (gte : gtenv) (gx : gcontext) (def : globdef) :
       let gx' = gcontext_update_local gx id ty in
       let bid = transl_globdef_name !curr_mname id in
       (Some (Barocq.DefFun (bid, bf)), gte, gx')
+  | DeclType (tid, tk) ->
+      let gte' = gtenv_update_local_abstracts gte tid in
+      let bid = transl_globdef_name !curr_mname tid in
+      (Some (Barocq.DeclType (bid, tk)), gte', gx)
+  | DeclConst (id, sty) ->
+      let ty = styp_to_ctyp gte sty in
+      let gx' = gcontext_update_local gx id ty in
+      let bid = transl_globdef_name !curr_mname id in
+      let bty = transl_ctyp ty in
+      (Some (Barocq.DeclConst (bid, bty)), gte, gx')
+  | DeclFun (id, tparams, tret) ->
+      let sty = SFun (tparams, tret) in
+      let ty = styp_to_ctyp gte sty in
+      let gx' = gcontext_update_local gx id ty in
+      let bid = transl_globdef_name !curr_mname id in
+      let btparams =
+        List.map
+          (fun (attr, sty) ->
+            let bty = transl_ctyp (styp_to_ctyp gte sty) in
+            (attr, bty))
+          tparams
+      in
+      let btret = transl_ctyp (styp_to_ctyp gte tret) in
+      (Some (Barocq.DeclFun (bid, btparams, btret)), gte, gx')
 
 let typecheck_modul (gte : gtenv) (gx : gcontext) (md : modul) :
     Barocq.program * gtenv * gcontext =
@@ -750,7 +796,7 @@ let typecheck_modul (gte : gtenv) (gx : gcontext) (md : modul) :
           md.md_defs
       in
       (* Once the type checking is finished, we update the global environment and
-     global context to add the definitions of the new module. *)
+         global context to add the definitions of the new module. *)
       let gte' =
         {
           gtenv_local = tenv_empty;

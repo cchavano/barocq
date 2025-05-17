@@ -72,4 +72,6 @@ Definition sadd (s: pset) (p: positive) : pset := PositiveSet.add p s.
 
 Definition sremove (s: pset) (p: positive) : pset := PositiveSet.remove p s.
 
+Definition sunion (s1 s2: pset) : pset := PositiveSet.union s1 s2.
+
 Notation sempty := PositiveSet.empty.

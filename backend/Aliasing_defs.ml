@@ -117,7 +117,7 @@ let comparison_to_int (c : Datatypes.comparison) : int =
   | Datatypes.Lt -> -1
   | Datatypes.Gt -> 1
 
-module Ident = struct
+module Ident1 = struct
   type t = ident
 
   let compare (x : t) (y : t) : int = comparison_to_int (Pos.compare x y)
@@ -132,9 +132,9 @@ module IdentPair = struct
     | _ as c -> comparison_to_int c
 end
 
-module IdentMap = Map.Make (Ident)
+module IdentMap = Map.Make (Ident1)
 module IdentPairMap = Map.Make (IdentPair)
-module IdentSet = Set.Make (Ident)
+module IdentSet = Set.Make (Ident1)
 
 module AbsDom = struct
   (** Abstract domain for the alias analysis. The two possible values are
@@ -153,7 +153,7 @@ module AbsDom = struct
   (** Reverse abstract environment. Bindings in a map of type [rev_absenv] are
       of the form l -> \{x1, ..., xn\}. It means that the abstract location l
       may be pointed by the variables \{x1, ..., xn\}. *)
-  type rev_asbenv = var_set IdentMap.t
+  type rev_absenv = var_set IdentMap.t
 
   (** Abstract memory. Bindings in a map of type [absmem] are of the form (l, f)
       -> \{l1, ..., ln\}. Following the path [f] from l leads to locations \{l1,
@@ -184,17 +184,19 @@ module AbsDom = struct
       - The set of locations [st_res] pointed by the return value of the
         function;
       - The invalid paths environment [st_inv];
-      - The invalid paths [st_inv_res] of the return value of the function.
-      - The environment of locked arrays. *)
+      - The invalid paths [st_inv_res] of the return value of the function;
+      - The environment of locked arrays;
+      - The next fresh location identifier [st_next_loc]. *)
   type absstate = {
     st_env : absenv;
     st_mem : absmem;
-    st_rev_env : rev_asbenv;
+    st_rev_env : rev_absenv;
     st_rev_mem : rev_absmem;
     st_res : pointsto_set;
     st_inv : path_map;
     st_inv_res : path_tree option;
     st_arr_locked : Typed.atom IdentMap.t;
+    st_next_loc : ident;
   }
 
   type t =
@@ -214,8 +216,8 @@ module AbsDom = struct
 
   (** [env_reverse_single x ls rev] reverses the binding [x] -> [ls] into the
       reverse environment [rev]. *)
-  let env_reverse_single (x : ident) (ls : pointsto_set) (rev : rev_asbenv) :
-      rev_asbenv =
+  let env_reverse_single (x : ident) (ls : pointsto_set) (rev : rev_absenv) :
+      rev_absenv =
     IdentSet.fold
       (fun l accS ->
         IdentMap.update
@@ -229,7 +231,7 @@ module AbsDom = struct
       rev
 
   (** [env_reverse ev] reverses the abstract environment [ev]. *)
-  let env_reverse (ev : absenv) : rev_asbenv =
+  let env_reverse (ev : absenv) : rev_absenv =
     IdentMap.fold env_reverse_single ev IdentMap.empty
 
   (** [add_loc_from_id lip f l] adds the location [l] coming from path [[f]] in
@@ -313,7 +315,12 @@ module AbsDom = struct
     (* If (l, f) -> {m1, ..., mn} is the new binding added in st.st_mem,
        then adds l in all ls s.t. mi -> {(f, ls), ...} belongs to rm, for mi in {m1, ..., mn}. *)
     let rm = mem_reverse_single (l, f) locs rm in
-    { st with st_mem = m; st_rev_mem = rm }
+    {
+      st with
+      st_mem = m;
+      st_rev_mem = rm;
+      st_next_loc = Pos.add BinNums.Coq_xH (Pos.max st.st_next_loc l);
+    }
 
   (** [mem_get m l f] returns the points-to set associated with [(l, f)] in [m].
       Returns an empty set if [(l, f)] is not a key of [m]. *)
@@ -329,7 +336,7 @@ module AbsDom = struct
 
   (** [rev_env_unions e1 e2] computes the union of the reverse environments
       [re1] and [re2]. *)
-  let rev_env_union (re1 : rev_asbenv) (re2 : rev_asbenv) : rev_asbenv =
+  let rev_env_union (re1 : rev_absenv) (re2 : rev_absenv) : rev_absenv =
     IdentMap.union (fun _ x y -> Some (IdentSet.union x y)) re1 re2
 
   (** [mem_union m1 m2] computes the union of the memories [m1] and [m2]. *)
@@ -363,10 +370,10 @@ module AbsDom = struct
   let inv_union (iv1 : path_map) (iv2 : path_map) : path_map =
     IdentMap.union (fun _ t1 t2 -> Some (PathTree.union t1 t2)) iv1 iv2
 
-  (** [arr_taken_union at1 at2] computes the union of the accessed array
-      indexes. The union fails if the same array in [at1] and [at2] has two
-      different taken indexes. *)
-  let arr_taken_union (at1 : Typed.atom IdentMap.t)
+  (** [arr_locked_union at1 at2] computes the union of the accessed array
+      indexes. The union fails if the same array in [at1] and [at2] are locked
+      with different indexes. *)
+  let arr_locked_union (at1 : Typed.atom IdentMap.t)
       (at2 : Typed.atom IdentMap.t) : Typed.atom IdentMap.t option =
     try
       Some
@@ -376,9 +383,9 @@ module AbsDom = struct
            at2)
     with Failure _ -> None
 
-  let make_state (ev : absenv) (m : absmem) (rev : rev_asbenv) (rm : rev_absmem)
+  let make_state (ev : absenv) (m : absmem) (rev : rev_absenv) (rm : rev_absmem)
       (r : pointsto_set) (iv : path_map) (ivr : path_tree option)
-      (al : Typed.atom IdentMap.t) : absstate =
+      (al : Typed.atom IdentMap.t) (nl : ident) : absstate =
     {
       st_env = ev;
       st_mem = m;
@@ -388,18 +395,20 @@ module AbsDom = struct
       st_inv = iv;
       st_inv_res = ivr;
       st_arr_locked = al;
+      st_next_loc = nl;
     }
 
-  let make_state2 (ev : absenv) (m : absmem) (r : pointsto_set) : absstate =
+  let make_state2 (ev : absenv) (m : absmem) : absstate =
     {
       st_env = ev;
       st_mem = m;
       st_rev_env = env_reverse ev;
       st_rev_mem = mem_reverse m;
-      st_res = r;
+      st_res = set_empty;
       st_inv = IdentMap.empty;
       st_inv_res = None;
       st_arr_locked = IdentMap.empty;
+      st_next_loc = BinNums.Coq_xH;
     }
 
   (** [union d1 d2] computes the union of the two abstract domains [d1] and
@@ -419,6 +428,9 @@ module AbsDom = struct
         | None, Some t2 -> Some t2
         | None, None -> None
       in
+      let next_loc =
+        Pos.add BinNums.Coq_xH (Pos.max st1.st_next_loc st2.st_next_loc)
+      in
       (* Check that the domain of locked arrays is the same. *)
       let arr_locked_locs1 =
         IdentSet.of_seq (Seq.map fst (IdentMap.to_seq st1.st_arr_locked))
@@ -427,9 +439,10 @@ module AbsDom = struct
         IdentSet.of_seq (Seq.map fst (IdentMap.to_seq st2.st_arr_locked))
       in
       if IdentSet.compare arr_locked_locs1 arr_locked_locs2 = 0 then
-        let al_union = arr_taken_union st1.st_arr_locked st2.st_arr_locked in
+        let al_union = arr_locked_union st1.st_arr_locked st2.st_arr_locked in
         match al_union with
-        | Some al -> AbsState (make_state ev m rev rm res inv inv_res al)
+        | Some al ->
+            AbsState (make_state ev m rev rm res inv inv_res al next_loc)
         | None -> Top
       else Top
     in
@@ -461,14 +474,15 @@ end
 type absdom = AbsDom.t
 
 (** A function descriptor. It contains:
-    - The parameter list;
-    - The call state built such that no inter-aliasing occurs between
-      parameters, and that each of them points to a unique tree-shaped part of
-      the memory;
-    - The return state which results from the execution of the transfer function
-      on the call state, projected on the function parameters. *)
+    - The parameter list [fd_params];
+    - The call state [fd_callstate] built such that no inter-aliasing occurs
+      between parameters, and that each of them points to a unique tree-shaped
+      part of the memory;
+    - The return state [fd_returnstate]. The way this return state is
+      constructed depends wether the function is defined or abstract. *)
+
 type fun_descr = {
-  fd_params : (ident * ctyp) list;
+  fd_params : (ident * btyp) list;
   fd_callstate : AbsDom.absstate;
   fd_returnstate : absdom;
 }

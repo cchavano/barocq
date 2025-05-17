@@ -10,14 +10,14 @@ type cident =
   | IdExtern of ident * ident
 
 (** Surface types. At parsing, a type identifier cannot yet be distinguished
-    between a struct type or an alias. *)
+    between a struct type, an alias or an abstract type. *)
 type styp =
   | SBool
   | SInt32 of Types.signedness
   | SInt64 of Types.signedness
   | SArray of styp
-  | SStructOrAlias of cident
-  | SFun of styp list * styp
+  | SIdent of cident
+  | SFun of (Syntax.param_attr * styp) list * styp
 
 type raw_expr =
   | ETrue
@@ -56,9 +56,12 @@ and literal = raw_literal Location.t
 
 type globdef =
   | DefAlias of ident * styp
-  | DefStruct of ident * (ident * styp) list
+  | DefType of ident * (ident * styp) list
   | DefConst of ident * literal * styp
   | DefFun of ident * func
+  | DeclType of ident * Ctypes.struct_or_union
+  | DeclConst of ident * styp
+  | DeclFun of ident * (Syntax.param_attr * styp) list * styp
 
 type modul = {
   md_name : ident;

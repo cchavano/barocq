@@ -63,6 +63,8 @@ Definition norm_globdef (def: ImpBNF.globdef) : res ImpABNF.globdef :=
   | DefFun x f =>
       let* f' := norm_function f in
       ret (DefFun x f')
+  | DeclConst x ty => ret (DeclConst x ty)
+  | DeclFun f tparams tret => ret (DeclFun f tparams tret)
   end.
 
 Definition norm_program (prog: ImpBNF.program) : res ImpABNF.program :=

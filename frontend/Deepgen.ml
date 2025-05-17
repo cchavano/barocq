@@ -62,16 +62,17 @@ let signedness_to_deep (s : signedness) : string =
   | Signed -> "Signed"
   | Unsigned -> "Unsigned"
 
-let rec ctyp_to_deep (ty : ctyp) : string =
+let rec ctyp_to_deep (ty : btyp) : string =
   match ty with
-  | CBool -> "CBool"
-  | CInt32 s -> sprintf "CInt32 %s" (signedness_to_deep s)
-  | CInt64 s -> sprintf "CInt64 %s" (signedness_to_deep s)
-  | CArray ta -> sprintf "CArray (%s)" (ctyp_to_deep ta)
-  | CStruct ts -> sprintf "CStruct (%s)" (ident_to_deep ts)
-  | CFun (tparams, tret) ->
+  | BBool -> "BBool"
+  | BInt32 s -> sprintf "BInt32 %s" (signedness_to_deep s)
+  | BInt64 s -> sprintf "BInt64 %s" (signedness_to_deep s)
+  | BArray ta -> sprintf "BArray (%s)" (ctyp_to_deep ta)
+  | BStruct ts -> sprintf "BStruct (%s)" (ident_to_deep ts)
+  | BAbs t -> sprintf "BAbs %s" (ident_to_deep t)
+  | BFun (tparams, tret) ->
       sprintf
-        "CFun %s (%s)"
+        "BFun %s (%s)"
         (list_to_string_bracket ctyp_to_deep tparams)
         (ctyp_to_deep tret)
 
@@ -142,7 +143,7 @@ and access_to_deep (ac : access) : string =
   | AcStructField f -> sprintf "AcStructField %s" (ident_to_string f)
   | AcArrayIndex e -> sprintf "AcArrayIndex (%s)" (expr_to_deep "" e)
 
-let params_to_deep (params : (ident * ctyp) list) : string =
+let params_to_deep (params : (ident * btyp) list) : string =
   list_to_string_bracket
     (fun (id, ty) -> sprintf "(%s, %s)" (ident_to_deep id) (ctyp_to_deep ty))
     params
@@ -159,8 +160,16 @@ let function_to_deep (f : coq_function) : string =
     prefix
     (expr_to_deep prefix f.fn_body)
 
-let fields_to_deep (fields : (ident * ctyp) list) : string =
-  params_to_deep fields
+let fields_to_deep (fields : (ident * btyp) list) : string =
+  sprintf
+    "[\n%s\n]"
+    (list_to_string
+       ""
+       ""
+       ";\n"
+       (fun (id, ty) ->
+         sprintf "%s(%s, %s)" indent (ident_to_deep id) (ctyp_to_deep ty))
+       fields)
 
 let rec literal_to_deep (l : literal) : string =
   match l with
@@ -180,43 +189,54 @@ and fields_lit_to_deep (fields : (ident * literal) list) : string =
     fields
 
 let globdef_to_coqdef (def : globdef) : string =
-  let s1, s2, s3 =
-    match def with
-    | DefStruct (id, fields) ->
-        ( sprintf "struct_%s" (ident_to_string id),
-          "list (ident * ctyp)",
-          fields_to_deep fields )
-    | DefConst (id, l, _) ->
-        ( sprintf "const_%s" (ident_to_string id),
-          "Syntax.literal",
-          literal_to_deep l )
-    | DefFun (id, f) ->
-        ( sprintf "fun_%s" (ident_to_string id),
-          "Barocq.function",
-          function_to_deep f )
-  in
-  sprintf "Definition %s : %s := %s." s1 s2 s3
+  let def_format = sprintf "Definition %s : %s := %s." in
+  match def with
+  | DefType (id, fields) ->
+      def_format
+        (sprintf "struct_%s" (ident_to_string id))
+        "list (ident * btyp)"
+        (fields_to_deep fields)
+  | DefConst (id, l, _) ->
+      def_format
+        (sprintf "const_%s" (ident_to_string id))
+        "Syntax.literal"
+        (literal_to_deep l)
+  | DefFun (id, f) ->
+      def_format
+        (sprintf "fun_%s" (ident_to_string id))
+        "Barocq.function"
+        (function_to_deep f)
+  | _ -> ""
 
-let rec print_globdefs (out : out_channel) (defs : globdef list) : unit =
-  match defs with
-  | [] -> ()
-  | d :: defs' ->
-      fprintf out "%s\n\n" (globdef_to_coqdef d);
-      print_globdefs out defs'
+let print_globdefs (out : out_channel) (defs : globdef list) : unit =
+  let defs =
+    List.filter
+      (fun d ->
+        match (d : Barocq.globdef) with
+        | DefType _ | DefConst _ | DefFun _ -> true
+        | _ -> false)
+      defs
+  in
+  print_list out "" "" "\n\n" globdef_to_coqdef defs
 
 let headers : string =
   "From Coq Require Import String List BinIntDef.\n\
-   From compcert Require Import Integers Clightdefs.\n\
+   From compcert Require Import Integers Ctypes Clightdefs.\n\
    From BarocqComp Require Import Types Syntax Barocq.\n\
    Import ClightNotations.\n\
    Import ListNotations.\n\n\
    Open Scope string_scope.\n\
    Open Scope clight_scope.\n\n"
 
+let param_attr_to_deep (attr : param_attr) : string =
+  match attr with
+  | AttrNone -> "AttrNone"
+  | AttrReadonly -> "AttrReadonly"
+
 let globdef_to_deep (def : globdef) : string =
   match def with
-  | DefStruct (id, fields) ->
-      sprintf "DefStruct %s struct_%s" (ident_to_deep id) (ident_to_string id)
+  | DefType (id, fields) ->
+      sprintf "DefType %s struct_%s" (ident_to_deep id) (ident_to_string id)
   | DefConst (id, l, ty) ->
       sprintf
         "DefConst %s const_%s (%s)"
@@ -225,10 +245,29 @@ let globdef_to_deep (def : globdef) : string =
         (ctyp_to_deep ty)
   | DefFun (id, f) ->
       sprintf "DefFun %s fun_%s" (ident_to_deep id) (ident_to_string id)
+  | DeclType (id, tk) ->
+      let st_or_un =
+        match tk with
+        | Ctypes.Struct -> "Struct"
+        | Ctypes.Union -> "Union"
+      in
+      sprintf "DeclType %s %s" (ident_to_deep id) st_or_un
+  | DeclConst (id, ty) ->
+      sprintf "DeclConst %s (%s)" (ident_to_deep id) (ctyp_to_deep ty)
+  | DeclFun (id, tparams, tret) ->
+      sprintf
+        "DeclFun %s (%s) (%s)"
+        (ident_to_deep id)
+        (list_to_string_bracket
+           (fun (attr, ty) ->
+             sprintf "(%s, %s)" (param_attr_to_deep attr) (ctyp_to_deep ty))
+           tparams)
+        (ctyp_to_deep tret)
 
 let print_program (out : out_channel) (prog : program) : unit =
   fprintf out "%s" headers;
-  let _ = print_globdefs out prog in
+  print_globdefs out prog;
+  fprintf out "\n\n";
   print_list
     out
     "Definition prog : Barocq.program := [\n"

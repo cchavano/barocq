@@ -1,4 +1,4 @@
-From compcert Require Import Integers.
+From compcert Require Import Ctypes Integers.
 From BarocqComp Require Import Utils Types Syntax.
 
 Module BNF.
@@ -17,7 +17,7 @@ Module BNF.
     | AInt32 : int -> signedness -> atom
     | AInt64 : int64 -> signedness -> atom
     | AVar : ident -> atom
-    | ACast : atom -> ctyp -> atom
+    | ACast : atom -> btyp -> atom
     | AUnaryOp : unary_op -> atom -> atom
     | ABinaryOp : binary_op -> atom -> atom -> atom
     | AStructProj : atom -> ident -> atom
@@ -45,7 +45,7 @@ Module BNF.
 
   Record program : Type := mk_program {
     prog_defs : list globdef;
-    prog_types : list struct_def
+    prog_types : list type_def
   }.
 
 End BNF.
@@ -63,6 +63,7 @@ Module Monadic.
     | MArray : mtyp -> mtyp
     | MStruct : ident -> mtyp
     | MFun : list mtyp -> mtyp -> mtyp
+    | MAbs : ident -> mtyp
     | MRes : mtyp -> mtyp.
 
   (** ** Atoms *)
@@ -106,7 +107,9 @@ Module Monadic.
 
   Inductive globdef : Type :=
     | DefConst : ident -> literal -> mtyp -> globdef
-    | DefFun : ident -> function -> globdef.
+    | DefFun : ident -> function -> globdef
+    | DeclConst : ident -> mtyp -> globdef
+    | DeclFun : ident -> list (param_attr * mtyp) -> mtyp -> globdef.
 
   (** ** Programs *)
 
@@ -115,9 +118,23 @@ Module Monadic.
     sd_fields : list (ident * mtyp)
   }.
 
+  Inductive type_def : Type :=
+    | TdStruct : struct_def -> type_def
+    | TdAbstract : ident -> struct_or_union -> type_def. 
+
   Record program : Type := mk_program {
     prog_defs : list globdef;
-    prog_types : list struct_def
+    prog_types : list type_def
   }.
+
+  Definition get_struct_defs (types: list type_def) : list struct_def :=
+    List.fold_right
+      (fun td acc =>
+        match td with
+        | TdStruct sd => cons sd acc
+        | _ => acc
+        end)
+      nil
+      types.
 
 End Monadic.

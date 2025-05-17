@@ -14,9 +14,9 @@ Inductive literal_base : Type :=
   | LbVar : ident -> literal_base.
 
 Inductive literal : Type :=
-  | LBase : literal_base -> ctyp -> literal
-  | LArray : list literal_base -> ctyp -> literal
-  | LStruct : list (ident * literal_base) -> ctyp -> literal.
+  | LBase : literal_base -> btyp -> literal
+  | LArray : list literal_base -> btyp -> literal
+  | LStruct : list (ident * literal_base) -> btyp -> literal.
 
 (** ** Atoms *)
 
@@ -27,10 +27,10 @@ Definition access : Type := Syntax.Typed.access.
 (** ** Expressions ("pure" computations) *)
 
 Inductive expr : Type :=
-  | EAtom : atom -> ctyp -> expr
-  | EArrayGet : atom -> atom -> ctyp -> expr
-  | EStructProj : atom -> ident -> ctyp -> expr
-  | EDeepAccess : atom -> list access -> ctyp -> expr.
+  | EAtom : atom -> btyp -> expr
+  | EArrayGet : atom -> atom -> btyp -> expr
+  | EStructProj : atom -> ident -> btyp -> expr
+  | EDeepAccess : atom -> list access -> btyp -> expr.
 
 (** ** "Effectul" computations *)
 
@@ -52,9 +52,9 @@ Inductive statement : Type :=
 (** ** Functions *)
 
 Record function : Type := mk_function {
-  fn_return: ctyp;
-  fn_params: list (ident * ctyp);
-  fn_vars: list (ident * ctyp);
+  fn_return: btyp;
+  fn_params: list (ident * btyp);
+  fn_vars: list (ident * btyp);
   fn_body: statement
 }.
 

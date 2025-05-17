@@ -45,24 +45,27 @@ let token_to_string (tok : Bparser.token) : string =
   | TRUE -> "TRUE"
   | FALSE -> "FALSE"
   | TYPE -> "TYPE"
+  | OF -> "OF"
   | TYP_BOOL -> "TYP_BOOL"
   | TYP_INT32 -> "TYP_INT32"
   | TYP_UINT32 -> "TYP_UINT32"
   | TYP_INT64 -> "TYP_INT64"
   | TYP_UINT64 -> "TYP_UINT64"
   | TYP_ARRAY -> "TYP_ARRAY"
-  | STRUCT -> "STRUCT"
-  | DEF -> "DEF"
+  | DEFN -> "DEFN"
+  | DECL -> "DECL"
   | LET -> "LET"
   | IN -> "IN"
   | IF -> "IF"
   | THEN -> "THEN"
   | ELSE -> "ELSE"
+  | AT_READONLY -> "AT_READONLY"
   | AS -> "AS"
   | LIT_INT32 (i, Types.Signed) -> sprintf "LIT_INT32 %ld Signed" i
   | LIT_INT32 (i, Types.Unsigned) -> sprintf "LIT_INT32 %lu Unsigned" i
   | LIT_INT64 (i, Types.Signed) -> sprintf "LIT_INT64 %Ld Signed" i
   | LIT_INT64 (i, Types.Unsigned) -> sprintf "LIT_INT64 %Lu Unsigned" i
+  | LIT_STRING s -> s
   | IDENT id -> sprintf "IDENT %s" id
   | EOF -> "EOF"
 

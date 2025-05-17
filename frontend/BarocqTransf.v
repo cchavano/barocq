@@ -3,98 +3,6 @@ From BarocqComp Require Import Error Utils Types Syntax Barocq.
 
 (** * Barocq to Barocq transformations *)
 
-(** ** Identifier renaming *)
-
-(* Definition transl_user_ident (params: pset) (x: ident) : ident :=
-  if smem params x then Ident.prefix_with "p_" x
-  else Utils.transl_user_ident x.
-
-Fixpoint rename_idents_expr (params: pset) (e: Barocq.expr) : Barocq.expr :=
-  let fix rename_idents_access (params: pset) (ac: Barocq.access) {struct ac} : Barocq.access :=
-    match ac with
-    | AcArrayIndex e1 => AcArrayIndex (rename_idents_expr params e1)
-    | _ => ac
-    end
-  in
-  match e with
-  | ETrue
-  | EFalse
-  | EInt32 _ _
-  | EInt64 _ _ => e
-  | EVar x =>
-      let x' := transl_user_ident params x in
-      EVar x'
-  | ECast e1 ty =>
-      let e1' := rename_idents_expr params e1 in
-      ECast e1' ty
-  | EUnaryOp op e1 =>
-      let e1' := rename_idents_expr params e1 in
-      EUnaryOp op e1'
-  | EBinaryOp op e1 e2 =>
-      let e1' := rename_idents_expr params e1 in
-      let e2' := rename_idents_expr params e2 in
-      EBinaryOp op e1' e2'
-  | EArrayGet e1 e2 =>
-      let e1' := rename_idents_expr params e1 in
-      let e2' := rename_idents_expr params e2 in
-      EArrayGet e1' e2'
-  | EArraySet e1 e2 e3 =>
-      let e1' := rename_idents_expr params e1 in
-      let e2' := rename_idents_expr params e2 in
-      let e3' := rename_idents_expr params e3 in
-      EArraySet e1' e2' e3'
-  | EStructProj e1 f =>
-      let e1' := rename_idents_expr params e1 in
-      EStructProj e1' f
-  | EStructUpdate e1 f e2 =>
-      let e1' := rename_idents_expr params e1 in
-      let e2' := rename_idents_expr params e2 in
-      EStructUpdate e1' f e2'
-  | EDeepAccess e1 acs =>
-      let e1' := rename_idents_expr params e1 in
-      let acs' := List.map (rename_idents_access params) acs in
-      EDeepAccess e1' acs'
-  | EApp e1 args =>
-      let e1' := rename_idents_expr params e1 in
-      let args' := List.map (rename_idents_expr params) args in
-      EApp e1' args'
-  | EIfThenElse e1 e2 e3 =>
-      let e1' := rename_idents_expr params e1 in
-      let e2' := rename_idents_expr params e2 in
-      let e3' := rename_idents_expr params e3 in
-      EIfThenElse e1' e2' e3'
-  | ELetIn x e1 e2 =>
-      let x' := Utils.transl_user_ident x in
-      let e1' := rename_idents_expr params e1 in
-      let e2' := rename_idents_expr (sremove params x) e2 in
-      ELetIn x' e1' e2'
-  end.
-
-Definition rename_idents_function (f: Barocq.function) : Barocq.function :=
-  let pids := List.fold_left (fun acc p => sadd acc (fst p)) (fn_params f) sempty in
-  let params' := List.map (fun '(pid, ptyp) => (Ident.prefix_with "p_" pid, ptyp)) (fn_params f) in
-  {|
-    fn_return := fn_return f;
-    fn_params := params';
-    fn_body := rename_idents_expr pids (fn_body f)
-  |}.
-
-Definition rename_idents_globdef (def: Barocq.globdef) : Barocq.globdef :=
-  match def with
-  | DefConst mn x l ty => DefConst mn (Utils.transl_user_ident x) l ty
-  | DefFun mn x f =>
-      let x' := Utils.transl_user_ident x in
-      let f' := rename_idents_function f in
-      DefFun mn x' f'
-  | _ => def
-  end.
-
-Definition rename_idents_program (prog: Barocq.program) : Barocq.program :=
-  {|
-    prog_defs := List.map rename_idents_globdef (prog_defs prog);
-    prog_extern := prog_extern prog
-  |}. *)
-
 (** ** Transformation of logical AND/OR expressions *)
 
 Fixpoint transf_logical_expr (e: Barocq.expr) : Barocq.expr :=
@@ -182,9 +90,9 @@ Definition transf_logical_program (prog: Barocq.program) : Barocq.program :=
    EArrayGet and EStructProj, not as a EDeepAccess.
    Deep accesses are only generated for accesses to a primitive value. *)
 
-Fixpoint access_list_typ (acs: list BarocqTyped.access) : ctyp :=
+Fixpoint access_list_typ (acs: list BarocqTyped.access) : btyp :=
   match acs with
-  | nil => CBool (* arbitrary type *)
+  | nil => BBool (* arbitrary type *)
   | ac :: nil =>
       match ac with
       | BarocqTyped.AcStructField _ ty => ty
@@ -199,8 +107,8 @@ Fixpoint create_deep_access_expr (e: BarocqTyped.expr) : Barocq.expr :=
     match e with
     | BarocqTyped.ETrue _ => (Barocq.ETrue, acs)
     | BarocqTyped.EFalse _ => (Barocq.EFalse, acs)
-    | BarocqTyped.EInt32 i (CInt32 s) => (Barocq.EInt32 i s, acs)
-    | BarocqTyped.EInt64 i (CInt64 s) => (Barocq.EInt64 i s, acs)
+    | BarocqTyped.EInt32 i (BInt32 s) => (Barocq.EInt32 i s, acs)
+    | BarocqTyped.EInt64 i (BInt64 s) => (Barocq.EInt64 i s, acs)
     | BarocqTyped.EVar x _ => (Barocq.EVar x, acs)
     | BarocqTyped.EArrayGet e1 e2 ty =>
         let e2' := create_deep_access_expr e2 in
@@ -285,9 +193,12 @@ Definition create_deep_access_function (f: BarocqTyped.function) : Barocq.functi
 
 Definition create_deep_access_globdef (def: BarocqTyped.globdef) : Barocq.globdef :=
   match def with
-  | BarocqTyped.DefStruct s fields => DefStruct s fields
+  | BarocqTyped.DefType s fields => DefType s fields
   | BarocqTyped.DefConst x l ty => DefConst x l ty
   | BarocqTyped.DefFun x f => DefFun x (create_deep_access_function f)
+  | BarocqTyped.DeclType t tk => DeclType t tk
+  | BarocqTyped.DeclConst x ty => DeclConst x ty
+  | BarocqTyped.DeclFun f tparams tret => DeclFun f tparams tret
   end.
 
 Definition create_deep_access_program (prog: BarocqTyped.program) : Barocq.program :=
@@ -296,7 +207,6 @@ Definition create_deep_access_program (prog: BarocqTyped.program) : Barocq.progr
 (** ** Combination of the two transformations *)
 
 Definition transf_program (prog: Barocq.program) : res Barocq.program :=
-  (* let prog := rename_idents_program prog in *)
   let prog := transf_logical_program prog in
   let* prog := Barocq.Typing.typecheck_program prog in
   ret (create_deep_access_program prog).

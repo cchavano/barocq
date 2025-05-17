@@ -17,7 +17,7 @@
     List.iter
       (fun (s, t) -> Hashtbl.add aliases s t)
       [
-        ("hey", CBool)
+        ("hey", BBool)
       ]
 %}
 
@@ -35,12 +35,14 @@
 %token OP_EQ OP_NEQ OP_LT OP_GT OP_LE OP_GE
 %token OP_ANDBOOL OP_ORBOOL OP_XORBOOL OP_NOTBOOL 
 %token TRUE FALSE
-%token TYPE
 %token TYP_BOOL TYP_INT32 TYP_UINT32 TYP_INT64 TYP_UINT64 TYP_ARRAY
 %token COMPUTE
-%token STRUCT DEF LET IN
+%token DEFN DECL TYPE OF
+%token AT_READONLY
+%token LET IN
 %token IF THEN ELSE
 %token AS
+%token <string> LIT_STRING
 %token <int32 * Types.signedness> LIT_INT32
 %token <int64 * Types.signedness> LIT_INT64
 %token <string> IDENT
@@ -57,7 +59,7 @@
 %nonassoc OP_NOTBOOL OP_NOTINT
 %nonassoc LPAREN LBRACKET
 %nonassoc DOT
-%nonassoc ARROW
+%right ARROW
 %nonassoc TYP_ARRAY
 
 %start imodul
@@ -75,10 +77,26 @@ command:
 
 globdef:
   | TYPE id = ident BIND ty = styp { DefAlias (id, ty) }
-  | STRUCT id = ident BIND fields = struct_fields { DefStruct (id, fields) }
-  | DEF x = ident COLON ty = styp BIND l = literal { DefConst (x, l, ty) }
-  | DEF x = ident params = delimited(LPAREN, separated_list(COMMA, param), RPAREN)
+  | TYPE id = ident BIND fields = struct_fields { DefType (id, fields) }
+  | TYPE id = ident OF kind = abs_type_kind { DeclType (id, kind) }
+  | DEFN x = ident COLON ty = styp BIND l = literal { DefConst (x, l, ty) }
+  | DEFN x = ident params = delimited(LPAREN, separated_list(COMMA, param), RPAREN)
     COLON ty = styp BIND e = expr { DefFun (x, {fn_return = ty; fn_params = params; fn_body = e}) }
+  | DECL x = ident COLON ty = styp
+    {
+      match ty with
+      | SFun (tparams, tret) -> DeclFun (x, tparams, tret)
+      | _ -> DeclConst (x, ty)
+    }
+
+abs_type_kind:
+  | kind = LIT_STRING
+    {
+      match kind with
+      | "struct" -> Ctypes.Struct 
+      | "union" -> Ctypes.Union
+      | _ -> raise Error
+    }
 
 param:
   | x = ident COLON ty = styp { (x, ty) }
@@ -167,22 +185,27 @@ typ_field:
   | key = ident COLON ty = styp SEMICOLON { (key, ty) }
 
 styp:
+  | sty = styp_simpl { sty }
+  | TYP_ARRAY ty = styp_simpl { SArray ty }
+  | TYP_ARRAY LPAREN ty = styp RPAREN { SArray ty }
+  | ty = styp_func { ty }
+
+styp_simpl:
   | TYP_BOOL { SBool }
   | TYP_INT32 { SInt32 Signed }
   | TYP_UINT32 { SInt32 Unsigned }
   | TYP_INT64 { SInt64 Signed }
   | TYP_UINT64 { SInt64 Unsigned }
-  | TYP_ARRAY ty = styp { SArray ty }
-  | ty = cident { SStructOrAlias ty }
-  | ty = funtyp { ty }
-  | LPAREN ty = styp RPAREN { ty }
+  | ty = cident { SIdent ty }
 
-funtyp:
-  | LPAREN RPAREN ARROW tret = styp { SFun ([], tret) }
-  | tparam = styp ARROW tret = styp { SFun ([tparam], tret) }
-  | LPAREN tparam1 = styp COMMA tparams = separated_nonempty_list(COMMA, styp)
-    RPAREN ARROW tret = styp
-    { SFun (tparam1 :: tparams, tret) }
+styp_func:
+  | tparams = delimited(LPAREN, separated_list(COMMA, styp_func_param), RPAREN)
+    ARROW tret = styp
+    { SFun (tparams, tret) }
+
+styp_func_param:
+  | AT_READONLY ty = styp { (AttrReadonly, ty) }
+  | ty = styp { (AttrNone, ty) }
 
 mod_ident:
   | id = IDENT

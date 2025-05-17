@@ -11,7 +11,11 @@ Definition to_string (i: t) : string :=
 
 Definition of_str_nat (n: nat) : t :=
   let s := NilEmpty.string_of_uint (Nat.to_uint n) in
-  ident_of_string s.
+  of_string s.
+
+Definition of_str_pos (p: positive) : t :=
+  let s := NilEmpty.string_of_uint (Pos.to_uint p) in
+  of_string s.
 
 Definition concat (i1 i2: t) : t :=
   let s1 := to_string i1 in

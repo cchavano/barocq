@@ -118,13 +118,13 @@ Module Typing.
   Import Imp1Typed.
   Import ListNotations.
 
-  Definition typof_var (gx: gcontext) (lx: lcontext) (x: ident) : res ctyp :=
+  Definition typof_var (gx: gcontext) (lx: lcontext) (x: ident) : res btyp :=
     match lcontext_get lx x with
     | OK ty => eret ty
     | Error _ =>
         match gcontext_get gx x with
-        | OK (CArray _)
-        | OK (CStruct _) =>
+        | OK (BArray _)
+        | OK (BStruct _) =>
             failwith "Imp1.Typing.typof_var: the use of global structures or arrays is not yet supported"
         | OK ty => eret ty
         | Error e => Error e
@@ -133,10 +133,10 @@ Module Typing.
 
   Fixpoint typecheck_atom (gx: gcontext) (lx: lcontext) (a: Syntax.atom) : res Syntax.Typed.atom :=
     match a with
-    | Syntax.ATrue => ret (ATrue CBool)
-    | Syntax.AFalse => ret (AFalse CBool)
-    | Syntax.AInt32 i s => ret (AInt32 i (CInt32 s))
-    | Syntax.AInt64 i s => ret (AInt64 i (CInt64 s))
+    | Syntax.ATrue => ret (ATrue BBool)
+    | Syntax.AFalse => ret (AFalse BBool)
+    | Syntax.AInt32 i s => ret (AInt32 i (BInt32 s))
+    | Syntax.AInt64 i s => ret (AInt64 i (BInt64 s))
     | Syntax.AVar x =>
         let* t := typof_var gx lx x in
         ret (AVar x t)
@@ -158,7 +158,7 @@ Module Typing.
         ret (ABinaryOp op a1' a2' t)
     end.
 
-  Fixpoint typecheck_access (se: senv) (gx: gcontext) (lx: lcontext) (ty: ctyp) (acs: list Syntax.access) : res (ctyp * list Syntax.Typed.access) :=
+  Fixpoint typecheck_access (se: senv) (gx: gcontext) (lx: lcontext) (ty: btyp) (acs: list Syntax.access) : res (btyp * list Syntax.Typed.access) :=
     match acs with
     | nil => ret (ty, nil)
     | ac :: acs' =>
@@ -230,7 +230,7 @@ Module Typing.
       lx2
       (ret lx1).
 
-  Fixpoint typecheck_statement (se: senv) (gx: gcontext) (lx: lcontext) (tret: ctyp) (s: Imp1.statement) : res (Imp1Typed.statement * lcontext) := 
+  Fixpoint typecheck_statement (se: senv) (gx: gcontext) (lx: lcontext) (tret: btyp) (s: Imp1.statement) : res (Imp1Typed.statement * lcontext) := 
     match s with
     | Imp1.StSet x c =>
         let* c' := typecheck_comp se gx lx c in
@@ -241,7 +241,7 @@ Module Typing.
         let* (s2', lx2) := typecheck_statement se gx lx tret s2 in
         let* a' := typecheck_atom gx lx a in
         match typof_atom a' with
-        | CBool =>
+        | BBool =>
             let* lx' := merge_context lx1 lx2 in
             ret (StIfThenElse a' s1' s2', lx')
         | _ => failwith "Imp1.Typing.typecheck_statement: atom of type bool expected"
@@ -276,19 +276,30 @@ Module Typing.
   Fixpoint typecheck_globdefs_rec (se: senv) (gx: gcontext) (defs: list Imp1.globdef) : res (list Imp1Typed.globdef) :=
     match defs with
     | nil => ret nil
-    | DefConst x l ty :: defs' =>
-        let* l' := typecheck_literal se l in
-        if ctyp_eq_dec ty (typof_literal l') then
-          let* gx := gcontext_update gx x ty in
-          let* rd := typecheck_globdefs_rec se gx defs' in
-          ret (DefConst x l' ty :: rd)
-        else
-          failwith "Imp1.Typing.typecheck_globdefs: type mismatch in constant definition"
-    | DefFun x f :: defs' =>
-        let* f' := typecheck_function se gx f in
-        let* gx := gcontext_update gx x (cfun_typ (fn_params f') (fn_return f')) in
-        let* rd := typecheck_globdefs_rec se gx defs' in
-        ret (DefFun x f' :: rd)
+    | d :: defs' =>
+        match d with
+        | DefConst x l ty =>
+            let* l' := typecheck_literal se l in
+            if ctyp_eq_dec ty (typof_literal l') then
+              let* gx := gcontext_update gx x ty in
+              let* rd := typecheck_globdefs_rec se gx defs' in
+              ret (DefConst x l' ty :: rd)
+            else
+              failwith "Imp1.Typing.typecheck_globdefs: type mismatch in constant definition"
+        | DefFun x f =>
+            let* f' := typecheck_function se gx f in
+            let* gx := gcontext_update gx x (mk_fun_ctyp (fn_params f') (fn_return f')) in
+            let* rd := typecheck_globdefs_rec se gx defs' in
+            ret (DefFun x f' :: rd)
+        | DeclConst x ty =>
+            let* gx := gcontext_update gx x ty in
+            let* rd := typecheck_globdefs_rec se gx defs' in
+            ret (DeclConst x ty :: rd)
+        | DeclFun x tparams tret =>
+            let* gx := gcontext_update gx x (mk_fun_ctyp tparams tret) in
+            let* rd := typecheck_globdefs_rec se gx defs' in
+            ret (DeclFun x tparams tret :: rd)
+        end
     end.
 
   Definition typecheck_globdefs (se: senv) (defs: list Imp1.globdef) : res (list Imp1Typed.globdef) :=
@@ -297,8 +308,11 @@ Module Typing.
   Definition typecheck_program (prog: Imp1.program) : res Imp1Typed.program :=
     let* se :=
       Utils.fold_left_err
-        (fun acc st =>
-          senv_update acc (sd_name st) (sd_fields st))
+        (fun acc td =>
+          match td with
+          | TdStruct st => senv_update acc (sd_name st) (sd_fields st)
+          | TdAbstract _ _ => ret acc
+          end)
         (prog_types prog)
         (eret tempty)
     in

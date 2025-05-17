@@ -3,21 +3,24 @@
 	"name": "Barocq",
 	"patterns": [
 		{ "include": "#comments" },
-		{ "include": "#declarations" },
 		{ "include": "#definitions" },
 		{ "include": "#operators" },
 		{ "include": "#keywords"},
 		{ "include": "#literals" },
-		{ "include": "#types" },
 		{ "include": "#identifiers"}
 	],
 	"repository": {
 		"keywords": {
 			"patterns": [
+				{
+					"comment": "control keyword",
+					"name": "keyword.control.barocq",
+					"match": "\\b(if|then|else)\\b"
+				},
                 {
-                    "comment": "reserved keyword",
+                    "comment": "other keyword",
 				    "name": "keyword.other.barocq",
-				    "match": "\\b(module|type|struct|def|let|in|if|then|else|as|compute)\\b"
+				    "match": "\\b(module|type|defn|decl|let|in|as|compute|of)\\b"
                 }
             ]
 		},
@@ -37,46 +40,90 @@
                     "comment": "binding operator",
                     "name": "keyword.operator.barocq",
                     "match": "="
-                }
+                },
+				{
+					"comment": "annotation",
+					"name": "storage.modifier.barocq",
+					"match": "(@\\w+)"
+				}
             ]
         },
-		"types": {
+		"types_builtin": {
             "patterns": [
                 {
                     "comment": "builtin type",
-                    "name": "entity.name.type.barocq",
+                    "name": "storage.type.barocq",
                     "match": "\\b(bool|i32|u32|i64|u64|array)\\b"
-                },
+                }
+			]
+		},
+		"types": {
+			"patterns": [
+				{ "include": "#types_builtin" },
 				{
-                    "comment": "type cast",
-                    "match": "(?<=(as))\\s+((\\w+)(::))?(\\w+)",
-                    "captures": {
+					"comment": "user-defined type",
+					"match": "(?<=(array\\s+)*)((\\w+)(::))?(\\w+)",
+					"captures": {
 						"3": { "name": "entity.name.namespace.barocq" },
 						"4": { "name": "keyword.operator.barocq" },
-                        "5": { "name": "entity.name.type.barocq" }
-                    }
-                }
-
+						"5": { "name": "storage.type.barocq" }
+					}
+				}
 			]
 		},
 		"types_decl": {
 			"patterns": [
+				{ "include": "#types_builtin" },
 				{
-					"comment": "type declaration or right side of type definition",
-					"match": "(?<=[=:]\\s+(array\\s+)*)((\\w+)(::))?(\\w+)",
+					"comment": "type declaration",
+					"match": "(?<=:\\s*(array\\s+)*)((\\w+)(::))?(\\w+)",
 					"captures": {
 						"3": { "name": "entity.name.namespace.barocq" },
 						"4": { "name": "keyword.operator.barocq" },
-						"5": { "name": "entity.name.type.barocq" }
+						"5": { "name": "storage.type.barocq" }
 					}
 				}
 			]
 		},
 		"definitions": {
 			"patterns": [
+                {
+                    "comment": "module definition",
+                    "match": "\\b(module)\\s+(\\w+)",
+                    "captures": {
+                        "1": { "name": "keyword.other.barocq" },
+                        "2": { "name": "entity.name.namespace.barocq" }
+                    }
+                },
+				{
+					"comment": "abstrat function declaration",
+					"begin": "\\b(decl)\\s+(\\w+)\\s*:\\s+\\(",
+					"end": "$",
+					"beginCaptures": {
+						"1": { "name": "keyword.other.barocq" },
+						"2": { "name": "entity.name.function.barocq" }
+					},
+					"patterns": [
+						{ "include": "#operators" },
+						{ "include": "#keywords" },
+						{ "include": "#types" }
+					]
+				},
+				{
+					"comment": "abstract constant declaration",
+					"begin": "\\b(decl)\\s+(\\w+)\\s*:",
+					"end": "$",
+					"beginCaptures": {
+						"1": { "name": "keyword.other.barocq" },
+						"2": { "name": "variable.name.barocq" }
+					},
+					"patterns": [
+						{ "include": "#types" }
+					]
+				},
 				{
 					"comment": "function definition",
-					"begin": "\\b(def)\\s+(\\w+)\\s*\\(",
+					"begin": "\\b(defn)\\s+(\\w+)\\s*\\(",
 					"end": "(=)",
 					"beginCaptures": {
 						"1": { "name": "keyword.other.barocq" },
@@ -91,7 +138,7 @@
 				},
 				{
 					"comment": "constant definition",
-					"begin": "\\b(def)\\s+(\\w+)",
+					"begin": "\\b(defn)\\s+(\\w+)\\s*:",
 					"end": "(=)",
 					"beginCaptures": {
 						"1": { "name": "keyword.other.barocq" },
@@ -101,16 +148,16 @@
 						"1": { "name": "keyword.operator.barocq" }
 					},
 					"patterns": [
-						{ "include": "#types_decl" }
+						{ "include": "#types" }
 					]
 				},
 				{
 					"comment": "struct type definition",
-					"begin": "\\b(struct)\\s+(\\w+)\\s+(=)",
+					"begin": "\\b(type)\\s+(\\w+)\\s+(=)\\s*{",
 					"end": "}",
 					"beginCaptures": {
 						"1": { "name": "keyword.other.barocq" },
-						"2": { "name": "entity.name.type.barocq"},
+						"2": { "name": "storage.type.barocq" },
 						"3": { "name": "keyword.operator.barocq" }
 					},
 					"patterns": [
@@ -124,27 +171,28 @@
 					"end": "$",
 					"beginCaptures": {
 						"1": { "name": "keyword.other.barocq" },
-						"2": { "name": "entity.name.type.barocq" },
+						"2": { "name": "storage.type.barocq" },
 						"3": { "name": "keyword.operator.barocq" }
 					},
 					"patterns": [
-						{ "include": "#types_decl" }
+						{ "include": "#types" }
+					]
+				},
+				{
+					"comment": "abstract type declaration",
+					"begin": "\\b(type)\\s+(\\w+)\\s+(of)",
+					"end": "$",
+					"beginCaptures": {
+						"1": { "name": "keyword.other.barocq" },
+						"2": { "name": "storage.type.barocq" },
+						"3": { "name": "keyword.other.barocq" }
+					},
+					"patterns": [
+						{ "include": "#strings" }
 					]
 				}
 			]
 		},
-		"declarations": {
-            "patterns": [
-                {
-                    "comment": "module declaration",
-                    "match": "\\b(module)\\s+(\\w+)",
-                    "captures": {
-                        "1": { "name": "keyword.other.barocq" },
-                        "2": { "name": "entity.name.namespace.barocq" }
-                    }
-                }
-            ]
-        },
 		"literals": {
             "patterns": [
                 {
@@ -180,8 +228,25 @@
                     "captures": {
                         "1": { "name": "entity.name.function.barocq" }
                     }
-                }
+                },
+				{
+					"comment": "struct field or function parameter",
+					"match": "(\\w+)\\s*:",
+					"capture":{
+						"1": { "name": "entity.name.variable.barocq" }
+					}
+				}
 
+			]
+		},
+		"strings": {
+			"patterns": [
+				{
+					"comment": "string literal",
+					"name": "string.quoted.double.ocaml",
+					"begin": "\"",
+					"end": "\""
+				}
 			]
 		},
 		"comments": {

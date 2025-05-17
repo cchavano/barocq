@@ -30,7 +30,7 @@ Fixpoint transl_statement (s: Imp1Typed.statement) : Imp2.statement :=
   | Imp1Typed.StReturn a => StReturn a
   end.
 
-Fixpoint all_vars (s: Imp1Typed.statement) : list (ident * ctyp) :=
+Fixpoint all_vars (s: Imp1Typed.statement) : list (ident * btyp) :=
   match s with
   | Imp1Typed.StReturn _ => nil
   | Imp1Typed.StSet x c => (x, typof_comp c) :: nil
@@ -102,7 +102,7 @@ Definition transl_literal (l: Imp1Typed.literal) : cmon (Imp2.literal * list (id
     end
   in ret (l', rev' defs).
 
-Definition typof_literal (l: Imp2.literal) : ctyp :=
+Definition typof_literal (l: Imp2.literal) : btyp :=
   match l with
   | LBase _ ty => ty
   | LStruct _ ty => ty
@@ -112,14 +112,23 @@ Definition typof_literal (l: Imp2.literal) : ctyp :=
 Fixpoint transl_globdefs_rec (defs: list Imp1Typed.globdef) : cmon (list Imp2.globdef) :=
   match defs with
   | nil => ret nil
-  | DefFun x f :: defs' =>
-      let* dr := transl_globdefs_rec defs' in
-      ret (DefFun x (transl_function f) :: dr)
-  | DefConst x l ty :: defs' =>
-      let* (l', d1) := transl_literal l in
-      let defs1 := map (fun '(x, lx) => DefConst x lx (typof_literal lx)) d1 in
-      let* dr := transl_globdefs_rec defs' in
-      ret (defs1 ++ ((DefConst x l' ty) :: dr))
+  | d :: defs' =>
+      match d with
+      | DefFun x f =>
+          let* dr := transl_globdefs_rec defs' in
+          ret (DefFun x (transl_function f) :: dr)
+      | DefConst x l ty =>
+          let* (l', d1) := transl_literal l in
+          let defs1 := map (fun '(x, lx) => DefConst x lx (typof_literal lx)) d1 in
+          let* dr := transl_globdefs_rec defs' in
+          ret (defs1 ++ ((DefConst x l' ty) :: dr))
+      | DeclConst x ty =>
+          let* dr := transl_globdefs_rec defs' in
+          ret (DeclConst x ty :: dr)
+      | DeclFun f tparams tret =>
+          let* dr := transl_globdefs_rec defs' in
+          ret (DeclFun f tparams tret :: dr)
+      end
   end.
 
 Definition transl_globdefs (defs: list Imp1Typed.globdef) : list Imp2.globdef :=

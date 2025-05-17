@@ -1,5 +1,6 @@
 open Printf
 open Syntax
+open Types
 open BarocqShallow.Monadic
 open PrintCommon
 
@@ -8,6 +9,104 @@ let coqlib : string ref = ref ""
 let shallowfile : string ref = ref ""
 
 let deepfile : string ref = ref ""
+
+let gen_abs_types_impl_env (types : type_def list) : string =
+  let rec lassoc (types : type_def list) : (string * string) list =
+    match types with
+    | [] -> []
+    | td :: types' ->
+        let r = lassoc types' in
+        begin
+          match td with
+          | TdAbstract (tid, _) ->
+              (Deepgen.ident_to_deep tid, ident_to_string tid) :: r
+          | _ -> r
+        end
+  in
+  let env_list prefix l =
+    list_to_string
+      ""
+      ""
+      ";\n"
+      (fun (d, s) -> sprintf "%s(%s, %s.%s)" prefix d !shallowfile s)
+      l
+  in
+  let env_build env_list l =
+    let indent3 = String.make 6 ' ' in
+    sprintf
+      "PMap.get tid\n\
+       %s(List.fold_left\n\
+       %s(fun ge '(d, s) => PMap.set d s ge)\n\
+       %s[\n\
+       %s\n\
+       %s]\n\
+       %s(PMap.init (unit : Type)))"
+      (String.make 4 ' ')
+      indent3
+      indent3
+      (env_list (String.make 8 ' ') l)
+      indent3
+      indent3
+  in
+  let l = lassoc types in
+  sprintf
+    "Definition ABS_TYPES_IMPL (tid: ident) : Type :=\n%s%s.\n\n"
+    indent
+    (match l with
+    | [] -> "unit"
+    | _ -> env_build env_list (lassoc types))
+
+let gen_abs_defs_impl_env (defs : globdef list) : string =
+  let rec lassoc (defs : globdef list) : (string * string) list =
+    match defs with
+    | [] -> []
+    | d :: defs' ->
+        let r = lassoc defs' in
+        begin
+          match d with
+          | DeclConst (x, _) | DeclFun (x, _, _) ->
+              (Deepgen.ident_to_deep x, ident_to_string x) :: r
+          | _ -> r
+        end
+  in
+  let genv_list prefix l =
+    list_to_string
+      ""
+      ""
+      ";\n"
+      (fun (d, s) ->
+        sprintf
+          "%s(%s, (Val ABS_TYPES_IMPL (typof_def_noerr %s.prog %s) %s.%s))"
+          prefix
+          d
+          !deepfile
+          d
+          !shallowfile
+          s)
+      l
+  in
+  let genv_build genv_list l =
+    let indent2 = String.make 4 ' ' in
+    sprintf
+      "List.fold_left\n\
+       %s(fun ge '(d, s) => PTree.set d s ge)\n\
+       %s[\n\
+       %s\n\
+       %s]\n\
+       %sPTree.Empty"
+      indent2
+      indent2
+      (genv_list (String.make 6 ' ') l)
+      indent2
+      indent2
+  in
+  let l = lassoc defs in
+  sprintf
+    "Definition ABS_DEFS_IMPL : genv ABS_TYPES_IMPL :=\n%s%s.\n\n"
+    indent
+    (match l with
+    | [] -> "PTree.Empty"
+    | _ -> genv_build genv_list l)
 
 let convert_struct_value (id : ident) (arg : string) : string =
   sprintf "transl_struct_%s %s" (ident_to_string id) arg
@@ -55,7 +154,7 @@ let gen_function_corres (fid : ident) (f : coq_function) : string =
     gen_shallow_call_ret base f.fn_return
   in
   sprintf
-    "Theorem fun_%s_corres :\n%s%s%s =\n%s%s.\nProof.\n%sreflexivity.\nQed."
+    "Theorem fun_%s_corres :\n%s%s%s =\n%s%s.\nProof.\n%stry reflexivity.\nQed."
     (ident_to_string fid)
     forall
     indent
@@ -179,13 +278,15 @@ let gen_globdef_corres (def : globdef) : string =
   match def with
   | DefConst (id, ty, l) -> gen_const_corres id ty l
   | DefFun (id, f) -> gen_function_corres id f
+  | _ -> ""
 
 let make_headers () : string =
   sprintf
-    "From Coq Require Import String.\n\
-     From compcert Require Import Integers Clightdefs.\n\
-     From BarocqComp Require Import Error Array Struct Barocq.\n\
+    "From Coq Require Import BinPosDef String List.\n\
+     From compcert Require Import Maps Integers Clightdefs.\n\
+     From BarocqComp Require Import Types Error Array Struct Barocq.\n\
      From %s Require Import %s %s.\n\n\
+     Import ListNotations.\n\
      Import ClightNotations.\n\n\
      Open Scope string_scope.\n\
      Open Scope clight_scope.\n\n"
@@ -204,8 +305,27 @@ let print_proofs (out : out_channel) (prog : program) : unit =
     | [], _ :: _ -> ("", "\n")
   in
   fprintf out "%s" (make_headers ());
-  fprintf out "(** * Struct conversions **)\n\n";
-  print_list out "" s "\n\n" gen_struct_conv types;
-  print_list out "" s "\n\n" gen_struct_conv_corres types;
-  fprintf out "(** * Program correspondence proofs **)\n\n";
+  fprintf out "%s" (gen_abs_types_impl_env types);
+  fprintf out "%s" (gen_abs_defs_impl_env defs);
+  fprintf
+    out
+    "Definition eval_def := Barocq.eval_def ABS_TYPES_IMPL ABS_DEFS_IMPL.\n\n";
+  fprintf
+    out
+    "Definition eval_struct_ctyp := Barocq.eval_struct_ctyp ABS_TYPES_IMPL.\n\n";
+  let structs = get_struct_defs types in
+  if structs <> [] then begin
+    fprintf out "(** * Struct conversions **)\n\n";
+    print_list out "" s "\n\n" gen_struct_conv structs;
+    print_list out "" s "\n\n" gen_struct_conv_corres structs
+  end;
+  if defs <> [] then fprintf out "(** * Program correspondence proofs **)\n\n";
+  let defs =
+    List.filter
+      (fun (d : BarocqShallow.Monadic.globdef) ->
+        match d with
+        | DefFun _ | DefConst _ -> true
+        | _ -> false)
+      defs
+  in
   print_list out "" e "\n\n" gen_globdef_corres defs

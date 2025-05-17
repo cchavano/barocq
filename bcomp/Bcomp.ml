@@ -45,44 +45,52 @@ let opt_gen_alias_return_state_of = ref ""
 
 let opt_debug_aliasing = ref false
 
+let file_types_impl = ref ""
+
 let dot_png_cmd = sprintf "dot -Tpng %s > %s.png"
 
 let usage_msg = "Usage: barocq [options] <files> \noptions:"
 
 let options =
   [
-    ("-interp", Arg.Set opt_interp, "\t\tInterpret the given files");
+    ("-interp", Arg.Set opt_interp, "\t\t\t\tInterpret the given files");
     ( "-parse",
       Arg.Set opt_parse,
-      "\t\tParse the given files (stop after parsing)" );
+      "\t\t\t\tParse the given files (stop after parsing)" );
     ( "-typecheck",
       Arg.Set opt_typecheck,
-      "\t\tTypecheck the input files (do not compile)" );
-    ("-o", Arg.Set_string c_output, "<file>\t\tGenerate C output in <file>");
+      "\t\t\t\tTypecheck the input files (do not compile)" );
+    ("-o", Arg.Set_string c_output, "<file>\t\t\t\tGenerate C output in <file>");
     ( "-print-tokens",
       Arg.Set opt_print_tokens,
-      "\tPrint parsed tokens (stop after lexing)" );
-    ("-print-bbnf", Arg.Set opt_print_bbnf, "\t\tPretty-print B-normal form IR");
-    ("-print-imp1", Arg.Set opt_print_imp1, "\t\tPretty-print Imp1 IR");
-    ("-gen-header", Arg.Set opt_gen_header, "\t\tGenerate the C header file");
-    ( "-gen-shallow",
-      Arg.Set opt_gen_shallow,
-      "\t\tGenerate the Rocq shallow-embedding" );
-    ("-gen-deep", Arg.Set opt_gen_deep, "\t\tGenerate the Rocq deep-embedding");
-    ( "-gen-corres",
-      Arg.Set opt_gen_corres,
-      "\t\tGenerate the correspondance proofs between the shallow and the \
-       deep-embedding" );
-    ( "-gen-call-state-of",
-      Arg.Set_string opt_gen_alias_call_state_of,
-      "\tGenerate the aliaising call state of the given function" );
-    ( "-gen-return-state-of",
-      Arg.Set_string opt_gen_alias_return_state_of,
-      "\tGenerate the aliasing state after a complete execution of the given \
-       function" );
+      "\t\t\tPrint parsed tokens (stop after lexing)" );
+    ( "-print-bbnf",
+      Arg.Set opt_print_bbnf,
+      "\t\t\t\tPretty-print B-normal form IR" );
+    ("-print-imp1", Arg.Set opt_print_imp1, "\t\t\t\tPretty-print Imp1 IR");
     ( "-debug-aliasing",
       Arg.Set opt_debug_aliasing,
-      "\tDisplay the alias analysis debugging information on stderr" );
+      "\t\t\tDisplay the alias analysis debugging information on stderr" );
+    ( "-types-impl",
+      Arg.Set_string file_types_impl,
+      "<file>\t\t\tUse <file> as the C implementation for abstract types" );
+    ("-gen-header", Arg.Set opt_gen_header, "\t\t\t\tGenerate the C header file");
+    ( "-gen-shallow",
+      Arg.Set opt_gen_shallow,
+      "\t\t\t\tGenerate the Rocq shallow-embedding" );
+    ( "-gen-deep",
+      Arg.Set opt_gen_deep,
+      "\t\t\t\tGenerate the Rocq deep-embedding" );
+    ( "-gen-corres",
+      Arg.Set opt_gen_corres,
+      "\t\t\t\tGenerate the correspondance proofs between the Rocq embeddings"
+    );
+    ( "-gen-call-state-of",
+      Arg.Set_string opt_gen_alias_call_state_of,
+      "<fun_name>\t\tGenerate the aliasing call state of <fun_name>" );
+    ( "-gen-return-state-of",
+      Arg.Set_string opt_gen_alias_return_state_of,
+      "<fun_name>\tGenerate the aliasing return state of <fun_name>" );
   ]
 
 let set_source_files (file : string) : unit =
@@ -206,18 +214,17 @@ let () =
                   let fid = !opt_gen_alias_call_state_of in
                   match Aliasing_impl.get_fun_descr prog fid with
                   | Some fdescr ->
+                      let callstate = fdescr.Aliasing_defs.fd_callstate in
                       let dotfile = sprintf "%s_call_state.dot" fid in
                       let dotfile_rev = sprintf "%s_call_state_rev.dot" fid in
                       let out = open_out dotfile in
                       let out_rev = open_out dotfile_rev in
                       Aliasing_impl.DotExport.print_state
                         out
-                        (Aliasing_defs.AbsDom.AbsState
-                           fdescr.Aliasing_defs.fd_callstate);
+                        (Aliasing_defs.AbsDom.AbsState callstate);
                       Aliasing_impl.DotExport.print_rev_state
                         out_rev
-                        (Aliasing_defs.AbsDom.AbsState
-                           fdescr.Aliasing_defs.fd_callstate);
+                        (Aliasing_defs.AbsDom.AbsState callstate);
                       close_out out;
                       close_out out_rev;
                       let _ = Unix.system (dot_png_cmd dotfile dotfile) in
@@ -225,8 +232,7 @@ let () =
                         Unix.system (dot_png_cmd dotfile_rev dotfile_rev)
                       in
                       ()
-                  | None ->
-                      failwith (sprintf "function \"%s\" is not defined" fid)
+                  | _ -> failwith (sprintf "function \"%s\" is not defined" fid)
                 end
               | Errors.Error msg ->
                   failwith
@@ -247,16 +253,15 @@ let () =
                   let fid = !opt_gen_alias_return_state_of in
                   match Aliasing_impl.get_fun_descr prog fid with
                   | Some fdescr ->
+                      let returnstate = fdescr.Aliasing_defs.fd_returnstate in
                       let dotfile = sprintf "%s_return_state.dot" fid in
                       let dotfile_rev = sprintf "%s_return_state_rev.dot" fid in
                       let out = open_out dotfile in
                       let out_rev = open_out dotfile_rev in
-                      Aliasing_impl.DotExport.print_state
-                        out
-                        fdescr.Aliasing_defs.fd_returnstate;
+                      Aliasing_impl.DotExport.print_state out returnstate;
                       Aliasing_impl.DotExport.print_rev_state
                         out_rev
-                        fdescr.Aliasing_defs.fd_returnstate;
+                        returnstate;
                       close_out out;
                       close_out out_rev;
                       let _ = Unix.system (dot_png_cmd dotfile dotfile) in
@@ -264,8 +269,7 @@ let () =
                         Unix.system (dot_png_cmd dotfile_rev dotfile_rev)
                       in
                       ()
-                  | None ->
-                      failwith (sprintf "function \"%s\" is not defined" fid)
+                  | _ -> failwith (sprintf "function \"%s\" is not defined" fid)
                 end
               | Errors.Error msg ->
                   failwith
@@ -278,7 +282,7 @@ let () =
 
       begin
         if !opt_interp then
-          let _ = Interpreter.interpret iprog in
+          let _ = Binterpreter.interpret iprog in
           exit 0
       end;
 
@@ -334,12 +338,12 @@ let () =
           record_idents (List.map PrintCommon.ident_to_string ids);
           PrintClight.destination := Some !c_output;
           (* Program printing *)
-          PrintClight.print_if_2 prog;
-          printf "C file generated at %s\n" (get_full_filename !c_output ".c");
+          PrintCprog.print_clight !file_types_impl prog;
+          printf "C file generated at %s\n" !c_output;
           (* Header printing *)
           if !opt_gen_header then begin
             let header_file = get_full_filename !c_output ".h" in
-            PrintHeader.print header_file prog;
+            PrintCprog.print_header !file_types_impl header_file prog;
             printf "Header file generated at %s\n" header_file
           end;
           exit 0
@@ -347,7 +351,7 @@ let () =
     with
     | Sys_error msg -> eprintf "System error: %s\n" msg
     | SyntaxError (lexbuf, msg) -> eprintf "%s\n" (syntax_error_msg lexbuf msg)
-    | Interpreter.Error msg -> eprintf "Interpretation error: %s\n" msg
+    | Binterpreter.Error msg -> eprintf "Interpretation error: %s\n" msg
     | SurfaceTyping.Error (cause, loc) -> begin
         let msg = SurfaceTyping.msg_from_failure cause in
         match loc with
@@ -359,9 +363,9 @@ let () =
     | Failure msg -> eprintf "Unexpected error: %s\n" msg
     | Aliasing_impl.UnsupportedFeature msg ->
         eprintf "Compilation error: %s\n" msg
-    | Assert_failure (src, _, _) ->
+    (* | Assert_failure (src, _, _) ->
         eprintf
           "Impossible error coming from %s. Please, make a bug report.\n"
-          src
+          src *)
   end;
   exit 1

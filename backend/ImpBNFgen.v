@@ -28,6 +28,8 @@ Definition transl_globdef (def: BarocqBNF.globdef) : ImpBNF.globdef :=
   match def with
   | DefConst x l ty => DefConst x l ty
   | DefFun x f => DefFun x (transl_function f)
+  | DeclConst x ty => DeclConst x ty
+  | DeclFun f tparams tret => DeclFun f tparams tret
   end.
 
 Definition transl_program (prog: BarocqBNF.program) : ImpBNF.program :=

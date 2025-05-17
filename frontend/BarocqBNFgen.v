@@ -172,28 +172,37 @@ Definition norm_function (f: Barocq.function) : res BarocqBNF.function :=
     fn_body := body_norm
   |}.
 
-Fixpoint norm_program_rec (defs: list Barocq.globdef) : res (list BarocqBNF.globdef * list struct_def) :=
-  match defs with
+Fixpoint norm_program_rec (prog: Barocq.program) : res (list BarocqBNF.globdef * list type_def) :=
+  match prog with
   | nil => eret (nil, nil)
-  | d :: defs' =>
+  | d :: prog' =>
       match d with
-      | Barocq.DefStruct a fields =>
-          let* (defr, structs) := norm_program_rec defs' in
-          eret (defr, {| sd_name := a; sd_fields := fields |} :: structs)
+      | Barocq.DefType a fields =>
+          let* (ndefs, types) := norm_program_rec prog' in
+          eret (ndefs, TdStruct {| sd_name := a; sd_fields := fields |} :: types)
       | Barocq.DefConst x l ty =>
-          let* (defr, structs) := norm_program_rec defs' in
-          eret (Syntax.DefConst x l ty :: defr, structs)
+          let* (ndefs, types) := norm_program_rec prog' in
+          eret (Syntax.DefConst x l ty :: ndefs, types)
       | Barocq.DefFun x f =>
           let* f' := norm_function f in
-          let* (defr, structs):= norm_program_rec defs' in
-          eret (Syntax.DefFun x f' :: defr, structs)
+          let* (ndefs, types) := norm_program_rec prog' in
+          eret (Syntax.DefFun x f' :: ndefs, types)
+      | Barocq.DeclType t tk =>
+          let* (ndefs, types) := norm_program_rec prog' in
+          eret (ndefs, TdAbstract t tk :: types)
+      | Barocq.DeclConst x ty =>
+          let* (ndefs, types) := norm_program_rec prog' in
+          eret (Syntax.DeclConst x ty :: ndefs, types)
+      | Barocq.DeclFun x tparams tret =>
+          let* (ndefs, types) := norm_program_rec prog' in
+          eret (Syntax.DeclFun x tparams tret :: ndefs, types)
       end
   end.
 
 Definition norm_program (prog: Barocq.program) : res BarocqBNF.program :=
   let* prog := BarocqTransf.transf_program prog in
-  let* (defs, structs) := norm_program_rec prog in
+  let* (defs, types) := norm_program_rec prog in
   eret {|
     Syntax.prog_defs := defs;
-    Syntax.prog_types := structs
+    Syntax.prog_types := types
   |}.

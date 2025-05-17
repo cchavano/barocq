@@ -34,18 +34,20 @@ let rec typ_to_string (ty : typ) : string =
   | TInt64 Unsigned -> "u64"
   | TArray t -> sprintf "array %s" (opt_parens t)
   | TStruct (x, _) -> sprintf "%s" (ident_to_string x)
+  | TAbs t -> ident_to_string t
   | TFun (tparams, tret) -> funtyp_to_string typ_to_string tparams tret
 
 and opt_parens (ty : typ) = PrintCommon.opt_parens is_simpl_typ typ_to_string ty
 
-let rec ctyp_to_string (ty : ctyp) : string =
+let rec ctyp_to_string (ty : btyp) : string =
   match ty with
-  | CBool -> "bool"
-  | CInt32 Signed -> "i32"
-  | CInt32 Unsigned -> "u32"
-  | CInt64 Signed -> "i64"
-  | CInt64 Unsigned -> "u64"
-  | CArray (CArray t) -> sprintf "array (%s)" (ctyp_to_string t)
-  | CArray t -> sprintf "array %s" (ctyp_to_string t)
-  | CStruct a -> ident_to_string a
-  | CFun (tparams, tret) -> funtyp_to_string ctyp_to_string tparams tret
+  | BBool -> "bool"
+  | BInt32 Signed -> "i32"
+  | BInt32 Unsigned -> "u32"
+  | BInt64 Signed -> "i64"
+  | BInt64 Unsigned -> "u64"
+  | BArray (BArray t) -> sprintf "array (%s)" (ctyp_to_string t)
+  | BArray t -> sprintf "array %s" (ctyp_to_string t)
+  | BStruct a -> ident_to_string a
+  | BAbs t -> ident_to_string t
+  | BFun (tparams, tret) -> funtyp_to_string ctyp_to_string tparams tret

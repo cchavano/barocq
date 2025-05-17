@@ -38,7 +38,7 @@ include Makefile.menhir
 
 # The pre-parser's error message database is compiled as follows.
 
-# cparser/pre_parser_messages.ml:
+# $(COMPCERT_DIR)/cparser/pre_parser_messages.ml:
 # 	$(MAKE) -C cparser correct
 
 # Directories containing plain Caml code

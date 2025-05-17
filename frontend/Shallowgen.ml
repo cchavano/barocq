@@ -231,6 +231,7 @@ let rec mtyp_to_rocq (ty : mtyp) : string =
   | MInt64 _ -> "int64"
   | MArray ta -> sprintf "array %s" (opt_parens ta)
   | MStruct ts -> ident_to_string ts
+  | MAbs t -> ident_to_string t
   | MFun (tparams, tret) -> (
       match tparams with
       | [] -> sprintf "unit -> %s" (opt_parens tret)
@@ -291,6 +292,11 @@ let struct_def_to_rocq (st : struct_def) : string =
     (ident_to_string st.sd_name)
     (list_to_string "" "" ";\n" field_typ_to_rocq st.sd_fields)
 
+let type_def_to_rocq (td : type_def) : string =
+  match td with
+  | TdStruct st -> struct_def_to_rocq st
+  | TdAbstract (t, _) -> sprintf "Parameter %s : Type." (ident_to_string t)
+
 let globdef_to_rocq (def : globdef) : string =
   match def with
   | DefConst (x, l, ty) ->
@@ -301,6 +307,11 @@ let globdef_to_rocq (def : globdef) : string =
         (literal_to_rocq l)
   | DefFun (x, f) ->
       sprintf "Definition %s %s." (ident_to_string x) (function_to_rocq f)
+  | DeclConst (x, ty) ->
+      sprintf "Parameter %s : %s." (ident_to_string x) (mtyp_to_rocq ty)
+  | DeclFun (x, tparams, tret) ->
+      let ty = MFun (List.map snd tparams, tret) in
+      sprintf "Parameter %s : %s." (ident_to_string x) (mtyp_to_rocq ty)
 
 let gen_field_setter (id : ident) ((fname, ftyp) : ident * mtyp) (args : string)
     : string =
@@ -350,6 +361,7 @@ let print_program (out : out_channel) (prog : program) : unit =
     | [], _ :: _ -> ("", "\n")
   in
   fprintf out "%s" headers;
-  print_list out "" s "\n\n" struct_def_to_rocq types;
-  List.iter (print_struct_setters out) types;
+  print_list out "" s "\n\n" type_def_to_rocq types;
+  let structs = get_struct_defs types in
+  List.iter (print_struct_setters out) structs;
   print_list out "" e "\n\n" globdef_to_rocq defs

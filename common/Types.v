@@ -1,10 +1,8 @@
 From Coq Require Import List.
-From compcert Require Import Integers.
+From compcert Require Import Integers Maps.
 From BarocqComp Require Import Error Array Struct Ident MapList.
 
 Definition ident := Ident.t.
-
-(* Definition ident := Ident.Extended.t. *)
 
 (** * Syntax of types *)
 
@@ -25,7 +23,8 @@ Inductive typ : Type :=
   | TInt64 : signedness -> typ
   | TArray : typ -> typ
   | TStruct : ident -> list (ident * typ) -> typ
-  | TFun : list typ -> typ -> typ.
+  | TFun : list typ -> typ -> typ
+  | TAbs : ident -> typ.
 
 Fixpoint typ_eq_dec (t1 t2: typ) : { t1 = t2 } + { t1 <> t2 }.
 Proof.
@@ -34,47 +33,48 @@ Defined.
 
 (** ** Concrete types *)
 
-Inductive ctyp : Type :=
-  | CBool : ctyp
-  | CInt32 : signedness -> ctyp
-  | CInt64 : signedness -> ctyp
-  | CArray : ctyp -> ctyp
-  | CStruct : ident -> ctyp
-  | CFun : list ctyp -> ctyp -> ctyp.
+Inductive btyp : Type :=
+  | BBool : btyp
+  | BInt32 : signedness -> btyp
+  | BInt64 : signedness -> btyp
+  | BArray : btyp -> btyp
+  | BStruct : ident -> btyp
+  | BFun : list btyp -> btyp -> btyp
+  | BAbs : ident -> btyp.
 
-Definition ctyp_is_prim (ty: ctyp) : bool :=
+Definition ctyp_is_prim (ty: btyp) : bool :=
   match ty with
-  | CBool | CInt32 _ | CInt64 _ => true
+  | BBool | BInt32 _ | BInt64 _ => true
   | _ => false
   end.
 
-Definition signed_of_int_ctyp (ty: ctyp) : signedness :=
+Definition signed_of_int_ctyp (ty: btyp) : signedness :=
   match ty with
-  | CInt32 s
-  | CInt64 s => s
+  | BInt32 s
+  | BInt64 s => s
   | _ => Signed
   end.
 
-Fixpoint ctyp_eq_dec (t1 t2: ctyp) : { t1 = t2 } + { t1 <> t2 }.
+Fixpoint ctyp_eq_dec (t1 t2: btyp) : { t1 = t2 } + { t1 <> t2 }.
 Proof.
   repeat decide equality.
 Defined.
 
-Definition cfun_typ (params: list (ident * ctyp)) (tret: ctyp) : ctyp :=
-  CFun (map snd params) tret.
+Definition mk_fun_ctyp {A: Type} (params: list (A * btyp)) (tret: btyp) : btyp :=
+  BFun (List.map snd params) tret.
 
 (** * Type of a struct field *)
 
 Definition typof_field (k: ident) (fields: list (ident * typ)) : res typ :=
   find_k_err Ident.eq_dec k fields.
 
-Definition ctypof_field (k: ident) (fields: list (ident * ctyp)) : res ctyp :=
+Definition ctypof_field (k: ident) (fields: list (ident * btyp)) : res btyp :=
   find_k_err Ident.eq_dec k fields.
 
 (* Type for array indexes *)
 
-Definition arr_index_ctyp : ctyp :=
-  if Archi.ptr64 then CInt64 Unsigned else CInt32 Unsigned.
+Definition arr_index_ctyp : btyp :=
+  if Archi.ptr64 then BInt64 Unsigned else BInt32 Unsigned.
 
 Definition arr_index_typ : typ :=
   if Archi.ptr64 then TInt64 Unsigned else TInt32 Unsigned.
@@ -96,23 +96,24 @@ Section EVALTYP.
 
 End EVALTYP.
 
-Fixpoint eval_typ (t: typ) : Type :=
+Fixpoint eval_typ (am: ident -> Type) (t: typ) : Type :=
   match t with
   | TBool => bool
   | TInt32 _ => int
   | TInt64 _ => int64
-  | TArray ta => array (eval_typ ta)
-  | TStruct _ fields => eval_structtyp eval_typ fields
+  | TArray ta => array (eval_typ am ta)
+  | TStruct _ fields => eval_structtyp (eval_typ am) fields
   | TFun tparams tret =>
       match tparams with
-      | nil => unit -> res (eval_typ tret)
-      | _ => eval_funtyp eval_typ tparams tret
+      | nil => unit -> res (eval_typ am tret)
+      | _ => eval_funtyp (eval_typ am) tparams tret
       end
+  | TAbs t => am t
   end.
 
 (** ** Type cast w.r.t. type equality *)
 
-Definition typ_cast {t1 t2: typ} (Heq: t1 = t2) (x: eval_typ t1) : eval_typ t2.
+Definition typ_cast {t1 t2: typ} (am: ident -> Type) (Heq: t1 = t2) (x: eval_typ am t1) : eval_typ am t2.
 Proof.
   subst. exact x.
 Defined.

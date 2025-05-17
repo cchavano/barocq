@@ -1,4 +1,4 @@
-From compcert Require Import Integers.
+From compcert Require Import Integers Ctypes.
 From BarocqComp Require Import Utils Array Ident Types.
 
 (** * Identfitiers *)
@@ -56,7 +56,7 @@ Inductive atom : Type :=
   | AInt32 : int -> signedness -> atom
   | AInt64 : int64 -> signedness -> atom
   | AVar : ident -> atom
-  | ACast : atom -> ctyp -> atom
+  | ACast : atom -> btyp -> atom
   | AUnaryOp : unary_op -> atom -> atom
   | ABinaryOp : binary_op -> atom -> atom -> atom.
 
@@ -82,66 +82,88 @@ Inductive comp : Type :=
 Module Typed.
 
   Inductive literal :=
-    | LTrue : ctyp -> literal
-    | LFalse : ctyp -> literal
-    | LInt32 : int -> ctyp -> literal
-    | LInt64 : int64 -> ctyp -> literal
-    | LArray : array literal -> ctyp -> literal
-    | LStruct : list (ident * literal) -> ctyp -> literal.
+    | LTrue : btyp -> literal
+    | LFalse : btyp -> literal
+    | LInt32 : int -> btyp -> literal
+    | LInt64 : int64 -> btyp -> literal
+    | LArray : array literal -> btyp -> literal
+    | LStruct : list (ident * literal) -> btyp -> literal.
 
   Inductive atom :=
-    | ATrue : ctyp -> atom
-    | AFalse : ctyp -> atom
-    | AInt32 : int -> ctyp -> atom
-    | AInt64 : int64 -> ctyp -> atom
-    | AVar : ident -> ctyp -> atom
-    | ACast : atom -> ctyp -> atom
-    | AUnaryOp : unary_op -> atom -> ctyp -> atom
-    | ABinaryOp : binary_op -> atom -> atom -> ctyp -> atom.
+    | ATrue : btyp -> atom
+    | AFalse : btyp -> atom
+    | AInt32 : int -> btyp -> atom
+    | AInt64 : int64 -> btyp -> atom
+    | AVar : ident -> btyp -> atom
+    | ACast : atom -> btyp -> atom
+    | AUnaryOp : unary_op -> atom -> btyp -> atom
+    | ABinaryOp : binary_op -> atom -> atom -> btyp -> atom.
 
   Inductive access : Type :=
-    | AcStructField : ident -> ctyp -> access
-    | AcArrayIndex : atom -> ctyp -> access.
+    | AcStructField : ident -> btyp -> access
+    | AcArrayIndex : atom -> btyp -> access.
 
   Inductive comp : Type := 
-    | CpAtom : atom -> ctyp -> comp
-    | CpArrayGet : atom -> atom -> ctyp -> comp
-    | CpArraySet : atom -> atom -> atom -> ctyp -> comp
-    | CpStructProj : atom -> ident -> ctyp -> comp
-    | CpStructUpdate : atom -> ident -> atom -> ctyp -> comp
-    | CpDeepAccess : atom -> list access -> ctyp -> comp
-    | CpCall : atom -> list atom -> ctyp -> comp.
+    | CpAtom : atom -> btyp -> comp
+    | CpArrayGet : atom -> atom -> btyp -> comp
+    | CpArraySet : atom -> atom -> atom -> btyp -> comp
+    | CpStructProj : atom -> ident -> btyp -> comp
+    | CpStructUpdate : atom -> ident -> atom -> btyp -> comp
+    | CpDeepAccess : atom -> list access -> btyp -> comp
+    | CpCall : atom -> list atom -> btyp -> comp.
 
 End Typed.
 
 (** * Functions *)
 
 Record function (B: Type) : Type := mk_function {
-  fn_return : ctyp;
-  fn_params : list (ident * ctyp);
+  fn_return : btyp;
+  fn_params : list (ident * btyp);
   fn_body : B
 }.
 
 (** * Global definitions *)
 
+Inductive param_attr :=
+  | AttrReadonly
+  | AttrNone.
+
 Inductive globdef (C F: Type) : Type :=
-  | DefConst : ident -> C -> ctyp -> globdef C F
-  | DefFun : ident -> F -> globdef C F.
+  | DefConst : ident -> C -> btyp -> globdef C F
+  | DefFun : ident -> F -> globdef C F
+  | DeclConst : ident -> btyp -> globdef C F
+  | DeclFun : ident -> list (param_attr * btyp) -> btyp -> globdef C F.
 
 (** * Programs *)
 
 Record struct_def := mk_struct_def {
   sd_name : ident;
-  sd_fields : list (ident * ctyp)
+  sd_fields : list (ident * btyp)
 }.
+
+Inductive type_def : Type :=
+  | TdStruct : struct_def -> type_def
+  | TdAbstract : ident -> struct_or_union -> type_def. 
 
 Record program (G: Type) : Type := mk_program {
   prog_defs : list G;
-  prog_types : list struct_def;
+  prog_types : list type_def;
 }.
+
+Definition get_struct_defs (types: list type_def) : list struct_def :=
+  List.fold_right
+    (fun td acc =>
+      match td with
+      | TdStruct sd => cons sd acc
+      | _ => acc
+      end)
+    nil
+    types.
 
 Arguments DefConst {C} {F}.
 Arguments DefFun {C} {F}.
+Arguments DeclConst {C} {F}.
+Arguments DeclFun {C} {F}.
 
 Arguments mk_function {B}.
 Arguments fn_return {B}.

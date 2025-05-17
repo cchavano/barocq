@@ -34,6 +34,9 @@ Extract Constant Imp1gen.AliasingCheck.gen_aliasing_program => "Aliasing_impl.ge
 
 Separate Extraction
   BinPos.Pos.pred
+  BinPosDef.Pos.max
+  BinPosDef.Pos.add
+  BinPosDef.Pos.leb
   BinInt.Z.succ
   BinPosDef.Pos.compare
   Integers.Ptrofs.signed
@@ -69,4 +72,6 @@ Separate Extraction
   Compiler.compile_to_imp1
   Compiler.compile
   BarocqShallowgen.monadify_norm_program
-  Imp1.Aliasing_AST.program.
+  BarocqShallow.Monadic.get_struct_defs
+  Imp1.Aliasing_AST.program
+  Ident.

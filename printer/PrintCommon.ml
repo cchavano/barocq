@@ -1,14 +1,13 @@
 open Printf
 open Camlcoq
-open Ctypesdefs
 
 let indent : string = String.make 2 ' '
 
 let ident_to_string (x : Syntax.ident) : string =
-  camlstring_of_coqstring (string_of_ident x)
+  camlstring_of_coqstring (Ident.to_string x)
 
 let ident_of_string (s : string) : Syntax.ident =
-  ident_of_string (coqstring_of_camlstring s)
+  Ident.of_string (coqstring_of_camlstring s)
 
 let i32_to_string (i : Integers.Int.int) : string =
   sprintf "%ld" (camlint_of_coqint i)
@@ -48,7 +47,7 @@ let print_list (out : out_channel) (b : string) (e : string) (s : string)
     (f : 'a -> string) (l : 'a list) : unit =
   let rec aux (l : 'a list) =
     match l with
-    | [] -> fprintf out "%s%s" b e
+    | [] -> fprintf out "%s" e
     | x :: [] -> fprintf out "%s%s" (f x) e
     | x :: r ->
         fprintf out "%s%s" (f x) s;
