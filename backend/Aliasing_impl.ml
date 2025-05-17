@@ -116,14 +116,13 @@ let rec inv_paths_to_loc_rec (rev : rev_absenv) (rm : rev_absmem)
         adj
   | None -> paths'
 
-(** [inv_paths_to_loc st loc] computes all paths leading to the location [loc]
-    in [st] on stores makes them invalid. *)
+(** [inv_paths_to_loc st loc] computes the map of all paths leading to the
+    location [loc] in [st]. *)
 let inv_paths_to_loc (st : absstate) (loc : absloc) : path_map =
   inv_paths_to_loc_rec st.st_rev_env st.st_rev_mem loc [] IdentMap.empty
 
-(** [inv_paths_to_loc_suffixed st loc suffix] computes all paths leading to the
-    location [loc] in [st], suffixes them with [suffix] and makes them invalid.
-*)
+(** [inv_paths_to_loc_suffixed st loc suffix] computes the map of all paths
+    leading to the location [loc] in [st] and suffixes them with [suffix]. *)
 let inv_paths_to_loc_suffixed (st : absstate) (loc : absloc) (suffix : path) :
     path_map =
   inv_paths_to_loc_rec st.st_rev_env st.st_rev_mem loc suffix IdentMap.empty
@@ -597,8 +596,8 @@ let rec aliased_paths_rec (m : absmem) (rev : rev_absenv) (rm : rev_absmem)
         locs
         paths'
 
-(** [aliased_path st x p] returns the paths which are in alias with [x.p] in
-    [st] and makes them invalid. *)
+(** [aliased_path st x p] returns the map of paths aliased with [x.p] in [st].
+*)
 let aliased_paths (st : absstate) (x : ident) (p : path) : path_map =
   match IdentMap.find_opt x st.st_env with
   | Some locs ->
@@ -628,53 +627,54 @@ let aliased_paths_of_pmap (st : absstate) (pm : path_map) : path_map =
     pm
     IdentMap.empty
 
-(** [sub_aliases_of_loc_aux rev m root visited] returns the set of variables
-    which are in alias with sub-elements of the location [root] in the memory
-    [m] and reverse environment [rev]. [visited] are the already visited
-    locations. *)
-let rec sub_aliases_of_loc_aux (rev : rev_absenv) (m : absmem) (root : absloc)
-    (visited : IdentSet.t) : var_set * IdentSet.t =
-  if IdentSet.mem root visited then (set_empty, visited)
+(** [sub_aliases_of_loc_aux st root visited] returns the map of paths aliased
+    with sub-elements of the location [root] in the state [st]. [visited] are
+    the already visited locations. *)
+let rec sub_aliases_of_loc_aux (st : absstate) (root : absloc)
+    (visited : IdentSet.t) : path_map * IdentSet.t =
+  if IdentSet.mem root visited then (IdentMap.empty, visited)
   else
-    let vars = vars_aliased_to_loc rev root in
+    let vars = vars_aliased_to_loc st.st_rev_env root in
+    let iv =
+      IdentSet.fold
+        (fun v iv ->
+          let v_inv = aliased_paths st v [] in
+          inv_union iv v_inv)
+        vars
+        IdentMap.empty
+    in
     let adjacents =
       IdentPairMap.fold
         (fun (l, f) locs acc ->
           if l = root then List.append (IdentSet.elements locs) acc else acc)
-        m
+        st.st_mem
         []
     in
-    let vars', visited' = sub_aliases_of_locs_aux rev m adjacents visited in
+    let iv', visited' = sub_aliases_of_locs_aux st adjacents visited in
     let visited' = IdentSet.add root visited' in
-    (IdentSet.union vars vars', visited')
+    (inv_union iv iv', visited')
 
-(** [sub_aliases_of_locs_aux rev m roots visited] returns the set of variables
-    which are in alias with sub-elements of the locations contained in [roots]
-    given the memory [m], reverse environment [rev] and already visited
-    locations [visited]. *)
-and sub_aliases_of_locs_aux (rev : rev_absenv) (m : absmem)
-    (roots : absloc list) (visited : IdentSet.t) : var_set * IdentSet.t =
+(** [sub_aliases_of_locs_aux rev m roots visited] returns the map of paths
+    aliased with the sub-elements of the locations contained in [roots] given
+    the state [st] and already visited locations [visited]. *)
+and sub_aliases_of_locs_aux (st : absstate) (roots : absloc list)
+    (visited : IdentSet.t) : path_map * IdentSet.t =
   List.fold_left
-    (fun (vars, visited) root ->
-      let vars', visited' = sub_aliases_of_loc_aux rev m root visited in
-      (IdentSet.union vars vars', visited'))
-    (set_empty, visited)
+    (fun (iv, visited) root ->
+      let iv', visited' = sub_aliases_of_loc_aux st root visited in
+      (inv_union iv iv', visited'))
+    (IdentMap.empty, visited)
     roots
 
-(** [sub_aliases_of_loc st loc] returns the set of variables which are in alias
-    with sub-elements of the location [loc] in [st]. *)
-let sub_aliases_of_loc (st : absstate) (loc : absloc) : var_set =
-  fst (sub_aliases_of_loc_aux st.st_rev_env st.st_mem loc set_empty)
+(** [sub_aliases_of_loc st loc] returns the map of paths aliased with the
+    sub-elements of the location [loc] in [st]. *)
+let sub_aliases_of_loc (st : absstate) (loc : absloc) : path_map =
+  fst (sub_aliases_of_loc_aux st loc set_empty)
 
-(** [sub_aliases_of_locs st locs] returns the set of variables which are in
-    alias with sub-elements of the locations contained in [locs] given [st]. *)
-let sub_aliases_of_locs (st : absstate) (locs : pointsto_set) : var_set =
-  fst
-    (sub_aliases_of_locs_aux
-       st.st_rev_env
-       st.st_mem
-       (IdentSet.elements locs)
-       set_empty)
+(** [sub_aliases_of_locs st locs] returns the map of paths aliased with the
+    sub-elements of the locations contained in [locs] given [st]. *)
+let sub_aliases_of_locs (st : absstate) (locs : pointsto_set) : path_map =
+  fst (sub_aliases_of_locs_aux st (IdentSet.elements locs) set_empty)
 
 (** [follow_path_from_loc m p root] returns the set of locations reachable from
     [root] via [p] in the memory [m]. *)
@@ -1089,15 +1089,10 @@ let exec_set_call (show_debug : bool) (se : senv) (x : ident) (a : atom)
                 iv_args
                 set_empty
             in
-            (* We invalidate all variables aliased with sub-elements of the
+            (* We invalidate all paths aliased with sub-elements of the
               invalid paths returned by the return state. *)
-            let inv_vars = sub_aliases_of_locs st locs in
-            let iv_args =
-              IdentSet.fold
-                (fun v (acc : path_map) -> IdentMap.add v Leaf acc)
-                inv_vars
-                iv_args
-            in
+            let iv_sub = sub_aliases_of_locs st locs in
+            let iv_args = inv_union iv_sub iv_args in
             (* If variable shadowing occurs, we must remove the binding of x in the map of invalid paths. *)
             IdentMap.remove x iv_args
           in
