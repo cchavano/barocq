@@ -5,8 +5,10 @@
 		{ "include": "#comments" },
 		{ "include": "#definitions" },
 		{ "include": "#operators" },
+		{ "include": "#types_cast" },
 		{ "include": "#keywords"},
 		{ "include": "#literals" },
+		{ "include": "#types_builtin" },
 		{ "include": "#identifiers"}
 	],
 	"repository": {
@@ -20,7 +22,7 @@
                 {
                     "comment": "other keyword",
 				    "name": "keyword.other.barocq",
-				    "match": "\\b(module|type|defn|decl|let|in|as|compute|of)\\b"
+				    "match": "\\b(module|type|defn|decl|let|in|compute|as|of)\\b"
                 }
             ]
 		},
@@ -78,6 +80,20 @@
 					"comment": "type declaration",
 					"match": "(?<=:\\s*(array\\s+)*)((\\w+)(::))?(\\w+)",
 					"captures": {
+						"3": { "name": "entity.name.namespace.barocq" },
+						"4": { "name": "keyword.operator.barocq" },
+						"5": { "name": "storage.type.barocq" }
+					}
+				}
+			]
+		},
+		"types_cast": {
+			"patterns": [
+				{
+					"comment": "type cast",
+					"match": "\\b(as)\\s+((\\w+)(::))?(\\w+)",
+					"captures": {
+						"1": { "name": "keyword.other.barocq" },
 						"3": { "name": "entity.name.namespace.barocq" },
 						"4": { "name": "keyword.operator.barocq" },
 						"5": { "name": "storage.type.barocq" }
