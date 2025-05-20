@@ -276,7 +276,7 @@ Section TRANSL.
             let d := (x, Gvar {|
               gvar_info := t;
               gvar_init := init;
-              gvar_readonly := false;
+              gvar_readonly := btyp_is_prim ty;
               gvar_volatile := false
             |}) in
             let* r := transl_globdefs_rec defs' (sadd globs x) in

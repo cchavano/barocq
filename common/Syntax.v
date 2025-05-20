@@ -126,6 +126,7 @@ Record function (B: Type) : Type := mk_function {
 
 Inductive param_attr :=
   | AttrReadonly
+  | AttrWrite
   | AttrNone.
 
 Inductive globdef (C F: Type) : Type :=

@@ -43,6 +43,9 @@ type error_cause =
   | Duplicated_param of string * string
   | Duplicated_module of string
   | Missing_struct_fields of string list
+  | Missing_param_write of string * btyp
+  | Too_many_param_write of string
+  | Mismatch_type_param_write of string * btyp * btyp
 
 exception Error of error_cause * unit Location.t option
 
@@ -59,6 +62,11 @@ let rec btyp_to_string (ty : btyp) : string =
       if mname = !curr_mname then cid else sprintf "%s::%s" mname cid
   | BFun (tparams, tret) ->
       PrintTypes.funtyp_to_string btyp_to_string tparams tret
+
+let btyp_is_prim (ty : btyp) : bool =
+  match ty with
+  | BBool | BInt32 _ | BInt64 _ -> true
+  | _ -> false
 
 let msg_from_failure (cause : error_cause) : string =
   match cause with
@@ -121,6 +129,23 @@ let msg_from_failure (cause : error_cause) : string =
       sprintf
         "the following struct fields are missing: %s"
         (PrintCommon.list_to_string "" "" ", " (fun x -> x) mfields)
+  | Too_many_param_write id ->
+      sprintf
+        "abstract function %s must only contain one @write-annotated parameter"
+        id
+  | Missing_param_write (fid, ty) ->
+      sprintf
+        "abstract function %s returns a value of type %s, but no parameter of \
+         this type is annotated with @write"
+        fid
+        (btyp_to_string ty)
+  | Mismatch_type_param_write (fid, tw, tret) ->
+      sprintf
+        "abstract function %s writes in a parameter of type %s, but returns a \
+         value of type %s"
+        fid
+        (btyp_to_string tw)
+        (btyp_to_string tret)
 
 let error ?(loc : 'a Location.t option = None) (c : error_cause) =
   let loc =
@@ -430,6 +455,7 @@ let rec typecheck_raw_expr (gte : gtenv) (gx : gcontext) (lx : lcontext)
       (Barocq.EVar x', typof_var gx lx x)
   | ECast (e1, sty) ->
       let ty = styp_to_btyp gte sty in
+      let ty = styp_to_btyp gte sty in
       let e1', t1 = typecheck_expr gte gx lx e1 in
       (Barocq.ECast (e1', transl_btyp ty), typecheck_cast t1 ty)
   | EUnaryOp (op, e1) ->
@@ -703,10 +729,39 @@ let typecheck_function (gte : gtenv) (gx : gcontext) (x : ident) (f : func) :
 let transl_globdef_name (mname : string) (x : ident) : Syntax.ident =
   PrintCommon.ident_of_string (sprintf "%s_%s" mname x.content)
 
+let typecheck_abs_function (x : ident) (tparams : (param_attr * btyp) list)
+    (tret : btyp) : btyp =
+  let rec check_write_param tparams tret write =
+    match tparams with
+    | [] -> begin
+        match write with
+        | Some tw ->
+            if tw = tret then ()
+            else
+              error
+                (Mismatch_type_param_write (x.content, tw, tret))
+                ~loc:(Some x)
+        | None ->
+            if btyp_is_prim tret then ()
+            else error (Missing_param_write (x.content, tret)) ~loc:(Some x)
+      end
+    | (attr, t) :: tparams' -> begin
+        match attr with
+        | AttrWrite ->
+            if write <> None then
+              error (Too_many_param_write x.content) ~loc:(Some x)
+            else check_write_param tparams' tret (Some t)
+        | _ -> check_write_param tparams' tret write
+      end
+  in
+  let _ = check_write_param tparams tret None in
+  BFun (List.map snd tparams, tret)
+
 let typecheck_globdef (gte : gtenv) (gx : gcontext) (def : globdef) :
     Barocq.globdef option * gtenv * gcontext =
   match def with
   | DefAlias (alias, sty) ->
+      let ty = styp_to_btyp gte sty in
       let ty = styp_to_btyp gte sty in
       (None, gtenv_update_local_aliases gte alias ty, gx)
   | DefType (sid, fields) -> begin
@@ -736,9 +791,11 @@ let typecheck_globdef (gte : gtenv) (gx : gcontext) (def : globdef) :
     end
   | DefConst (id, l, sty) ->
       let ty = styp_to_btyp gte sty in
+      let ty = styp_to_btyp gte sty in
       let l' = typecheck_literal gte ty l in
       let gx' = gcontext_update_local gx id ty in
       let bid = transl_globdef_name !curr_mname id in
+      let bty = transl_btyp ty in
       let bty = transl_btyp ty in
       (Some (Barocq.DefConst (bid, l', bty)), gte, gx')
   | DefFun (id, f) ->
@@ -757,18 +814,25 @@ let typecheck_globdef (gte : gtenv) (gx : gcontext) (def : globdef) :
       let bty = transl_btyp ty in
       (Some (Barocq.DeclConst (bid, bty)), gte, gx')
   | DeclFun (id, tparams, tret) ->
-      let sty = SFun (tparams, tret) in
-      let ty = styp_to_btyp gte sty in
+      let tparams' =
+        List.map
+          (fun (attr, sty) ->
+            let bty = styp_to_btyp gte sty in
+            (attr, bty))
+          tparams
+      in
+      let tret' = styp_to_btyp gte tret in
+      let ty = typecheck_abs_function id tparams' tret' in
       let gx' = gcontext_update_local gx id ty in
       let bid = transl_globdef_name !curr_mname id in
       let btparams =
         List.map
-          (fun (attr, sty) ->
-            let bty = transl_btyp (styp_to_btyp gte sty) in
-            (attr, bty))
-          tparams
+          (fun (attr, bty) ->
+            let bty' = transl_btyp bty in
+            (attr, bty'))
+          tparams'
       in
-      let btret = transl_btyp (styp_to_btyp gte tret) in
+      let btret = transl_btyp tret' in
       (Some (Barocq.DeclFun (bid, btparams, btret)), gte, gx')
 
 let typecheck_modul (gte : gtenv) (gx : gcontext) (md : modul) :

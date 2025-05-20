@@ -232,6 +232,7 @@ let param_attr_to_deep (attr : param_attr) : string =
   match attr with
   | AttrNone -> "AttrNone"
   | AttrReadonly -> "AttrReadonly"
+  | AttrWrite -> "AttrWrite"
 
 let globdef_to_deep (def : globdef) : string =
   match def with

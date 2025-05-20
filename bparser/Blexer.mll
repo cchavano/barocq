@@ -125,6 +125,7 @@ rule read_token = parse
   | hex_int_lit as il { parse_int_lit il }
   | dec_int_lit as il { parse_int_lit il }
   | "@read"       { AT_READONLY }
+  | "@write"      { AT_WRITE }
   | ident as id
     {
       try (Hashtbl.find keywords id) with 

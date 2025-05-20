@@ -38,7 +38,7 @@
 %token TYP_BOOL TYP_INT32 TYP_UINT32 TYP_INT64 TYP_UINT64 TYP_ARRAY
 %token COMPUTE
 %token DEFN DECL TYPE OF
-%token AT_READONLY
+%token AT_READONLY AT_WRITE
 %token LET IN
 %token IF THEN ELSE
 %token AS
@@ -205,6 +205,7 @@ styp_func:
 
 styp_func_param:
   | AT_READONLY ty = styp { (AttrReadonly, ty) }
+  | AT_WRITE ty = styp { (AttrWrite, ty) }
   | ty = styp { (AttrNone, ty) }
 
 mod_ident:

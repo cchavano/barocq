@@ -782,7 +782,9 @@ let locs_bijection (se : senv) (v1 : ident) (v2 : ident) (ty : btyp)
       st1.st_mem
       st2.st_mem
       (IdentMap.add lv1 lv2 IdentMap.empty)
-  else failwith "locs_bijection_var error"
+  else (
+    Printf.eprintf "Cardinal: %d\n" (IdentSet.cardinal l2);
+    failwith "locs_bijection_var error")
 
 (** [funcall_bijection se args params stcallee stcaller] computes the bijection
     between the state of the callee and the state of the caller. It returns a
@@ -958,41 +960,6 @@ let build_call_state (st : absstate) (args : atom list) : absstate =
   let stcall = proj_state st vars_in_params in
   { stcall with st_res = set_empty }
 
-(** [shift_locs st shift] shifts all location identifiers by [shift]. *)
-let shift_locs (st : absstate) (shift : ident) : absstate =
-  let ev =
-    IdentMap.fold
-      (fun v locs acc ->
-        let locs' = IdentSet.map (Pos.add shift) locs in
-        IdentMap.add v locs' acc)
-      st.st_env
-      IdentMap.empty
-  in
-  let rev = env_reverse ev in
-  let m =
-    IdentPairMap.fold
-      (fun (l, f) locs acc ->
-        let locs' = IdentSet.map (Pos.add shift) locs in
-        let l' = Pos.add shift l in
-        IdentPairMap.add (l', f) locs' acc)
-      st.st_mem
-      IdentPairMap.empty
-  in
-  let rm = mem_reverse m in
-  let res = IdentSet.map (Pos.add shift) st.st_res in
-  let inv = st.st_inv in
-  let inv_res = st.st_inv_res in
-  let arr_locked =
-    IdentMap.fold
-      (fun l a acc ->
-        let l' = Pos.add shift l in
-        IdentMap.add l' a acc)
-      st.st_arr_locked
-      IdentMap.empty
-  in
-  let next_loc = Pos.add st.st_next_loc shift in
-  make_state ev m rev rm res inv inv_res arr_locked next_loc
-
 (** [exec_set_call x a args ty fe st nctr] computes the transfer function for
     the statement [set x = a (args)] on [st]. [fe] is the function descriptor
     environment. [ty] is the type of the return value. *)
@@ -1007,14 +974,6 @@ let exec_set_call (show_debug : bool) (se : senv) (x : ident) (a : atom)
         | None -> raise unsupported
       in
       let* fd_returnstate = fd_returnstate in
-
-      (* If the function corresponding to the descriptor fdescr
-         is abstract or has called abstract functions, new abstract locations
-         have been created. To avoid name clashes with alread-existing locations
-         in the caller state, we shift all locations of fd_callstate and fd_returnstate
-         by the next fresh location of the caller state. *)
-      let fd_callstate = shift_locs fd_callstate st.st_next_loc in
-      let fd_returnstate = shift_locs fd_returnstate st.st_next_loc in
 
       let stcall = build_call_state st args in
       (* We build the bijections for the variables and the locations between the current call state,
@@ -1035,9 +994,8 @@ let exec_set_call (show_debug : bool) (se : senv) (x : ident) (a : atom)
         && wf_args stcall args && args_validity && no_locked_arrays
       then
         (* The return state is the one given by the function descriptor on which we apply the bijection. *)
-        let next_loc = Pos.max st.st_next_loc fd_returnstate.st_next_loc in
         let stret =
-          apply_state_bijection vars_bij locs_bij next_loc fd_returnstate
+          apply_state_bijection vars_bij locs_bij st.st_next_loc fd_returnstate
         in
         (* The state before the call "st" and the return state "stret" must be merged.
              The merge operation is the following:
@@ -1057,8 +1015,7 @@ let exec_set_call (show_debug : bool) (se : senv) (x : ident) (a : atom)
                + The invalid paths of the return state;
                + The paths that were aliased with some arguments that themselves contained invalid paths when the function returns.
              - The locked arrays are the one of the initial state.
-             - The next fresh location is given by the maximum between the one of the caller
-               and the one of the return state. *)
+             - The next fresh location is the one of the initial state. *)
         let st' = if is_prim ty then st else env_add st x stret.st_res in
         let m_ret =
           IdentPairMap.merge
@@ -1107,6 +1064,7 @@ let exec_set_call (show_debug : bool) (se : senv) (x : ident) (a : atom)
         in
         let inv_res_ret = st.st_inv_res in
         let arr_locked_ret = st.st_arr_locked in
+        let next_loc = st.st_next_loc in
         AbsState
           {
             st' with
@@ -1296,30 +1254,33 @@ let rec absexec (show_debug : bool) (se : senv) (fe : fenv) (d : absdom)
       print_dom_debug show_debug d' "OUT" (Some a);
       (s', d')
 
-(** [add_memory_object se st ty] adds a new memory object corresponding to the
-    type [ty] in [st]. [se] is the struct type environment. It also returns the
-    identifier of the object's root. *)
-let add_memory_object (se : senv) (st : absstate) (ty : btyp) : ident * absstate
-    =
+let fresh_loc (l : absloc) : absloc = Pos.add BinNums.Coq_xH l
+
+(** [add_memory_object_aux se st ty] adds a new memory object reflecting type
+    [ty] in [st] and attached it to root [root]. [se] is the struct type
+    environment. *)
+let add_memory_object_aux (se : senv) (st : absstate) (root : absloc)
+    (ty : btyp) : absstate =
   let next_loc = ref st.st_next_loc in
   let fresh_loc () =
     let r = !next_loc in
-    next_loc := Pos.add BinNums.Coq_xH r;
+    next_loc := fresh_loc !next_loc;
     r
   in
-  let rec gen_val_mem_layout (root : absloc) (ty : btyp) : absmem =
+  let rec gen_val_mem_layout (m : absmem) (root : absloc) (ty : btyp) : absmem =
     match ty with
     | BBool | BInt32 _ | BInt64 _ | BAbs _ -> mem_empty
-    | BArray ta -> gen_array_mem_layout root ta
-    | BStruct ts -> gen_struct_mem_layout root ts
+    | BArray ta -> gen_array_mem_layout m root ta
+    | BStruct ts -> gen_struct_mem_layout m root ts
     | _ -> raise unsupported
-  and gen_array_mem_layout (root : absloc) (ta : btyp) : absmem =
-    if is_prim ta then mem_empty
+  and gen_array_mem_layout (m : absmem) (root : absloc) (ta : btyp) : absmem =
+    if is_prim ta then m
     else
       let lid = fresh_loc () in
-      let m = gen_val_mem_layout lid ta in
+      let m = gen_val_mem_layout m lid ta in
       IdentPairMap.add (root, _INDEX) (IdentSet.singleton lid) m
-  and gen_struct_mem_layout (root : absloc) (sid : ident) =
+  and gen_struct_mem_layout (m : absmem) (root : absloc) (sid : ident) : absmem
+      =
     match senv_get se sid with
     | Errors.OK fields ->
         List.fold_left
@@ -1327,25 +1288,21 @@ let add_memory_object (se : senv) (st : absstate) (ty : btyp) : ident * absstate
             if is_prim ftyp then acc
             else
               let lid = fresh_loc () in
-              let mem = gen_val_mem_layout lid ftyp in
-              let mem' =
-                IdentPairMap.add (root, fname) (IdentSet.singleton lid) mem
-              in
-              mem_union mem' acc)
-          mem_empty
+              let m = gen_val_mem_layout acc lid ftyp in
+              IdentPairMap.add (root, fname) (IdentSet.singleton lid) m)
+          m
           fields
-    | Errors.Error _ -> mem_empty
+    | Errors.Error _ -> assert false
   in
-  let root = fresh_loc () in
-  let m = mem_union st.st_mem (gen_val_mem_layout root ty) in
+  let m = gen_val_mem_layout st.st_mem root ty in
   let rm = mem_reverse m in
-  ( root,
-    {
-      st with
-      st_mem = mem_union st.st_mem m;
-      st_rev_mem = rm;
-      st_next_loc = !next_loc;
-    } )
+  { st with st_mem = m; st_rev_mem = rm; st_next_loc = !next_loc }
+
+let add_memory_object (se : senv) (st : absstate) (ty : btyp) : ident * absstate
+    =
+  let root = st.st_next_loc in
+  let st = { st with st_next_loc = fresh_loc st.st_next_loc } in
+  (root, add_memory_object_aux se st root ty)
 
 (** [gen_valid_call_state se params] generates a valid call state w.r.t. the
     function parameters [params]. *)
@@ -1447,21 +1404,23 @@ let senv_from_struct_defs (l : struct_def list) : senv =
 let gen_absfun_descr (se : senv) (fe : fenv)
     (tparams : (param_attr * btyp) list) (tret : btyp) : fun_descr =
   let gen_param_id pos = ident_of_string (sprintf "p%d" pos) in
-  let params =
+  let params1 =
     List.fold_left
-      (fun (ctr, params) (_, pty) ->
+      (fun (ctr, params) (attr, pty) ->
         let pid = gen_param_id ctr in
-        (ctr + 1, (pid, pty) :: params))
+        (ctr + 1, (attr, (pid, pty)) :: params))
       (0, [])
       tparams
     |> snd |> List.rev
   in
+  let params = List.map snd params1 in
   let callstate = gen_valid_call_state se params in
   assert (wf_params callstate params);
   assert (params_pointsto_unique callstate (List.map fst params));
   let returnstate =
-    let root, st = add_memory_object se callstate tret in
-    let st = { st with st_res = IdentSet.singleton root } in
+    let wparam, _ = List.assoc AttrWrite params1 in
+    let root = IdentMap.find wparam callstate.st_env in
+    let st = { callstate with st_res = root } in
     let st =
       List.fold_left
         (fun (ctr, st) (attr, pty) ->
