@@ -221,7 +221,7 @@ Module Typing.
         let '(ty1, ty2, ty3) := (typof_expr e1', typof_expr e2', typof_expr e3') in
         match ty1 with
         | BBool =>
-            if ctyp_eq_dec ty2 ty3 then
+            if btyp_eq_dec ty2 ty3 then
               ret (EIfThenElse e1' e2' e3' ty2)
             else fail
         | _ => fail
@@ -241,7 +241,7 @@ Module Typing.
         (ret tempty)
     in
     let* body := typecheck_expr se gx lx (fn_body f) in
-    if ctyp_eq_dec (typof_expr body) (fn_return f) then
+    if btyp_eq_dec (typof_expr body) (fn_return f) then
       ret {|
         fn_return := fn_return f;
         fn_params := fn_params f;
@@ -260,7 +260,7 @@ Module Typing.
           ret ((DefType x fields) :: rd)
       | Barocq.DefConst x l ty =>
           let* l' := typecheck_literal se l in
-          if ctyp_eq_dec ty (Typing.typof_literal l') then
+          if btyp_eq_dec ty (Typing.typof_literal l') then
             let* gx' := gcontext_update gx x ty in
             let* rd := typecheck_globdefs se gx' defs' in
             ret (DefConst x l ty :: rd)
@@ -268,7 +268,7 @@ Module Typing.
             failwith "Barocq.Typing.typecheck_globdef: type mismatch in constant definition"
       | Barocq.DefFun x f =>
           let* f' := typecheck_function se gx f in
-          let tf := mk_fun_ctyp (fn_params f') (fn_return f') in
+          let tf := mk_fun_btyp (fn_params f') (fn_return f') in
           let* gx' := gcontext_update gx x tf in
           let* rd := typecheck_globdefs se gx' defs' in
           ret (DefFun x f' :: rd)
@@ -280,7 +280,7 @@ Module Typing.
           let* rd := typecheck_globdefs se gx' defs' in
           ret (DeclConst x ty :: rd)
       | Barocq.DeclFun x tparams tret =>
-          let tf := mk_fun_ctyp tparams tret in
+          let tf := mk_fun_btyp tparams tret in
           let* gx' := gcontext_update gx x tf in
           let* rd := typecheck_globdefs se gx' defs' in
           ret (DeclFun x tparams tret :: rd)
@@ -777,7 +777,7 @@ Section DENOT.
     | EInt64 i s => ret (Val (TInt64 s) i)
     | EVar x => eval_var ge le x
     | ECast e1 ty =>
-        let* ty' := ctyp_to_typ te ty in
+        let* ty' := btyp_to_typ te ty in
         let* v1 := eval_expr te ge le e1 in
         eval_cast v1 ty'
     | EUnaryOp op e =>
@@ -870,13 +870,13 @@ Section DENOT.
 
   Definition build_fun_value (te: tenv) (ge: genv) (params: list (ident * btyp)) (tret: btyp) (e: expr) : res value :=
     if nodup_k Ident.eq_dec params then
-      let* tret' := ctyp_to_typ te tret in
-      let* params' := map_k_err (ctyp_to_typ te) params in
+      let* tret' := btyp_to_typ te tret in
+      let* params' := map_k_err (btyp_to_typ te) params in
       ret (Val (TFun (map (fun x => snd x) params') tret') (build_funval te ge params' tret' e))
     else fail.
 
-  Definition fields_ctyp_to_typ (te: tenv) (fields: list (ident * btyp)) : res (list (ident * typ)) :=
-    map_k_err (ctyp_to_typ te) fields.
+  Definition fields_btyp_to_typ (te: tenv) (fields: list (ident * btyp)) : res (list (ident * typ)) :=
+    map_k_err (btyp_to_typ te) fields.
 
   Fixpoint interpret_rec (te: tenv) (ge: genv) (cmds: list Barocq.command) : res (list value) :=
     match cmds with
@@ -884,13 +884,13 @@ Section DENOT.
     | c :: xprog' =>
         match c with
         | CmdDef (DefType a fields) =>
-            let* fields' := fields_ctyp_to_typ te fields in
+            let* fields' := fields_btyp_to_typ te fields in
             let* te' := tenv_update te a fields' in
             interpret_rec te' ge xprog'
         | CmdDef (DefConst x l ty) =>
             let* vv := eval_literal te l in
             let '(Val tv v) := vv in
-            let* ty' := ctyp_to_typ te ty in
+            let* ty' := btyp_to_typ te ty in
             if typ_eq_dec tv ty' then
               let* ge' := genv_update ge x vv in
               interpret_rec te ge' xprog'
@@ -918,7 +918,7 @@ Section DENOT.
     | d :: prog' =>
         match d with
         | DefType a fields =>
-            let* fields' := fields_ctyp_to_typ te fields in
+            let* fields' := fields_btyp_to_typ te fields in
             let* te' := tenv_update te a fields' in
             eval_def_rec te' ge prog' x
         | DefConst y l ty =>
@@ -926,7 +926,7 @@ Section DENOT.
             if Ident.eq_dec x y then ret vv
             else
               let '(Val tv v) := vv in
-              let* ty' := ctyp_to_typ te ty in
+              let* ty' := btyp_to_typ te ty in
               if typ_eq_dec tv ty' then
                 let* ge' := genv_update ge y vv in
                 eval_def_rec te ge' prog' x
@@ -966,23 +966,23 @@ Section DENOT.
     | d :: prog' =>
         match d with
         | DefType a fields =>
-            let* fields' := fields_ctyp_to_typ te fields in
+            let* fields' := fields_btyp_to_typ te fields in
             let* te' := tenv_update te a fields' in
             typof_def_rec te' prog' x
         | DefConst y _ ty
         | DeclConst y ty =>
-            let* ty' := ctyp_to_typ te ty in
+            let* ty' := btyp_to_typ te ty in
             if Ident.eq_dec y x then ret ty'
             else typof_def_rec te prog' x
         | DefFun y f =>
-            let ty := mk_fun_ctyp (fn_params f) (fn_return f) in
-            let* ty' := ctyp_to_typ te ty in
+            let ty := mk_fun_btyp (fn_params f) (fn_return f) in
+            let* ty' := btyp_to_typ te ty in
             if Ident.eq_dec y x then ret ty'
             else typof_def_rec te prog' x
         | DeclType _ _ => typof_def_rec te prog' x
         | DeclFun y tparams tret =>
-            let ty := mk_fun_ctyp tparams tret in
-            let* ty' := ctyp_to_typ te ty in
+            let ty := mk_fun_btyp tparams tret in
+            let* ty' := btyp_to_typ te ty in
             if Ident.eq_dec y x then ret ty'
             else typof_def_rec te prog' x
         end
@@ -997,21 +997,21 @@ Section DENOT.
     | Error _ => TBool
     end.
 
-  Fixpoint eval_struct_ctyp_rec (te: tenv) (prog: Barocq.program) (t: ident) : res typ :=
+  Fixpoint eval_struct_btyp_rec (te: tenv) (prog: Barocq.program) (t: ident) : res typ :=
     match prog with
     | nil => fail
     | DefType a fields :: prog' =>
-        let* fields' := fields_ctyp_to_typ te fields in
+        let* fields' := fields_btyp_to_typ te fields in
         if Ident.eq_dec a t then ret (TStruct a fields')
         else
           let* te' := tenv_update te a fields' in
-          eval_struct_ctyp_rec te' prog' t
+          eval_struct_btyp_rec te' prog' t
     | _ :: prog' =>
-        eval_struct_ctyp_rec te prog' t
+        eval_struct_btyp_rec te prog' t
     end.
 
-  Definition eval_struct_ctyp (prog: program) (t: ident) : Type :=
-    match eval_struct_ctyp_rec tempty prog t with
+  Definition eval_struct_btyp (prog: program) (t: ident) : Type :=
+    match eval_struct_btyp_rec tempty prog t with
     | OK t' => eval_typ t'
     | Error _ => unit
     end.

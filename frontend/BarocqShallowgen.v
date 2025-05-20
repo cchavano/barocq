@@ -444,15 +444,15 @@ Module Monadification.
     | _ => MonError.fail
     end.
 
-  Fixpoint monadify_ctyp (ty: btyp) : mtyp :=
+  Fixpoint monadify_btyp (ty: btyp) : mtyp :=
     match ty with
     | BBool => MBool
     | BInt32 s => MInt32 s
     | BInt64 s => MInt64 s
-    | BArray ta => MArray (monadify_ctyp ta)
+    | BArray ta => MArray (monadify_btyp ta)
     | BStruct s => MStruct s
     | BFun tparams tret =>
-        MFun (map monadify_ctyp tparams) (MRes (monadify_ctyp tret))
+        MFun (map monadify_btyp tparams) (MRes (monadify_btyp tret))
     | BAbs t => MAbs t
     end.
 
@@ -467,7 +467,7 @@ Module Monadification.
         eret (AVar x t)
     | BNF.ACast a1 ty =>
         let* a1' := typecheck_atom se gx lx a1 in
-        let t := monadify_ctyp ty in
+        let t := monadify_btyp ty in
         eret (ACast a1' t)
     | BNF.AUnaryOp op a1 =>
         let* a1' := typecheck_atom se gx lx a1 in
@@ -631,7 +631,7 @@ Module Monadification.
     monadify_expr_rec se gx lx e false.
 
   Definition monadify_function (se: senv) (gx: gcontext) (f: BNF.function) : res function :=
-    let params := map_k monadify_ctyp (Syntax.fn_params f) in
+    let params := map_k monadify_btyp (Syntax.fn_params f) in
     let* lx :=
       fold_left_err
         (fun acc '(x, tx) => lcontext_update acc x tx)
@@ -660,7 +660,7 @@ Module Monadification.
     | d :: defs' =>
         match d with
         | Syntax.DefConst x l ty =>
-            let ty' := monadify_ctyp ty in
+            let ty' := monadify_btyp ty in
             let* gx' := gcontext_update gx x ty' in
             let* r := monadify_globdefs_rec se gx' defs' in
             eret (DefConst x l ty' :: r) 
@@ -671,12 +671,12 @@ Module Monadification.
             let* r := monadify_globdefs_rec se gx' defs' in
             eret (DefFun x f' :: r)
         | Syntax.DeclConst x ty =>
-            let ty' := monadify_ctyp ty in
+            let ty' := monadify_btyp ty in
             let* gx' := gcontext_update gx x ty' in
             let* r := monadify_globdefs_rec se gx' defs' in
             eret (DeclConst x ty' :: r)
         | Syntax.DeclFun f tparams tret =>
-            let ty' := monadify_ctyp (mk_fun_ctyp tparams tret) in
+            let ty' := monadify_btyp (mk_fun_btyp tparams tret) in
             let* gx' := gcontext_update gx f ty' in
             let* r := monadify_globdefs_rec se gx' defs' in
             match ty' with
@@ -697,7 +697,7 @@ Module Monadification.
         (fun td =>
           match td with
           | Syntax.TdStruct st =>
-              let fields := MapList.map_k monadify_ctyp (Syntax.sd_fields st) in
+              let fields := MapList.map_k monadify_btyp (Syntax.sd_fields st) in
               TdStruct {| sd_name := Syntax.sd_name st; sd_fields := fields |}
           | Syntax.TdAbstract t tk => TdAbstract t tk
           end)

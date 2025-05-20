@@ -62,19 +62,19 @@ let signedness_to_deep (s : signedness) : string =
   | Signed -> "Signed"
   | Unsigned -> "Unsigned"
 
-let rec ctyp_to_deep (ty : btyp) : string =
+let rec btyp_to_deep (ty : btyp) : string =
   match ty with
   | BBool -> "BBool"
   | BInt32 s -> sprintf "BInt32 %s" (signedness_to_deep s)
   | BInt64 s -> sprintf "BInt64 %s" (signedness_to_deep s)
-  | BArray ta -> sprintf "BArray (%s)" (ctyp_to_deep ta)
+  | BArray ta -> sprintf "BArray (%s)" (btyp_to_deep ta)
   | BStruct ts -> sprintf "BStruct (%s)" (ident_to_deep ts)
   | BAbs t -> sprintf "BAbs %s" (ident_to_deep t)
   | BFun (tparams, tret) ->
       sprintf
         "BFun %s (%s)"
-        (list_to_string_bracket ctyp_to_deep tparams)
-        (ctyp_to_deep tret)
+        (list_to_string_bracket btyp_to_deep tparams)
+        (btyp_to_deep tret)
 
 let rec expr_to_deep (prefix : string) (e : expr) : string =
   let prefix' = prefix ^ indent in
@@ -87,7 +87,7 @@ let rec expr_to_deep (prefix : string) (e : expr) : string =
       sprintf "EInt64 (%s) %s" (int64_to_deep i s) (signedness_to_deep s)
   | EVar x -> sprintf "EVar %s" (ident_to_deep x)
   | ECast (e1, ty) ->
-      sprintf "ECast %s %s" (expr_to_deep prefix e1) (ctyp_to_deep ty)
+      sprintf "ECast %s %s" (expr_to_deep prefix e1) (btyp_to_deep ty)
   | EUnaryOp (op, e1) ->
       sprintf "EUnaryOp %s (%s)" (unary_op_to_deep op) (expr_to_deep "" e1)
   | EBinaryOp (op, e1, e2) ->
@@ -145,7 +145,7 @@ and access_to_deep (ac : access) : string =
 
 let params_to_deep (params : (ident * btyp) list) : string =
   list_to_string_bracket
-    (fun (id, ty) -> sprintf "(%s, %s)" (ident_to_deep id) (ctyp_to_deep ty))
+    (fun (id, ty) -> sprintf "(%s, %s)" (ident_to_deep id) (btyp_to_deep ty))
     params
 
 let function_to_deep (f : coq_function) : string =
@@ -153,7 +153,7 @@ let function_to_deep (f : coq_function) : string =
   sprintf
     "{|\n%sfn_return := %s;\n%sfn_params := %s;\n%sfn_body :=\n%s%s\n|}"
     indent
-    (ctyp_to_deep f.fn_return)
+    (btyp_to_deep f.fn_return)
     indent
     (params_to_deep f.fn_params)
     indent
@@ -168,7 +168,7 @@ let fields_to_deep (fields : (ident * btyp) list) : string =
        ""
        ";\n"
        (fun (id, ty) ->
-         sprintf "%s(%s, %s)" indent (ident_to_deep id) (ctyp_to_deep ty))
+         sprintf "%s(%s, %s)" indent (ident_to_deep id) (btyp_to_deep ty))
        fields)
 
 let rec literal_to_deep (l : literal) : string =
@@ -242,7 +242,7 @@ let globdef_to_deep (def : globdef) : string =
         "DefConst %s const_%s (%s)"
         (ident_to_deep id)
         (ident_to_string id)
-        (ctyp_to_deep ty)
+        (btyp_to_deep ty)
   | DefFun (id, f) ->
       sprintf "DefFun %s fun_%s" (ident_to_deep id) (ident_to_string id)
   | DeclType (id, tk) ->
@@ -253,16 +253,16 @@ let globdef_to_deep (def : globdef) : string =
       in
       sprintf "DeclType %s %s" (ident_to_deep id) st_or_un
   | DeclConst (id, ty) ->
-      sprintf "DeclConst %s (%s)" (ident_to_deep id) (ctyp_to_deep ty)
+      sprintf "DeclConst %s (%s)" (ident_to_deep id) (btyp_to_deep ty)
   | DeclFun (id, tparams, tret) ->
       sprintf
         "DeclFun %s (%s) (%s)"
         (ident_to_deep id)
         (list_to_string_bracket
            (fun (attr, ty) ->
-             sprintf "(%s, %s)" (param_attr_to_deep attr) (ctyp_to_deep ty))
+             sprintf "(%s, %s)" (param_attr_to_deep attr) (btyp_to_deep ty))
            tparams)
-        (ctyp_to_deep tret)
+        (btyp_to_deep tret)
 
 let print_program (out : out_channel) (prog : program) : unit =
   fprintf out "%s" headers;

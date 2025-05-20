@@ -32,20 +32,20 @@ Definition tenv_update (te: tenv) (x: ident) (fields: list (ident * typ)) : res 
   | Error _ => ret (tset te x fields)
   end.
 
-Fixpoint ctyp_to_typ (te: tenv) (ty: btyp) : res typ :=
+Fixpoint btyp_to_typ (te: tenv) (ty: btyp) : res typ :=
   match ty with
   | BBool => ret TBool
   | BInt32 s => ret (TInt32 s)
   | BInt64 s => ret (TInt64 s)
   | BArray ta =>
-      let* ta' := ctyp_to_typ te ta in 
+      let* ta' := btyp_to_typ te ta in 
       ret (TArray ta')
   | BStruct tx =>
       let* fields := tenv_get te tx in
       ret (TStruct tx fields)
   | BFun tparams tret =>
-      let* tparams' := mmap (ctyp_to_typ te) tparams in
-      let* tret' := ctyp_to_typ te tret in
+      let* tparams' := mmap (btyp_to_typ te) tparams in
+      let* tret' := btyp_to_typ te tret in
       ret (TFun tparams' tret')
   | BAbs t => ret (TAbs t)
   end.
@@ -108,7 +108,7 @@ Definition lcontext_get (lx: lcontext) (x: ident) : res btyp :=
 Definition lcontext_update (lx: lcontext) (x: ident) (ty: btyp) : res lcontext :=
   match lcontext_get lx x with
   | OK t =>
-      if ctyp_eq_dec ty t then ret (tset lx x ty)
+      if btyp_eq_dec ty t then ret (tset lx x ty)
       else
         failwith "Typing.lcontext_update: variable shadowing with a different type"
   | Error _ => ret (tset lx x ty)
@@ -190,7 +190,7 @@ Definition typecheck_binary_op (op: binary_op) (ty1 ty2: btyp) : res btyp :=
 Definition typecheck_array_get (ty1 ty2: btyp) : res btyp :=    
   match ty1 with
   | BArray ta =>
-      if ctyp_eq_dec ty2 arr_index_ctyp then ret ta
+      if btyp_eq_dec ty2 arr_index_btyp then ret ta
       else failwith "Typing.typecheck_array_get: array index type mismatch"
   | _ => failwith "Typing.typecheck_array_get: array typed expected"
   end.
@@ -198,8 +198,8 @@ Definition typecheck_array_get (ty1 ty2: btyp) : res btyp :=
 Definition typecheck_array_set (ty1 ty2 ty3: btyp) : res btyp :=
   match ty1 with
   | BArray ta =>
-      if ctyp_eq_dec ty2 arr_index_ctyp then
-        if ctyp_eq_dec ta ty3 then ret ty1
+      if btyp_eq_dec ty2 arr_index_btyp then
+        if btyp_eq_dec ta ty3 then ret ty1
         else failwith "Typing.typecheck_array_set: type mismatch"
       else failwith "Typing.typecheck_array_set: array index type mismatch"
   | _ => failwith "Typing.typecheck_array_set: array type expected"
@@ -211,7 +211,7 @@ Definition typecheck_struct_proj (se: senv) (ty: btyp) (x: ident) : res btyp :=
       let/catch fields := senv_get se t
         /> "Typing.typecheck_struct_proj: unknown struct type"
       in
-      ctypof_field x fields
+      btypof_field x fields
   | _ => failwith "Typing.typecheck_struct_proj: struct type expected"
   end.
 
@@ -221,26 +221,26 @@ Definition typecheck_struct_update (se: senv) (ty1 ty2: btyp) (x: ident) : res b
       let/catch fields := senv_get se t
         /> "Typing.typecheck_struct_proj: unknown struct type"
       in
-      let* tx := ctypof_field x fields in
-      if ctyp_eq_dec tx ty2 then ret ty1
+      let* tx := btypof_field x fields in
+      if btyp_eq_dec tx ty2 then ret ty1
       else failwith "Typing.typecheck_struct_update: type mismatch"
   | _ => failwith "Typing.typecheck_struct_update: struct type expected"
   end.
 
-  Inductive access_ctyp : Type :=
-    | ActypAcStructField : ident -> access_ctyp
-    | ActypAcArrayIndex : btyp -> access_ctyp.
+  Inductive access_btyp : Type :=
+    | AbtypAcStructField : ident -> access_btyp
+    | AbtypAcArrayIndex : btyp -> access_btyp.
 
-  Fixpoint typecheck_access (se: senv) (gx: gcontext) (lx: lcontext) (ty: btyp) (acs: list access_ctyp) : res (btyp * list btyp) := 
+  Fixpoint typecheck_access (se: senv) (gx: gcontext) (lx: lcontext) (ty: btyp) (acs: list access_btyp) : res (btyp * list btyp) := 
     match acs with
     | nil => ret (ty, nil)
     | ac :: acs' =>
         match ac with
-        | ActypAcStructField f =>
+        | AbtypAcStructField f =>
             let* ty' := typecheck_struct_proj se ty f in
             let* (r, lr) := typecheck_access se gx lx ty' acs' in
             ret (r, ty' :: lr)
-        | ActypAcArrayIndex ta =>
+        | AbtypAcArrayIndex ta =>
             let* ty' := typecheck_array_get ty ta in
             let* (r, lr) := typecheck_access se gx lx ty' acs' in
             ret (r, ty' :: lr)
@@ -251,7 +251,7 @@ Fixpoint typecheck_call_rec (tparams targs: list btyp) (tret: btyp) : res btyp :
   match tparams, targs with
   | nil, nil => ret tret
   | tp1 :: tparams', ta1 :: targs' =>
-      if ctyp_eq_dec tp1 ta1 then
+      if btyp_eq_dec tp1 ta1 then
         typecheck_call_rec tparams' targs' tret
       else 
         failwith "Typing.typecheck_call_rec: type mismatch"
@@ -271,7 +271,7 @@ Fixpoint typecheck_array_lit (a: array literal) : res btyp :=
   | l :: nil => ret (typof_literal l)
   | l :: a' =>
       let* t := typecheck_array_lit a' in
-      if ctyp_eq_dec (typof_literal l) t then ret t
+      if btyp_eq_dec (typof_literal l) t then ret t
       else failwith "Typing.typecheck_array_lit: type mismatch"
   end.
 
@@ -280,7 +280,7 @@ Fixpoint typecheck_struct_lit (l1: list (ident * literal)) (l2: list (ident * bt
   | nil, nil => true
   | (x1, l1) :: l1', (x2, tx2) :: l2' =>
       let tx1 := typof_literal l1 in
-      if ctyp_eq_dec tx1 tx2 then typecheck_struct_lit l1' l2'
+      if btyp_eq_dec tx1 tx2 then typecheck_struct_lit l1' l2'
       else false
   | _, _ => false
   end.

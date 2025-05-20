@@ -204,7 +204,7 @@ let struct_to_rocq_struct (st : ident list) (arg : string) : string =
 let gen_struct_conv (st : struct_def) : string =
   let id_str = ident_to_string st.sd_name in
   sprintf
-    "Definition transl_struct_%s (s: %s.%s) : eval_struct_ctyp %s.prog %s :=\n\
+    "Definition transl_struct_%s (s: %s.%s) : eval_struct_btyp %s.prog %s :=\n\
      %s%s."
     id_str
     !shallowfile
@@ -312,7 +312,7 @@ let print_proofs (out : out_channel) (prog : program) : unit =
     "Definition eval_def := Barocq.eval_def ABS_TYPES_IMPL ABS_DEFS_IMPL.\n\n";
   fprintf
     out
-    "Definition eval_struct_ctyp := Barocq.eval_struct_ctyp ABS_TYPES_IMPL.\n\n";
+    "Definition eval_struct_btyp := Barocq.eval_struct_btyp ABS_TYPES_IMPL.\n\n";
   let structs = get_struct_defs types in
   if structs <> [] then begin
     fprintf out "(** * Struct conversions **)\n\n";

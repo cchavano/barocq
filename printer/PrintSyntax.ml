@@ -66,7 +66,7 @@ let rec atom_to_string (a : atom) : string =
   | AInt64 (i, Unsigned) -> u64_to_string i
   | AVar x -> ident_to_string x
   | ACast (a1, ty) ->
-      sprintf "%s as %s" (opt_parens a1) (PrintTypes.ctyp_to_string ty)
+      sprintf "%s as %s" (opt_parens a1) (PrintTypes.btyp_to_string ty)
   | AUnaryOp (op, a) -> sprintf "%s %s" (unary_op_to_string op) (opt_parens a)
   | ABinaryOp (op, a1, a2) ->
       sprintf
@@ -163,7 +163,7 @@ module PrintTyped = struct
 end
 
 let param_to_string (param : ident * btyp) : string =
-  sprintf "%s : %s" (ident_to_string (fst param)) (ctyp_to_string (snd param))
+  sprintf "%s : %s" (ident_to_string (fst param)) (btyp_to_string (snd param))
 
 let param_list_to_string (params : (ident * btyp) list) : string =
   list_to_string_paren param_to_string params
@@ -173,7 +173,7 @@ let function_to_string (body_to_string : 'a -> string) (f : 'a coq_function) :
   sprintf
     "%s : %s =\n%s"
     (param_list_to_string f.fn_params)
-    (ctyp_to_string f.fn_return)
+    (btyp_to_string f.fn_return)
     (body_to_string f.fn_body)
 
 let globdef_to_string (lit_to_string : 'a -> string)
@@ -184,25 +184,25 @@ let globdef_to_string (lit_to_string : 'a -> string)
       sprintf
         "defn %s : %s = %s%s"
         (ident_to_string x)
-        (ctyp_to_string ty)
+        (btyp_to_string ty)
         (lit_to_string l)
         csep
   | DefFun (x, f) ->
       sprintf "defn %s%s%s" (ident_to_string x) (func_to_string f) fsep
   | DeclConst (x, ty) ->
-      sprintf "decl %s : %s%s" (ident_to_string x) (ctyp_to_string ty) csep
+      sprintf "decl %s : %s%s" (ident_to_string x) (btyp_to_string ty) csep
   | DeclFun (x, tparams, tret) ->
       sprintf
         "decl %s : %s%s"
         (ident_to_string x)
-        (ctyp_to_string (mk_fun_ctyp tparams tret))
+        (btyp_to_string (mk_fun_btyp tparams tret))
         fsep
 
 let struct_def_to_tring (sep : string) (st : struct_def) : string =
   sprintf
     "type %s = %s%s"
     (ident_to_string st.sd_name)
-    (structtyp_to_string ctyp_to_string st.sd_fields)
+    (structtyp_to_string btyp_to_string st.sd_fields)
     sep
 
 let type_def_to_string (sep : string) (td : type_def) : string =

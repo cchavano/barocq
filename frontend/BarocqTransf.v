@@ -112,13 +112,13 @@ Fixpoint create_deep_access_expr (e: BarocqTyped.expr) : Barocq.expr :=
     | BarocqTyped.EVar x _ => (Barocq.EVar x, acs)
     | BarocqTyped.EArrayGet e1 e2 ty =>
         let e2' := create_deep_access_expr e2 in
-        if orb (ctyp_is_prim ty) (negb (list_is_empty acs)) then
+        if orb (btyp_is_prim ty) (negb (list_is_empty acs)) then
           create_deep_access_rec e1 (AcArrayIndex e2' :: acs)
         else
           let e1' := create_deep_access_expr e1 in
           (Barocq.EArrayGet e1' e2', acs)
     | BarocqTyped.EStructProj e1 f ty =>
-        if orb (ctyp_is_prim ty) (negb (list_is_empty acs)) then
+        if orb (btyp_is_prim ty) (negb (list_is_empty acs)) then
           create_deep_access_rec e1 (AcStructField f :: acs)
         else
           let e1' := create_deep_access_expr e1 in
@@ -156,7 +156,7 @@ Fixpoint create_deep_access_expr (e: BarocqTyped.expr) : Barocq.expr :=
               end)
             acs1
         in
-        if orb (ctyp_is_prim ty) (negb (list_is_empty acs)) then
+        if orb (btyp_is_prim ty) (negb (list_is_empty acs)) then
           (e1', acs1' ++ acs)
         else
           (Barocq.EDeepAccess e1' acs1', acs)

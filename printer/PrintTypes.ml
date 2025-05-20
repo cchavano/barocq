@@ -39,15 +39,15 @@ let rec typ_to_string (ty : typ) : string =
 
 and opt_parens (ty : typ) = PrintCommon.opt_parens is_simpl_typ typ_to_string ty
 
-let rec ctyp_to_string (ty : btyp) : string =
+let rec btyp_to_string (ty : btyp) : string =
   match ty with
   | BBool -> "bool"
   | BInt32 Signed -> "i32"
   | BInt32 Unsigned -> "u32"
   | BInt64 Signed -> "i64"
   | BInt64 Unsigned -> "u64"
-  | BArray (BArray t) -> sprintf "array (%s)" (ctyp_to_string t)
-  | BArray t -> sprintf "array %s" (ctyp_to_string t)
+  | BArray (BArray t) -> sprintf "array (%s)" (btyp_to_string t)
+  | BArray t -> sprintf "array %s" (btyp_to_string t)
   | BStruct a -> ident_to_string a
   | BAbs t -> ident_to_string t
-  | BFun (tparams, tret) -> funtyp_to_string ctyp_to_string tparams tret
+  | BFun (tparams, tret) -> funtyp_to_string btyp_to_string tparams tret

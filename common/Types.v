@@ -42,25 +42,25 @@ Inductive btyp : Type :=
   | BFun : list btyp -> btyp -> btyp
   | BAbs : ident -> btyp.
 
-Definition ctyp_is_prim (ty: btyp) : bool :=
+Definition btyp_is_prim (ty: btyp) : bool :=
   match ty with
   | BBool | BInt32 _ | BInt64 _ => true
   | _ => false
   end.
 
-Definition signed_of_int_ctyp (ty: btyp) : signedness :=
+Definition signed_of_int_btyp (ty: btyp) : signedness :=
   match ty with
   | BInt32 s
   | BInt64 s => s
   | _ => Signed
   end.
 
-Fixpoint ctyp_eq_dec (t1 t2: btyp) : { t1 = t2 } + { t1 <> t2 }.
+Fixpoint btyp_eq_dec (t1 t2: btyp) : { t1 = t2 } + { t1 <> t2 }.
 Proof.
   repeat decide equality.
 Defined.
 
-Definition mk_fun_ctyp {A: Type} (params: list (A * btyp)) (tret: btyp) : btyp :=
+Definition mk_fun_btyp {A: Type} (params: list (A * btyp)) (tret: btyp) : btyp :=
   BFun (List.map snd params) tret.
 
 (** * Type of a struct field *)
@@ -68,12 +68,12 @@ Definition mk_fun_ctyp {A: Type} (params: list (A * btyp)) (tret: btyp) : btyp :
 Definition typof_field (k: ident) (fields: list (ident * typ)) : res typ :=
   find_k_err Ident.eq_dec k fields.
 
-Definition ctypof_field (k: ident) (fields: list (ident * btyp)) : res btyp :=
+Definition btypof_field (k: ident) (fields: list (ident * btyp)) : res btyp :=
   find_k_err Ident.eq_dec k fields.
 
 (* Type for array indexes *)
 
-Definition arr_index_ctyp : btyp :=
+Definition arr_index_btyp : btyp :=
   if Archi.ptr64 then BInt64 Unsigned else BInt32 Unsigned.
 
 Definition arr_index_typ : typ :=

@@ -253,7 +253,7 @@ Module Typing.
     | Imp1.StReturn a =>
         let* a' := typecheck_atom gx lx a in
         let ty := typof_atom a' in
-        if ctyp_eq_dec ty tret then
+        if btyp_eq_dec ty tret then
           ret (StReturn a', lx)
         else
           failwith "Imp1.Typing.typecheck_statement: return type mismatch"
@@ -280,7 +280,7 @@ Module Typing.
         match d with
         | DefConst x l ty =>
             let* l' := typecheck_literal se l in
-            if ctyp_eq_dec ty (typof_literal l') then
+            if btyp_eq_dec ty (typof_literal l') then
               let* gx := gcontext_update gx x ty in
               let* rd := typecheck_globdefs_rec se gx defs' in
               ret (DefConst x l' ty :: rd)
@@ -288,7 +288,7 @@ Module Typing.
               failwith "Imp1.Typing.typecheck_globdefs: type mismatch in constant definition"
         | DefFun x f =>
             let* f' := typecheck_function se gx f in
-            let* gx := gcontext_update gx x (mk_fun_ctyp (fn_params f') (fn_return f')) in
+            let* gx := gcontext_update gx x (mk_fun_btyp (fn_params f') (fn_return f')) in
             let* rd := typecheck_globdefs_rec se gx defs' in
             ret (DefFun x f' :: rd)
         | DeclConst x ty =>
@@ -296,7 +296,7 @@ Module Typing.
             let* rd := typecheck_globdefs_rec se gx defs' in
             ret (DeclConst x ty :: rd)
         | DeclFun x tparams tret =>
-            let* gx := gcontext_update gx x (mk_fun_ctyp tparams tret) in
+            let* gx := gcontext_update gx x (mk_fun_btyp tparams tret) in
             let* rd := typecheck_globdefs_rec se gx defs' in
             ret (DeclFun x tparams tret :: rd)
         end
