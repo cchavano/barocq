@@ -54,7 +54,7 @@
             "patterns": [
                 {
                     "comment": "builtin type",
-                    "name": "storage.type.barocq",
+                    "name": "entity.name.type.barocq",
                     "match": "\\b(bool|i32|u32|i64|u64|array)\\b"
                 }
 			]
@@ -64,26 +64,29 @@
 				{ "include": "#types_builtin" },
 				{
 					"comment": "user-defined type",
-					"match": "(?<=(array\\s+)*)((\\w+)(::))?(\\w+)",
+					"match": "((\\w+)(::))?(\\w+)",
 					"captures": {
-						"3": { "name": "entity.name.namespace.barocq" },
-						"4": { "name": "keyword.operator.barocq" },
-						"5": { "name": "storage.type.barocq" }
+						"2": { "name": "entity.name.namespace.barocq" },
+						"3": { "name": "keyword.operator.barocq" },
+						"4": { "name": "entity.name.type.barocq" }
 					}
 				}
 			]
 		},
 		"types_decl": {
 			"patterns": [
-				{ "include": "#types_builtin" },
 				{
 					"comment": "type declaration",
-					"match": "(?<=:\\s*(array\\s+)*)((\\w+)(::))?(\\w+)",
-					"captures": {
-						"3": { "name": "entity.name.namespace.barocq" },
-						"4": { "name": "keyword.operator.barocq" },
-						"5": { "name": "storage.type.barocq" }
-					}
+					"begin": ":\\s*",
+					"end": "((\\w+)(::))?(?!array)(\\w+)",
+					"endCaptures": {
+						"2": { "name": "entity.name.namespace.barocq" },
+						"3": { "name": "keyword.operator.barocq" },
+						"4": { "name": "entity.name.type.barocq" } 
+					},
+					"patterns": [
+						{ "include": "#types_builtin" }
+					]
 				}
 			]
 		},
@@ -96,7 +99,7 @@
 						"1": { "name": "keyword.other.barocq" },
 						"3": { "name": "entity.name.namespace.barocq" },
 						"4": { "name": "keyword.operator.barocq" },
-						"5": { "name": "storage.type.barocq" }
+						"5": { "name": "entity.name.type.barocq" }
 					}
 				}
 			]
@@ -173,7 +176,7 @@
 					"end": "}",
 					"beginCaptures": {
 						"1": { "name": "keyword.other.barocq" },
-						"2": { "name": "storage.type.barocq" },
+						"2": { "name": "entity.name.type.barocq" },
 						"3": { "name": "keyword.operator.barocq" }
 					},
 					"patterns": [
@@ -187,7 +190,7 @@
 					"end": "$",
 					"beginCaptures": {
 						"1": { "name": "keyword.other.barocq" },
-						"2": { "name": "storage.type.barocq" },
+						"2": { "name": "entity.name.type.barocq" },
 						"3": { "name": "keyword.operator.barocq" }
 					},
 					"patterns": [
@@ -200,7 +203,7 @@
 					"end": "$",
 					"beginCaptures": {
 						"1": { "name": "keyword.other.barocq" },
-						"2": { "name": "storage.type.barocq" },
+						"2": { "name": "entity.name.type.barocq" },
 						"3": { "name": "keyword.other.barocq" }
 					},
 					"patterns": [
