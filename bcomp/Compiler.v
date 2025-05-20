@@ -7,8 +7,8 @@ Definition compile (show_debug: bool) (prog: Barocq.program) : res Clight.progra
   let* iabnf := ImpABNFgen.norm_program ibnf in
   let imp1 := Imp1gen.transl_program iabnf in
   let* imp1_typed := Imp1Typing.typecheck_program imp1 in
-  let* imp1_alias := Imp1gen.AliasingCheck.gen_aliasing_program show_debug imp1_typed in
-  let* imp1_typed := Imp1gen.AliasingCheck.check_program imp1_alias in
+  let* imp1_alias := Imp1gen.gen_aliasing_program show_debug imp1_typed in
+  let* imp1_typed := Imp1gen.check_program_aliasing imp1_alias in
   let imp2 := Imp2gen.transl_program imp1_typed in
   let* clight := Clightgen.transl_program imp2 in
   eret clight.

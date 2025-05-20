@@ -84,7 +84,7 @@ let access_to_string (ac : access) : string =
   | AcArrayIndex i -> sprintf "[%s]" (atom_to_string i)
 
 let access_list_to_string (acs : access list) : string =
-  list_to_string "\\" "\\" "" access_to_string acs
+  list_to_string "" "" "" access_to_string acs
 
 let comp_to_string (c : comp) : string =
   match c with

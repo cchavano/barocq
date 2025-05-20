@@ -360,12 +360,7 @@ let () =
         | None -> assert false
       end
     | CompilerError msg -> eprintf "Compilation error: %s\n" msg
-    | Failure msg -> eprintf "Unexpected error: %s\n" msg
     | Aliasing_impl.UnsupportedFeature msg ->
         eprintf "Compilation error: %s\n" msg
-    (* | Assert_failure (src, _, _) ->
-        eprintf
-          "Impossible error coming from %s. Please, make a bug report.\n"
-          src *)
   end;
   exit 1

@@ -59,3 +59,27 @@ end = struct
   let statement_to_string (s : Imp1Typed.statement) : string =
     statement_to_string (untype_statement s)
 end
+
+module PrintAliasing = struct
+  open PrintSyntax.PrintTyped
+
+  let rec remove_alias_info (s : Imp1.Aliasing_AST.statement) : Imp1.statement =
+    match s with
+    | Aliasing_AST.StSet (x, c, _, _) -> StSet (x, untype_comp c)
+    | Aliasing_AST.StIfThenElse (a, s1, s2, _, _) ->
+        let s1' = remove_alias_info s1 in
+        let s2' = remove_alias_info s2 in
+        StIfThenElse (untype_atom a, s1', s2')
+    | Aliasing_AST.StSequence (s1, s2) ->
+        let s1' = remove_alias_info s1 in
+        let s2' = remove_alias_info s2 in
+        StSequence (s1', s2')
+    | Aliasing_AST.StReturn (a, _, _) -> StReturn (untype_atom a)
+
+  let statement_to_string_pref (prefix : string)
+      (s : Imp1.Aliasing_AST.statement) : string =
+    statement_to_string_pref prefix (remove_alias_info s)
+
+  let statement_to_string (s : Imp1.Aliasing_AST.statement) : string =
+    statement_to_string (remove_alias_info s)
+end

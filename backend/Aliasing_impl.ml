@@ -4,13 +4,14 @@ open Types
 open Syntax
 open Syntax.Typed
 open Typing
-open Monads
 open Imp1
 open Imp1Typed
 open Aliasing_defs
 open Aliasing_defs.PathTree
 open Aliasing_defs.AbsDom
 open PrintCommon
+
+let top (msg : string) = Top (mk_err_info msg)
 
 exception UnsupportedFeature of string
 
@@ -25,39 +26,6 @@ let ( let* ) = AbsDom.dbind
 (** [absloc_to_string l] converts an abstract location to a string. *)
 let absloc_to_string (l : absloc) : string =
   ident_to_string (Ident.concat (ident_of_string "l") (Ident.of_str_pos l))
-
-(** [is_valid_atom d a] checks wether the atom [a] is valid in [d]. If [a]
-    contains variables x1, ..., xn, it checks wether paths x1, ..., xn are valid
-    in [d]. *)
-let rec is_valid_atom (d : t) (a : atom) : bool =
-  match a with
-  | AVar (x, _) -> is_valid_path d x []
-  | AUnaryOp (op, a', _) -> is_valid_atom d a'
-  | ABinaryOp (op, a1, a2, _) -> is_valid_atom d a1 && is_valid_atom d a2
-  | _ -> true
-
-(** [_INDEX] is the label given to edges whose source is an array. *)
-let _INDEX : ident = ident_of_string "[]"
-
-(** [path_of_access_list acs] transforms the access list [acs] into a path. *)
-let rec path_of_access_list (acs : access list) : path =
-  match acs with
-  | [] -> []
-  | AcStructField (f, _) :: acs' -> f :: path_of_access_list acs'
-  | AcArrayIndex (_, _) :: acs' -> _INDEX :: path_of_access_list acs'
-
-(** [is_valid_deep_access d a acs] checks that the deep access from [a] with
-    access list [acs] is valid in [d].*)
-let is_valid_deep_access (d : t) (a : atom) (acs : access list) : bool =
-  let rec aux acs =
-    match acs with
-    | [] -> true
-    | Syntax.Typed.AcArrayIndex (i, _) :: acs' -> is_valid_atom d i && aux acs'
-    | Syntax.Typed.AcStructField _ :: acs' -> aux acs'
-  in
-  match a with
-  | AVar (x, _) -> aux acs && is_valid_path d x (path_of_access_list acs)
-  | _ -> assert false
 
 (** [paths_to_string paths] transforms an invalid path map into a string. *)
 let paths_to_string (paths : path_map) : string =
@@ -343,7 +311,7 @@ let exec_set_array_get (x : ident) (a : atom) (i : atom) (st : absstate) :
               (* If variable shadowing occurs, removes x from the map of invalid paths. *)
               AbsState { st' with st_inv = IdentMap.remove x st'.st_inv }
         end
-      else Top
+      else top "impossible array get, the array is not free"
   | _ -> assert false
 
 (** [exec_set_array_set x a i v st] executes the transfer function for the
@@ -442,7 +410,10 @@ let exec_set_array_set (x : ident) (a : atom) (i : atom) (v : atom)
             st.st_arr_locked
         in
         AbsState { st' with st_inv = inv'; st_arr_locked = al }
-      else Top
+      else
+        top
+          "impossible array set, the array is not free of locked on the right \
+           index"
   | _ -> assert false
 
 (** [exec_set_deep_access x a acs ty st] executes the transfer function for the
@@ -467,13 +438,13 @@ let exec_set_deep_access (x : ident) (a : atom) (acs : access list) (ty : btyp)
 
 (** [is_arg v args] checks wether the variable [v] is contained in the argument
     list [args]. *)
-let is_arg (v : ident) (args : atom list) : bool =
+(* let is_arg (v : ident) (args : atom list) : bool =
   List.exists
     (fun a ->
       match a with
       | Syntax.Typed.AVar (x, _) -> if x = v then true else false
       | _ -> false)
-    args
+    args *)
 
 (** [pointsto_unique st x] checks wether the variable [x] points to only one
     abstract location in [st]. *)
@@ -750,7 +721,7 @@ let rec mem_bijection (se : senv) (edges : (ident * btyp) list) (loc1 : absloc)
             mem_bijection se edges_e lv1 lv2 m1 m2 (IdentMap.add lv1 lv2 bij)
           in
           mem_bijection se edges' loc1 loc2 m1 m2 bij'
-        else failwith "mem_bijection error"
+        else assert false
 
 (** [locs_bijection se v1 v2 ty st1 st2] computes the bijection between all
     locations contained in [st1] and [st2], starting from the variables [v1] of
@@ -782,9 +753,7 @@ let locs_bijection (se : senv) (v1 : ident) (v2 : ident) (ty : btyp)
       st1.st_mem
       st2.st_mem
       (IdentMap.add lv1 lv2 IdentMap.empty)
-  else (
-    Printf.eprintf "Cardinal: %d\n" (IdentSet.cardinal l2);
-    failwith "locs_bijection_var error")
+  else assert false
 
 (** [funcall_bijection se args params stcallee stcaller] computes the bijection
     between the state of the callee and the state of the caller. It returns a
@@ -806,8 +775,7 @@ let funcall_bijection (show_debug : bool) (se : senv)
     List.fold_left
       (fun acc (v, ty) ->
         IdentMap.union
-          (fun _ l1 l2 ->
-            if l1 <> l2 then failwith "no bijection possible" else Some l1)
+          (fun _ l1 l2 -> if l1 <> l2 then assert false else Some l1)
           (locs_bijection se v (IdentMap.find v vars_bij) ty stcallee stcaller)
           acc)
       IdentMap.empty
@@ -917,8 +885,8 @@ let proj_state_aux (st : absstate) (vars : var_set) (locs : pointsto_set) :
   let ev = IdentMap.filter (fun k _ -> IdentSet.mem k vars) st.st_env in
   let rev = env_reverse ev in
   (* The invalid path environment is projected on the variables *)
-  let inv = IdentMap.filter (fun k _ -> IdentSet.mem k vars) st.st_inv in
-  let inv_res = st.st_inv_res in
+  let iv = IdentMap.filter (fun k _ -> IdentSet.mem k vars) st.st_inv in
+  let iv_res = st.st_inv_res in
   (* To build the memory projection, we make a DFS from all the locations pointed by
      the variables. *)
   let roots =
@@ -943,7 +911,7 @@ let proj_state_aux (st : absstate) (vars : var_set) (locs : pointsto_set) :
      in the projection of the memory. *)
   let res = IdentSet.filter (fun r -> IdentSet.mem r visited) st.st_res in
   let next_loc = st.st_next_loc in
-  make_state ev m rev rm res inv inv_res arr_locked next_loc
+  make_state ev m rev rm res iv iv_res arr_locked next_loc
 
 (** [proj_state st vars] builds the projection of [st] on the variables [vars].
 *)
@@ -952,12 +920,13 @@ let proj_state st vars = proj_state_aux st vars set_empty
 (** [build_call_state st args] build the state for a function call with
     arguments [args] from [st]. *)
 let build_call_state (st : absstate) (args : atom list) : absstate =
-  let vars_in_params : var_set =
-    IdentMap.to_seq st.st_env |> Seq.map fst
-    |> Seq.filter (fun v -> is_arg v args)
-    |> IdentSet.of_seq
+  let vars =
+    List.fold_left
+      (fun acc a -> IdentSet.union (vars_of_atom a) acc)
+      set_empty
+      args
   in
-  let stcall = proj_state st vars_in_params in
+  let stcall = proj_state st vars in
   { stcall with st_res = set_empty }
 
 (** [exec_set_call x a args ty fe st nctr] computes the transfer function for
@@ -976,23 +945,34 @@ let exec_set_call (show_debug : bool) (se : senv) (x : ident) (a : atom)
       let* fd_returnstate = fd_returnstate in
 
       let stcall = build_call_state st args in
-      (* We build the bijections for the variables and the locations between the current call state,
-            and the pre-requisite call state of the callee. *)
-      let vars_bij, locs_bij =
-        funcall_bijection show_debug se fd_params args fd_callstate stcall
-      in
+
       (* Before calling the function, we must check the following things: 
             - All arguments are completely valid;
             - Each non-primitive argument points to only one abstract location;
             - Each argument points to a tree-shaped part of the memory;
             - There is no inter-aliasing between arguments
             - There is no locked arrays passed as arguments. *)
-      let args_validity = List.for_all (is_valid_atom (AbsState stcall)) args in
+      let args_validity =
+        List.for_all (Aliasing_check.check_atom (AbsState stcall)) args
+      in
       let no_locked_arrays = IdentMap.is_empty stcall.st_arr_locked in
-      if
-        args_pointsto_unique stcall args
-        && wf_args stcall args && args_validity && no_locked_arrays
-      then
+      let errmsg cause =
+        sprintf "when calling function %s: %s" (ident_to_string y) cause
+      in
+      if not (args_pointsto_unique stcall args) then
+        top (errmsg "some arguments point to multiple location")
+      else if not no_locked_arrays then
+        top (errmsg "some arguments contain locked arrays")
+      else if not (wf_args stcall args) then
+        top (errmsg "intra- or inter-argument aliasing")
+      else if not args_validity then top (errmsg "some arguments are not valid")
+      else
+        (* We build the bijections for the variables and the locations between the current call state,
+            and the pre-requisite call state of the callee. *)
+        let vars_bij, locs_bij =
+          funcall_bijection show_debug se fd_params args fd_callstate stcall
+        in
+
         (* The return state is the one given by the function descriptor on which we apply the bijection. *)
         let stret =
           apply_state_bijection vars_bij locs_bij st.st_next_loc fd_returnstate
@@ -1075,7 +1055,6 @@ let exec_set_call (show_debug : bool) (se : senv) (x : ident) (a : atom)
             st_arr_locked = arr_locked_ret;
             st_next_loc = next_loc;
           }
-      else Top
   | _ -> assert false
 
 (** [invalidate_parent_arrays st] invalidates the paths leading to all arrays
@@ -1156,7 +1135,7 @@ let locked_arrays_to_string (st : absstate) : string =
     (List.of_seq (IdentMap.to_seq arr_locked_var))
 
 let print_dom_debug (show_debug : bool) (d : absdom) (suffix : string)
-    (res : atom option) : unit =
+    (inv_res : bool) : unit =
   (match d with
   | AbsState st ->
       debug_info show_debug
@@ -1167,92 +1146,126 @@ let print_dom_debug (show_debug : bool) (d : absdom) (suffix : string)
            suffix
            (locked_arrays_to_string st);
       begin
-        match res with
-        | Some a -> begin
-            match st.st_inv_res with
-            | Some t ->
-                debug_info show_debug
-                @@ sprintf
-                     "INV_RES: %s.%s\n"
-                     (PrintSyntax.PrintTyped.atom_to_string a)
-                     (PathTree.to_string t)
-            | None -> debug_info show_debug "INV_RES: None\n"
-          end
-        | None -> ()
+        if inv_res then
+          match st.st_inv_res with
+          | Some t ->
+              debug_info show_debug
+              @@ sprintf "INV_RES: %s\n" (PathTree.to_string t)
+          | None -> debug_info show_debug "INV_RES: None\n"
+        else ()
       end
-  | Top -> debug_info show_debug @@ sprintf "DOM_%s: Top\n" suffix);
+  | Top _ -> debug_info show_debug @@ sprintf "DOM_%s: Top\n" suffix);
   if suffix = "OUT" then debug_info show_debug "\n"
+
+let update_err_stmt (stmt : Imp1Typed.statement) (err : err_info) : err_info =
+  match stmt with
+  | StIfThenElse _ | StSequence _ -> err
+  | _ ->
+      if err.ei_stmt = None then
+        mk_err_info_with_stmt
+          (PrintImp1.PrintTyped.statement_to_string_pref "" stmt)
+          err.ei_msg
+      else err
 
 (** [absexec se fe ce d s] computes the transfer function for the statement [s]
     on [d]. [fe] is the function descriptor environement. [se] is the struct
     types environment. *)
 let rec absexec (show_debug : bool) (se : senv) (fe : fenv) (d : absdom)
     (s : Imp1Typed.statement) : Imp1.Aliasing_AST.statement * absdom =
-  match s with
-  | StSet (x, c) ->
-      (* We check that no shadowing occurs on a variable used for an array access. *)
-      let d_in = d in
-      print_dom_debug show_debug d_in "IN" None;
-      let d' =
-        let* st = d in
-        let all_vars_in_array_get =
-          IdentMap.fold
-            (fun _ a acc -> IdentSet.union (vars_of_atom a) acc)
-            st.st_arr_locked
-            set_empty
+  let d_in = d in
+  let s', d_out =
+    match s with
+    | StSet (x, c) ->
+        (* We check that no shadowing occurs on a variable used for an array access. *)
+        print_dom_debug show_debug d_in "IN" false;
+        let d' =
+          let* st = d in
+          let all_vars_in_array_get =
+            IdentMap.fold
+              (fun _ a acc -> IdentSet.union (vars_of_atom a) acc)
+              st.st_arr_locked
+              set_empty
+          in
+          if IdentSet.mem x all_vars_in_array_get then
+            top
+              "shadowing of variables used to access array elements is \
+               forbidden"
+          else
+            match c with
+            | CpAtom (a, _) -> AbsState (exec_set_atom x a st)
+            | CpStructProj (a, f, ty) ->
+                AbsState (exec_set_struct_proj x a f ty st)
+            | CpStructUpdate (a, f, v, _) ->
+                AbsState (exec_set_struct_update se x a f v st)
+            | CpCall (a, args, ty) ->
+                debug_info show_debug
+                @@ sprintf
+                     "Entering function call \"%s\" ==========\n"
+                     (PrintSyntax.PrintTyped.comp_to_string c);
+                let r = exec_set_call show_debug se x a args ty fe st in
+                debug_info show_debug
+                @@ sprintf
+                     "Exiting function call \"%s\" ===========\n"
+                     (PrintSyntax.PrintTyped.comp_to_string c);
+                r
+            | CpArrayGet (a, i, _) -> exec_set_array_get x a i st
+            | CpArraySet (a, i, v, _) -> exec_set_array_set x a i v st
+            | CpDeepAccess (a, acs, ty) ->
+                AbsState (exec_set_deep_access x a acs ty st)
         in
-        if IdentSet.mem x all_vars_in_array_get then Top
-        else
-          match c with
-          | CpAtom (a, _) -> AbsState (exec_set_atom x a st)
-          | CpStructProj (a, f, ty) ->
-              AbsState (exec_set_struct_proj x a f ty st)
-          | CpStructUpdate (a, f, v, _) ->
-              AbsState (exec_set_struct_update se x a f v st)
-          | CpCall (a, args, ty) ->
-              debug_info show_debug
-              @@ sprintf
-                   "Entering function call \"%s\" ==========\n"
-                   (PrintSyntax.PrintTyped.comp_to_string c);
-              let r = exec_set_call show_debug se x a args ty fe st in
-              debug_info show_debug
-              @@ sprintf
-                   "Exiting function call \"%s\" ===========\n"
-                   (PrintSyntax.PrintTyped.comp_to_string c);
-              r
-          | CpArrayGet (a, i, _) -> exec_set_array_get x a i st
-          | CpArraySet (a, i, v, _) -> exec_set_array_set x a i v st
-          | CpDeepAccess (a, acs, ty) ->
-              AbsState (exec_set_deep_access x a acs ty st)
-      in
-      let s', d' = (Imp1.Aliasing_AST.StSet (x, c, d_in, d'), d') in
-      debug_info show_debug
-      @@ sprintf ">> %s\n" (PrintImp1.PrintTyped.statement_to_string_pref "" s);
-      print_dom_debug show_debug d' "OUT" None;
-      (s', d')
-  | StIfThenElse (a, s1, s2) ->
-      let s1', d1 = absexec show_debug se fe d s1 in
-      let s2', d2 = absexec show_debug se fe d s2 in
-      let d' = AbsDom.union d1 d2 in
-      (Imp1.Aliasing_AST.StIfThenElse (a, s1', s2'), d')
-  | StSequence (s1, s2) ->
-      let s1', d1 = absexec show_debug se fe d s1 in
-      let s2', d2 = absexec show_debug se fe d1 s2 in
-      (Imp1.Aliasing_AST.StSequence (s1', s2'), d2)
-  | StReturn a ->
-      print_dom_debug show_debug d "IN" None;
-      debug_info show_debug
-      @@ sprintf ">> %s\n" (PrintImp1.PrintTyped.statement_to_string_pref "" s);
-      let d' =
-        let* st = d in
-        let st' = exec_return a st in
-        if is_tree_locs st'.st_mem (IdentSet.elements st.st_res) then
-          AbsState st'
-        else Top
-      in
-      let s', d' = (Imp1.Aliasing_AST.StReturn (a, d, d'), d') in
-      print_dom_debug show_debug d' "OUT" (Some a);
-      (s', d')
+        let s', d' = (Imp1.Aliasing_AST.StSet (x, c, d_in, d'), d') in
+        debug_info show_debug
+        @@ sprintf
+             ">> %s\n"
+             (PrintImp1.PrintTyped.statement_to_string_pref "" s);
+        print_dom_debug show_debug d' "OUT" false;
+        (s', d')
+    | StIfThenElse (a, s1, s2) ->
+        print_dom_debug show_debug d_in "IN" false;
+        debug_info show_debug
+        @@ sprintf
+             ">> Entering if-then-else \"if %s\" ======================\n"
+             (PrintSyntax.PrintTyped.atom_to_string a);
+        let s1', d1 = absexec show_debug se fe d s1 in
+        let s2', d2 = absexec show_debug se fe d s2 in
+        let d_out =
+          match AbsDom.union d1 d2 with
+          | Top err -> Top err
+          | _ as d' -> d'
+        in
+        debug_info show_debug
+        @@ sprintf
+             ">> Exiting if-then-else \"if %s\", joint point ==========\n"
+             (PrintSyntax.PrintTyped.atom_to_string a);
+        print_dom_debug show_debug d_out "OUT" true;
+        (Imp1.Aliasing_AST.StIfThenElse (a, s1', s2', d_in, d_out), d_out)
+    | StSequence (s1, s2) ->
+        let s1', d1 = absexec show_debug se fe d s1 in
+        let s2', d2 = absexec show_debug se fe d1 s2 in
+        (Imp1.Aliasing_AST.StSequence (s1', s2'), d2)
+    | StReturn a ->
+        print_dom_debug show_debug d "IN" false;
+        debug_info show_debug
+        @@ sprintf
+             ">> %s\n"
+             (PrintImp1.PrintTyped.statement_to_string_pref "" s);
+        let d' =
+          let* st = d in
+          let st' = exec_return a st in
+          if is_tree_locs st'.st_mem (IdentSet.elements st.st_res) then
+            AbsState st'
+          else top "ill-formed return value"
+        in
+        let s', d' = (Imp1.Aliasing_AST.StReturn (a, d, d'), d') in
+        print_dom_debug show_debug d' "OUT" true;
+        (s', d')
+  in
+  let d_out =
+    match d_out with
+    | Top err -> Top (update_err_stmt s err)
+    | _ -> d_out
+  in
+  (s', d_out)
 
 let fresh_loc (l : absloc) : absloc = Pos.add BinNums.Coq_xH l
 
@@ -1373,9 +1386,11 @@ let gen_fun_descr_and_ast (show_debug : bool) (se : senv) (fe : fenv)
     let* retstate = returnstate in
     let retstate = build_return_state retstate f.fn_params in
     (* Well-formedness checks for the resulting memory. *)
-    if wf_return_val retstate && wf_params retstate f.fn_params then
-      AbsState retstate
-    else Top
+    if not (wf_return_val retstate) then
+      top "ill-formed return value after complete function analysis"
+    else if not (wf_params retstate f.fn_params) then
+      top "the return state contains intra- or inter-parameter aliasing"
+    else AbsState retstate
   in
   let fdescr =
     {
@@ -1388,7 +1403,7 @@ let gen_fun_descr_and_ast (show_debug : bool) (se : senv) (fe : fenv)
   | AbsState st ->
       debug_info show_debug
       @@ sprintf "INV_RET: %s\n" (paths_to_string st.st_inv)
-  | Top -> debug_info show_debug @@ sprintf "INV_RET: Top\n");
+  | Top _ -> debug_info show_debug @@ sprintf "INV_RET: Top\n");
   (fdescr, ast)
 
 (** [senv_from_struct_defs l] build the struct type environment from the list of
@@ -1459,7 +1474,7 @@ let get_fun_descr (p : program) (fname : string) : fun_descr option =
     function [f] with the aliasing information. *)
 let gen_aliasing_function (show_debug : bool) (se : senv) (fe : fenv)
     (x : ident) (f : Imp1Typed.coq_function) :
-    (Imp1.Aliasing_AST.coq_function * fenv) option =
+    (Imp1.Aliasing_AST.coq_function * fenv) Errors.res =
   let fdescr, body' = gen_fun_descr_and_ast show_debug se fe f in
   let fe' = IdentMap.add x fdescr fe in
   match fdescr.fd_returnstate with
@@ -1467,54 +1482,68 @@ let gen_aliasing_function (show_debug : bool) (se : senv) (fe : fenv)
       let f' =
         { fn_return = f.fn_return; fn_params = f.fn_params; fn_body = body' }
       in
-      Some (f', fe')
-  | Top -> None
+      Errors.OK (f', fe')
+  | Top err ->
+      let stmt_info =
+        match err.ei_stmt with
+        | Some str -> sprintf ", statement \"%s\"" str
+        | None -> ""
+      in
+      let msg =
+        sprintf
+          "alias analysis of function %s%s\n> %s"
+          (ident_to_string x)
+          stmt_info
+          err.ei_msg
+      in
+      Errors.Error (Errors.msg (Camlcoq.coqstring_of_camlstring msg))
 
 (** [gen_aliasing_globdef se fe def] generates the aliasing AST for the global
     definition [def]. It also returns the new function descriptor environment if
     the global def is a function. *)
 let gen_aliasing_globdef (se : senv) (fe : fenv) (def : Imp1Typed.globdef)
-    (show_debug : bool) : (Imp1.Aliasing_AST.globdef * fenv) option =
+    (show_debug : bool) : (Imp1.Aliasing_AST.globdef * fenv) Errors.res =
   match def with
   | DefFun (x, f) ->
       debug_info show_debug
       @@ sprintf "Analysing function %s...\n\n" (ident_to_string x);
       let r =
         match gen_aliasing_function show_debug se fe x f with
-        | Some (f', fe') -> Some (DefFun (x, f'), fe')
-        | None -> None
+        | Errors.OK (f', fe') -> Errors.OK (DefFun (x, f'), fe')
+        | Errors.Error _ as err -> err
       in
       debug_info show_debug
       @@ sprintf "\nAnalysis of function %s finished.\n\n" (ident_to_string x);
       r
-  | DefConst (x, l, ty) -> Some (DefConst (x, l, ty), fe)
-  | DeclConst (x, ty) -> Some (DeclConst (x, ty), fe)
+  | DefConst (x, l, ty) -> Errors.OK (DefConst (x, l, ty), fe)
+  | DeclConst (x, ty) -> Errors.OK (DeclConst (x, ty), fe)
   | DeclFun (x, tparams, tret) ->
       let fdescr = gen_absfun_descr se fe tparams tret in
       let fe' = IdentMap.add x fdescr fe in
-      Some (DeclFun (x, tparams, tret), fe')
+      Errors.OK (DeclFun (x, tparams, tret), fe')
 
 (** [gen_aliasing_program prog] generates the aliasing AST for the whole Imp1
     program [prog]. *)
 let gen_aliasing_program (show_debug : bool) (prog : Imp1Typed.program) :
-    Imp1.Aliasing_AST.program MonError.coq_M =
+    Imp1.Aliasing_AST.program Errors.res =
   let rec aux fe defs =
     match defs with
-    | [] -> Some []
+    | [] -> Errors.OK []
     | d :: defs' -> begin
         let se = senv_from_struct_defs (get_struct_defs prog.prog_types) in
         match gen_aliasing_globdef se fe d show_debug with
-        | Some (d', fe') -> begin
+        | Errors.OK (d', fe') -> begin
             match aux fe' defs' with
-            | Some r -> Some (d' :: r)
-            | None -> None
+            | Errors.OK r -> Errors.OK (d' :: r)
+            | Errors.Error _ as err -> err
           end
-        | None -> None
+        | Errors.Error _ as err -> err
       end
   in
   match aux IdentMap.empty prog.prog_defs with
-  | Some defs -> Errors.OK { prog_types = prog.prog_types; prog_defs = defs }
-  | None -> Errors.Error [Errors.MSG ['N'; 'O'; 'K']]
+  | Errors.OK defs ->
+      Errors.OK { prog_types = prog.prog_types; prog_defs = defs }
+  | Errors.Error _ as err -> err
 
 module DotExport = struct
   let ident_to_dotstring (id : ident) : string =
@@ -1636,7 +1665,7 @@ module DotExport = struct
           print_env out st.st_env;
           print_mem out st.st_mem;
           print_res out st.st_res
-      | Top -> ()
+      | Top _ -> ()
     end;
     fprintf out "}"
 
@@ -1647,7 +1676,7 @@ module DotExport = struct
       | AbsState st ->
           print_rev_env out st.st_rev_env;
           print_rev_mem out st.st_rev_mem
-      | Top -> ()
+      | Top _ -> ()
     end;
     fprintf out "}"
 end

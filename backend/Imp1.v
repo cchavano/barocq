@@ -92,7 +92,7 @@ Module Aliasing_AST.
 
   Inductive statement : Type :=
     | StSet : ident -> comp -> ABSDOM -> ABSDOM -> statement
-    | StIfThenElse : atom -> statement -> statement -> statement
+    | StIfThenElse : atom -> statement -> statement -> ABSDOM -> ABSDOM -> statement
     | StSequence : statement -> statement -> statement
     | StReturn : atom -> ABSDOM -> ABSDOM -> statement.
 

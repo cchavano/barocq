@@ -24,13 +24,8 @@ Extraction Blacklist List String Int Array.
 Set Extraction Output Directory "_build/extraction".
 
 Extract Constant Imp1.Aliasing_AST.ABSDOM => "Aliasing_defs.AbsDom.t".
-Extract Constant Imp1gen.AliasingCheck.path => "Aliasing_defs.path".
-Extract Inlined Constant Imp1gen.AliasingCheck.make_path => "".
-Extract Constant Imp1gen.AliasingCheck.is_valid_path => "Aliasing_defs.AbsDom.is_valid_path".
-Extract Constant Imp1gen.AliasingCheck.is_valid_atom => "Aliasing_impl.is_valid_atom".
-Extract Constant Imp1gen.AliasingCheck.is_valid_return => "Aliasing_defs.AbsDom.is_valid_return".
-Extract Constant Imp1gen.AliasingCheck.is_valid_deep_access => "Aliasing_impl.is_valid_deep_access".
-Extract Constant Imp1gen.AliasingCheck.gen_aliasing_program => "Aliasing_impl.gen_aliasing_program".
+Extract Constant Imp1gen.gen_aliasing_program => "Aliasing_impl.gen_aliasing_program".
+Extract Constant Imp1gen.check_program_aliasing => "Aliasing_check.check_program".
 
 Separate Extraction
   BinPos.Pos.pred

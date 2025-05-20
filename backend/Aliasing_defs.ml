@@ -5,8 +5,20 @@ open PrintCommon
 
 type path = ident list
 
+(** [_INDEX] is the label given to memory edges whose source is an array (c.f.
+    AbsDom). *)
+let _INDEX : ident = ident_of_string "[]"
+
 let path_to_string (p : path) : string =
   list_to_string "" "" "." ident_to_string p
+
+(** [path_of_access_list acs] transforms the access list [acs] into a path. *)
+let rec path_of_access_list (acs : Syntax.Typed.access list) : path =
+  match acs with
+  | [] -> []
+  | Syntax.Typed.AcStructField (f, _) :: acs' -> f :: path_of_access_list acs'
+  | Syntax.Typed.AcArrayIndex (_, _) :: acs' ->
+      _INDEX :: path_of_access_list acs'
 
 module PathTree = struct
   (** Tree representing invalid paths in the abstract memory. A path is a
@@ -199,14 +211,24 @@ module AbsDom = struct
     st_next_loc : ident;
   }
 
+  type err_info = {
+    ei_stmt : string option;
+    ei_msg : string;
+  }
+
+  let mk_err_info (msg : string) : err_info = { ei_stmt = None; ei_msg = msg }
+
+  let mk_err_info_with_stmt (stmt : string) (msg : string) : err_info =
+    { ei_stmt = Some stmt; ei_msg = msg }
+
   type t =
     | AbsState of absstate
-    | Top
+    | Top of err_info
 
   let dbind (a : t) (f : absstate -> t) : t =
     match a with
     | AbsState a -> f a
-    | Top -> Top
+    | Top err -> Top err
 
   let env_empty : absenv = IdentMap.empty
 
@@ -443,12 +465,19 @@ module AbsDom = struct
         match al_union with
         | Some al ->
             AbsState (make_state ev m rev rm res inv inv_res al next_loc)
-        | None -> Top
-      else Top
+        | None ->
+            Top
+              (mk_err_info
+                 "impossible domain union, some arrays are locked on different \
+                  indexes")
+      else
+        Top
+          (mk_err_info
+             "impossible domain union, the set of locked arrays is not the same")
     in
     match (d1, d2) with
     | AbsState st1, AbsState st2 -> aux st1 st2
-    | _, _ -> Top
+    | Top err, _ | _, Top err -> Top err
 
   (* Validity check *)
 
@@ -460,7 +489,7 @@ module AbsDom = struct
         | Some t -> PathTree.is_completely_valid_path t p
         | None -> true
       end
-    | Top -> false
+    | Top _ -> false
 
   (** [is_valid_return] checks wether the return value of the function being
       analysed is valid, i.e. st_inv_res is [None] if [d] is a valid abstract
