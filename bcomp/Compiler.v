@@ -19,3 +19,9 @@ Definition compile_to_imp1 (prog: Barocq.program) : res Imp1.program :=
   let* iabnf := ImpABNFgen.norm_program ibnf in
   let imp1 := Imp1gen.transl_program iabnf in
   eret imp1.
+
+Definition aliascheck_program (show_debug: bool) (prog: Barocq.program) : res Imp1Typed.program :=
+  let* imp1 := compile_to_imp1 prog in
+  let* imp1_typed := Imp1Typing.typecheck_program imp1 in
+  let* imp1_alias := Imp1gen.gen_aliasing_program show_debug imp1_typed in
+  Imp1gen.check_program_aliasing imp1_alias.

@@ -64,6 +64,7 @@ Separate Extraction
   Barocq.iprog_to_prog
   Barocq.eval_def
   Barocq.eval_struct_btyp
+  Compiler.aliascheck_program
   Compiler.compile_to_imp1
   Compiler.compile
   BarocqShallowgen.monadify_norm_program

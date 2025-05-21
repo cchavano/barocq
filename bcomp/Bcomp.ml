@@ -25,6 +25,8 @@ let opt_parse = ref false
 
 let opt_typecheck = ref false
 
+let opt_aliascheck = ref false
+
 let opt_print_tokens = ref false
 
 let opt_print_bbnf = ref false
@@ -57,9 +59,10 @@ let options =
     ( "-parse",
       Arg.Set opt_parse,
       "\t\t\t\tParse the given files (stop after parsing)" );
-    ( "-typecheck",
-      Arg.Set opt_typecheck,
-      "\t\t\t\tTypecheck the input files (do not compile)" );
+    ("-typecheck", Arg.Set opt_typecheck, "\t\t\t\tTypecheck the input files");
+    ( "-aliascheck",
+      Arg.Set opt_aliascheck,
+      "\t\t\t\tRun the alias analysis on the input files" );
     ("-o", Arg.Set_string c_output, "<file>\t\t\t\tGenerate C output in <file>");
     ( "-print-tokens",
       Arg.Set opt_print_tokens,
@@ -182,6 +185,21 @@ let () =
         exit 0
       end;
 
+      if !opt_interp then begin
+        let _ = Binterpreter.interpret iprog in
+        exit 0
+      end;
+
+      if !opt_aliascheck then begin
+        begin
+          match Compiler.aliascheck_program !opt_debug_aliasing prog with
+          | Errors.OK _ -> printf "Alias checking succeeded\n"
+          | Errors.Error msg ->
+              raise @@ CompilerError (C2C.string_of_errmsg msg)
+        end;
+        exit 0
+      end;
+
       if !opt_print_bbnf then begin
         let bbnf = BarocqBNFgen.norm_program prog in
         begin
@@ -278,12 +296,6 @@ let () =
           | Errors.Error msg ->
               raise @@ CompilerError (C2C.string_of_errmsg msg)
         end
-      end;
-
-      begin
-        if !opt_interp then
-          let _ = Binterpreter.interpret iprog in
-          exit 0
       end;
 
       if !opt_gen_corres then begin
