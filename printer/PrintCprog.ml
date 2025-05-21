@@ -31,6 +31,14 @@ let print_header_globdef (p : formatter)
   | Gfun _ -> ()
   | Gvar v -> print_header_globvar p id v
 
+let print_inttype_aliases (oc : out_channel) : unit =
+  Printf.fprintf
+    oc
+    "typedef int i32;\n\
+     typedef unsigned int u32;\n\
+     typedef long long i64;\n\
+     typedef unsigned long long u64;\n\n"
+
 let print_header (types_header : string) (hfile : string)
     (prog : Clight.program) : unit =
   let aux p prog =
@@ -44,5 +52,6 @@ let print_header (types_header : string) (hfile : string)
   Printf.fprintf oc "#pragma once\n\n";
   if types_header <> "" then
     Printf.fprintf oc "#include \"%s\"\n\n" types_header;
+  print_inttype_aliases oc;
   aux (formatter_of_out_channel oc) prog;
   close_out oc
