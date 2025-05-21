@@ -42,11 +42,17 @@ let cast_to_rocq (src_ty : mtyp) (dst_ty : mtyp) : string =
     sprintf "%s_to_%s" (mtyp_to_string src_ty) (mtyp_to_string dst_ty)
   else ""
 
-let unary_op_to_rocq (op : unary_op) : string =
+let unary_op_to_rocq (ty : mtyp) (op : unary_op) : string =
+  let intmod =
+    match ty with
+    | MInt32 _ -> "Int"
+    | MInt64 _ -> "Int64"
+    | _ -> ""
+  in
   match op with
   | UopNotbool -> "negb "
-  | UopNotint -> "Int.not "
-  | UopNeg -> "Int.neg "
+  | UopNotint -> sprintf "%s.not " intmod
+  | UopNeg -> sprintf "%s.neg " intmod
   | UopPlus -> ""
 
 let binary_op_to_rocq (ty : mtyp) (op : binary_op) : string =
@@ -63,6 +69,7 @@ let binary_op_to_rocq (ty : mtyp) (op : binary_op) : string =
       match o with
       | "add" | "sub" | "mul" | "and" | "or" | "xor" | "shl" -> ""
       | "shr" | "cmp" | "lt" -> if suffix = "s" then "" else suffix
+      | "eq" -> ""
       | _ -> suffix
     in
     sprintf "%s.%s%s" intmod o suffix
@@ -111,11 +118,14 @@ let rec atom_to_rocq (a : atom) : string =
         cast_to_rocq (BarocqShallowgen.Monadification.typof_atom a1) ty
       in
       sprintf "%s %s" castfunc (opt_parens a1)
-  | AUnaryOp (op, a, _) -> sprintf "%s%s" (unary_op_to_rocq op) (opt_parens a)
+  | AUnaryOp (op, a, _) ->
+      let ty = BarocqShallowgen.Monadification.typof_atom a in
+      sprintf "%s%s" (unary_op_to_rocq ty op) (opt_parens a)
   | ABinaryOp (op, a1, a2, ty) ->
+      let ty1 = BarocqShallowgen.Monadification.typof_atom a1 in
       sprintf
         "%s %s %s"
-        (binary_op_to_rocq ty op)
+        (binary_op_to_rocq ty1 op)
         (opt_parens a1)
         (opt_parens a2)
   | AStructProj (a1, x, _) ->
