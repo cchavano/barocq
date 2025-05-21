@@ -1131,7 +1131,7 @@ let locked_arrays_to_string (st : absstate) : string =
       sprintf
         "%s -> %s"
         (ident_to_string v)
-        (PrintSyntax.PrintTyped.atom_to_string a))
+        (PrintSyntax.Typed.atom_to_string a))
     (List.of_seq (IdentMap.to_seq arr_locked_var))
 
 let print_dom_debug (show_debug : bool) (d : absdom) (suffix : string)
@@ -1163,7 +1163,7 @@ let update_err_stmt (stmt : Imp1Typed.statement) (err : err_info) : err_info =
   | _ ->
       if err.ei_stmt = None then
         mk_err_info_with_stmt
-          (PrintImp1.PrintTyped.statement_to_string_pref "" stmt)
+          (PrintImp1.Typed.statement_to_string_pref "" stmt)
           err.ei_msg
       else err
 
@@ -1201,12 +1201,12 @@ let rec absexec (show_debug : bool) (se : senv) (fe : fenv) (d : absdom)
                 debug_info show_debug
                 @@ sprintf
                      "Entering function call \"%s\" ==========\n"
-                     (PrintSyntax.PrintTyped.comp_to_string c);
+                     (PrintSyntax.Typed.comp_to_string c);
                 let r = exec_set_call show_debug se x a args ty fe st in
                 debug_info show_debug
                 @@ sprintf
                      "Exiting function call \"%s\" ===========\n"
-                     (PrintSyntax.PrintTyped.comp_to_string c);
+                     (PrintSyntax.Typed.comp_to_string c);
                 r
             | CpArrayGet (a, i, _) -> exec_set_array_get x a i st
             | CpArraySet (a, i, v, _) -> exec_set_array_set x a i v st
@@ -1215,9 +1215,7 @@ let rec absexec (show_debug : bool) (se : senv) (fe : fenv) (d : absdom)
         in
         let s', d' = (Imp1.Aliasing_AST.StSet (x, c, d_in, d'), d') in
         debug_info show_debug
-        @@ sprintf
-             ">> %s\n"
-             (PrintImp1.PrintTyped.statement_to_string_pref "" s);
+        @@ sprintf ">> %s\n" (PrintImp1.Typed.statement_to_string_pref "" s);
         print_dom_debug show_debug d' "OUT" false;
         (s', d')
     | StIfThenElse (a, s1, s2) ->
@@ -1225,7 +1223,7 @@ let rec absexec (show_debug : bool) (se : senv) (fe : fenv) (d : absdom)
         debug_info show_debug
         @@ sprintf
              ">> Entering if-then-else \"if %s\" ======================\n"
-             (PrintSyntax.PrintTyped.atom_to_string a);
+             (PrintSyntax.Typed.atom_to_string a);
         let s1', d1 = absexec show_debug se fe d s1 in
         let s2', d2 = absexec show_debug se fe d s2 in
         let d_out =
@@ -1236,7 +1234,7 @@ let rec absexec (show_debug : bool) (se : senv) (fe : fenv) (d : absdom)
         debug_info show_debug
         @@ sprintf
              ">> Exiting if-then-else \"if %s\", joint point ==========\n"
-             (PrintSyntax.PrintTyped.atom_to_string a);
+             (PrintSyntax.Typed.atom_to_string a);
         print_dom_debug show_debug d_out "OUT" true;
         (Imp1.Aliasing_AST.StIfThenElse (a, s1', s2', d_in, d_out), d_out)
     | StSequence (s1, s2) ->
@@ -1246,9 +1244,7 @@ let rec absexec (show_debug : bool) (se : senv) (fe : fenv) (d : absdom)
     | StReturn a ->
         print_dom_debug show_debug d "IN" false;
         debug_info show_debug
-        @@ sprintf
-             ">> %s\n"
-             (PrintImp1.PrintTyped.statement_to_string_pref "" s);
+        @@ sprintf ">> %s\n" (PrintImp1.Typed.statement_to_string_pref "" s);
         let d' =
           let* st = d in
           let st' = exec_return a st in

@@ -16,9 +16,7 @@ exception Invalid_program of error_cause * statement option
 let msg_from_failure (cause : error_cause) : string =
   match cause with
   | Invalid_atom a ->
-      Printf.sprintf
-        "atom %s is not valid"
-        (PrintSyntax.PrintTyped.atom_to_string a)
+      Printf.sprintf "atom %s is not valid" (PrintSyntax.Typed.atom_to_string a)
   | Invalid_path (v, p) ->
       Printf.sprintf
         "path %s%s is not valid"
@@ -31,13 +29,12 @@ let msg_from_failure (cause : error_cause) : string =
           ""
           ""
           (fun ac ->
-            PrintSyntax.PrintTyped.untype_access ac
-            |> PrintSyntax.access_to_string)
+            PrintSyntax.Typed.untype_access ac |> PrintSyntax.access_to_string)
           acs
       in
       Printf.sprintf
         "deep access %s%s is not valid"
-        (PrintSyntax.PrintTyped.atom_to_string a)
+        (PrintSyntax.Typed.atom_to_string a)
         acs_str
   | Invalid_retval -> "invalid return value"
 

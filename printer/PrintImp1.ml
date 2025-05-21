@@ -36,21 +36,21 @@ let globdef_to_string (def : Imp1.globdef) : string =
 let print_program (out : out_channel) (prog : Imp1.program) : unit =
   PrintSyntax.print_program out ";" globdef_to_string prog
 
-module PrintTyped : sig
+module Typed : sig
   val statement_to_string_pref : string -> Imp1Typed.statement -> string
 
   val statement_to_string : Imp1Typed.statement -> string
 end = struct
-  open PrintSyntax.PrintTyped
+  open PrintSyntax.Typed
 
   let rec untype_statement (s : Imp1Typed.statement) : Imp1.statement =
     match s with
-    | Typed.StSet (x, c) -> StSet (x, untype_comp c)
-    | Typed.StIfThenElse (a, s1, s2) ->
+    | Imp1Typed.StSet (x, c) -> StSet (x, untype_comp c)
+    | Imp1Typed.StIfThenElse (a, s1, s2) ->
         StIfThenElse (untype_atom a, untype_statement s1, untype_statement s2)
-    | Typed.StSequence (s1, s2) ->
+    | Imp1Typed.StSequence (s1, s2) ->
         StSequence (untype_statement s1, untype_statement s2)
-    | Typed.StReturn a -> StReturn (untype_atom a)
+    | Imp1Typed.StReturn a -> StReturn (untype_atom a)
 
   let statement_to_string_pref (prefix : string) (s : Imp1Typed.statement) :
       string =
@@ -61,7 +61,7 @@ end = struct
 end
 
 module PrintAliasing = struct
-  open PrintSyntax.PrintTyped
+  open PrintSyntax.Typed
 
   let rec remove_alias_info (s : Imp1.Aliasing_AST.statement) : Imp1.statement =
     match s with

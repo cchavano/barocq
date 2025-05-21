@@ -113,27 +113,27 @@ let comp_to_string (c : comp) : string =
         (atom_to_string f)
         (list_to_string_paren atom_to_string args)
 
-module PrintTyped = struct
+module Typed = struct
   let rec untype_atom (a : Syntax.Typed.atom) : atom =
     match a with
-    | Typed.ATrue _ -> ATrue
-    | Typed.AFalse _ -> AFalse
-    | Typed.AInt32 (i, ty) -> begin
+    | Syntax.Typed.ATrue _ -> ATrue
+    | Syntax.Typed.AFalse _ -> AFalse
+    | Syntax.Typed.AInt32 (i, ty) -> begin
         match ty with
         | BInt32 Signed -> AInt32 (i, Signed)
         | BInt32 Unsigned -> AInt32 (i, Unsigned)
         | _ -> assert false
       end
-    | Typed.AInt64 (i, ty) -> begin
+    | Syntax.Typed.AInt64 (i, ty) -> begin
         match ty with
         | BInt64 Signed -> AInt64 (i, Signed)
         | BInt64 Unsigned -> AInt64 (i, Unsigned)
         | _ -> assert false
       end
-    | Typed.AVar (x, _) -> AVar x
-    | Typed.ACast (a1, ty) -> ACast (untype_atom a1, ty)
-    | Typed.AUnaryOp (op, a', _) -> AUnaryOp (op, untype_atom a')
-    | Typed.ABinaryOp (op, a1, a2, _) ->
+    | Syntax.Typed.AVar (x, _) -> AVar x
+    | Syntax.Typed.ACast (a1, ty) -> ACast (untype_atom a1, ty)
+    | Syntax.Typed.AUnaryOp (op, a', _) -> AUnaryOp (op, untype_atom a')
+    | Syntax.Typed.ABinaryOp (op, a1, a2, _) ->
         ABinaryOp (op, untype_atom a1, untype_atom a2)
 
   let atom_to_string (a : Syntax.Typed.atom) : string =
@@ -141,21 +141,22 @@ module PrintTyped = struct
 
   let untype_access (ac : Syntax.Typed.access) : Syntax.access =
     match ac with
-    | Typed.AcStructField (f, _) -> AcStructField f
-    | Typed.AcArrayIndex (a, _) -> AcArrayIndex (untype_atom a)
+    | Syntax.Typed.AcStructField (f, _) -> AcStructField f
+    | Syntax.Typed.AcArrayIndex (a, _) -> AcArrayIndex (untype_atom a)
 
-  let untype_comp (c : Typed.comp) : comp =
+  let untype_comp (c : Syntax.Typed.comp) : comp =
     match c with
-    | Typed.CpAtom (a, _) -> CpAtom (untype_atom a)
-    | Typed.CpArrayGet (a1, a2, _) -> CpArrayGet (untype_atom a1, untype_atom a2)
-    | Typed.CpArraySet (a1, a2, a3, _) ->
+    | Syntax.Typed.CpAtom (a, _) -> CpAtom (untype_atom a)
+    | Syntax.Typed.CpArrayGet (a1, a2, _) ->
+        CpArrayGet (untype_atom a1, untype_atom a2)
+    | Syntax.Typed.CpArraySet (a1, a2, a3, _) ->
         CpArraySet (untype_atom a1, untype_atom a2, untype_atom a3)
-    | Typed.CpStructProj (a', f, _) -> CpStructProj (untype_atom a', f)
-    | Typed.CpStructUpdate (a1, f, a2, _) ->
+    | Syntax.Typed.CpStructProj (a', f, _) -> CpStructProj (untype_atom a', f)
+    | Syntax.Typed.CpStructUpdate (a1, f, a2, _) ->
         CpStructUpdate (untype_atom a1, f, untype_atom a2)
-    | Typed.CpDeepAccess (a, acs, _) ->
+    | Syntax.Typed.CpDeepAccess (a, acs, _) ->
         CpDeepAccess (untype_atom a, List.map untype_access acs)
-    | Typed.CpCall (a', args, _) ->
+    | Syntax.Typed.CpCall (a', args, _) ->
         CpCall (untype_atom a', List.map untype_atom args)
 
   let comp_to_string (c : Syntax.Typed.comp) : string =
