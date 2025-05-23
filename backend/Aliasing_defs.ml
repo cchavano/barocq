@@ -304,45 +304,36 @@ module AbsDom = struct
     let rev = env_reverse_single x locs rev in
     { st with st_env = ev; st_rev_env = rev }
 
-  (** [mem_add st (l, f) locs] adds the binding [(l, f)] -> [locs] in the state
-      [st] and reflects this change in the reverse memory. *)
-  let mem_add (st : absstate) ((l, f) : ident * ident) (locs : pointsto_set) :
-      absstate =
-    let old_locs = IdentPairMap.find (l, f) st.st_mem in
-    let m = IdentPairMap.add (l, f) locs st.st_mem in
-    (* If (l, f) -> {l1, ..., ln} is the old binding of st.st_mem,
-       then removes l in all ls s.t. li -> {(f, ls), ...} belongs to st.st_rev_mem, for li in {l1, ..., ln}. *)
-    let rec remove_loc_from (lip : (ident * pointsto_set) list) (f : ident)
-        (l : absloc) : (ident * pointsto_set) list =
-      match lip with
-      | [] -> []
-      | (fi, ls) :: lip' ->
-          if fi = f then (fi, IdentSet.remove l ls) :: lip'
-          else (fi, ls) :: remove_loc_from lip' f l
+  (** [mem_weak_update st (l, f) locs] adds the locations [locs] into the set of
+      locations already pointed by [(l, f)] in [st], and reflects the change in
+      the reverse memory. *)
+  let mem_weak_update (st : absstate) ((l, f) : ident * ident)
+      (locs : pointsto_set) : absstate =
+    let m =
+      IdentPairMap.update
+        (l, f)
+        (fun f_locs ->
+          match f_locs with
+          | Some f_locs -> Some (IdentSet.union f_locs locs)
+          | None -> Some locs)
+        st.st_mem
     in
-    let rm =
-      IdentSet.fold
-        (fun ol acc ->
-          IdentMap.update
-            ol
-            (fun lip ->
-              match lip with
-              | Some lip -> Some (remove_loc_from lip f l)
-              | None -> None)
-            acc)
-        old_locs
-        st.st_rev_mem
-    in
-    (* Adds the new reverse bindings *)
-    (* If (l, f) -> {m1, ..., mn} is the new binding added in st.st_mem,
-       then adds l in all ls s.t. mi -> {(f, ls), ...} belongs to rm, for mi in {m1, ..., mn}. *)
-    let rm = mem_reverse_single (l, f) locs rm in
     {
       st with
       st_mem = m;
-      st_rev_mem = rm;
+      st_rev_mem = mem_reverse m;
       st_next_loc = Pos.add BinNums.Coq_xH (Pos.max st.st_next_loc l);
     }
+
+  (* let mem_strong_update (st : absstate) ((l, f) : ident * ident)
+      (locs : pointsto_set) : absstate =
+    let m = IdentPairMap.add (l, f) locs st.st_mem in
+    {
+      st with
+      st_mem = m;
+      st_rev_mem = mem_reverse m;
+      st_next_loc = Pos.add BinNums.Coq_xH (Pos.max st.st_next_loc l);
+    } *)
 
   (** [mem_get m l f] returns the points-to set associated with [(l, f)] in [m].
       Returns an empty set if [(l, f)] is not a key of [m]. *)

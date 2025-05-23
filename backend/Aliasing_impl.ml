@@ -249,9 +249,9 @@ let exec_set_struct_update (se : senv) (x : ident) (a : atom) (f : ident)
         | AVar (v, ty) ->
             if is_prim ty then st
             else
-              (* If v is not primitive, makes x.f point to all locations pointed by v. *)
+              (* If v is not primitive, we update the memory. *)
               let lv = IdentMap.find v st.st_env in
-              IdentSet.fold (fun l acc -> mem_add acc (l, f) lv) ly st
+              IdentSet.fold (fun l acc -> mem_weak_update acc (l, f) lv) ly st
         | _ -> st
       in
       (* x points to all locations pointed by y. *)
@@ -374,8 +374,11 @@ let exec_set_array_set (x : ident) (a : atom) (i : atom) (v : atom)
               if is_prim ty then st
               else
                 let lv = IdentMap.find v st.st_env in
-                (* x[] points to all locations pointed by v. *)
-                IdentSet.fold (fun l acc -> mem_add acc (l, _INDEX) lv) ly st
+                (* Update the locations pointed by x[]. *)
+                IdentSet.fold
+                  (fun l acc -> mem_weak_update acc (l, _INDEX) lv)
+                  ly
+                  st
           | _ -> st
         in
         (* x points to all locations pointed by y. *)
@@ -715,6 +718,7 @@ let rec mem_bijection (se : senv) (edges : (ident * btyp) list) (loc1 : absloc)
                 | Errors.Error _ -> assert false
               end
             | BArray ta -> [(_INDEX, ta)]
+            | BAbs _ -> []
             | _ -> assert false
           in
           let bij' =
@@ -984,10 +988,9 @@ let exec_set_call (show_debug : bool) (se : senv) (x : ident) (a : atom)
                As function parameters are renamed by the frontend, we never assign an argument to another value.
                So for every key "v" in stret.st_env, s.t. "v" was an argument, the points-to set of "v" is the same
                in stret.st_env and st.st_env.
-             - If a pair (l, f) is a key of the return state memory, it means that
-                - either it was accessible from the arguments (and it's also contained in st),
-                - or it's a new locations resulting from a call to an abstract function.
-               We just keep the value associated with (l, f) from this return state in the new memory.
+             - If a pair (l, f) is a key of the return state memory, it means that it was accessible from the arguments
+                (and it's also contained in st).
+                We just keep the value associated with (l, f) from this return state in the new memory.
              - If a pair (l, f) is NOT a key of the return state memory,
                then we keep the value associated with (l, f) from the initial state.
              - The invalid paths of the resulting state will contain:
@@ -1278,7 +1281,7 @@ let add_memory_object_aux (se : senv) (st : absstate) (root : absloc)
   in
   let rec gen_val_mem_layout (m : absmem) (root : absloc) (ty : btyp) : absmem =
     match ty with
-    | BBool | BInt32 _ | BInt64 _ | BAbs _ -> mem_empty
+    | BBool | BInt32 _ | BInt64 _ | BAbs _ -> m
     | BArray ta -> gen_array_mem_layout m root ta
     | BStruct ts -> gen_struct_mem_layout m root ts
     | _ -> raise unsupported
@@ -1292,12 +1295,14 @@ let add_memory_object_aux (se : senv) (st : absstate) (root : absloc)
       =
     match senv_get se sid with
     | Errors.OK fields ->
+        (* Printf.printf "Fields: %s\n" (PrintTypes.structtyp_to_string PrintTypes.btyp_to_string fields); *)
         List.fold_left
-          (fun acc (fname, ftyp) ->
-            if is_prim ftyp then acc
+          (fun acc (fname, fty) ->
+            if is_prim fty then acc
             else
               let lid = fresh_loc () in
-              let m = gen_val_mem_layout acc lid ftyp in
+              (* Printf.printf "Fresh loc: %s\n" (absloc_to_string lid); *)
+              let m = gen_val_mem_layout acc lid fty in
               IdentPairMap.add (root, fname) (IdentSet.singleton lid) m)
           m
           fields
@@ -1334,9 +1339,6 @@ let is_param (v : ident) (params : (ident * btyp) list) : bool =
     [st] on the function parameters [params]. *)
 let build_return_state (st : absstate) (params : (ident * btyp) list) : absstate
     =
-  (* As functions may create new memory objects due to calls to abstract functions,
-     we must keep the memory part reachable from the returned locations (which may point
-     to new objects). *)
   let streturn =
     proj_state_aux st (IdentSet.of_list (List.map fst params)) st.st_res
   in
@@ -1429,8 +1431,12 @@ let gen_absfun_descr (se : senv) (fe : fenv)
   assert (wf_params callstate params);
   assert (params_pointsto_unique callstate (List.map fst params));
   let returnstate =
-    let wparam, _ = List.assoc AttrWrite params1 in
-    let root = IdentMap.find wparam callstate.st_env in
+    let root =
+      if is_prim tret then IdentSet.empty
+      else
+        let wparam, _ = List.assoc AttrWrite params1 in
+        IdentMap.find wparam callstate.st_env
+    in
     let st = { callstate with st_res = root } in
     let st =
       List.fold_left
