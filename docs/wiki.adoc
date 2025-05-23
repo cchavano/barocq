@@ -7,9 +7,9 @@ Barocq is a restricted functional programming language with built-in records and
 
 The purpose of Barocq is to integrate C-like features into a functional language to easily write system code (e.g. microkernel). Barocq is compiled to Clight, an intermediate language of https://github.com/AbsInt/CompCert[CompCert]. Clight programs can be pretty-printed as compilable C files. A Barocq program can also be translated to a shallow and deep embedding in Coq/Rocq. Proofs of correspondence between the two embeddings are automatically generated.
 
-Even though Barocq has a purely functional semantics, the compiler transforms all record and array modifications into in-place updates in C (i.e. no copies are performed). Of course, only a really small subset of functional programs can be translated to an imperative one with in-place updates without breaking the source program's semantics. Thus, Barocq is equipped with a static analyzer that rejects the programs whose compilation would be incorrect.
+Even though Barocq has a purely functional semantics, the compiler transforms all record and array modifications into in-place updates in C (i.e. no copies are performed). Of course, only a really small subset of functional programs can be translated to imperative ones using in-place updates without breaking the source program's semantics. Thus, Barocq is equipped with a static analyzer that rejects the programs whose compilation would be incorrect.
 
-This documentation first describes the necessary steps to install the Barocq compiler. It then presents the surface syntax and the features of the language. Finally, it gives an more detailed example and the good practices to follow to avoid getting errors from the static analyzer mentioned above.
+This documentation first describes the necessary steps to install the Barocq compiler. It then presents the surface syntax and the features of the language. Finally, it gives a more detailed example and the good practices to follow to avoid getting errors from the static analyzer mentioned above.
 
 == Installation guide
 
@@ -98,7 +98,7 @@ type circle = {
 
 ==== Array types
 
-Array types are declared type with the keyword `array`. For example, an array of `i32` is written `array i32`, an array of `point` is written `array point` and an array of an array of `u64` is written `array (array u64)`. In the last example, parentheses are mandatory.
+Array types are declared with the keyword `array`. For example, an array of `i32` is written `array i32`, an array of `point` is written `array point` and an array of an array of `u64` is written `array (array u64)`. In the last example, parentheses are mandatory.
 
 NOTE: Although arrays can be of any type, Barocq does not support polymorphism, i.e. you cannot write functions that take an array whose element type is generic.
 
@@ -128,9 +128,9 @@ Boolean literals are `true` and `false`.
 Integer literals can be written in decimal (e.g. `123`) or hexadimal (e.g. `0xFF`) notation. By default,
 integer literals are parsed as being 32-bit signed integers. To change the signedness and size of a literal, the suffixes `U` (for unsigned), `L` (for long, i.e. 64-bit) and `UL` (for unsigned 64-bit) must be used.
 
-Record literals are written `{ f1 = l1; f2 = l2; ... }`, where `fi` is the field name and `li` the corresponding value, which is another literal.
+Record literals are written `{ f1 = l1; ...; fn = ln; }`, where `fi` is the field name and `li` the corresponding value, which is another literal.
 
-Array literals are written `[| l1; l2; l3 |]` where each `li` is a literal.
+Array literals are written `[| l1; l2; ...; ln |]` where each `li` is a literal.
 
 IMPORTANT: Array and record literals can only be used for defining global constants and cannot appear in the body of a function. This is due to the fact that Barocq does not support object allocation.
 
@@ -266,7 +266,7 @@ NOTE: The type of an array index depends on the CompCert `Archi.ptr64` value. If
 
 === Definitions
 
-Global constants  and functions can be defined with the keyword `defn``.
+Global constants  and functions can be defined with the keyword `defn`.
 
 ==== Constants
 
@@ -355,7 +355,7 @@ Abstract function must respect the following contract:
 
 * All arguments passed to an abstract function must be completely independant, i.e. there is no intra- or inter-aliasing between arguments;
 * The function cannot make a newly allocated object escape from the local scope;
-* The function must preserve the memory layout of the call state (e.g. pointer swapping is forbidden). If changes occur, they can only be a modification of a primitive value contained in the arguments;
+* The function must preserve the memory layout of the call state (e.g. pointer swapping is forbidden). If changes occur in the memory, they can only be a modification of a primitive value contained in the arguments;
 * The function cannot modify an argument annotated with `@read`;
 * If the result is non-primitive, it must point to the argument annotated with `@write`.
 ====
@@ -451,6 +451,8 @@ You may notice that to modify the `nb_sched` field of a process, it is needed to
 
 A deep update would make this instruction effectively return the new updated kernel `state`, but this is not yet supported by the compiler.
 
+If you just want make a deep access to a value without modifying it, you can use the syntax `ks.procs[next_id].nb_sched` for example.
+
 To compile those files with the Barocq compiler, we use the following command:
 
 [source,bash]
@@ -466,7 +468,7 @@ As mentionned in the preamble, all array and record modifications are compiled i
 
 NOTE: The points-to analysis is performed on an intermediate representation called `Imp1`. The error messages are thus related to the `Imp1` syntax. Precisely pinpointing the origin of the problem in the source code is a tedious task that has not yet been done. To make the debugging of Barocq code easier, you can display the `Imp1` representation with the `-print-imp1` option of the compiler.
 
-The first thing to have in mind when you write Barocq code is that you are kind of writing an imperative program with a functional syntax. Thus, in the compiled code, assignments to non-primitive values create aliases to it and modifying an array or a struct actually makes an in-place modification. To make a functional program compatible with those behaviors, it is strongly recommended to adopt an _affine_ programming style (a bit like Rust for those familiar with the language). This means that you should only use a non-primitive value at most once. More precisely, we adopt the following guideline: "everytime you make a modification to an object, never try to use the old version of it". This is what we do in the example above. To help following this good practice, we use variable shadowing every time we modify a variable, so that we are sure that we can only use the last reference. +
+The first thing to have in mind when you write Barocq code is that you are kind of writing an imperative program with a functional syntax. Thus, in the compiled code, assignments to non-primitive values actually create aliases, and modifying an array or a struct updates the memory in-place. To make a functional program compatible with those behaviors, it is strongly recommended to adopt an _affine_ programming style (a bit like Rust for those familiar with the language). This means that you should only use a non-primitive value at most once. More precisely, we adopt the following guideline: "everytime you make a modification to an object, never try to use the old version of it". This is what we do in the example above. To help following this good practice, we use variable shadowing every time we modify a variable, so that we are sure that we will only use the last reference to it. +
 
 The second thing to know concerns arrays. Usually, arrays are accessed with indices whose values are not statically known. Barocq enforces a restrictive policy to make sure the programmer doesn't access an array with different indices at the same time. In short, you can only access one element at a time, and you cannot feed the parameters of a function with arguments containing arrays on which you already have a reference on a element.
 
