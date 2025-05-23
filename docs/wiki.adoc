@@ -1,0 +1,473 @@
+= Barocq's documentation
+:toc:
+
+== Preamble
+
+Barocq is a restricted functional programming language with built-in records and arrays.
+
+The purpose of Barocq is to integrate C-like features into a functional language to easily write system code (e.g. microkernel). Barocq is compiled to Clight, an intermediate language of https://github.com/AbsInt/CompCert[CompCert]. Clight programs can be pretty-printed as compilable C files. A Barocq program can also be translated to a shallow and deep embedding in Coq/Rocq. Proofs of correspondence between the two embeddings are automatically generated.
+
+Even though Barocq has a purely functional semantics, the compiler transforms all record and array modifications into in-place updates in C (i.e. no copies are performed). Of course, only a really small subset of functional programs can be translated to an imperative one with in-place updates without breaking the source program's semantics. Thus, Barocq is equipped with a static analyzer that rejects the programs whose compilation would be incorrect.
+
+This documentation first describes the necessary steps to install the Barocq compiler. It then presents the surface syntax and the features of the language. Finally, it gives an more detailed example and the good practices to follow to avoid getting errors from the static analyzer mentioned above.
+
+== Installation guide
+
+=== Dependencies
+
+The Barocq compiler depends on OCaml, Coq/Rocq and the CompCert compiler.
+First, install the OCaml Package Manager (OPAM).
+Once `opam` is configured, add the Coq package repository:
+
+[source,bash]
+----
+opam repo add coq-released https://coq.inria.fr/opam/released
+----
+
+Finally, install the following dependencies with `opam install`:
+
+[source,text]
+----
+ocaml           (version 4.14.2)
+menhir          (version 20240715)
+coq             (version 8.20.0)
+coq-compcert    (version 3.15, using the "-b" option)
+----
+
+=== Building the project
+
+The commands are the following:
+
+[source,bash]
+----
+make
+make install
+----
+`make install` installs the binary executable `barocq` under the `bin/` folder of the current opam switch.
+
+=== Editor support
+
+There is a syntax-highlighting support for VSCode. Open the VSCode command palette, look for the command `Developer: Install Extension from Location...` and choose the directory `misc/vsbarocq`.
+
+== Syntax
+
+=== Types
+
+==== Primitive types
+
+Barocq supports the usual boolean and integer types. These types correspond to _primitive_ types.
+
+[cols="1,1"]
+|===
+|Type |Syntax
+
+|boolean
+|`bool`
+
+|32-bit integer
+|`i32`
+
+|32-bit unsigned integer
+|`u32`
+
+|64-bit integer
+|`i64`
+
+|64-bit unsigned integer
+|`u64`
+|===
+
+For the moment, there is no support for integers whose size depend on the architecture.
+
+==== Record types
+
+Record types can be created with the keyword `type`. An example of two record type definitions:
+
+[source]
+----
+type point = {
+    x: i32;
+    y: i32;
+}
+
+type circle = {
+    center: point;
+    radius: u32;
+}
+----
+
+==== Array types
+
+Array types are declared type with the keyword `array`. For example, an array of `i32` is written `array i32`, an array of `point` is written `array point` and an array of an array of `u64` is written `array (array u64)`. In the last example, parentheses are mandatory.
+
+NOTE: Although arrays can be of any type, Barocq does not support polymorphism, i.e. you cannot write functions that take an array whose element type is generic.
+
+==== Type aliases
+
+The following code creates a type named `int` to be an alias for `i32`, and a type named `buffer` to be an alias of `array u32`.
+
+[source]
+----
+type int = i32
+
+type buffer = array u32
+----
+
+Type aliases is a front-end feature only, i.e. they will not appear in the compiled C file.
+
+==== About the compilation of types
+
+All non-primitive types are boxed in the generated C file, i.e. they are wrapped in a pointer.
+
+=== Expressions
+
+==== Literals
+
+Boolean literals are `true` and `false`.
+
+Integer literals can be written in decimal (e.g. `123`) or hexadimal (e.g. `0xFF`) notation. By default,
+integer literals are parsed as being 32-bit signed integers. To change the signedness and size of a literal, the suffixes `U` (for unsigned), `L` (for long, i.e. 64-bit) and `UL` (for unsigned 64-bit) must be used.
+
+Record literals are written `{ f1 = l1; f2 = l2; ... }`, where `fi` is the field name and `li` the corresponding value, which is another literal.
+
+Array literals are written `[| l1; l2; l3 |]` where each `li` is a literal.
+
+IMPORTANT: Array and record literals can only be used for defining global constants and cannot appear in the body of a function. This is due to the fact that Barocq does not support object allocation.
+
+==== Operators
+
+Barocq comes with the usual unary and binary operators, which are the following.
+
+*Unary operators*:
+
+[cols="1,1,1"]
+|===
+|Operator |Description |Operand type
+
+|`!`
+|Boolean NOT
+|`bool`
+
+|`+`
+|Numerical PLUS
+|Any integer type
+
+|`-`
+|Numerical MINUS
+|Any integer type
+
+|`~`
+|Bitwise NOT
+|Any integer type
+
+|===
+
+*Binary operators*:
+
+The two operands of a binary operation must have the same type.
+
+[cols="1,1,1"]
+|===
+|Operator |Description |Operands type
+
+|`&&`
+|Boolean AND
+|`bool`
+
+|`\|\|`
+|Boolean OR
+|`bool`
+
+|`^^`
+|Boolean XOR
+|`bool`
+
+|`+`
+|Numerical ADD
+|Any integer type
+
+|`-`
+|Numerical SUBSTRACT
+|Any integer type
+
+|`*`
+|Numerical MULTIPLY
+|Any integer type
+
+|`/`
+|Numerical DIVIDE
+|Any integer type
+
+|`%`
+|Numerical MODULO
+|Any integer type
+
+|`<`
+|Numerical LESS THAN
+|Any integer type
+
+|`\<=`
+|Numerical LESS or EQUAL THAN
+|Any integer type
+
+|`>`
+|Numerical GREATER THAN
+|Any integer type
+
+|`>=`
+|Numerical GREATER or EQUAL THAN
+|Any integer type
+
+|`=`
+|Equality test
+|Any primitive type
+
+|`!=`
+|Equality test negation
+|Any primitive type
+
+|===
+
+==== Other expressions
+
+The following table summarizes the other expressions of the language. All identifiers which begin by an `e` are themselves expressions.
+
+[col="1,1"]
+|===
+|Syntax |Description
+
+|`let x = e1 in e2`
+|Let binding
+
+|`if e1 then e2 else e3`
+|Conditional expression
+
+|`e.f`
+|Accessing a record field
+
+|`e1.f \<- e2`
+|Modifying a record field
+
+|`e1[e2]`
+|Accessing an array element
+
+|`e1[e2] \<- e2`
+|Modifying an array element
+
+|`e1 as ty`
+|Casting `e1` to an expression of type `ty`
+
+|`f(e1, ..., en)`
+|Calling function `f` with arguments `e1, ..., en`
+
+|===
+
+NOTE: The type of an array index depends on the CompCert `Archi.ptr64` value. If you compiled CompCert to target a 32-bit architecture, you should use `u32` indices, otherwise you should use `u64` for a 64-bit arch.
+
+=== Definitions
+
+Global constants  and functions can be defined with the keyword `defn``.
+
+==== Constants
+
+The syntax is:
+
+[source]
+----
+defn const_name : const_type = const_value
+----
+`const_name` is an identifier, `const_type` is a type and `const_value` is a literal.
+
+The following example declare several constants:
+
+[source]
+----
+defn MAX_SIZE : u32 = 10U
+
+defn my_array : array point = [|{ x = 6; y = -2; };  { x = 2; y = 34; }|]
+----
+
+IMPORTANT: Only constants with a primitive type can be used in function bodies. Non-primitive constants may be used by manually written C code which would be linked to Barocq generated code.
+
+==== Functions
+
+The syntax is:
+
+[source]
+----
+defn fun_name(p1: t1, ..., pn: tn) : tr =
+    (* body *)
+----
+
+Each parameter `pi` is associated with its type `ti`. `tr` is the return type. A function can take no parameters.
+
+NOTE: All functions are uncurried, you can not do partial application.
+
+=== Foreign function interface
+
+You may need to provide types and definitions which do not have an implementation in Barocq, but are implemented in C. Barocq supports abstract types and abstract definitions.
+
+==== Abstract types
+
+For abstract types, Barocq needs to now if the underlying type is a struct or a union:
+
+[source]
+----
+type my_type1 of "struct"
+
+type my_type2 of "union"
+----
+
+All references to an abstract type in the Barocq code are translated to a boxed type in the generated C file.
+The only thing that shoud be unboxed is the type definition itself.
+
+==== Abstract definitions
+
+Abstract constants and functions are declared with the keyword `decl`:
+
+[source]
+----
+type t1 of "struct"
+
+type rec = {
+    f1: t1;
+    f2: u32;
+}
+
+decl CONST1 : u32
+
+decl CONST2 : rec
+
+decl rand : (i32) -> i32
+
+decl copy_array : (@read array point, @write array point) -> array point
+----
+
+By default, all arguments passed to an abstract function will become unsuable after the call (like in a strict linear type system.). To prevent this, you can use the annotation `@read` to specify that the function will only read data from the argument and will never modify it.
+This annotation is used in the abstract function `copy_array` for example. +
+The second existing annotation is `@write`, which means two things. First, it indicates that the function may modify the argument, and second, that the returned value is a direct alias to this argument. 
+Any abstract function which returns a non-primitive value shoud have a parameter annotated with `@write` with the same type as the return type.
+
+[IMPORTANT]
+.The contract of abstract functions
+====
+Abstract function must respect the following contract:
+
+* All arguments passed to an abstract function must be completely independant, i.e. there is no intra- or inter-aliasing between arguments;
+* The function cannot make a newly allocated object escape from the local scope;
+* The function must preserve the memory layout of the call state (e.g. pointer swapping is forbidden). If changes occur, they can only be a modification of a primitive value contained in the arguments;
+* The function cannot modify an argument annotated with `@read`;
+* If the result is non-primitive, it must point to the argument annotated with `@write`.
+====
+
+=== Modules
+
+Barocq supports multi-file compilation. Each file corresponds to a module, and must begin with the declaration of the module name:
+
+[source]
+----
+module Mname
+----
+
+The first character of a module name must be an uppercase letter. The following characters can be lowercase or uppercase letters or underscores.
+
+To reference a definition (a type, a constant or a function) of an external module in the current module, the definition identifier must be prefixed with `Mname::` where `Mname` is the module name.
+
+WARNING: When compiling with (dependent) multiple files, all the dependencies must be given in order to the compiler. The Barocq compiler does not support separate compilation (no linking phase) and does not have a dependency analyzer yet. 
+
+== A small example
+
+In this example, we write of what could be an excerpt of a microkernel.
+We have two source files: `kernel.br` and `machine.br`.
+
+First, let's look at `machine.br`.
+
+[source]
+.machine.br
+----
+module Machine
+
+type state of "struct"
+
+decl read_time : (@read state) -> u64
+
+decl write_timecmp : (@write state, u64) -> state
+----
+
+This module defines the API to interact with the underlying machine. It declares an abstract type - the machine state - that will be implemented as a C struct. Then, it declares two abstract functions: `read_time` and `write_timecmp`, which respectively read time from the machine state and write the compare time in the machine state.
+
+Now, let's look at `kernel.br`.
+
+[source]
+.kernel.br
+----
+module Kernel
+
+defn NB_PROCS : u64 = 5UL
+
+defn QUANTUM : u64 = 100UL
+
+type proc = {
+  pid: u64;
+  regs: array u64;
+  nb_sched: u64;
+}
+
+type state = {
+  curr_pid: u64;
+  procs: array proc;
+  deadline: u64;
+  mc: Machine::state;
+}
+
+defn sync(ks: state) : state =
+  ks.mc <- Machine::write_time(ks.mc, ks.deadline)
+
+defn schedule(ks: state) : state =
+  if Machine::read_time(ks.mc) > ks.deadline then
+    let next_pid = (ks.curr_pid + 1UL) % NB_PROCS in
+    let ks = ks.curr_pid <- next_pid in
+    let ks = ks.deadline <- ks.deadline + QUANTUM in
+    let procs = ks.procs in
+    let proc = procs[next_pid] in
+    let proc = proc.nb_sched <- proc.nb_sched + 1UL in
+    let procs = procs[next_pid] <- proc in
+    let ks = ks.procs <- procs in
+    sync(ks)
+  else
+    ks
+----
+
+The kernel state is composed of the current process id, the array of processes, the deadline of the current process and the machine state. A process is represented as a struct containing its identifier, its set of saved registers and the number of times it has been scheduled.
+
+Two constants describe the kernel configuration: the number of processes `NB_PROCS`, and the quantum value for a round-robin scheduling `QUANTUM`.
+
+Finally, two core functions are defined. The function `sync` is used to synchronize the kernel data with the machine state. The function `schedule` chooses the next process to be scheduled. Basically, it checks that the current process has exceeded its deadline. If it is the case, it selects the next process to run,increments the `nb_sched` field of this process by one and updates the machine state. If not, it does nothing.
+
+You may notice that to modify the `nb_sched` field of a process, it is needed to write all the steps from getting the process, updating it and updating the process table back. In fact, Barocq does not support _deep updates_ for the moment. If you try to write `ks.procs[next_id].nb_sched \<- v`, this instruction is interpreted as:
+
+. < Retrieve the value from `ks.procs[next_id]` >, which returns a value of type `proc`;
+. < Update the field `nb_sched` of this value >, which also returns a value of type `proc`.
+
+A deep update would make this instruction effectively return the new updated kernel `state`, but this is not yet supported by the compiler.
+
+To compile those files with the Barocq compiler, we use the following command:
+
+[source,bash]
+----
+barocq -o kernel.c -gen-header -types-impl machine.h machine.br kernel.br
+----
+
+This command will generate a C file `kernel.c` and the associated header file `kernel.h`. All definitions are grouped together in `kernel.c` and prefixed with the name of the module from which they originate. For exemple, the function `schedule` becomes `Kernel_schedule`. The option `-types-impl` allows the user to specify the location of the file containing the implemention of all abstract types. This option appends the necessary `#include` directive at the beginning of `kernel.h` and `kernel.c`. You can find the source files and the compilation artefacts of this example under the `example` directory.
+
+== Coding good practices
+
+As mentionned in the preamble, all array and record modifications are compiled into in-place updates. The static analyzer of Barocq performs a points-to based analysis to check wether the source program can be compiled with in-place updates without breaking its semantics. We explain here the restrictions it induces and the good practices to follow to avoid getting errors from the static analyzer.
+
+NOTE: The points-to analysis is performed on an intermediate representation called `Imp1`. The error messages are thus related to the `Imp1` syntax. Precisely pinpointing the origin of the problem in the source code is a tedious task that has not yet been done. To make the debugging of Barocq code easier, you can display the `Imp1` representation with the `-print-imp1` option of the compiler.
+
+The first thing to have in mind when you write Barocq code is that you are kind of writing an imperative program with a functional syntax. Thus, in the compiled code, assignments to non-primitive values create aliases to it and modifying an array or a struct actually makes an in-place modification. To make a functional program compatible with those behaviors, it is strongly recommended to adopt an _affine_ programming style (a bit like Rust for those familiar with the language). This means that you should only use a non-primitive value at most once. More precisely, we adopt the following guideline: "everytime you make a modification to an object, never try to use the old version of it". This is what we do in the example above. To help following this good practice, we use variable shadowing every time we modify a variable, so that we are sure that we can only use the last reference. +
+
+The second thing to know concerns arrays. Usually, arrays are accessed with indices whose values are not statically known. Barocq enforces a restrictive policy to make sure the programmer doesn't access an array with different indices at the same time. In short, you can only access one element at a time, and you cannot feed the parameters of a function with arguments containing arrays on which you already have a reference on a element.
+
+Finally, you will not be able to swap pointers with the actual implementation of Barocq. The modification you can make in the memory can only correspond to updating primitive values in objects.

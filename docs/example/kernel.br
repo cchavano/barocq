@@ -1,0 +1,35 @@
+module Kernel
+
+defn NB_PROCS : u64 = 5UL
+
+defn QUANTUM : u64 = 100UL
+
+type proc = {
+  pid: u64;
+  regs: array u64;
+  nb_sched: u64;
+}
+
+type state = {
+  curr_pid: u64;
+  procs: array proc;
+  deadline: u64;
+  mc: Machine::state;
+}
+
+defn sync(ks: state) : state =
+  ks.mc <- Machine::write_timecmp(ks.mc, ks.deadline)
+
+defn schedule(ks: state) : state =
+  if Machine::read_time(ks.mc) > ks.deadline then
+    let next_pid = (ks.curr_pid + 1UL) % NB_PROCS in
+    let ks = ks.curr_pid <- next_pid in
+    let ks = ks.deadline <- ks.deadline + QUANTUM in
+    let procs = ks.procs in
+    let proc = procs[next_pid] in
+    let proc = proc.nb_sched <- proc.nb_sched + 1UL in
+    let procs = procs[next_pid] <- proc in
+    let ks = ks.procs <- procs in
+    sync(ks)
+  else
+    ks
