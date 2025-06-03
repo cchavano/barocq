@@ -54,7 +54,7 @@
     List.iter
       (fun (s, t) -> Hashtbl.add keywords s t)
       [
-        ("module", MODULE); ("compute", COMPUTE);
+        ("module", MODULE); ("import", IMPORT); ("compute", COMPUTE);
         ("true", TRUE); ("false", FALSE);
         ("bool", TYP_BOOL); ("i32", TYP_INT32); ("u32", TYP_UINT32);
         ("i64", TYP_INT64); ("u64", TYP_UINT64); ("array", TYP_ARRAY);

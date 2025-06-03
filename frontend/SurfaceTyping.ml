@@ -193,35 +193,51 @@ let compose_loc_idents (mname : ident) (id : ident) : ident =
   let v = compose_idents mname.content id.content in
   Location.make mname.startpos id.endpos v
 
-let tenv_get (mname : string) (te : tenv) (tid : ident) : btyp =
+let tenv_get (mname : string) (te : tenv) (tid : ident) : btyp option =
   match IdentMap.find_opt tid.content te.tenv_aliases with
-  | Some ty -> ty
+  | Some ty -> Some ty
   | None -> begin
       match IdentMap.find_opt tid.content te.tenv_structs with
-      | Some _ -> BStruct (mname, tid.content)
+      | Some _ -> Some (BStruct (mname, tid.content))
       | None -> begin
           match IdentSet.find_opt tid.content te.tenv_abstracts with
-          | Some _ -> BAbs (mname, tid.content)
-          | None -> error (Undefined_type tid.content) ~loc:(Some tid)
+          | Some _ -> Some (BAbs (mname, tid.content))
+          | None -> None
         end
     end
 
-let gtenv_get (gte : gtenv) (cid : cident) : btyp =
+let gtenv_get (imports : ident list) (gte : gtenv) (cid : cident) : btyp =
+  let gtenv_get_prefixed (mname : ident) (tid : ident) : btyp option =
+    match IdentMap.find_opt mname.content gte.gtenv_extern with
+    | Some te -> tenv_get mname.content te tid
+    | None -> error (Module_not_found mname.content) ~loc:(Some mname)
+  in
+  let rec gtenv_get_imports (imports : ident list) (tid : ident) : btyp =
+    match imports with
+    | [] -> error (Undefined_type tid.content) ~loc:(Some tid)
+    | m1 :: imports' -> begin
+        match gtenv_get_prefixed m1 tid with
+        | Some ty -> ty
+        | None -> gtenv_get_imports imports' tid
+      end
+  in
   match cid with
-  | IdLocal tid -> tenv_get !curr_mname gte.gtenv_local tid
-  | IdExtern (mname, tid) -> begin
-      match IdentMap.find_opt mname.content gte.gtenv_extern with
-      | Some te -> begin
-          try tenv_get mname.content te tid
-          with Error (Undefined_type _, loc) ->
-            let tid' = compose_loc_idents mname tid in
-            error (Undefined_type tid'.content) ~loc:(Some tid)
-        end
-      | None -> error (Module_not_found mname.content) ~loc:(Some mname)
+  | IdSimple tid -> begin
+      match tenv_get !curr_mname gte.gtenv_local tid with
+      | Some ty -> ty
+      | None -> gtenv_get_imports imports tid
+    end
+  | IdPrefixed (mname, tid) -> begin
+      match gtenv_get_prefixed mname tid with
+      | Some ty -> ty
+      | None ->
+          let tid' = compose_loc_idents mname tid in
+          error (Undefined_type tid'.content) ~loc:(Some tid')
     end
 
-let gtenv_get_fields (gte : gtenv) (cid : cident) : (string * btyp) list =
-  let ty = gtenv_get gte cid in
+let gtenv_get_fields (imports : ident list) (gte : gtenv) (cid : cident) :
+    (string * btyp) list =
+  let ty = gtenv_get imports gte cid in
   match ty with
   | BStruct (mname, sid) ->
       let se, sid' =
@@ -290,23 +306,33 @@ type lcontext = (btyp * var_kind) IdentMap.t
 
 let lcontext_empty = IdentMap.empty
 
-let gcontext_get (gx : gcontext) (cid : cident) : btyp =
+let gcontext_get (imports : ident list) (gx : gcontext) (cid : cident) : btyp =
+  let gcontext_get_prefixed (mname : ident) (id : ident) : btyp option =
+    match IdentMap.find_opt mname.content gx.gx_extern with
+    | Some mx -> IdentMap.find_opt id.content mx
+    | None -> error (Module_not_found mname.content) ~loc:(Some mname)
+  in
+  let rec gcontext_get_imports (imports : ident list) (id : ident) : btyp =
+    match imports with
+    | [] -> error (Undefined_ident id.content) ~loc:(Some id)
+    | m1 :: imports' -> begin
+        match gcontext_get_prefixed m1 id with
+        | Some ty -> ty
+        | None -> gcontext_get_imports imports' id
+      end
+  in
   match cid with
-  | IdLocal id -> begin
+  | IdSimple id -> begin
       match IdentMap.find_opt id.content gx.gx_local with
       | Some ty -> ty
-      | None -> error (Undefined_ident id.content) ~loc:(Some id)
+      | None -> gcontext_get_imports imports id
     end
-  | IdExtern (mname, id) -> begin
-      match IdentMap.find_opt mname.content gx.gx_extern with
-      | Some mx -> begin
-          match IdentMap.find_opt id.content mx with
-          | Some ty -> ty
-          | None ->
-              let id' = compose_loc_idents mname id in
-              error (Undefined_ident id'.content) ~loc:(Some id')
-        end
-      | None -> error (Module_not_found mname.content) ~loc:(Some mname)
+  | IdPrefixed (mname, id) -> begin
+      match gcontext_get_prefixed mname id with
+      | Some ty -> ty
+      | None ->
+          let id' = compose_loc_idents mname id in
+          error (Undefined_ident id'.content) ~loc:(Some id')
     end
 
 let gcontext_update_local (gx : gcontext) (x : ident) (ty : btyp) : gcontext =
@@ -321,14 +347,15 @@ let lcontext_update (lx : lcontext) (x : ident) (ty : btyp) : lcontext =
       else error (Variable_shadowing_diff_type (x.content, ty)) ~loc:(Some x)
   | None -> IdentMap.add x.content (ty, VarLocal) lx
 
-let typof_var (gx : gcontext) (lx : lcontext) (x : cident) : btyp =
+let typof_var (imports : ident list) (gx : gcontext) (lx : lcontext)
+    (x : cident) : btyp =
   match x with
-  | IdLocal x' -> begin
+  | IdSimple x' -> begin
       match IdentMap.find_opt x'.content lx with
       | Some (ty, _) -> ty
-      | None -> gcontext_get gx x
+      | None -> gcontext_get imports gx x
     end
-  | IdExtern _ -> gcontext_get gx x
+  | IdPrefixed _ -> gcontext_get imports gx x
 
 let typecheck_unary_op (op : unary_op) (ty : btyp) : btyp =
   match (op, ty) with
@@ -392,31 +419,48 @@ let typecheck_struct_proj (gte : gtenv) (mname : string) (sid : string)
     end
   | None -> assert false (* Ill-typed environment *)
 
-let rec styp_to_btyp (gte : gtenv) (sty : styp) : btyp =
+let rec styp_to_btyp (imports : ident list) (gte : gtenv) (sty : styp) : btyp =
   match sty with
   | SBool -> BBool
   | SInt32 s -> BInt32 s
   | SInt64 s -> BInt64 s
-  | SArray sta -> BArray (styp_to_btyp gte sta)
-  | SIdent stid -> gtenv_get gte stid
+  | SArray sta -> BArray (styp_to_btyp imports gte sta)
+  | SIdent stid -> gtenv_get imports gte stid
   | SFun (stparams, stret) ->
-      let tparams = List.map (fun (_, sty) -> styp_to_btyp gte sty) stparams in
-      let tret = styp_to_btyp gte stret in
+      let tparams =
+        List.map (fun (_, sty) -> styp_to_btyp imports gte sty) stparams
+      in
+      let tret = styp_to_btyp imports gte stret in
       BFun (tparams, tret)
 
-let transl_var_name (mname : string) (lx : lcontext) (x : cident) : Syntax.ident
-    =
+let transl_var_name (imports : ident list) (gx : gcontext) (lx : lcontext)
+    (x : cident) : Syntax.ident =
+  let rec mname_of_ident (imports : ident list) (id : ident) : string =
+    match imports with
+    | [] -> error (Undefined_ident id.content) ~loc:(Some id)
+    | m1 :: imports' ->
+        let m1_gx = IdentMap.find m1.content gx.gx_extern in
+        begin
+          match IdentMap.find_opt id.content m1_gx with
+          | Some _ -> m1.content
+          | None -> mname_of_ident imports' id
+        end
+  in
   let x' =
     match x with
-    | IdLocal x ->
+    | IdSimple x ->
         let prefix =
           match IdentMap.find_opt x.content lx with
-          | Some (_, VarLocal) -> "u_"
-          | Some (_, VarParam) -> "p_"
-          | None -> mname ^ "_"
+          | Some (_, VarLocal) -> "u"
+          | Some (_, VarParam) -> "p"
+          | None -> begin
+              match IdentMap.find_opt x.content gx.gx_local with
+              | Some _ -> !curr_mname
+              | None -> mname_of_ident imports x
+            end
         in
-        prefix ^ x.content
-    | IdExtern (mname', x) -> Printf.sprintf "%s_%s" mname'.content x.content
+        sprintf "%s_%s" prefix x.content
+    | IdPrefixed (mname, x) -> Printf.sprintf "%s_%s" mname.content x.content
   in
   PrintCommon.ident_of_string x'
 
@@ -443,20 +487,20 @@ let rec transl_btyp (ty : btyp) : Types.btyp =
 let arr_index_btyp : btyp =
   if Archi.ptr64 then BInt64 Types.Unsigned else BInt32 Types.Unsigned
 
-let rec typecheck_raw_expr (gte : gtenv) (gx : gcontext) (lx : lcontext)
-    (e : raw_expr) : Barocq.expr * btyp =
+let rec typecheck_raw_expr (imports : ident list) (gte : gtenv) (gx : gcontext)
+    (lx : lcontext) (e : raw_expr) : Barocq.expr * btyp =
   match e with
   | ETrue -> (Barocq.ETrue, BBool)
   | EFalse -> (Barocq.EFalse, BBool)
   | EInt32 (i, s) -> (Barocq.EInt32 (i, s), BInt32 s)
   | EInt64 (i, s) -> (Barocq.EInt64 (i, s), BInt64 s)
   | EVar x ->
-      let x' = transl_var_name !curr_mname lx x in
-      (Barocq.EVar x', typof_var gx lx x)
+      let ty = typof_var imports gx lx x in
+      let x' = transl_var_name imports gx lx x in
+      (Barocq.EVar x', ty)
   | ECast (e1, sty) ->
-      let ty = styp_to_btyp gte sty in
-      let ty = styp_to_btyp gte sty in
-      let e1', t1 = typecheck_expr gte gx lx e1 in
+      let ty = styp_to_btyp imports gte sty in
+      let e1', t1 = typecheck_expr imports gte gx lx e1 in
       (Barocq.ECast (e1', transl_btyp ty), typecheck_cast t1 ty)
   | EUnaryOp (op, e1) ->
       let texp =
@@ -464,7 +508,7 @@ let rec typecheck_raw_expr (gte : gtenv) (gx : gcontext) (lx : lcontext)
         | UopNeg | UopNotint | UopPlus -> Expect_int
         | UopNotbool -> Expect_typ BBool
       in
-      let e1', t1 = typecheck_expr_expecting gte gx lx e1 texp in
+      let e1', t1 = typecheck_expr_expecting imports gte gx lx e1 texp in
       let t = typecheck_unary_op op t1 in
       (Barocq.EUnaryOp (op, e1'), t)
   | EBinaryOp (op, e1, e2) ->
@@ -474,14 +518,24 @@ let rec typecheck_raw_expr (gte : gtenv) (gx : gcontext) (lx : lcontext)
         | BopEq | BopNeq -> Expect_int_or_bool
         | _ -> Expect_int
       in
-      let e1', t1 = typecheck_expr_expecting gte gx lx e1 texp in
-      let e2', t2 = typecheck_expr_expecting gte gx lx e2 (Expect_typ t1) in
+      let e1', t1 = typecheck_expr_expecting imports gte gx lx e1 texp in
+      let e2', t2 =
+        typecheck_expr_expecting imports gte gx lx e2 (Expect_typ t1)
+      in
       let t = typecheck_binary_op op t1 t2 in
       (Barocq.EBinaryOp (op, e1', e2'), t)
   | EArrayGet (e1, e2) ->
-      let e1', t1 = typecheck_expr_expecting gte gx lx e1 Expect_array in
+      let e1', t1 =
+        typecheck_expr_expecting imports gte gx lx e1 Expect_array
+      in
       let e2', _ =
-        typecheck_expr_expecting gte gx lx e2 (Expect_typ arr_index_btyp)
+        typecheck_expr_expecting
+          imports
+          gte
+          gx
+          lx
+          e2
+          (Expect_typ arr_index_btyp)
       in
       begin
         match t1 with
@@ -489,21 +543,31 @@ let rec typecheck_raw_expr (gte : gtenv) (gx : gcontext) (lx : lcontext)
         | _ -> assert false
       end
   | EArraySet (e1, e2, e3) ->
-      let e1', t1 = typecheck_expr_expecting gte gx lx e1 Expect_array in
+      let e1', t1 =
+        typecheck_expr_expecting imports gte gx lx e1 Expect_array
+      in
       let e2', _ =
-        typecheck_expr_expecting gte gx lx e2 (Expect_typ arr_index_btyp)
+        typecheck_expr_expecting
+          imports
+          gte
+          gx
+          lx
+          e2
+          (Expect_typ arr_index_btyp)
       in
       begin
         match t1 with
         | BArray ta ->
             let e3', _ =
-              typecheck_expr_expecting gte gx lx e3 (Expect_typ ta)
+              typecheck_expr_expecting imports gte gx lx e3 (Expect_typ ta)
             in
             (Barocq.EArraySet (e1', e2', e3'), t1)
         | _ -> assert false
       end
   | EStructProj (e1, f) ->
-      let e1', t1 = typecheck_expr_expecting gte gx lx e1 Expect_struct in
+      let e1', t1 =
+        typecheck_expr_expecting imports gte gx lx e1 Expect_struct
+      in
       begin
         match t1 with
         | BStruct (mname, sid) ->
@@ -513,48 +577,57 @@ let rec typecheck_raw_expr (gte : gtenv) (gx : gcontext) (lx : lcontext)
         | _ -> assert false
       end
   | EStructUpdate (e1, f, e2) ->
-      let e1', t1 = typecheck_expr_expecting gte gx lx e1 Expect_struct in
+      let e1', t1 =
+        typecheck_expr_expecting imports gte gx lx e1 Expect_struct
+      in
       begin
         match t1 with
         | BStruct (mname, sid) ->
             let f' = transl_field_name f in
             let tf = typecheck_struct_proj gte mname sid f in
             let e2', _ =
-              typecheck_expr_expecting gte gx lx e2 (Expect_typ tf)
+              typecheck_expr_expecting imports gte gx lx e2 (Expect_typ tf)
             in
             (Barocq.EStructUpdate (e1', f', e2'), t1)
         | _ -> assert false
       end
   | EApp (e1, args) ->
-      let e1', t1 = typecheck_expr_expecting gte gx lx e1 Expect_function in
+      let e1', t1 =
+        typecheck_expr_expecting imports gte gx lx e1 Expect_function
+      in
       begin
         match t1 with
         | BFun (tparams, tret) ->
-            let args', t = typecheck_app gte gx lx tparams tret args in
+            let args', t = typecheck_app imports gte gx lx tparams tret args in
             (Barocq.EApp (e1', args'), t)
         | _ -> assert false
       end
   | EIfThenElse (e1, e2, e3) ->
-      let e1', _ = typecheck_expr_expecting gte gx lx e1 (Expect_typ BBool) in
-      let e2', t2 = typecheck_expr gte gx lx e2 in
-      let e3', _ = typecheck_expr_expecting gte gx lx e3 (Expect_typ t2) in
+      let e1', _ =
+        typecheck_expr_expecting imports gte gx lx e1 (Expect_typ BBool)
+      in
+      let e2', t2 = typecheck_expr imports gte gx lx e2 in
+      let e3', _ =
+        typecheck_expr_expecting imports gte gx lx e3 (Expect_typ t2)
+      in
       (Barocq.EIfThenElse (e1', e2', e3'), t2)
   | ELetIn (x, e1, e2) ->
       let x' = PrintCommon.ident_of_string ("u_" ^ x.content) in
-      let e1', t1 = typecheck_expr gte gx lx e1 in
+      let e1', t1 = typecheck_expr imports gte gx lx e1 in
       let lx' = lcontext_update lx x t1 in
-      let e2', t2 = typecheck_expr gte gx lx' e2 in
+      let e2', t2 = typecheck_expr imports gte gx lx' e2 in
       (Barocq.ELetIn (x', e1', e2'), t2)
 
-and typecheck_expr (gte : gtenv) (gx : gcontext) (lx : lcontext) (e : expr) :
-    Barocq.expr * btyp =
-  try typecheck_raw_expr gte gx lx e.content
+and typecheck_expr (imports : ident list) (gte : gtenv) (gx : gcontext)
+    (lx : lcontext) (e : expr) : Barocq.expr * btyp =
+  try typecheck_raw_expr imports gte gx lx e.content
   with Error (cause, loc) -> update_error_loc cause loc e
 
-and typecheck_expr_expecting (gte : gtenv) (gx : gcontext) (lx : lcontext)
-    (e : expr) (texp : expected_typ) : Barocq.expr * btyp =
+and typecheck_expr_expecting (imports : ident list) (gte : gtenv)
+    (gx : gcontext) (lx : lcontext) (e : expr) (texp : expected_typ) :
+    Barocq.expr * btyp =
   try
-    let ((e', ty) as r) = typecheck_raw_expr gte gx lx e.content in
+    let ((e', ty) as r) = typecheck_raw_expr imports gte gx lx e.content in
     match texp with
     | Expect_typ t ->
         if t = ty then r else error (Type_mismatch (texp, Current_typ ty))
@@ -585,8 +658,8 @@ and typecheck_expr_expecting (gte : gtenv) (gx : gcontext) (lx : lcontext)
       end
   with Error (cause, loc) -> update_error_loc cause loc e
 
-and typecheck_app (gte : gtenv) (gx : gcontext) (lx : lcontext)
-    (tparams : btyp list) (tret : btyp) (args : expr list) :
+and typecheck_app (imports : ident list) (gte : gtenv) (gx : gcontext)
+    (lx : lcontext) (tparams : btyp list) (tret : btyp) (args : expr list) :
     Barocq.expr list * btyp =
   let arity = List.length tparams in
   let nbargs = List.length args in
@@ -594,7 +667,9 @@ and typecheck_app (gte : gtenv) (gx : gcontext) (lx : lcontext)
     match (tparams, args) with
     | [], [] -> ([], tret)
     | tp :: tparams', a :: args' ->
-        let a', _ = typecheck_expr_expecting gte gx lx a (Expect_typ tp) in
+        let a', _ =
+          typecheck_expr_expecting imports gte gx lx a (Expect_typ tp)
+        in
         let bargs, t = aux tparams' args' in
         (a' :: bargs, t)
     | _, _ -> error (Wrong_argument_number (arity, nbargs))
@@ -687,16 +762,16 @@ let find_duplicate_ident (l : ident list) : ident option =
   in
   aux (List.rev l)
 
-let typecheck_function (gte : gtenv) (gx : gcontext) (x : ident) (f : func) :
-    Barocq.coq_function * btyp =
+let typecheck_function (imports : ident list) (gte : gtenv) (gx : gcontext)
+    (x : ident) (f : func) : Barocq.coq_function * btyp =
   match find_duplicate_ident (List.map fst f.fn_params) with
   | Some p -> error (Duplicated_param (p.content, x.content)) ~loc:(Some p)
   | None ->
-      let tret = styp_to_btyp gte f.fn_return in
+      let tret = styp_to_btyp imports gte f.fn_return in
       let params =
         List.map
           (fun ((pid, ptyp) : ident * styp) ->
-            (pid.content, styp_to_btyp gte ptyp))
+            (pid.content, styp_to_btyp imports gte ptyp))
           f.fn_params
       in
       let ty = BFun (List.map snd params, tret) in
@@ -707,7 +782,7 @@ let typecheck_function (gte : gtenv) (gx : gcontext) (x : ident) (f : func) :
           params
       in
       let body, tb =
-        typecheck_expr_expecting gte gx lx f.fn_body (Expect_typ tret)
+        typecheck_expr_expecting imports gte gx lx f.fn_body (Expect_typ tret)
       in
       let bparams =
         List.map
@@ -757,12 +832,12 @@ let typecheck_abs_function (x : ident) (tparams : (param_attr * btyp) list)
   let _ = check_write_param tparams tret None in
   BFun (List.map snd tparams, tret)
 
-let typecheck_globdef (gte : gtenv) (gx : gcontext) (def : globdef) :
-    Barocq.globdef option * gtenv * gcontext =
+let typecheck_globdef (imports : ident list) (gte : gtenv) (gx : gcontext)
+    (def : globdef) : Barocq.globdef option * gtenv * gcontext =
   match def with
   | DefAlias (alias, sty) ->
-      let ty = styp_to_btyp gte sty in
-      let ty = styp_to_btyp gte sty in
+      let ty = styp_to_btyp imports gte sty in
+      let ty = styp_to_btyp imports gte sty in
       (None, gtenv_update_local_aliases gte alias ty, gx)
   | DefType (sid, fields) -> begin
       match find_duplicate_ident (List.map fst fields) with
@@ -774,7 +849,7 @@ let typecheck_globdef (gte : gtenv) (gx : gcontext) (def : globdef) :
           let fields' =
             List.map
               (fun ((fname, ftyp) : ident * styp) ->
-                (fname.content, styp_to_btyp gte ftyp))
+                (fname.content, styp_to_btyp imports gte ftyp))
               fields
           in
           let bsid = transl_globdef_name !curr_mname sid in
@@ -790,8 +865,8 @@ let typecheck_globdef (gte : gtenv) (gx : gcontext) (def : globdef) :
           (Some (Barocq.DefType (bsid, bfields)), gte', gx)
     end
   | DefConst (id, l, sty) ->
-      let ty = styp_to_btyp gte sty in
-      let ty = styp_to_btyp gte sty in
+      let ty = styp_to_btyp imports gte sty in
+      let ty = styp_to_btyp imports gte sty in
       let l' = typecheck_literal gte ty l in
       let gx' = gcontext_update_local gx id ty in
       let bid = transl_globdef_name !curr_mname id in
@@ -799,7 +874,7 @@ let typecheck_globdef (gte : gtenv) (gx : gcontext) (def : globdef) :
       let bty = transl_btyp ty in
       (Some (Barocq.DefConst (bid, l', bty)), gte, gx')
   | DefFun (id, f) ->
-      let bf, ty = typecheck_function gte gx id f in
+      let bf, ty = typecheck_function imports gte gx id f in
       let gx' = gcontext_update_local gx id ty in
       let bid = transl_globdef_name !curr_mname id in
       (Some (Barocq.DefFun (bid, bf)), gte, gx')
@@ -808,7 +883,7 @@ let typecheck_globdef (gte : gtenv) (gx : gcontext) (def : globdef) :
       let bid = transl_globdef_name !curr_mname tid in
       (Some (Barocq.DeclType (bid, tk)), gte', gx)
   | DeclConst (id, sty) ->
-      let ty = styp_to_btyp gte sty in
+      let ty = styp_to_btyp imports gte sty in
       let gx' = gcontext_update_local gx id ty in
       let bid = transl_globdef_name !curr_mname id in
       let bty = transl_btyp ty in
@@ -817,11 +892,11 @@ let typecheck_globdef (gte : gtenv) (gx : gcontext) (def : globdef) :
       let tparams' =
         List.map
           (fun (attr, sty) ->
-            let bty = styp_to_btyp gte sty in
+            let bty = styp_to_btyp imports gte sty in
             (attr, bty))
           tparams
       in
-      let tret' = styp_to_btyp gte tret in
+      let tret' = styp_to_btyp imports gte tret in
       let ty = typecheck_abs_function id tparams' tret' in
       let gx' = gcontext_update_local gx id ty in
       let bid = transl_globdef_name !curr_mname id in
@@ -835,6 +910,15 @@ let typecheck_globdef (gte : gtenv) (gx : gcontext) (def : globdef) :
       let btret = transl_btyp tret' in
       (Some (Barocq.DeclFun (bid, btparams, btret)), gte, gx')
 
+let rec typecheck_imports (imports : ident list) (gx : gcontext) : unit =
+  match imports with
+  | [] -> ()
+  | m1 :: imports' -> begin
+      match IdentMap.find_opt m1.content gx.gx_extern with
+      | Some _ -> typecheck_imports imports' gx
+      | None -> error (Module_not_found m1.content) ~loc:(Some m1)
+    end
+
 let typecheck_modul (gte : gtenv) (gx : gcontext) (md : modul) :
     Barocq.program * gtenv * gcontext =
   let mname = md.md_name in
@@ -846,10 +930,13 @@ let typecheck_modul (gte : gtenv) (gx : gcontext) (md : modul) :
       let gte = { gte with gtenv_local = tenv_empty } in
       let gx = { gx with gx_local = IdentMap.empty } in
       (* Type checking *)
+      typecheck_imports md.md_imports gx;
       let defs, gte, gx =
         List.fold_left
           (fun (acc_defs, acc_gte, acc_gx) def ->
-            let d, gte, gx = typecheck_globdef acc_gte acc_gx def in
+            let d, gte, gx =
+              typecheck_globdef md.md_imports acc_gte acc_gx def
+            in
             let acc_defs' =
               match d with
               | Some d -> d :: acc_defs
@@ -889,18 +976,18 @@ let typecheck_program (prog : program) : Barocq.program =
   in
   bprog
 
-let typecheck_command (gte : gtenv) (gx : gcontext) (cmd : command) :
-    Barocq.command option * gtenv * gcontext =
+let typecheck_command (imports : ident list) (gte : gtenv) (gx : gcontext)
+    (cmd : command) : Barocq.command option * gtenv * gcontext =
   match cmd with
   | CmdDef d ->
-      let bd, gte', gx' = typecheck_globdef gte gx d in
+      let bd, gte', gx' = typecheck_globdef imports gte gx d in
       begin
         match bd with
         | Some bd -> (Some (Barocq.CmdDef bd), gte', gx')
         | None -> (None, gte', gx')
       end
   | CmdExpr e ->
-      let be, _ = typecheck_expr gte gx lcontext_empty e in
+      let be, _ = typecheck_expr imports gte gx lcontext_empty e in
       (Some (Barocq.CmdExpr be), gte, gx)
 
 let typecheck_imodul (gte : gtenv) (gx : gcontext) (imd : imodul) :
@@ -913,11 +1000,14 @@ let typecheck_imodul (gte : gtenv) (gx : gcontext) (imd : imodul) :
       (* Initialization of gte and gtx *)
       let gte = { gte with gtenv_local = tenv_empty } in
       let gx = { gx with gx_local = IdentMap.empty } in
+      typecheck_imports imd.imd_imports gx;
       (* Type checking *)
       let cmds, gte, gx =
         List.fold_left
           (fun (acc_cmds, acc_gte, acc_gx) cmd ->
-            let cmd, gte, gx = typecheck_command acc_gte acc_gx cmd in
+            let cmd, gte, gx =
+              typecheck_command imd.imd_imports acc_gte acc_gx cmd
+            in
             let acc_defs' =
               match cmd with
               | Some cmd -> cmd :: acc_cmds
@@ -928,7 +1018,7 @@ let typecheck_imodul (gte : gtenv) (gx : gcontext) (imd : imodul) :
           imd.imd_cmds
       in
       (* Once the type checking is finished, we update the global environment and
-     global context to add the definitions of the new module. *)
+         global context to add the definitions of the new module. *)
       let gte' =
         {
           gtenv_local = tenv_empty;

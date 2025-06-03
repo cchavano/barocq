@@ -373,6 +373,21 @@ The first character of a module name must be an uppercase letter. The following 
 
 To reference a definition (a type, a constant or a function) of an external module in the current module, the definition identifier must be prefixed with `Mname::` where `Mname` is the module name.
 
+It is also possible to import modules at the beginning of a file just after the module declaration:
+
+[source]
+----
+module Mname
+
+import Mod1
+import Mod2
+----
+
+This example will bring the definitions of `Mod1` and `Mod2` in scope, so that using the module name prefix `Mod1::` or `Mod2::` is no longer mandatory. If `Mod1` and `Mod2` have definitions with the same name, the last imported module takes precedence (in the above example, it is `Mod2`).
+
+NOTE: Use imports with 
+
+
 WARNING: When compiling with (dependent) multiple files, all the dependencies must be given in order to the compiler. The Barocq compiler does not support separate compilation (no linking phase) and does not have a dependency analyzer yet. 
 
 == A small example

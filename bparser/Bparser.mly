@@ -22,6 +22,7 @@
 %}
 
 %token MODULE
+%token IMPORT
 %token DOT COMMA SEMICOLON COLON SEMISEMI
 %token LPAREN RPAREN
 %token LBRACKET RBRACKET
@@ -68,8 +69,18 @@
 
 imodul:
   | MODULE mname = mod_ident SEMISEMI?
+    imports = list(import)
     cmds = list(command) EOF
-    { { imd_name = mname; imd_cmds = cmds } }
+    {
+      {
+        imd_name = mname;
+        imd_imports = List.rev imports;
+        imd_cmds = cmds
+      } 
+    }
+
+import:
+  | IMPORT mname = mod_ident SEMISEMI? { mname }
 
 command:
   | def = globdef SEMISEMI? { CmdDef def }
@@ -218,8 +229,8 @@ mod_ident:
     }
 
 cident:
-  | id = ident { IdLocal id }
-  | mname = mod_ident COLON COLON id = ident { IdExtern (mname, id) }
+  | id = ident { IdSimple id }
+  | mname = mod_ident COLON COLON id = ident { IdPrefixed (mname, id) }
 
 ident:
   | id = IDENT { Location.make $startpos $endpos id }

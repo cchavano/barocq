@@ -2,12 +2,12 @@ open Syntax
 
 type ident = string Location.t
 
-(** Composed identifiers. A composed identifier refers to either an identifer
-    local to a module (global definition / type, paramater or local variable) or
-    to an external one. *)
+(** Composed identifiers. A composed identifier refers either to a simple
+    identifier which can be local or external (and imported), or a prefixed
+    identifier which correspond to an external identifer. *)
 type cident =
-  | IdLocal of ident
-  | IdExtern of ident * ident
+  | IdSimple of ident
+  | IdPrefixed of ident * ident
 
 (** Surface types. At parsing, a type identifier cannot yet be distinguished
     between a struct type, an alias or an abstract type. *)
@@ -65,6 +65,7 @@ type globdef =
 
 type modul = {
   md_name : ident;
+  md_imports : ident list;
   md_defs : globdef list;
 }
 
@@ -76,6 +77,7 @@ type command =
 
 type imodul = {
   imd_name : ident;
+  imd_imports : ident list;
   imd_cmds : command list;
 }
 
