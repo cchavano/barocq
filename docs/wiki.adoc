@@ -421,18 +421,21 @@ type state = {
 }
 
 defn sync(ks: state) : state =
-  ks.mc <- Machine::write_time(ks.mc, ks.deadline)
+  ks.mc <- Machine::write_timecmp(ks.mc, ks.deadline)
+
+defn incr_proc_nb_sched(ks: state, pid: u64) : state =
+  let procs = ks.procs in
+  let proc = procs[pid] in
+  let proc = proc.nb_sched <- proc.nb_sched + 1UL in
+  let procs = procs[pid] <- proc in
+  ks.procs <- procs
 
 defn schedule(ks: state) : state =
   if Machine::read_time(ks.mc) > ks.deadline then
     let next_pid = (ks.curr_pid + 1UL) % NB_PROCS in
     let ks = ks.curr_pid <- next_pid in
     let ks = ks.deadline <- ks.deadline + QUANTUM in
-    let procs = ks.procs in
-    let proc = procs[next_pid] in
-    let proc = proc.nb_sched <- proc.nb_sched + 1UL in
-    let procs = procs[next_pid] <- proc in
-    let ks = ks.procs <- procs in
+    let ks = incr_proc_nb_sched(ks, next_pid) in
     sync(ks)
   else
     ks
@@ -442,9 +445,10 @@ The kernel state is composed of the current process id, the array of processes, 
 
 Two constants describe the kernel configuration: the number of processes `NB_PROCS`, and the quantum value for a round-robin scheduling `QUANTUM`.
 
-Finally, two core functions are defined. The function `sync` is used to synchronize the kernel data with the machine state. The function `schedule` chooses the next process to be scheduled. Basically, it checks that the current process has exceeded its deadline. If it is the case, it selects the next process to run,increments the `nb_sched` field of this process by one and updates the machine state. If not, it does nothing.
+Finally, three core functions are defined. The function `sync` is used to synchronize the kernel data with the machine state. The function `incr_proc_nb_sched` increases by one the number of times a given process has been scheduled. The function `schedule` chooses the next process to be scheduled. Basically, it checks that the current process has exceeded its deadline. If it is the case, it selects the next process to run, increments the `nb_sched` field of this process by one and updates the machine state. If not, it does nothing.
 
-You may notice that to modify the `nb_sched` field of a process, it is needed to write all the steps from getting the process, updating it and updating the process table back. In fact, Barocq does not support _deep updates_ for the moment. If you try to write `ks.procs[next_id].nb_sched \<- v`, this instruction is interpreted as:
+
+You may notice that notice that to modify the `nb_sched` field of a process, the function `incr_proc_nb_sched` contains all the steps from getting the process, updating it and updating the process table back. In fact, Barocq does not support _deep updates_ for the moment. If you try to write `ks.procs[next_id].nb_sched \<- v`, this instruction is interpreted as:
 
 . < Retrieve the value from `ks.procs[next_id]` >, which returns a value of type `proc`;
 . < Update the field `nb_sched` of this value >, which also returns a value of type `proc`.

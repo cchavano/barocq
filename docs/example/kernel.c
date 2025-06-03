@@ -18,6 +18,7 @@ struct Kernel_state {
 extern unsigned long long Machine_read_time(struct Machine_state *);
 extern struct Machine_state *Machine_write_timecmp(struct Machine_state *, unsigned long long);
 struct Kernel_state *Kernel_sync(struct Kernel_state *);
+struct Kernel_state *Kernel_incr_proc_nb_sched(struct Kernel_state *, unsigned long long);
 struct Kernel_state *Kernel_schedule(struct Kernel_state *);
 unsigned long long const Kernel_NB_PROCS = 5LL;
 
@@ -37,28 +38,44 @@ struct Kernel_state *Kernel_sync(struct Kernel_state *$p_ks)
   return $i0;
 }
 
+struct Kernel_state *Kernel_incr_proc_nb_sched(struct Kernel_state *$p_ks, unsigned long long $p_pid)
+{
+  register unsigned long long $b1;
+  register unsigned long long $b0;
+  register struct Kernel_proc *$u_proc;
+  register struct Kernel_proc **$u_procs;
+  register struct Kernel_state *$i0;
+  $u_procs = (*$p_ks).procs;
+  $u_proc = *($u_procs + $p_pid);
+  $b1 = (*$u_proc).nb_sched;
+  $b0 = $b1 + 1LL;
+  (*$u_proc).nb_sched = $b0;
+  $u_proc = $u_proc;
+  *($u_procs + $p_pid) = $u_proc;
+  $u_procs = $u_procs;
+  (*$p_ks).procs = $u_procs;
+  $i0 = $p_ks;
+  return $i0;
+}
+
 struct Kernel_state *Kernel_schedule(struct Kernel_state *$p_ks)
 {
-  register struct Machine_state *$b8;
+  register struct Machine_state *$b6;
+  register unsigned long long $b5;
   register unsigned long long $b7;
-  register unsigned long long $b9;
-  register _Bool $b6;
+  register _Bool $b4;
   register unsigned long long $b1;
   register unsigned long long $b0;
   register unsigned long long $u_next_pid;
   register unsigned long long $b3;
   register unsigned long long $b2;
-  register unsigned long long $b5;
-  register unsigned long long $b4;
-  register struct Kernel_proc *$u_proc;
-  register struct Kernel_proc **$u_procs;
   register struct Kernel_state *$u_ks;
   register struct Kernel_state *$i0;
-  $b8 = (*$p_ks).mc;
-  $b7 = Machine_read_time($b8);
-  $b9 = (*$p_ks).deadline;
-  $b6 = $b7 > $b9;
-  if ($b6) {
+  $b6 = (*$p_ks).mc;
+  $b5 = Machine_read_time($b6);
+  $b7 = (*$p_ks).deadline;
+  $b4 = $b5 > $b7;
+  if ($b4) {
     $b1 = (*$p_ks).curr_pid;
     $b0 = $b1 + 1LL;
     $u_next_pid = $b0 % Kernel_NB_PROCS;
@@ -68,16 +85,7 @@ struct Kernel_state *Kernel_schedule(struct Kernel_state *$p_ks)
     $b2 = $b3 + Kernel_QUANTUM;
     (*$u_ks).deadline = $b2;
     $u_ks = $u_ks;
-    $u_procs = (*$u_ks).procs;
-    $u_proc = *($u_procs + $u_next_pid);
-    $b5 = (*$u_proc).nb_sched;
-    $b4 = $b5 + 1LL;
-    (*$u_proc).nb_sched = $b4;
-    $u_proc = $u_proc;
-    *($u_procs + $u_next_pid) = $u_proc;
-    $u_procs = $u_procs;
-    (*$u_ks).procs = $u_procs;
-    $u_ks = $u_ks;
+    $u_ks = Kernel_incr_proc_nb_sched($u_ks, $u_next_pid);
     $i0 = Kernel_sync($u_ks);
     return $i0;
   } else {
