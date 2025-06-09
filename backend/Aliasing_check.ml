@@ -10,6 +10,7 @@ type error_cause =
   | Invalid_path of ident * path
   | Invalid_deep_access of atom * access list
   | Invalid_retval
+  | Invalid_param_at_return of ident
 
 exception Invalid_program of error_cause * statement option
 
@@ -37,6 +38,10 @@ let msg_from_failure (cause : error_cause) : string =
         (PrintSyntax.Typed.atom_to_string a)
         acs_str
   | Invalid_retval -> "invalid return value"
+  | Invalid_param_at_return p ->
+      Printf.sprintf
+        "parameter %s may have been modified but is not returned"
+        (PrintCommon.ident_to_string p)
 
 let error ?(stmt : statement option = None) (cause : error_cause) =
   raise (Invalid_program (cause, stmt))
@@ -99,27 +104,62 @@ let check_comp (d : absdom) (c : comp) : comp =
       else error (Invalid_deep_access (a, acs))
   | CpStructProj _ -> assert false
 
-let rec check_statement (s : statement) : Imp1.Typed.statement =
-  try
-    match s with
-    | StSet (x, c, d_in, _) -> Imp1.Typed.StSet (x, check_comp d_in c)
-    | StIfThenElse (a, s1, s2, d_in, _) ->
-        if check_atom d_in a then
-          let s1' = check_statement s1 in
-          let s2' = check_statement s2 in
-          Imp1.Typed.StIfThenElse (a, s1', s2')
-        else error (Invalid_atom a)
-    | StSequence (s1, s2) ->
-        let s1' = check_statement s1 in
-        let s2' = check_statement s2 in
-        Imp1.Typed.StSequence (s1', s2')
-    | StReturn (a, _, d_out) ->
-        if AbsDom.is_valid_return d_out then Imp1.Typed.StReturn a
-        else error Invalid_retval
-  with Invalid_program (cause, s1) -> update_error_stmt cause s1 s
+(** [check_params_on_return_rec st params] checks that any parameter in [params]
+    is not modified if the returned locations does not match the locations
+    pointed to by the parameter. *)
+let rec check_params_on_return_rec (st : AbsDom.absstate)
+    (params : (ident * Types.btyp) list) : unit =
+  match params with
+  | [] -> ()
+  | (p, ty) :: params' ->
+      let plocs =
+        match IdentMap.find_opt p st.AbsDom.st_env with
+        | Some locs -> locs
+        | None -> IdentSet.empty
+      in
+      if Types.btyp_is_prim ty || IdentSet.equal st.AbsDom.st_res plocs then
+        check_params_on_return_rec st params'
+      else if AbsDom.is_valid_path (AbsDom.AbsState st) p [] then
+        check_params_on_return_rec st params'
+      else error (Invalid_param_at_return p)
+
+(** [check_params_on_return d params] checks that any parameter in [params] is
+    not modified if the returned locations does not match the locations pointed
+    to by the parameter. *)
+let check_params_on_return (d : absdom) (params : (ident * Types.btyp) list) :
+    unit =
+  match d with
+  | AbsDom.AbsState st -> check_params_on_return_rec st params
+  | AbsDom.Top _ -> assert false
+
+let check_statement (params : (ident * Types.btyp) list) (s : statement) :
+    Imp1.Typed.statement =
+  let rec check_rec (s : statement) : Imp1.Typed.statement =
+    try
+      match s with
+      | StSet (x, c, d_in, _) -> Imp1.Typed.StSet (x, check_comp d_in c)
+      | StIfThenElse (a, s1, s2, d_in, _) ->
+          if check_atom d_in a then
+            let s1' = check_rec s1 in
+            let s2' = check_rec s2 in
+            Imp1.Typed.StIfThenElse (a, s1', s2')
+          else error (Invalid_atom a)
+      | StSequence (s1, s2) ->
+          let s1' = check_rec s1 in
+          let s2' = check_rec s2 in
+          Imp1.Typed.StSequence (s1', s2')
+      | StReturn (a, _, d_out) ->
+          if AbsDom.is_valid_return d_out then begin
+            check_params_on_return d_out params;
+            Imp1.Typed.StReturn a
+          end
+          else error Invalid_retval
+    with Invalid_program (cause, s1) -> update_error_stmt cause s1 s
+  in
+  check_rec s
 
 let check_function (f : coq_function) : Imp1.Typed.coq_function =
-  let body = check_statement f.fn_body in
+  let body = check_statement f.fn_params f.fn_body in
   { fn_return = f.fn_return; fn_params = f.fn_params; fn_body = body }
 
 let check_globdef (def : globdef) : Imp1.Typed.globdef =
