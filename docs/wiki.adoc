@@ -385,8 +385,7 @@ import Mod2
 
 This example will bring the definitions of `Mod1` and `Mod2` in scope, so that using the module name prefix `Mod1::` or `Mod2::` is no longer mandatory. If `Mod1` and `Mod2` have definitions with the same name, the last imported module takes precedence (in the above example, it is `Mod2`).
 
-NOTE: Use imports with 
-
+NOTE: Use imports with care. Referencing an external definition without its module name can make the code harder to read and understand.
 
 WARNING: When compiling with (dependent) multiple files, all the dependencies must be given in order to the compiler. The Barocq compiler does not support separate compilation (no linking phase) and does not have a dependency analyzer yet. 
 
