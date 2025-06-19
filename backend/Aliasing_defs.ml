@@ -5,9 +5,9 @@ open PrintCommon
 
 type path = ident list
 
-(** [_INDEX] is the label given to memory edges whose source is an array (c.f.
+(** [_CONTENT] is the label given to memory edges whose source is an array (c.f.
     AbsDom). *)
-let _INDEX : ident = ident_of_string "[]"
+let _CONTENT : ident = ident_of_string "[*]"
 
 let path_to_string (p : path) : string =
   list_to_string "" "" "." ident_to_string p
@@ -18,7 +18,7 @@ let rec path_of_access_list (acs : Syntax.Typed.access list) : path =
   | [] -> []
   | Syntax.Typed.AcStructField (f, _) :: acs' -> f :: path_of_access_list acs'
   | Syntax.Typed.AcArrayIndex (_, _) :: acs' ->
-      _INDEX :: path_of_access_list acs'
+      _CONTENT :: path_of_access_list acs'
 
 module PathTree = struct
   (** Tree representing invalid paths in the abstract memory. A path is a

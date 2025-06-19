@@ -279,7 +279,7 @@ let exec_set_array_get (x : ident) (a : atom) (i : atom) (st : absstate) :
           ly
       in
       if all_free then
-        let yi_inv = invalid_paths_with_prefix st.st_inv y [_INDEX] in
+        let yi_inv = invalid_paths_with_prefix st.st_inv y [_CONTENT] in
         let st' =
           if is_prim ty then st
           else
@@ -287,7 +287,7 @@ let exec_set_array_get (x : ident) (a : atom) (i : atom) (st : absstate) :
             let ly_i =
               IdentSet.fold
                 (fun l acc ->
-                  IdentSet.union acc (AbsDom.mem_get st.st_mem l _INDEX))
+                  IdentSet.union acc (AbsDom.mem_get st.st_mem l _CONTENT))
                 ly
                 set_empty
             in
@@ -325,7 +325,7 @@ let exec_set_array_set (x : ident) (a : atom) (i : atom) (v : atom)
       let inv' =
         IdentSet.fold
           (fun l acc ->
-            let l_inv = inv_paths_to_loc_suffixed st l [_INDEX] in
+            let l_inv = inv_paths_to_loc_suffixed st l [_CONTENT] in
             inv_union l_inv acc)
           ly
           st.st_inv
@@ -334,7 +334,7 @@ let exec_set_array_set (x : ident) (a : atom) (i : atom) (v : atom)
       let inv' = IdentMap.remove x inv' in
       let v_inv =
         match invalid_paths_of_atom st.st_inv v with
-        | Some t -> Some (Node [(_INDEX, t)])
+        | Some t -> Some (Node [(_CONTENT, t)])
         | None -> None
       in
       let y_inv = invalid_paths_with_prefix st.st_inv y [] in
@@ -346,8 +346,8 @@ let exec_set_array_set (x : ident) (a : atom) (i : atom) (v : atom)
             not create invalid paths for x, modulo invalid paths from the value v we set in y[i]. *)
         match (v_inv, y_inv) with
         | _, Some (Leaf | Node []) -> Some Leaf
-        | _, Some (Node [(_INDEX, (Leaf | Node []))]) ->
-            Some (Node [(_INDEX, Leaf)])
+        | _, Some (Node [(_CONTENT, (Leaf | Node []))]) ->
+            Some (Node [(_CONTENT, Leaf)])
         | Some t1, _ -> Some t1
         | None, Some _ -> None
         | None, None -> None
@@ -376,7 +376,7 @@ let exec_set_array_set (x : ident) (a : atom) (i : atom) (v : atom)
                 let lv = IdentMap.find v st.st_env in
                 (* Update the locations pointed by x[]. *)
                 IdentSet.fold
-                  (fun l acc -> mem_weak_update acc (l, _INDEX) lv)
+                  (fun l acc -> mem_weak_update acc (l, _CONTENT) lv)
                   ly
                   st
           | _ -> st
@@ -717,7 +717,7 @@ let rec mem_bijection (se : senv) (edges : (ident * btyp) list) (loc1 : absloc)
                 | Errors.OK fields -> fields
                 | Errors.Error _ -> assert false
               end
-            | BArray ta -> [(_INDEX, ta)]
+            | BArray ta -> [(_CONTENT, ta)]
             | BAbs _ -> []
             | _ -> assert false
           in
@@ -745,7 +745,7 @@ let locs_bijection (se : senv) (v1 : ident) (v2 : ident) (ty : btyp)
           | Errors.OK fields -> fields
           | Errors.Error _ -> assert false
         end
-      | BArray ta -> [(_INDEX, ta)]
+      | BArray ta -> [(_CONTENT, ta)]
       | BAbs _ -> []
       | _ -> assert false
     in
@@ -1073,7 +1073,7 @@ let invalidate_parent_arrays (st : absstate) =
           | None -> []
         in
         let parent_arrays =
-          match List.assoc_opt _INDEX parent_assoc_list with
+          match List.assoc_opt _CONTENT parent_assoc_list with
           | Some locs -> locs
           | _ -> set_empty
         in
@@ -1290,7 +1290,7 @@ let add_memory_object_aux (se : senv) (st : absstate) (root : absloc)
     else
       let lid = fresh_loc () in
       let m = gen_val_mem_layout m lid ta in
-      IdentPairMap.add (root, _INDEX) (IdentSet.singleton lid) m
+      IdentPairMap.add (root, _CONTENT) (IdentSet.singleton lid) m
   and gen_struct_mem_layout (m : absmem) (root : absloc) (sid : ident) : absmem
       =
     match senv_get se sid with
@@ -1660,7 +1660,12 @@ module DotExport = struct
     end
 
   let print_state (out : out_channel) (d : absdom) : unit =
-    fprintf out "digraph memory {\n%sgraph [dpi=300];\n" indent;
+    fprintf
+      out
+      "digraph memory {\n\
+       %sgraph [fontname=\"Heltvica\",dpi=300];node [fontname = \
+       \"Heltvica\"];edge [fontname = \"Heltvica\"];\n"
+      indent;
     begin
       match d with
       | AbsState st ->
