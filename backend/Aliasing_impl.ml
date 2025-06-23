@@ -521,13 +521,14 @@ let is_tree_var (st : absstate) (x : ident) : bool =
   | None -> false
 
 (** [wf_args st args] checks that all arguments [args] are well-formed at
-    function call, i.e. that each arguments point to trees and that there is not
-    inter-aliasing between arguments. *)
+    function call, i.e. that each non-primitive arguments point to trees and
+    that there is not inter-aliasing between arguments. *)
 let wf_args (st : absstate) (args : atom list) : bool =
   let arg_roots =
     List.fold_left
       (fun acc (a : atom) ->
-        List.append (IdentSet.elements (vars_of_atom a)) acc)
+        if btyp_is_prim (typof_atom a) then acc
+        else List.append (IdentSet.elements (vars_of_atom a)) acc)
       []
       args
   in
