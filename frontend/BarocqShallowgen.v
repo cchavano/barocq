@@ -552,7 +552,7 @@ Module Monadification.
           end
       | _ => MonError.fail
       end
-    in eret (ERet a' ty').
+    in eret (ERet (EAtom a' (typof_atom a')) ty').
 
   Fixpoint monadify_expr_rec (se: senv) (gx: gcontext) (lx: lcontext) (e: BNF.expr) (imp: bool) : res expr :=
     match e with
@@ -581,7 +581,13 @@ Module Monadification.
         let ty1 := typof_atom a1' in
         let* args' := mmap (typecheck_atom se gx lx) args in
         let* (args1, t) := typecheck_call ty1 args' in
-        eret (EApp a1' args1 t)
+        let e' := EApp a1' args1 t in
+        if imp then
+          match t with
+          | MRes _ => eret e'
+          | _ => eret (ERet e' (MRes t))
+          end
+        else eret e'
     | BNF.EIfThenElse a e1 e2 =>
         let* a' := typecheck_atom se gx lx a in
         match (typof_atom a') with

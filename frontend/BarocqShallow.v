@@ -93,7 +93,7 @@ Module Monadic.
     | EIfThenElse : atom -> expr -> expr -> mtyp -> expr
     | ELetIn : ident -> expr -> expr -> mtyp -> expr
     | ELetMon : ident -> expr -> expr -> mtyp -> expr
-    | ERet : atom -> mtyp -> expr.
+    | ERet : expr -> mtyp -> expr.
 
   (** ** Functions *)
 

@@ -60,7 +60,7 @@ let binary_op_to_rocq (ty : mtyp) (op : binary_op) : string =
     match ty with
     | MInt32 Signed -> ("Int", "s")
     | MInt32 Unsigned -> ("Int", "u")
-    | MInt64 Signed -> ("Int", "s")
+    | MInt64 Signed -> ("Int64", "s")
     | MInt64 Unsigned -> ("Int64", "u")
     | _ -> ("", "")
   in
@@ -222,7 +222,12 @@ let rec expr_to_rocq_rec (prefix : string) (e : expr) : string =
               (ident_to_string x)
               (expr_to_rocq_rec "" e1)
               (expr_to_rocq_rec prefix e2))
-    | ERet (a1, _) -> sprintf "ret %s" (opt_parens a1)
+    | ERet (e1, _) -> begin
+        match e1 with
+        | EAtom (a1, _) -> sprintf "ret %s" (opt_parens a1)
+        | EApp _ -> sprintf "ret (%s)" (expr_to_rocq_rec "" e1)
+        | _ -> assert false
+      end
   in
   prefix ^ str
 
