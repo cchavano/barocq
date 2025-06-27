@@ -44,20 +44,24 @@ type func = {
   fn_body : expr;
 }
 
-type raw_literal =
-  | LTrue
-  | LFalse
-  | LInt32 of Integers.Int.int * Types.signedness
-  | LInt64 of Integers.Int64.int * Types.signedness
-  | LArray of literal list
-  | LStruct of (ident * literal) list
+type raw_const =
+  | CTrue
+  | CFalse
+  | CInt32 of Integers.Int.int * Types.signedness
+  | CInt64 of Integers.Int64.int * Types.signedness
+  | CVar of cident
+  | CArray of const list
+  | CStruct of (ident * const) list
+  | CUnop of unary_op * const
+  | CBinop of binary_op * const * const
+  | CCast of const * styp
 
-and literal = raw_literal Location.t
+and const = raw_const Location.t
 
 type globdef =
   | DefAlias of ident * styp
   | DefType of ident * (ident * styp) list
-  | DefConst of ident * literal * styp
+  | DefConst of ident * const * styp
   | DefFun of ident * func
   | DeclType of ident * Ctypes.struct_or_union
   | DeclConst of ident * styp

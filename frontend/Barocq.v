@@ -339,39 +339,51 @@ Section DENOT.
         match to with
         | TBool => ret (Val TBool b)
         | TInt32 s =>
-            let iv := I32.of_bool b in
+            let iv := if s then I32.of_bool b else U32.of_bool b in
             ret (Val (TInt32 s) iv)
         | TInt64 s =>
-            let iv := I64.of_bool b in
+            let iv := if s then I64.of_bool b else U64.of_bool b in
             ret (Val (TInt64 s) iv)
         | _ => fail
         end
     | Val (TInt32 s) i =>
         match to with
-        | TBool => ret (Val TBool (I32.to_bool i))
-        | TInt32 s' => ret (Val (TInt32 s') i)
+        | TBool => 
+            if s then ret (Val TBool (I32.to_bool i))
+            else ret (Val TBool (U32.to_bool i))
+        | TInt32 s' =>
+            match s, s' with
+            | Signed, Unsigned => ret (Val (TInt32 s') (U32.of_i32 i))
+            | Unsigned, Signed => ret (Val (TInt32 s') (I32.of_u32 i))
+            | _, _ => ret (Val (TInt32 s') i)
+            end
         | TInt64 s' =>
-            let i' :=
-              match s with
-              | Signed => I64.of_i32 i
-              | Unsigned => U64.of_i32 i
-              end
-            in
-            ret (Val (TInt64 s') i')
+            match s, s' with
+            | Signed, Signed => ret (Val (TInt64 s') (I64.of_i32 i))
+            | Signed, Unsigned => ret (Val (TInt64 s') (U64.of_i32 i))
+            | Unsigned, Signed => ret (Val (TInt64 s') (I64.of_u32 i))
+            | Unsigned, Unsigned => ret (Val (TInt64 s') (U64.of_u32 i))
+            end
         | _ => fail
         end
     | Val (TInt64 s) i =>
         match to with
-        | TBool => ret (Val TBool (I64.to_bool i))
+        | TBool => 
+            if s then ret (Val TBool (I64.to_bool i))
+            else ret (Val TBool (U64.to_bool i))
         | TInt32 s' =>
-            let i' :=
-              match s with
-              | Signed => I32.of_i64 i
-              | Unsigned => I32.of_u64 i
-              end
-            in
-            ret (Val (TInt32 s') i')
-        | TInt64 s' => ret (Val (TInt64 s') i)
+            match s, s' with
+            | Signed, Signed => ret (Val (TInt32 s') (I32.of_i64 i))
+            | Signed, Unsigned => ret (Val (TInt32 s') (U32.of_i64 i))
+            | Unsigned, Signed => ret (Val (TInt32 s') (I32.of_u64 i))
+            | Unsigned, Unsigned => ret (Val (TInt32 s') (U32.of_u64 i))
+            end
+        | TInt64 s' =>
+            match s, s' with
+            | Signed, Unsigned => ret (Val (TInt64 s') (U64.of_i64 i))
+            | Unsigned, Signed => ret (Val (TInt64 s') (I64.of_u64 i))
+            | _, _ => ret (Val (TInt64 s') i)
+            end
         | _ => fail
         end
     | _ => fail

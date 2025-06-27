@@ -4,8 +4,6 @@
   open Camlcoq
   open SurfaceAST
 
-  type prefix_op = Plus | Minus
-
   let aliases = Hashtbl.create 10
 
   (* A module name must begin with an uppercase letter. *)
@@ -90,7 +88,7 @@ globdef:
   | TYPE id = ident BIND ty = styp { DefAlias (id, ty) }
   | TYPE id = ident BIND fields = struct_fields { DefType (id, fields) }
   | TYPE id = ident OF kind = abs_type_kind { DeclType (id, kind) }
-  | DEFN x = ident COLON ty = styp BIND l = literal { DefConst (x, l, ty) }
+  | DEFN x = ident COLON ty = styp BIND c = const { DefConst (x, c, ty) }
   | DEFN x = ident params = delimited(LPAREN, separated_list(COMMA, param), RPAREN)
     COLON ty = styp BIND e = expr { DefFun (x, {fn_return = ty; fn_params = params; fn_body = e}) }
   | DECL x = ident COLON ty = styp
@@ -133,34 +131,25 @@ expr:
   | e = raw_expr { Location.make $startpos $endpos e }
   | e = delimited(LPAREN, expr, RPAREN) { e }
 
-raw_literal:
-  | TRUE { SurfaceAST.LTrue }
-  | FALSE { SurfaceAST.LFalse }
-  | p = prefix_op? i = LIT_INT32
-    {
-      let n = coqint_of_camlint (fst i) in
-      let n = match p with Some Minus -> Camlcoq.Z.neg n | _ -> n in
-      SurfaceAST.LInt32 (n, snd i)
-    }
-  | p = prefix_op? i = LIT_INT64
-    {
-      let n = coqint_of_camlint64 (fst i) in
-      let n = match p with Some Minus -> Camlcoq.Z.neg n | _ -> n in
-      SurfaceAST.LInt64 (n, snd i)
-    }
-  | a = delimited(LBRACKETBAR, separated_list(SEMICOLON, literal), RBRACKETBAR) { SurfaceAST.LArray a }
-  | st = delimited(LBRACE, nonempty_list(literal_field), RBRACE)
-    { SurfaceAST.LStruct st }
+raw_const:
+  | TRUE { SurfaceAST.CTrue }
+  | FALSE { SurfaceAST.CFalse }
+  | i = LIT_INT32 { SurfaceAST.CInt32 (coqint_of_camlint (fst i), (snd i)) }
+  | i = LIT_INT64 { SurfaceAST.CInt64 (coqint_of_camlint64 (fst i), (snd i)) }
+  | a = delimited(LBRACKETBAR, separated_list(SEMICOLON, const), RBRACKETBAR) { SurfaceAST.CArray a }
+  | st = delimited(LBRACE, nonempty_list(const_field), RBRACE)
+    { SurfaceAST.CStruct st }
+  | id = cident { SurfaceAST.CVar id }
+  | op = unary_op c = const { SurfaceAST.CUnop (op, c) }
+  | c1 = const op = binary_op c2 = const { SurfaceAST.CBinop (op, c1, c2) }
+  | c = const AS ty = styp { SurfaceAST.CCast (c, ty) }
 
-literal:
-  | l = raw_literal { Location.make $startpos $endpos l }
+const:
+  | c = raw_const { Location.make $startpos $endpos c }
+  | c = delimited(LPAREN, const, RPAREN) { c }
 
-prefix_op:
-  | OP_PLUS { Plus }
-  | OP_MINUS { Minus }
-
-literal_field:
-  | key = ident BIND l = literal SEMICOLON { (key, l) }
+const_field:
+  | key = ident BIND l = const SEMICOLON { (key, l) }
 
 %inline unary_op:
   | OP_NOTBOOL { UopNotbool }

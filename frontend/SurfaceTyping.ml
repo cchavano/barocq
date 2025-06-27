@@ -1,4 +1,6 @@
 open Printf
+open Integers
+open Intop
 open Syntax
 open Location
 open SurfaceAST
@@ -46,6 +48,9 @@ type error_cause =
   | Missing_param_write of string * btyp
   | Too_many_param_write of string
   | Mismatch_type_param_write of string * btyp * btyp
+  | Const_var_not_prim of string
+  | Const_var_abstract of string
+  | Invalid_operand of string * string
 
 exception Error of error_cause * unit Location.t option
 
@@ -146,6 +151,13 @@ let msg_from_failure (cause : error_cause) : string =
         fid
         (btyp_to_string tw)
         (btyp_to_string tret)
+  | Const_var_not_prim id ->
+      sprintf
+        "%s is not primitive, it cannot be used in a constant definition"
+        id
+  | Const_var_abstract id ->
+      sprintf "%s is abstract, it cannot be used in a constant definition" id
+  | Invalid_operand (op, ty) -> sprintf "invalid left operand for %s %s" op ty
 
 let error ?(loc : 'a Location.t option = None) (c : error_cause) =
   let loc =
@@ -306,6 +318,353 @@ type lcontext = (btyp * var_kind) IdentMap.t
 
 let lcontext_empty = IdentMap.empty
 
+let rec styp_to_btyp (imports : ident list) (gte : gtenv) (sty : styp) : btyp =
+  match sty with
+  | SBool -> BBool
+  | SInt32 s -> BInt32 s
+  | SInt64 s -> BInt64 s
+  | SArray sta -> BArray (styp_to_btyp imports gte sta)
+  | SIdent stid -> gtenv_get imports gte stid
+  | SFun (stparams, stret) ->
+      let tparams =
+        List.map (fun (_, sty) -> styp_to_btyp imports gte sty) stparams
+      in
+      let tret = styp_to_btyp imports gte stret in
+      BFun (tparams, tret)
+
+type cvalue =
+  | VBool of bool
+  | VInt32 of Int.int * Types.signedness
+  | VInt64 of Int64.int * Types.signedness
+  | VNotprim
+  | VAbs
+
+type cenv = {
+  cenv_local : cvalue IdentMap.t;
+  cenv_extern : cvalue IdentMap.t IdentMap.t;
+}
+
+let cenv_get (imports : ident list) (ce : cenv) (cid : cident) : cvalue =
+  let check_cval (id : ident) (v : cvalue) : cvalue =
+    match v with
+    | VAbs -> error (Const_var_abstract id.content) ~loc:(Some id)
+    | VNotprim -> error (Const_var_not_prim id.content) ~loc:(Some id)
+    | _ -> v
+  in
+  let cenv_get_prefixed (mname : ident) (id : ident) : cvalue option =
+    match IdentMap.find_opt mname.content ce.cenv_extern with
+    | Some mx -> IdentMap.find_opt id.content mx
+    | None -> error (Module_not_found mname.content) ~loc:(Some mname)
+  in
+  let rec cenv_get_imports (imports : ident list) (id : ident) : cvalue =
+    match imports with
+    | [] -> error (Undefined_ident id.content) ~loc:(Some id)
+    | m1 :: imports' -> begin
+        match cenv_get_prefixed m1 id with
+        | Some v -> v
+        | None -> cenv_get_imports imports' id
+      end
+  in
+  match cid with
+  | IdSimple id -> begin
+      match IdentMap.find_opt id.content ce.cenv_local with
+      | Some v -> check_cval id v
+      | None -> cenv_get_imports imports id
+    end
+  | IdPrefixed (mname, id) -> begin
+      match cenv_get_prefixed mname id with
+      | Some v -> check_cval id v
+      | None ->
+          let id' = compose_loc_idents mname id in
+          error (Undefined_ident id'.content) ~loc:(Some id')
+    end
+
+let cenv_update_local (ce : cenv) (x : ident) (v : cvalue) : cenv =
+  match IdentMap.find_opt x.content ce.cenv_local with
+  | Some _ -> error (Already_defined_glob x.content) ~loc:(Some x)
+  | None -> { ce with cenv_local = IdentMap.add x.content v ce.cenv_local }
+
+let cenv_empty : cenv =
+  { cenv_local = IdentMap.empty; cenv_extern = IdentMap.empty }
+
+let eval_cunop (op : unary_op) (v : cvalue) : cvalue =
+  match (op, v) with
+  | UopNotbool, VBool b -> VBool (not b)
+  | UopNotint, VInt32 (i, s) -> VInt32 (Int.not i, s)
+  | UopNeg, VInt32 (i, s) -> VInt32 (Int.neg i, s)
+  | UopPlus, VInt32 (i, s) -> v
+  | UopNotint, VInt64 (i, s) -> VInt32 (Int64.not i, s)
+  | UopNeg, VInt64 (i, s) -> VInt32 (Int64.neg i, s)
+  | UopPlus, VInt64 (i, s) -> v
+  | _ -> assert false
+
+let eval_cbinop (op : binary_op) (v1 : cvalue) (v2 : cvalue) : cvalue =
+  match op with
+  | BopAndbool -> begin
+      match (v1, v2) with
+      | VBool b1, VBool b2 -> VBool (b1 && b2)
+      | _ -> assert false
+    end
+  | BopOrbool -> begin
+      match (v1, v2) with
+      | VBool b1, VBool b2 -> VBool (b1 || b2)
+      | _ -> assert false
+    end
+  | BopXorbool -> begin
+      match (v1, v2) with
+      | VBool b1, VBool b2 -> VBool (Datatypes.xorb b1 b2)
+      | _ -> assert false
+    end
+  | BopAdd -> begin
+      match (v1, v2) with
+      | VInt32 (i1, s1), VInt32 (i2, s2) ->
+          if s1 = s2 then VInt32 (Int.add i1 i2, s1) else assert false
+      | VInt64 (i1, s1), VInt64 (i2, s2) ->
+          if s1 = s2 then VInt64 (Int64.add i1 i2, s1) else assert false
+      | _ -> assert false
+    end
+  | BopSub -> begin
+      match (v1, v2) with
+      | VInt32 (i1, s1), VInt32 (i2, s2) ->
+          if s1 = s2 then VInt32 (Int.sub i1 i2, s1) else assert false
+      | VInt64 (i1, s1), VInt64 (i2, s2) ->
+          if s1 = s2 then VInt64 (Int64.sub i1 i2, s1) else assert false
+      | _ -> assert false
+    end
+  | BopMul -> begin
+      match (v1, v2) with
+      | VInt32 (i1, s1), VInt32 (i2, s2) ->
+          if s1 = s2 then VInt32 (Int.mul i1 i2, s1) else assert false
+      | VInt64 (i1, s1), VInt64 (i2, s2) ->
+          if s1 = s2 then VInt64 (Int64.mul i1 i2, s1) else assert false
+      | _ -> assert false
+    end
+  | BopDiv -> begin
+      match (v1, v2) with
+      | VInt32 (i1, s1), VInt32 (i2, s2) ->
+          if s1 = s2 then
+            let div, ty =
+              if s1 = Types.Signed then (I32.div, "i32") else (U32.div, "u32")
+            in
+            let r =
+              match div i1 i2 with
+              | Errors.OK r -> r
+              | Errors.Error _ -> error (Invalid_operand (ty, "division"))
+            in
+            VInt32 (r, s1)
+          else assert false
+      | VInt64 (i1, s1), VInt64 (i2, s2) ->
+          if s1 = s2 then
+            let div, ty =
+              if s1 = Types.Signed then (I64.div, "i64") else (U64.div, "u64")
+            in
+            let r =
+              match div i1 i2 with
+              | Errors.OK r -> r
+              | Errors.Error _ -> error (Invalid_operand (ty, "division"))
+            in
+            VInt64 (r, s1)
+          else assert false
+      | _ -> assert false
+    end
+  | BopMod -> begin
+      match (v1, v2) with
+      | VInt32 (i1, s1), VInt32 (i2, s2) ->
+          if s1 = s2 then
+            let coq_mod, ty =
+              if s1 = Types.Signed then (I32.coq_mod, "i32")
+              else (U32.coq_mod, "u32")
+            in
+            let r =
+              match coq_mod i1 i2 with
+              | Errors.OK r -> r
+              | Errors.Error _ -> error (Invalid_operand (ty, "modulo"))
+            in
+            VInt32 (r, s1)
+          else assert false
+      | VInt64 (i1, s1), VInt64 (i2, s2) ->
+          if s1 = s2 then
+            let coq_mod, ty =
+              if s1 = Types.Signed then (I64.coq_mod, "i64")
+              else (U64.coq_mod, "u64")
+            in
+            let r =
+              match coq_mod i1 i2 with
+              | Errors.OK r -> r
+              | Errors.Error _ -> error (Invalid_operand (ty, "modulo"))
+            in
+            VInt64 (r, s1)
+          else assert false
+      | _ -> assert false
+    end
+  | BopAndint -> begin
+      match (v1, v2) with
+      | VInt32 (i1, s1), VInt32 (i2, s2) ->
+          if s1 = s2 then VInt32 (Int.coq_and i1 i2, s1) else assert false
+      | VInt64 (i1, s1), VInt64 (i2, s2) ->
+          if s1 = s2 then VInt64 (Int64.coq_and i1 i2, s1) else assert false
+      | _ -> assert false
+    end
+  | BopOrint -> begin
+      match (v1, v2) with
+      | VInt32 (i1, s1), VInt32 (i2, s2) ->
+          if s1 = s2 then VInt32 (Int.coq_or i1 i2, s1) else assert false
+      | VInt64 (i1, s1), VInt64 (i2, s2) ->
+          if s1 = s2 then VInt64 (Int64.coq_or i1 i2, s1) else assert false
+      | _ -> assert false
+    end
+  | BopXorint -> begin
+      match (v1, v2) with
+      | VInt32 (i1, s1), VInt32 (i2, s2) ->
+          if s1 = s2 then VInt32 (Int.xor i1 i2, s1) else assert false
+      | VInt64 (i1, s1), VInt64 (i2, s2) ->
+          if s1 = s2 then VInt64 (Int64.xor i1 i2, s1) else assert false
+      | _ -> assert false
+    end
+  | BopShl -> begin
+      match (v1, v2) with
+      | VInt32 (i1, s1), VInt32 (i2, s2) ->
+          if s1 = s2 then VInt32 (Int.shl i1 i2, s1) else assert false
+      | VInt64 (i1, s1), VInt64 (i2, s2) ->
+          if s1 = s2 then VInt64 (Int64.shl i1 i2, s1) else assert false
+      | _ -> assert false
+    end
+  | BopShr -> begin
+      match (v1, v2) with
+      | VInt32 (i1, s1), VInt32 (i2, s2) ->
+          if s1 = s2 then
+            let shr = if s1 = Types.Signed then Int.shr else Int.shru in
+            VInt32 (shr i1 i2, s1)
+          else assert false
+      | VInt64 (i1, s1), VInt64 (i2, s2) ->
+          if s1 = s2 then
+            let shr = if s1 = Types.Signed then Int64.shr else Int64.shru in
+            VInt64 (shr i1 i2, s1)
+          else assert false
+      | _ -> assert false
+    end
+  | BopEq -> begin
+      match (v1, v2) with
+      | VBool b1, VBool b2 -> VBool (b1 = b2)
+      | VInt32 (i1, s1), VInt32 (i2, s2) ->
+          if s1 = s2 then VBool (Int.eq i1 i2) else assert false
+      | VInt64 (i1, s1), VInt64 (i2, s2) ->
+          if s1 = s2 then VBool (Int64.eq i1 i2) else assert false
+      | _ -> assert false
+    end
+  | BopNeq -> begin
+      match (v1, v2) with
+      | VBool b1, VBool b2 -> VBool (b1 <> b2)
+      | VInt32 (i1, s1), VInt32 (i2, s2) ->
+          if s1 = s2 then
+            let cmp = if s1 = Types.Signed then Int.cmp else Int.cmp in
+            VBool (cmp Cne i1 i2)
+          else assert false
+      | VInt64 (i1, s1), VInt64 (i2, s2) ->
+          if s1 = s2 then
+            let cmp = if s1 = Types.Signed then Int64.cmp else Int64.cmp in
+            VBool (cmp Cne i1 i2)
+          else assert false
+      | _ -> assert false
+    end
+  | _ ->
+      let cop =
+        match op with
+        | BopLt -> Clt
+        | BopGt -> Cgt
+        | BopLe -> Cle
+        | BopGe -> Cge
+        | _ -> assert false
+      in
+      begin
+        match (v1, v2) with
+        | VInt32 (i1, s1), VInt32 (i2, s2) ->
+            if s1 = s2 then
+              let cmp = if s1 = Types.Signed then Int.cmp else Int.cmp in
+              VBool (cmp cop i1 i2)
+            else assert false
+        | VInt64 (i1, s1), VInt64 (i2, s2) ->
+            if s1 = s2 then
+              let cmp = if s1 = Types.Signed then Int64.cmp else Int64.cmp in
+              VBool (cmp cop i1 i2)
+            else assert false
+        | _ -> assert false
+      end
+
+let eval_ccast (v : cvalue) (dst_ty : btyp) : cvalue =
+  match v with
+  | VBool b -> begin
+      match dst_ty with
+      | BBool -> VBool b
+      | BInt32 Types.Signed -> VInt32 (I32.of_bool b, Types.Signed)
+      | BInt32 Types.Unsigned -> VInt32 (U32.of_bool b, Types.Unsigned)
+      | BInt64 Types.Signed -> VInt64 (I64.of_bool b, Types.Signed)
+      | BInt64 Types.Unsigned -> VInt64 (U64.of_bool b, Types.Unsigned)
+      | _ -> assert false
+    end
+  | VInt32 (i, s) -> begin
+      match dst_ty with
+      | BBool ->
+          if s = Types.Signed then VBool (I32.to_bool i)
+          else VBool (U32.to_bool i)
+      | BInt32 s' -> begin
+          match (s, s') with
+          | Types.Signed, Types.Unsigned -> VInt32 (U32.of_i32 i, s')
+          | Types.Unsigned, Types.Signed -> VInt32 (I32.of_u32 i, s')
+          | _ -> VInt32 (i, s)
+        end
+      | BInt64 s' -> begin
+          match (s, s') with
+          | Types.Signed, Types.Signed -> VInt64 (I64.of_i32 i, s')
+          | Types.Signed, Types.Unsigned -> VInt64 (U64.of_i32 i, s')
+          | Types.Unsigned, Types.Signed -> VInt64 (I64.of_u32 i, s')
+          | Types.Unsigned, Types.Unsigned -> VInt64 (U64.of_u32 i, s')
+        end
+      | _ -> assert false
+    end
+  | VInt64 (i, s) -> begin
+      match dst_ty with
+      | BBool ->
+          if s = Types.Signed then VBool (I64.to_bool i)
+          else VBool (U64.to_bool i)
+      | BInt32 s' -> begin
+          match (s, s') with
+          | Types.Signed, Types.Signed -> VInt32 (I32.of_i64 i, s')
+          | Types.Signed, Types.Unsigned -> VInt32 (U32.of_i64 i, s')
+          | Types.Unsigned, Types.Signed -> VInt32 (I32.of_u64 i, s')
+          | Types.Unsigned, Types.Unsigned -> VInt32 (U32.of_u64 i, s')
+        end
+      | BInt64 s' -> begin
+          match (s, s') with
+          | Types.Signed, Types.Unsigned -> VInt64 (U64.of_i64 i, s')
+          | Types.Unsigned, Types.Signed -> VInt64 (I64.of_u64 i, s')
+          | _ -> VInt64 (i, s)
+        end
+      | _ -> assert false
+    end
+  | _ -> assert false
+
+let rec eval_const (imports : ident list) (gte : gtenv) (ce : cenv) (c : const)
+    : cvalue =
+  match c.content with
+  | CTrue -> VBool true
+  | CFalse -> VBool false
+  | CInt32 (i, s) -> VInt32 (i, s)
+  | CInt64 (i, s) -> VInt64 (i, s)
+  | CVar x -> cenv_get imports ce x
+  | CUnop (op, c1) ->
+      let v1 = eval_const imports gte ce c1 in
+      eval_cunop op v1
+  | CBinop (op, c1, c2) ->
+      let v1 = eval_const imports gte ce c1 in
+      let v2 = eval_const imports gte ce c2 in
+      eval_cbinop op v1 v2
+  | CCast (c1, ty) ->
+      let v1 = eval_const imports gte ce c1 in
+      let ty = styp_to_btyp imports gte ty in
+      eval_ccast v1 ty
+  | _ -> assert false
+
 let gcontext_get (imports : ident list) (gx : gcontext) (cid : cident) : btyp =
   let gcontext_get_prefixed (mname : ident) (id : ident) : btyp option =
     match IdentMap.find_opt mname.content gx.gx_extern with
@@ -346,6 +705,11 @@ let lcontext_update (lx : lcontext) (x : ident) (ty : btyp) : lcontext =
       if ty1 = ty then IdentMap.add x.content (ty, VarLocal) lx
       else error (Variable_shadowing_diff_type (x.content, ty)) ~loc:(Some x)
   | None -> IdentMap.add x.content (ty, VarLocal) lx
+
+let cident_to_string (cid : cident) : string =
+  match cid with
+  | IdSimple id -> id.content
+  | IdPrefixed (mname, id) -> compose_idents mname.content id.content
 
 let typof_var (imports : ident list) (gx : gcontext) (lx : lcontext)
     (x : cident) : btyp =
@@ -419,20 +783,6 @@ let typecheck_struct_proj (gte : gtenv) (mname : string) (sid : string)
     end
   | None -> assert false (* Ill-typed environment *)
 
-let rec styp_to_btyp (imports : ident list) (gte : gtenv) (sty : styp) : btyp =
-  match sty with
-  | SBool -> BBool
-  | SInt32 s -> BInt32 s
-  | SInt64 s -> BInt64 s
-  | SArray sta -> BArray (styp_to_btyp imports gte sta)
-  | SIdent stid -> gtenv_get imports gte stid
-  | SFun (stparams, stret) ->
-      let tparams =
-        List.map (fun (_, sty) -> styp_to_btyp imports gte sty) stparams
-      in
-      let tret = styp_to_btyp imports gte stret in
-      BFun (tparams, tret)
-
 let transl_var_name (imports : ident list) (gx : gcontext) (lx : lcontext)
     (x : cident) : Syntax.ident =
   let rec mname_of_ident (imports : ident list) (id : ident) : string =
@@ -486,6 +836,36 @@ let rec transl_btyp (ty : btyp) : Types.btyp =
 
 let arr_index_btyp : btyp =
   if Archi.ptr64 then BInt64 Types.Unsigned else BInt32 Types.Unsigned
+
+let check_expected_typ (texp : expected_typ) (ty : btyp) (r : 'a) : 'a =
+  match texp with
+  | Expect_typ t ->
+      if t = ty then r else error (Type_mismatch (texp, Current_typ ty))
+  | Expect_int -> begin
+      match ty with
+      | BInt32 _ | BInt64 _ -> r
+      | _ -> error (Type_mismatch (texp, Current_typ ty))
+    end
+  | Expect_int_or_bool -> begin
+      match ty with
+      | BBool | BInt32 _ | BInt64 _ -> r
+      | _ -> error (Type_mismatch (texp, Current_typ ty))
+    end
+  | Expect_array -> begin
+      match ty with
+      | BArray _ -> r
+      | _ -> error (Type_mismatch (texp, Current_typ ty))
+    end
+  | Expect_struct -> begin
+      match ty with
+      | BStruct _ -> r
+      | _ -> error (Type_mismatch (texp, Current_typ ty))
+    end
+  | Expect_function -> begin
+      match ty with
+      | BFun _ -> r
+      | _ -> error (Type_mismatch (texp, Current_typ ty))
+    end
 
 let rec typecheck_raw_expr (imports : ident list) (gte : gtenv) (gx : gcontext)
     (lx : lcontext) (e : raw_expr) : Barocq.expr * btyp =
@@ -628,34 +1008,7 @@ and typecheck_expr_expecting (imports : ident list) (gte : gtenv)
     Barocq.expr * btyp =
   try
     let ((e', ty) as r) = typecheck_raw_expr imports gte gx lx e.content in
-    match texp with
-    | Expect_typ t ->
-        if t = ty then r else error (Type_mismatch (texp, Current_typ ty))
-    | Expect_int -> begin
-        match ty with
-        | BInt32 _ | BInt64 _ -> r
-        | _ -> error (Type_mismatch (texp, Current_typ ty))
-      end
-    | Expect_int_or_bool -> begin
-        match ty with
-        | BBool | BInt32 _ | BInt64 _ -> r
-        | _ -> error (Type_mismatch (texp, Current_typ ty))
-      end
-    | Expect_array -> begin
-        match ty with
-        | BArray _ -> r
-        | _ -> error (Type_mismatch (texp, Current_typ ty))
-      end
-    | Expect_struct -> begin
-        match ty with
-        | BStruct _ -> r
-        | _ -> error (Type_mismatch (texp, Current_typ ty))
-      end
-    | Expect_function -> begin
-        match ty with
-        | BFun _ -> r
-        | _ -> error (Type_mismatch (texp, Current_typ ty))
-      end
+    check_expected_typ texp ty r
   with Error (cause, loc) -> update_error_loc cause loc e
 
 and typecheck_app (imports : ident list) (gte : gtenv) (gx : gcontext)
@@ -676,26 +1029,33 @@ and typecheck_app (imports : ident list) (gte : gtenv) (gx : gcontext)
   in
   aux tparams args
 
-let rec typecheck_literal (gte : gtenv) (ty : btyp) (l : literal) :
-    Syntax.literal =
+let cvalue_to_literal (v : cvalue) : Syntax.literal =
+  match v with
+  | VBool true -> Syntax.LTrue
+  | VBool false -> Syntax.LFalse
+  | VInt32 (i, s) -> Syntax.LInt32 (i, s)
+  | VInt64 (i, s) -> Syntax.LInt64 (i, s)
+  | _ -> assert false
+
+let rec typecheck_const (imports : ident list) (gte : gtenv) (ce : cenv)
+    (gx : gcontext) (ty : btyp) (c : const) : Syntax.literal * btyp =
   try
-    match (l.content, ty) with
-    | LTrue, BBool -> Syntax.LTrue
-    | LFalse, BBool -> Syntax.LFalse
-    | LInt32 (i, sl), BInt32 st ->
-        if sl = st then Syntax.LInt32 (i, sl)
-        else
-          error
-            (Type_mismatch (Expect_typ (BInt32 st), Current_typ (BInt32 sl)))
-    | LInt64 (i, sl), BInt64 st ->
-        if sl = st then Syntax.LInt64 (i, sl)
-        else
-          error
-            (Type_mismatch (Expect_typ (BInt64 st), Current_typ (BInt64 sl)))
-    | LArray a, BArray ta ->
-        let a' = List.map (typecheck_literal gte ta) a in
-        Syntax.LArray a'
-    | LStruct st, BStruct (mname, sid) ->
+    match (c.content, ty) with
+    | ( ( CTrue
+        | CFalse
+        | CInt32 _
+        | CInt64 _
+        | CVar _
+        | CUnop _
+        | CBinop _
+        | CCast _ ),
+        _ ) -> typecheck_const_op_expecting imports gte ce gx c (Expect_typ ty)
+    | CArray a, BArray ta ->
+        let a' =
+          List.map (fun c -> fst (typecheck_const imports gte ce gx ta c)) a
+        in
+        (Syntax.LArray a', ty)
+    | CStruct st, BStruct (mname, sid) ->
         let fields, sid' =
           let te, sid' =
             if mname <> !curr_mname then
@@ -711,26 +1071,66 @@ let rec typecheck_literal (gte : gtenv) (ty : btyp) (l : literal) :
           in
           (fields, sid')
         in
-        let st' = typecheck_struct_lit gte sid' st fields in
+        let st' = typecheck_const_struct imports gte ce gx sid' st fields in
         let sid =
           match transl_btyp ty with
           | Types.BStruct sid -> sid
           | _ -> assert false
         in
-        Syntax.LStruct (st', sid)
-    | (LTrue | LFalse), _ ->
-        error (Type_mismatch (Expect_typ ty, Current_typ BBool))
-    | LInt32 (_, s), _ ->
-        error (Type_mismatch (Expect_typ ty, Current_typ (BInt32 s)))
-    | LInt64 (_, s), _ ->
-        error (Type_mismatch (Expect_typ ty, Current_typ (BInt64 s)))
-    | LArray _, _ -> error (Type_mismatch (Expect_typ ty, Current_array))
-    | LStruct _, _ -> error (Type_mismatch (Expect_typ ty, Current_struct))
-  with Error (cause, loc) -> update_error_loc cause loc l
+        (Syntax.LStruct (st', sid), ty)
+    | CArray _, _ -> error (Type_mismatch (Expect_typ ty, Current_array))
+    | CStruct _, _ -> error (Type_mismatch (Expect_typ ty, Current_struct))
+  with Error (cause, loc) -> update_error_loc cause loc c
 
-and typecheck_struct_lit (gte : gtenv) (sid : string)
-    (st : (ident * literal) list) (fields : (string * btyp) list) :
-    (Syntax.ident * Syntax.literal) list =
+and typecheck_const_op (imports : ident list) (gte : gtenv) (ce : cenv)
+    (gx : gcontext) (c : const) : Syntax.literal * btyp =
+  let t =
+    match c.content with
+    | CTrue -> BBool
+    | CFalse -> BBool
+    | CInt32 (_, s) -> BInt32 s
+    | CInt64 (_, s) -> BInt64 s
+    | CVar x -> gcontext_get imports gx x
+    | CUnop (op, c1) ->
+        let texp =
+          match op with
+          | UopNeg | UopNotint | UopPlus -> Expect_int
+          | UopNotbool -> Expect_typ BBool
+        in
+        let _, t1 = typecheck_const_op_expecting imports gte ce gx c1 texp in
+        typecheck_unary_op op t1
+    | CBinop (op, c1, c2) ->
+        let texp =
+          match op with
+          | BopAndbool | BopOrbool | BopXorbool -> Expect_typ BBool
+          | BopEq | BopNeq -> Expect_int_or_bool
+          | _ -> Expect_int
+        in
+        let _, t1 = typecheck_const_op_expecting imports gte ce gx c1 texp in
+        let _, t2 =
+          typecheck_const_op_expecting imports gte ce gx c2 (Expect_typ t1)
+        in
+        typecheck_binary_op op t1 t2
+    | CCast (c1, ty) ->
+        let ty' = styp_to_btyp imports gte ty in
+        let _, t1 = typecheck_const_op imports gte ce gx c1 in
+        typecheck_cast t1 ty'
+    | _ -> assert false
+  in
+  let v = eval_const imports gte ce c in
+  (cvalue_to_literal v, t)
+
+and typecheck_const_op_expecting (imports : ident list) (gte : gtenv)
+    (ce : cenv) (gx : gcontext) (c : const) (texp : expected_typ) :
+    Syntax.literal * btyp =
+  try
+    let ((c', ty) as r) = typecheck_const_op imports gte ce gx c in
+    check_expected_typ texp ty r
+  with Error (cause, loc) -> update_error_loc cause loc c
+
+and typecheck_const_struct (imports : ident list) (gte : gtenv) (ce : cenv)
+    (gx : gcontext) (sid : string) (st : (ident * const) list)
+    (fields : (string * btyp) list) : (Syntax.ident * Syntax.literal) list =
   match st with
   | [] ->
       if List.length fields = 0 then []
@@ -738,16 +1138,19 @@ and typecheck_struct_lit (gte : gtenv) (sid : string)
   | (fname, lit) :: st' -> begin
       match List.assoc_opt fname.content fields with
       | Some ftyp ->
-          let lit' = typecheck_literal gte ftyp lit in
+          let c', _ = typecheck_const imports gte ce gx ftyp lit in
           let r =
-            typecheck_struct_lit
+            typecheck_const_struct
+              imports
               gte
+              ce
+              gx
               sid
               st'
               (List.remove_assoc fname.content fields)
           in
           let fname' = transl_field_name fname in
-          (fname', lit') :: r
+          (fname', c') :: r
       | None -> error (Unknown_field (fname.content, sid)) ~loc:(Some fname)
     end
 
@@ -832,13 +1235,13 @@ let typecheck_abs_function (x : ident) (tparams : (param_attr * btyp) list)
   let _ = check_write_param tparams tret None in
   BFun (List.map snd tparams, tret)
 
-let typecheck_globdef (imports : ident list) (gte : gtenv) (gx : gcontext)
-    (def : globdef) : Barocq.globdef option * gtenv * gcontext =
+let typecheck_globdef (imports : ident list) (gte : gtenv) (ce : cenv)
+    (gx : gcontext) (def : globdef) :
+    Barocq.globdef option * gtenv * cenv * gcontext =
   match def with
   | DefAlias (alias, sty) ->
       let ty = styp_to_btyp imports gte sty in
-      let ty = styp_to_btyp imports gte sty in
-      (None, gtenv_update_local_aliases gte alias ty, gx)
+      (None, gtenv_update_local_aliases gte alias ty, ce, gx)
   | DefType (sid, fields) -> begin
       match find_duplicate_ident (List.map fst fields) with
       | Some fname ->
@@ -862,32 +1265,37 @@ let typecheck_globdef (imports : ident list) (gte : gtenv) (gx : gcontext)
               fields'
           in
           let gte' = gtenv_update_local_structs gte sid fields' in
-          (Some (Barocq.DefType (bsid, bfields)), gte', gx)
+          (Some (Barocq.DefType (bsid, bfields)), gte', ce, gx)
     end
-  | DefConst (id, l, sty) ->
+  | DefConst (id, c, sty) ->
       let ty = styp_to_btyp imports gte sty in
-      let ty = styp_to_btyp imports gte sty in
-      let l' = typecheck_literal gte ty l in
+      let l', _ = typecheck_const imports gte ce gx ty c in
       let gx' = gcontext_update_local gx id ty in
       let bid = transl_globdef_name !curr_mname id in
       let bty = transl_btyp ty in
-      let bty = transl_btyp ty in
-      (Some (Barocq.DefConst (bid, l', bty)), gte, gx')
+      let ce' =
+        let v =
+          if btyp_is_prim ty then eval_const imports gte ce c else VNotprim
+        in
+        cenv_update_local ce id v
+      in
+      (Some (Barocq.DefConst (bid, l', bty)), gte, ce', gx')
   | DefFun (id, f) ->
       let bf, ty = typecheck_function imports gte gx id f in
       let gx' = gcontext_update_local gx id ty in
       let bid = transl_globdef_name !curr_mname id in
-      (Some (Barocq.DefFun (bid, bf)), gte, gx')
+      (Some (Barocq.DefFun (bid, bf)), gte, ce, gx')
   | DeclType (tid, tk) ->
       let gte' = gtenv_update_local_abstracts gte tid in
       let bid = transl_globdef_name !curr_mname tid in
-      (Some (Barocq.DeclType (bid, tk)), gte', gx)
+      (Some (Barocq.DeclType (bid, tk)), gte', ce, gx)
   | DeclConst (id, sty) ->
       let ty = styp_to_btyp imports gte sty in
       let gx' = gcontext_update_local gx id ty in
       let bid = transl_globdef_name !curr_mname id in
       let bty = transl_btyp ty in
-      (Some (Barocq.DeclConst (bid, bty)), gte, gx')
+      let ce' = cenv_update_local ce id VAbs in
+      (Some (Barocq.DeclConst (bid, bty)), gte, ce', gx')
   | DeclFun (id, tparams, tret) ->
       let tparams' =
         List.map
@@ -908,7 +1316,7 @@ let typecheck_globdef (imports : ident list) (gte : gtenv) (gx : gcontext)
           tparams'
       in
       let btret = transl_btyp tret' in
-      (Some (Barocq.DeclFun (bid, btparams, btret)), gte, gx')
+      (Some (Barocq.DeclFun (bid, btparams, btret)), gte, ce, gx')
 
 let rec typecheck_imports (imports : ident list) (gx : gcontext) : unit =
   match imports with
@@ -919,8 +1327,8 @@ let rec typecheck_imports (imports : ident list) (gx : gcontext) : unit =
       | None -> error (Module_not_found m1.content) ~loc:(Some m1)
     end
 
-let typecheck_modul (gte : gtenv) (gx : gcontext) (md : modul) :
-    Barocq.program * gtenv * gcontext =
+let typecheck_modul (gte : gtenv) (ce : cenv) (gx : gcontext) (md : modul) :
+    Barocq.program * gtenv * cenv * gcontext =
   let mname = md.md_name in
   match IdentMap.find_opt mname.content gx.gx_extern with
   | Some _ -> error (Duplicated_module mname.content) ~loc:(Some mname)
@@ -931,19 +1339,19 @@ let typecheck_modul (gte : gtenv) (gx : gcontext) (md : modul) :
       let gx = { gx with gx_local = IdentMap.empty } in
       (* Type checking *)
       typecheck_imports md.md_imports gx;
-      let defs, gte, gx =
+      let defs, gte, ce, gx =
         List.fold_left
-          (fun (acc_defs, acc_gte, acc_gx) def ->
-            let d, gte, gx =
-              typecheck_globdef md.md_imports acc_gte acc_gx def
+          (fun (acc_defs, acc_gte, acc_ce, acc_gx) def ->
+            let d, gte, ce, gx =
+              typecheck_globdef md.md_imports acc_gte acc_ce acc_gx def
             in
             let acc_defs' =
               match d with
               | Some d -> d :: acc_defs
               | None -> acc_defs
             in
-            (acc_defs', gte, gx))
-          ([], gte, gx)
+            (acc_defs', gte, ce, gx))
+          ([], gte, ce, gx)
           md.md_defs
       in
       (* Once the type checking is finished, we update the global environment and
@@ -955,6 +1363,13 @@ let typecheck_modul (gte : gtenv) (gx : gcontext) (md : modul) :
             IdentMap.add md.md_name.content gte.gtenv_local gte.gtenv_extern;
         }
       in
+      let ce' =
+        {
+          cenv_local = IdentMap.empty;
+          cenv_extern =
+            IdentMap.add md.md_name.content ce.cenv_local ce.cenv_extern;
+        }
+      in
       let gx' =
         {
           gx_local = IdentMap.empty;
@@ -962,36 +1377,37 @@ let typecheck_modul (gte : gtenv) (gx : gcontext) (md : modul) :
         }
       in
       let bprog = List.rev defs in
-      (bprog, gte', gx')
+      (bprog, gte', ce', gx')
 
 let typecheck_program (prog : program) : Barocq.program =
-  let bprog, _, _ =
+  let bprog, _, _, _ =
     List.fold_left
-      (fun (acc_prog, acc_gte, acc_gx) md ->
-        let bprog, gte, gx = typecheck_modul acc_gte acc_gx md in
+      (fun (acc_prog, acc_gte, acc_ce, acc_gx) md ->
+        let bprog, gte, ce, gx = typecheck_modul acc_gte acc_ce acc_gx md in
         let bprog' = List.append acc_prog bprog in
-        (bprog', gte, gx))
-      ([], gtenv_empty, gcontext_empty)
+        (bprog', gte, ce, gx))
+      ([], gtenv_empty, cenv_empty, gcontext_empty)
       prog
   in
   bprog
 
-let typecheck_command (imports : ident list) (gte : gtenv) (gx : gcontext)
-    (cmd : command) : Barocq.command option * gtenv * gcontext =
+let typecheck_command (imports : ident list) (gte : gtenv) (ce : cenv)
+    (gx : gcontext) (cmd : command) :
+    Barocq.command option * gtenv * cenv * gcontext =
   match cmd with
   | CmdDef d ->
-      let bd, gte', gx' = typecheck_globdef imports gte gx d in
+      let bd, gte', ce', gx' = typecheck_globdef imports gte ce gx d in
       begin
         match bd with
-        | Some bd -> (Some (Barocq.CmdDef bd), gte', gx')
-        | None -> (None, gte', gx')
+        | Some bd -> (Some (Barocq.CmdDef bd), gte', ce', gx')
+        | None -> (None, gte', ce', gx')
       end
   | CmdExpr e ->
       let be, _ = typecheck_expr imports gte gx lcontext_empty e in
-      (Some (Barocq.CmdExpr be), gte, gx)
+      (Some (Barocq.CmdExpr be), gte, ce, gx)
 
-let typecheck_imodul (gte : gtenv) (gx : gcontext) (imd : imodul) :
-    Barocq.iprogram * gtenv * gcontext =
+let typecheck_imodul (gte : gtenv) (ce : cenv) (gx : gcontext) (imd : imodul) :
+    Barocq.iprogram * gtenv * cenv * gcontext =
   let mname = imd.imd_name in
   match IdentMap.find_opt mname.content gx.gx_extern with
   | Some _ -> error (Duplicated_module mname.content) ~loc:(Some mname)
@@ -1002,19 +1418,19 @@ let typecheck_imodul (gte : gtenv) (gx : gcontext) (imd : imodul) :
       let gx = { gx with gx_local = IdentMap.empty } in
       typecheck_imports imd.imd_imports gx;
       (* Type checking *)
-      let cmds, gte, gx =
+      let cmds, gte, ce, gx =
         List.fold_left
-          (fun (acc_cmds, acc_gte, acc_gx) cmd ->
-            let cmd, gte, gx =
-              typecheck_command imd.imd_imports acc_gte acc_gx cmd
+          (fun (acc_cmds, acc_gte, acc_ce, acc_gx) cmd ->
+            let cmd, gte, ce, gx =
+              typecheck_command imd.imd_imports acc_gte acc_ce acc_gx cmd
             in
             let acc_defs' =
               match cmd with
               | Some cmd -> cmd :: acc_cmds
               | None -> acc_cmds
             in
-            (acc_defs', gte, gx))
-          ([], gte, gx)
+            (acc_defs', gte, ce, gx))
+          ([], gte, ce, gx)
           imd.imd_cmds
       in
       (* Once the type checking is finished, we update the global environment and
@@ -1026,6 +1442,13 @@ let typecheck_imodul (gte : gtenv) (gx : gcontext) (imd : imodul) :
             IdentMap.add imd.imd_name.content gte.gtenv_local gte.gtenv_extern;
         }
       in
+      let ce' =
+        {
+          cenv_local = IdentMap.empty;
+          cenv_extern =
+            IdentMap.add imd.imd_name.content ce.cenv_local ce.cenv_extern;
+        }
+      in
       let gx' =
         {
           gx_local = IdentMap.empty;
@@ -1033,16 +1456,16 @@ let typecheck_imodul (gte : gtenv) (gx : gcontext) (imd : imodul) :
         }
       in
       let bprog = List.rev cmds in
-      (bprog, gte', gx')
+      (bprog, gte', ce', gx')
 
 let typecheck_iprogram (iprog : iprogram) : Barocq.iprogram =
-  let biprog, _, _ =
+  let biprog, _, _, _ =
     List.fold_left
-      (fun (acc_iprog, acc_gte, acc_gx) md ->
-        let biprog, gte, gx = typecheck_imodul acc_gte acc_gx md in
+      (fun (acc_iprog, acc_gte, acc_ce, acc_gx) md ->
+        let biprog, gte, ce, gx = typecheck_imodul acc_gte acc_ce acc_gx md in
         let biprog' = List.append acc_iprog biprog in
-        (biprog', gte, gx))
-      ([], gtenv_empty, gcontext_empty)
+        (biprog', gte, ce, gx))
+      ([], gtenv_empty, cenv_empty, gcontext_empty)
       iprog
   in
   biprog

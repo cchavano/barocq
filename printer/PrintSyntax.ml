@@ -14,13 +14,10 @@ let rec literal_to_string (l : literal) : string =
   | LInt64 (i, Unsigned) -> u64_to_string i
   | LArray a -> list_to_string_bracketbar literal_to_string a
   | LStruct (st, t) ->
-      let sts =
-        list_to_string_braces
-          (fun (x, lx) ->
-            sprintf "%s = %s" (ident_to_string x) (literal_to_string lx))
-          st
-      in
-      sprintf "%s#%s" sts (ident_to_string t)
+      list_to_string_braces
+        (fun (x, lx) ->
+          sprintf "%s = %s" (ident_to_string x) (literal_to_string lx))
+        st
 
 let unary_op_to_string (op : unary_op) : string =
   match op with
