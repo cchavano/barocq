@@ -29,18 +29,26 @@ let int64_to_rocq (i : Integers.Int64.int) (ty : mtyp) : string =
   sprintf "Int64.repr %s%%Z" si
 
 let cast_to_rocq (src_ty : mtyp) (dst_ty : mtyp) : string =
-  let mtyp_to_string ty =
+  let modl ty =
     match ty with
-    | MBool -> "bool"
-    | MInt32 Signed -> "int"
-    | MInt32 Unsigned -> "uint"
-    | MInt64 Signed -> "int64"
-    | MInt64 Unsigned -> "uint64"
+    | MInt32 Signed -> "I32"
+    | MInt32 Unsigned -> "U32"
+    | MInt64 Signed -> "I64"
+    | MInt64 Unsigned -> "U64"
     | _ -> ""
   in
-  if src_ty <> dst_ty then
-    sprintf "%s_to_%s" (mtyp_to_string src_ty) (mtyp_to_string dst_ty)
-  else ""
+  if dst_ty <> MBool then
+    let op =
+      match src_ty with
+      | MInt32 Signed -> "of_i32"
+      | MInt32 Unsigned -> "of_u32"
+      | MInt64 Signed -> "of_i64"
+      | MInt64 Unsigned -> "of_u64"
+      | MBool -> "of_bool"
+      | _ -> ""
+    in
+    sprintf "%s.%s" (modl dst_ty) op
+  else sprintf "%s.to_bool" (modl src_ty)
 
 let unary_op_to_rocq (ty : mtyp) (op : unary_op) : string =
   let intmod =
@@ -58,16 +66,41 @@ let unary_op_to_rocq (ty : mtyp) (op : unary_op) : string =
 let binary_op_to_rocq (ty : mtyp) (op : binary_op) : string =
   let intmod, suffix =
     match ty with
-    | MInt32 Signed -> ("Int", "s")
-    | MInt32 Unsigned -> ("Int", "u")
-    | MInt64 Signed -> ("Int64", "s")
-    | MInt64 Unsigned -> ("Int64", "u")
+    | MInt32 Signed ->
+        let modl =
+          match op with
+          | BopDiv | BopMod -> "I32"
+          | _ -> "Int"
+        in
+        (modl, "s")
+    | MInt32 Unsigned ->
+        let modl =
+          match op with
+          | BopDiv | BopMod -> "U32"
+          | _ -> "Int"
+        in
+        (modl, "s")
+    | MInt64 Signed ->
+        let modl =
+          match op with
+          | BopDiv | BopMod -> "I64"
+          | _ -> "Int64"
+        in
+        (modl, "s")
+    | MInt64 Unsigned ->
+        let modl =
+          match op with
+          | BopDiv | BopMod -> "U64"
+          | _ -> "Int64"
+        in
+        (modl, "s")
     | _ -> ("", "")
   in
   let intop (o : string) =
     let suffix =
       match o with
-      | "add" | "sub" | "mul" | "and" | "or" | "xor" | "shl" -> ""
+      | "add" | "sub" | "mul" | "and" | "or" | "xor" | "shl" | "div" | "mod" ->
+          ""
       | "shr" | "cmp" | "lt" -> if suffix = "s" then "" else suffix
       | "eq" -> ""
       | _ -> suffix
@@ -361,7 +394,7 @@ let print_struct_setters (out : out_channel) (st : struct_def) : unit =
 let headers : string =
   "From Coq Require Import List BinIntDef.\n\
    From compcert Require Import Integers.\n\
-   From BarocqComp Require Import Error Array Casting.\n\
+   From BarocqComp Require Import Error Array Intop.\n\
    Import ListNotations.\n\n\
    Open Scope error_monad_scope.\n\n"
 

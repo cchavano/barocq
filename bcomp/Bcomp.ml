@@ -363,7 +363,9 @@ let () =
     with
     | Sys_error msg -> eprintf "System error: %s\n" msg
     | SyntaxError (lexbuf, msg) -> eprintf "%s\n" (syntax_error_msg lexbuf msg)
-    | Binterpreter.Error msg -> eprintf "Interpretation error: %s\n" msg
+    | Binterpreter.Error msg ->
+        let suffix = if msg = "" then "" else sprintf ": %s" msg in
+        eprintf "Interpretation error%s\n" suffix
     | SurfaceTyping.Error (cause, loc) -> begin
         let msg = SurfaceTyping.msg_from_failure cause in
         match loc with

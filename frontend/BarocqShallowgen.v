@@ -22,9 +22,13 @@ Module Normalization.
         let* a1 := atom_of_expr e1 in
         eret (AUnaryOp op a1)
     | Barocq.EBinaryOp op e1 e2 =>
-        let* a1 := atom_of_expr e1 in
-        let* a2 := atom_of_expr e2 in
-        eret (ABinaryOp op a1 a2)
+        match op with
+        | BopDiv | BopMod => MonError.fail
+        | _ =>
+            let* a1 := atom_of_expr e1 in
+            let* a2 := atom_of_expr e2 in
+            eret (ABinaryOp op a1 a2)
+        end
     | Barocq.EStructProj e1 x =>
         let* a1 := atom_of_expr e1 in
         eret (AStructProj a1 x)
@@ -389,7 +393,11 @@ Module Monadification.
         match ty1, ty2 with
         | MInt32 s1, MInt32 s2
         | MInt64 s1, MInt64 s2 =>
-            if signedness_eq_dec s1 s2 then eret ty1
+            if signedness_eq_dec s1 s2 then
+              match op with
+              | BopDiv | BopMod => eret (MRes ty1)
+              | _ => eret ty1
+              end
             else MonError.fail
         | _, _ => MonError.fail
         end
@@ -468,7 +476,8 @@ Module Monadification.
     | BNF.ACast a1 ty =>
         let* a1' := typecheck_atom se gx lx a1 in
         let t := monadify_btyp ty in
-        eret (ACast a1' t)
+        if mtyp_eq_dec (typof_atom a1') t then eret a1'
+        else eret (ACast a1' t)
     | BNF.AUnaryOp op a1 =>
         let* a1' := typecheck_atom se gx lx a1 in
         let ty1 := typof_atom a1' in

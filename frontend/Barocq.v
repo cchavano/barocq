@@ -1,6 +1,6 @@
 From Coq Require Import List String ListDec PArith Bool.
 From compcert Require Import Integers Ctypes.
-From BarocqComp Require Import Error MapList Utils Casting Array Struct Types Typing Syntax.
+From BarocqComp Require Import Error MapList Utils Intop Array Struct Types Typing Syntax.
 Import ListNotations.
 
 (** * Abstract syntax *)
@@ -339,22 +339,22 @@ Section DENOT.
         match to with
         | TBool => ret (Val TBool b)
         | TInt32 s =>
-            let iv := bool_to_int b in
+            let iv := I32.of_bool b in
             ret (Val (TInt32 s) iv)
         | TInt64 s =>
-            let iv := bool_to_int64 b in
+            let iv := I64.of_bool b in
             ret (Val (TInt64 s) iv)
         | _ => fail
         end
     | Val (TInt32 s) i =>
         match to with
-        | TBool => ret (Val TBool (int_to_bool i))
+        | TBool => ret (Val TBool (I32.to_bool i))
         | TInt32 s' => ret (Val (TInt32 s') i)
         | TInt64 s' =>
             let i' :=
               match s with
-              | Signed => int_to_int64 i
-              | Unsigned => uint_to_int64 i
+              | Signed => I64.of_i32 i
+              | Unsigned => U64.of_i32 i
               end
             in
             ret (Val (TInt64 s') i')
@@ -362,12 +362,12 @@ Section DENOT.
         end
     | Val (TInt64 s) i =>
         match to with
-        | TBool => ret (Val TBool (int64_to_bool i))
+        | TBool => ret (Val TBool (I64.to_bool i))
         | TInt32 s' =>
             let i' :=
               match s with
-              | Signed => int64_to_int i
-              | Unsigned => uint64_to_int i
+              | Signed => I32.of_i64 i
+              | Unsigned => I32.of_u64 i
               end
             in
             ret (Val (TInt32 s') i')
@@ -439,25 +439,33 @@ Section DENOT.
     | BopDiv =>
         match v1, v2 with
         | Val (TInt32 Signed) i1, Val (TInt32 Signed) i2 =>
-            ret (Val (TInt32 Signed) (Int.divs i1 i2))
+            let* r := I32.div i1 i2 in
+            ret (Val (TInt32 Signed) r)
         | Val (TInt32 Unsigned) i1, Val (TInt32 Unsigned) i2 =>
-            ret (Val (TInt32 Unsigned) (Int.divu i1 i2))
+            let* r := U32.div i1 i2 in
+            ret (Val (TInt32 Unsigned) r)
         | Val (TInt64 Signed) i1, Val (TInt64 Signed) i2 =>
-            ret (Val (TInt64 Signed) (Int64.divs i1 i2))
+            let* r := I64.div i1 i2 in
+            ret (Val (TInt64 Signed) r)
         | Val (TInt64 Unsigned) i1, Val (TInt64 Unsigned) i2 =>
-            ret (Val (TInt64 Unsigned) (Int64.divu i1 i2))
+            let* r := U64.div i1 i2 in
+            ret (Val (TInt64 Unsigned) r)
         | _, _ => fail
         end
     | BopMod =>
         match v1, v2 with
         | Val (TInt32 Signed) i1, Val (TInt32 Signed) i2 =>
-            ret (Val (TInt32 Signed) (Int.mods i1 i2))
+            let* r := I32.mod i1 i2 in
+            ret (Val (TInt32 Signed) r)
         | Val (TInt32 Unsigned) i1, Val (TInt32 Unsigned) i2 =>
+            let* r := U32.mod i1 i2 in
             ret (Val (TInt32 Unsigned) (Int.modu i1 i2))
         | Val (TInt64 Signed) i1, Val (TInt64 Signed) i2 =>
+            let* r := I64.mod i1 i2 in
             ret (Val (TInt64 Signed) (Int64.mods i1 i2))
         | Val (TInt64 Unsigned) i1, Val (TInt64 Unsigned) i2 =>
-            ret (Val (TInt64 Unsigned) (Int64.modu i1 i2))
+            let* r := U64.mod i1 i2 in
+            ret (Val (TInt64 Unsigned) r)
         | _, _ => fail
         end
     | BopAndint =>
@@ -640,7 +648,7 @@ Section DENOT.
           + apply fail.
         - destruct (typ_eq_dec t2 (TInt32 Unsigned)).
           + subst. simpl in i. simpl in a.
-            destruct (Array.get a (uint_to_uint64 i)).
+            destruct (Array.get a (U64.of_u32 i)).
               * apply (ret (Val ta e)).
               * apply fail.
           + apply fail.
@@ -663,7 +671,7 @@ Section DENOT.
         + apply fail.
       - destruct (typ_eq_dec t2 (TInt32 Unsigned)).
         + destruct (typ_eq_dec ta t).
-          * subst. simpl in i. simpl in a. destruct (Array.set a (uint_to_uint64 i) v).
+          * subst. simpl in i. simpl in a. destruct (Array.set a (U64.of_u32 i) v).
             -- apply (ret (Val (TArray t) a0)).
             -- apply fail.
           * apply fail.
