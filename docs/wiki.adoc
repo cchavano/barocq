@@ -282,6 +282,28 @@ The following table summarizes the other expressions of the language. All identi
 
 |===
 
+There is also syntactic sugar for let-binding sequences. For example, the following code:
+
+[source]
+----
+let x = 1 in
+let y = 2 in
+let z = 3 in
+x + y + z
+----
+
+can be written:
+
+[source]
+----
+let
+  x = 1 and
+  x = 2 and
+  y = 3
+in
+x + y + z
+----
+
 NOTE: The type of an array index depends on the CompCert `Archi.ptr64` value. If you compiled CompCert to target a 32-bit architecture, you should use `u32` indices, otherwise you should use `u64` for a 64-bit arch.
 
 === Definitions
@@ -294,9 +316,9 @@ The syntax is:
 
 [source]
 ----
-defn const_name : const_type = const_value
+defn const_name : const_type = const_expr
 ----
-`const_name` is an identifier, `const_type` is a type and `const_value` is a literal.
+`const_name` is an identifier, `const_type` is a type and `const_expr` is a constant expression. A constant expression is either a literal, a constant variable or a boolean or an arithmetic expression.
 
 The following example declare several constants:
 
@@ -304,7 +326,11 @@ The following example declare several constants:
 ----
 defn MAX_SIZE : u32 = 10U
 
-defn my_array : array point = [|{ x = 6; y = -2; };  { x = 2; y = 34; }|]
+defn NB_ELEM : u32 = MAX_SIZE / 2U
+
+defn X_COORD_INIT : i32 = 6
+
+defn my_array : array point = [|{ x = X_COORD_INIT; y = -2; };  { x = X_COORD_INIT; y = 34; }|]
 ----
 
 IMPORTANT: Only constants with a primitive type can be used in function bodies. Non-primitive constants may be used by manually written C code which would be linked to Barocq generated code.
@@ -316,7 +342,7 @@ The syntax is:
 [source]
 ----
 defn fun_name(p1: t1, ..., pn: tn) : tr =
-    (* body *)
+  (* body *)
 ----
 
 Each parameter `pi` is associated with its type `ti`. `tr` is the return type. A function can take no parameters.
@@ -467,9 +493,11 @@ defn incr_proc_nb_sched(ks: state, pid: u64) : state =
 defn schedule(ks: state) : state =
   if Machine::read_time(ks.mc) > ks.deadline then
     let next_pid = (ks.curr_pid + 1UL) % NB_PROCS in
-    let ks = ks.curr_pid <- next_pid in
-    let ks = ks.deadline <- ks.deadline + QUANTUM in
-    let ks = incr_proc_nb_sched(ks, next_pid) in
+    let
+      ks = ks.curr_pid <- next_pid and
+      ks = ks.deadline <- ks.deadline + QUANTUM and
+      ks = incr_proc_nb_sched(ks, next_pid)
+    in
     sync(ks)
   else
     ks
