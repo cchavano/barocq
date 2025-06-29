@@ -22,7 +22,7 @@
                 {
                     "comment": "other keyword",
 				    "name": "keyword.other.barocq",
-				    "match": "\\b(module|import|type|defn|decl|let|in|compute|as|of)\\b"
+				    "match": "\\b(module|import|type|defn|decl|let|and|in|compute|as|of)\\b"
                 }
             ]
 		},

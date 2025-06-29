@@ -991,12 +991,11 @@ let rec typecheck_raw_expr (imports : ident list) (gte : gtenv) (gx : gcontext)
         typecheck_expr_expecting imports gte gx lx e3 (Expect_typ t2)
       in
       (Barocq.EIfThenElse (e1', e2', e3'), t2)
-  | ELetIn (x, e1, e2) ->
-      let x' = PrintCommon.ident_of_string ("u_" ^ x.content) in
-      let e1', t1 = typecheck_expr imports gte gx lx e1 in
-      let lx' = lcontext_update lx x t1 in
-      let e2', t2 = typecheck_expr imports gte gx lx' e2 in
-      (Barocq.ELetIn (x', e1', e2'), t2)
+  | ELetIn (le, e) -> begin
+      match le with
+      | [] -> assert false
+      | _ -> typecheck_let_in imports gte gx lx le e
+    end
 
 and typecheck_expr (imports : ident list) (gte : gtenv) (gx : gcontext)
     (lx : lcontext) (e : expr) : Barocq.expr * btyp =
@@ -1028,6 +1027,19 @@ and typecheck_app (imports : ident list) (gte : gtenv) (gx : gcontext)
     | _, _ -> error (Wrong_argument_number (arity, nbargs))
   in
   aux tparams args
+
+and typecheck_let_in (imports : ident list) (gte : gtenv) (gx : gcontext)
+    (lx : lcontext) (le : (ident * expr) list) (e : expr) : Barocq.expr * btyp =
+  match le with
+  | [] ->
+      let e', t = typecheck_expr imports gte gx lx e in
+      (e', t)
+  | (xi, ei) :: le' ->
+      let xi' = PrintCommon.ident_of_string ("u_" ^ xi.content) in
+      let ei', ti = typecheck_expr imports gte gx lx ei in
+      let lx' = lcontext_update lx xi ti in
+      let er, tr = typecheck_let_in imports gte gx lx' le' e in
+      (Barocq.ELetIn (xi', ei', er), tr)
 
 let cvalue_to_literal (v : cvalue) : Syntax.literal =
   match v with

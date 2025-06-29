@@ -59,7 +59,7 @@
         ("bool", TYP_BOOL); ("i32", TYP_INT32); ("u32", TYP_UINT32);
         ("i64", TYP_INT64); ("u64", TYP_UINT64); ("array", TYP_ARRAY);
         ("type", TYPE); ("of", OF); ("defn", DEFN); ("decl", DECL);
-        ("let", LET); ("in", IN); ("as", AS);
+        ("let", LET); ("in", IN); ("and", AND); ("as", AS);
         ("if", IF); ("then", THEN); ("else", ELSE);
       ]
 }

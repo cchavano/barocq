@@ -38,7 +38,7 @@
 %token COMPUTE
 %token DEFN DECL TYPE OF
 %token AT_READONLY AT_WRITE
-%token LET IN
+%token LET AND IN
 %token IF THEN ELSE
 %token AS
 %token <string> LIT_STRING
@@ -121,11 +121,14 @@ raw_expr:
   | e1 = expr LBRACKET e2 = expr RBRACKET ARROW_INV e3 = expr { EArraySet (e1, e2, e3) }
   | e1 = expr DOT key = ident { EStructProj (e1, key) }
   | e1 = expr DOT key = ident ARROW_INV e2 = expr { EStructUpdate (e1, key, e2) }
-  | LET x = ident BIND e1 = expr IN e2 = expr { ELetIn (x, e1, e2) }
+  | LET le = separated_nonempty_list(AND, binding) IN e = expr { ELetIn (le, e) }
   | IF e1 = expr THEN e2 = expr ELSE e3 = expr { EIfThenElse (e1, e2, e3) }
   | op = unary_op e = expr { EUnaryOp (op, e) }
   | e1 = expr op = binary_op e2 = expr { EBinaryOp (op, e1, e2) }
   | e = expr args = delimited(LPAREN, separated_list(COMMA, expr), RPAREN) { EApp (e, args) }
+
+binding:
+  | x = ident BIND e = expr { (x, e) }
 
 expr:
   | e = raw_expr { Location.make $startpos $endpos e }

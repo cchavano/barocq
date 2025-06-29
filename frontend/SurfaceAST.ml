@@ -34,7 +34,7 @@ type raw_expr =
   | EStructUpdate of expr * ident * expr
   | EApp of expr * expr list
   | EIfThenElse of expr * expr * expr
-  | ELetIn of ident * expr * expr
+  | ELetIn of (ident * expr) list * expr
 
 and expr = raw_expr Location.t
 
