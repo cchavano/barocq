@@ -956,21 +956,7 @@ let rec typecheck_raw_expr (imports : ident list) (gte : gtenv) (gx : gcontext)
             (Barocq.EStructProj (e1', f'), t)
         | _ -> assert false
       end
-  | EStructUpdate (e1, f, e2) ->
-      let e1', t1 =
-        typecheck_expr_expecting imports gte gx lx e1 Expect_struct
-      in
-      begin
-        match t1 with
-        | BStruct (mname, sid) ->
-            let f' = transl_field_name f in
-            let tf = typecheck_struct_proj gte mname sid f in
-            let e2', _ =
-              typecheck_expr_expecting imports gte gx lx e2 (Expect_typ tf)
-            in
-            (Barocq.EStructUpdate (e1', f', e2'), t1)
-        | _ -> assert false
-      end
+  | EStructUpdate (e1, le) -> typecheck_struct_update imports gte gx lx e1 le
   | EApp (e1, args) ->
       let e1', t1 =
         typecheck_expr_expecting imports gte gx lx e1 Expect_function
@@ -1009,6 +995,28 @@ and typecheck_expr_expecting (imports : ident list) (gte : gtenv)
     let ((e', ty) as r) = typecheck_raw_expr imports gte gx lx e.content in
     check_expected_typ texp ty r
   with Error (cause, loc) -> update_error_loc cause loc e
+
+and typecheck_struct_update (imports : ident list) (gte : gtenv) (gx : gcontext)
+    (lx : lcontext) (e : expr) (le : (ident * expr) list) : Barocq.expr * btyp =
+  let check_one_update (st_mname : string) (st_sid : string) ste f e =
+    let f' = transl_field_name f in
+    let tf = typecheck_struct_proj gte st_mname st_sid f in
+    let e', _ = typecheck_expr_expecting imports gte gx lx e (Expect_typ tf) in
+    (Barocq.EStructUpdate (ste, f', e'), BStruct (st_mname, st_sid))
+  in
+  let rec check_update_list (st_mname : string) (st_sid : string)
+      (e : Barocq.expr) (le : (ident * expr) list) : Barocq.expr * btyp =
+    match le with
+    | [] -> assert false
+    | (fi, ei) :: [] -> check_one_update st_mname st_sid e fi ei
+    | (fi, ei) :: le' ->
+        let bei, ti = check_one_update st_mname st_sid e fi ei in
+        check_update_list st_mname st_sid bei le'
+  in
+  let e', t = typecheck_expr_expecting imports gte gx lx e Expect_struct in
+  match t with
+  | BStruct (mname, sid) -> check_update_list mname sid e' le
+  | _ -> assert false
 
 and typecheck_app (imports : ident list) (gte : gtenv) (gx : gcontext)
     (lx : lcontext) (tparams : btyp list) (tret : btyp) (args : expr list) :

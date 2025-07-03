@@ -30,9 +30,9 @@ defn incr_proc_nb_sched(ks: state, pid: u64) : state =
 defn schedule(ks: state) : state =
   if Machine::read_time(ks.mc) > ks.deadline then
     let next_pid = (ks.curr_pid + 1UL) % NB_PROCS in
+    let next_deadline = ks.deadline + QUANTUM in
     let
-      ks = ks.curr_pid <- next_pid and
-      ks = ks.deadline <- ks.deadline + QUANTUM and
+      ks = ks with { curr_pid <- next_pid; deadline <- next_deadline; } and
       ks = incr_proc_nb_sched(ks, next_pid)
     in
     sync(ks)

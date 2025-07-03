@@ -57,6 +57,7 @@ let token_to_string (tok : Bparser.token) : string =
   | DECL -> "DECL"
   | LET -> "LET"
   | AND -> "AND"
+  | WITH -> "WITH"
   | IN -> "IN"
   | IF -> "IF"
   | THEN -> "THEN"

@@ -31,7 +31,7 @@ type raw_expr =
   | EArrayGet of expr * expr
   | EArraySet of expr * expr * expr
   | EStructProj of expr * ident
-  | EStructUpdate of expr * ident * expr
+  | EStructUpdate of expr * (ident * expr) list
   | EApp of expr * expr list
   | EIfThenElse of expr * expr * expr
   | ELetIn of (ident * expr) list * expr

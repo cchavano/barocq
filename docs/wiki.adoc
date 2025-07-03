@@ -279,10 +279,13 @@ The following table summarizes the other expressions of the language. All identi
 
 |`f(e1, ..., en)`
 |Calling function `f` with arguments `e1, ..., en`
-
 |===
 
-There is also syntactic sugar for let-binding sequences. For example, the following code:
+==== Syntactic sugar
+
+There is also syntactic sugar for let-binding sequences and multi-fields updates for records.
+
+To define multiple let-bindings without having to use `let ... in` everytime, you can use the `and` keyword. For exemple, the following code:
 
 [source]
 ----
@@ -303,6 +306,17 @@ let
 in
 x + y + z
 ----
+
+To update multiple fields of the same record "at the same time", the following syntax can be used:
+
+[source]
+----
+p with { x <- 2; y <- 3 }
+----
+
+In this example, `p` should be a record variable, and `x` and `y` fields of the corresponding record type.
+
+IMPORTANT: This syntax is desugarged by a sequence of single-field record updates that keeps the order in which the programmer updated the fields. For example, the code snippet above is desugared as `(p.x \<- 2).y \<- 3`. Using a different order can lead to different errors raised by the compiler if side effects do occur in the update expressions.
 
 NOTE: The type of an array index depends on the CompCert `Archi.ptr64` value. If you compiled CompCert to target a 32-bit architecture, you should use `u32` indices, otherwise you should use `u64` for a 64-bit arch.
 
@@ -493,9 +507,9 @@ defn incr_proc_nb_sched(ks: state, pid: u64) : state =
 defn schedule(ks: state) : state =
   if Machine::read_time(ks.mc) > ks.deadline then
     let next_pid = (ks.curr_pid + 1UL) % NB_PROCS in
+    let next_deadline = ks.deadline + QUANTUM in
     let
-      ks = ks.curr_pid <- next_pid and
-      ks = ks.deadline <- ks.deadline + QUANTUM and
+      ks = ks with { curr_pid <- next_pid; deadline <- next_deadline; } and
       ks = incr_proc_nb_sched(ks, next_pid)
     in
     sync(ks)

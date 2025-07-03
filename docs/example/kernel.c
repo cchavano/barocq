@@ -67,8 +67,9 @@ struct Kernel_state *Kernel_schedule(struct Kernel_state *$p_ks)
   register unsigned long long $b1;
   register unsigned long long $b0;
   register unsigned long long $u_next_pid;
-  register unsigned long long $b3;
   register unsigned long long $b2;
+  register unsigned long long $u_next_deadline;
+  register struct Kernel_state *$b3;
   register struct Kernel_state *$u_ks;
   register struct Kernel_state *$i0;
   $b6 = (*$p_ks).mc;
@@ -79,12 +80,12 @@ struct Kernel_state *Kernel_schedule(struct Kernel_state *$p_ks)
     $b1 = (*$p_ks).curr_pid;
     $b0 = $b1 + 1LL;
     $u_next_pid = $b0 % Kernel_NB_PROCS;
+    $b2 = (*$p_ks).deadline;
+    $u_next_deadline = $b2 + Kernel_QUANTUM;
     (*$p_ks).curr_pid = $u_next_pid;
-    $u_ks = $p_ks;
-    $b3 = (*$u_ks).deadline;
-    $b2 = $b3 + Kernel_QUANTUM;
-    (*$u_ks).deadline = $b2;
-    $u_ks = $u_ks;
+    $b3 = $p_ks;
+    (*$b3).deadline = $u_next_deadline;
+    $u_ks = $b3;
     $u_ks = Kernel_incr_proc_nb_sched($u_ks, $u_next_pid);
     $i0 = Kernel_sync($u_ks);
     return $i0;
