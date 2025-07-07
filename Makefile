@@ -23,11 +23,7 @@ VBUILD=$(addprefix $(BUILD_DIR)/, $(VSOURCE))
 
 EXTRDEP=$(BUILD_DIR)/bcomp/extractionMachdep.v
 
-COQINCLUDES=\
-	-R $(BUILD_DIR)/common BarocqComp.common\
-	-R $(BUILD_DIR)/frontend BarocqComp.frontend\
-	-R $(BUILD_DIR)/backend BarocqComp.backend\
-	-R $(BUILD_DIR)/bcomp BarocqComp.bcomp
+COQINCLUDES=$(foreach d, $(VDIRS), -R $(BUILD_DIR)/$(d) BarocqComp.$(d))
 COQC=coqc $(COQINCLUDES)
 COQEXEC=coqtop $(COQINCLUDES) -batch -load-vernac-source
 COQDEP=coqdep $(COQINCLUDES)
@@ -38,16 +34,15 @@ all:
 	$(MAKE) barocq
 
 $(addprefix $(BUILD_DIR)/, VDIRS):
-	@mkdir -p $(BUILD_DIR)/common
-	@mkdir -p $(BUILD_DIR)/frontend
-	@mkdir -p $(BUILD_DIR)/backend
-	@mkdir -p $(BUILD_DIR)/bcomp
+	@for dir in $(VDIRS) ; do \
+		mkdir -p $(BUILD_DIR)/$$dir ; \
+	done
 
 builddir: $(addprefix $(BUILD_DIR)/, VDIRS)
 
-# Retrieve file from CompCert build folder
+# Retrieve necessary files from the CompCert build folder
 
-compcert.ini :
+compcert.ini:
 	@echo RETRIEVE compcert.ini
 	@cp $(COMPCERT_DIR)/compcert.ini compcert.ini
 
