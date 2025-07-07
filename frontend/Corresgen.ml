@@ -316,8 +316,8 @@ let print_proofs (out : out_channel) (prog : program) : unit =
   let structs = get_struct_defs types in
   if structs <> [] then begin
     fprintf out "(** * Struct conversions **)\n\n";
-    print_list out "" s "\n\n" gen_struct_conv structs;
-    print_list out "" s "\n\n" gen_struct_conv_corres structs
+    print_list out "" "\n\n" s gen_struct_conv structs;
+    print_list out "" "\n\n" s gen_struct_conv_corres structs
   end;
   if defs <> [] then fprintf out "(** * Program correspondence proofs **)\n\n";
   let defs =
