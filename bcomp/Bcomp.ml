@@ -307,14 +307,14 @@ let () =
           Bytes.fill bytes 0 1 (Char.uppercase_ascii (String.get rawname 0));
           Bytes.to_string bytes
         in
-        Proofsgen.coqlib := coqlib;
-        Proofsgen.shallowfile := rawname ^ "_Shallow";
-        Proofsgen.deepfile := rawname ^ "_Deep";
+        Corresgen.coqlib := coqlib;
+        Corresgen.shallowfile := rawname ^ "_Shallow";
+        Corresgen.deepfile := rawname ^ "_Deep";
         let proofs_output = get_full_filename !c_output "_Corres.v" in
         let oc = open_out proofs_output in
         match BarocqShallowgen.monadify_norm_program prog with
         | Errors.OK prog ->
-            Proofsgen.print_proofs oc prog;
+            Corresgen.print_proofs oc prog;
             printf "Correspondence proofs generated at %s\n" proofs_output;
             close_out oc
         | Errors.Error msg ->
