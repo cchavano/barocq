@@ -202,6 +202,26 @@ The two operands of a binary operation must have the same type.
 |Numerical MODULO
 |Any integer type
 
+|`<<`
+|Bitwise LEFT SHIFT
+|Any integer type
+
+|`>>`
+|Bitwise RIGHT SHIFT
+|Any integer type
+
+|`&`
+|Bitwise AND
+|Any integer type
+
+|`\|`
+|Bitwise OR
+|Any integer type
+
+|`^`
+|Bitwise XOR
+|Any integer type
+
 |`<`
 |Numerical LESS THAN
 |Any integer type
@@ -218,7 +238,7 @@ The two operands of a binary operation must have the same type.
 |Numerical GREATER or EQUAL THAN
 |Any integer type
 
-|`=`
+|`==`
 |Equality test
 |Any primitive type
 
