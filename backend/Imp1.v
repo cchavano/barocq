@@ -124,8 +124,9 @@ Module Typing.
     | Error _ =>
         match gcontext_get gx x with
         | OK (BArray _)
-        | OK (BStruct _) =>
-            failwith "Imp1.Typing.typof_var: the use of global structures or arrays is not yet supported"
+        | OK (BStruct _)
+        | OK (BAbs _) =>
+            failwith "Imp1.Typing.typof_var: the use of non-primitive global constants is not supported"
         | OK ty => eret ty
         | Error e => Error e
         end

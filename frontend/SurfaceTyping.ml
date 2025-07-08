@@ -51,6 +51,7 @@ type error_cause =
   | Const_var_not_prim of string
   | Const_var_abstract of string
   | Invalid_operand of string * string
+  | Use_of_non_prim_glob
 
 exception Error of error_cause * unit Location.t option
 
@@ -158,6 +159,8 @@ let msg_from_failure (cause : error_cause) : string =
   | Const_var_abstract id ->
       sprintf "%s is abstract, it cannot be used in a constant definition" id
   | Invalid_operand (op, ty) -> sprintf "invalid left operand for %s %s" op ty
+  | Use_of_non_prim_glob ->
+      "the use of non-primitive global constants is forbidden"
 
 let error ?(loc : 'a Location.t option = None) (c : error_cause) =
   let loc =
@@ -680,19 +683,24 @@ let gcontext_get (imports : ident list) (gx : gcontext) (cid : cident) : btyp =
         | None -> gcontext_get_imports imports' id
       end
   in
-  match cid with
-  | IdSimple id -> begin
-      match IdentMap.find_opt id.content gx.gx_local with
-      | Some ty -> ty
-      | None -> gcontext_get_imports imports id
-    end
-  | IdPrefixed (mname, id) -> begin
-      match gcontext_get_prefixed mname id with
-      | Some ty -> ty
-      | None ->
-          let id' = compose_loc_idents mname id in
-          error (Undefined_ident id'.content) ~loc:(Some id')
-    end
+  let ty =
+    match cid with
+    | IdSimple id -> begin
+        match IdentMap.find_opt id.content gx.gx_local with
+        | Some ty -> ty
+        | None -> gcontext_get_imports imports id
+      end
+    | IdPrefixed (mname, id) -> begin
+        match gcontext_get_prefixed mname id with
+        | Some ty -> ty
+        | None ->
+            let id' = compose_loc_idents mname id in
+            error (Undefined_ident id'.content) ~loc:(Some id')
+      end
+  in
+  match ty with
+  | BArray _ | BStruct _ | BAbs _ -> error Use_of_non_prim_glob
+  | _ -> ty
 
 let gcontext_update_local (gx : gcontext) (x : ident) (ty : btyp) : gcontext =
   match IdentMap.find_opt x.content gx.gx_local with
