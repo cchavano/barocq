@@ -31,4 +31,4 @@ let to_string (loc : 'a t) : string =
     if startpos.pos_cnum = endpos.pos_cnum - 1 then from_single_pos startpos
     else from_interval startpos endpos
   in
-  Printf.sprintf "in file \"%s\", %s" startpos.pos_fname srcloc
+  Printf.sprintf "File \"%s\", %s" startpos.pos_fname srcloc

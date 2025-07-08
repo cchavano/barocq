@@ -965,7 +965,7 @@ let exec_set_call (show_debug : bool) (se : senv) (x : ident) (a : atom)
         sprintf "when calling function %s: %s" (ident_to_string y) cause
       in
       if not (args_pointsto_unique stcall args) then
-        top (errmsg "some arguments point to multiple location")
+        top (errmsg "some arguments point to multiple locations")
       else if not no_locked_arrays then
         top (errmsg "some arguments contain locked arrays")
       else if not (wf_args stcall args) then
@@ -1494,7 +1494,7 @@ let gen_aliasing_function (show_debug : bool) (se : senv) (fe : fenv)
       in
       let msg =
         sprintf
-          "alias analysis of function %s%s\n> %s"
+          "alias analysis of function %s%s\n>> %s"
           (ident_to_string x)
           stmt_info
           err.ei_msg

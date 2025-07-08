@@ -8,9 +8,9 @@ exception SyntaxError of lexbuf * string
 let syntax_error_msg lexbuf msg =
   let startpos = Lexing.lexeme_start_p lexbuf in
   let endpos = Lexing.lexeme_end_p lexbuf in
-  let sep = if msg = "" then "" else ": " in
+  let sep = if msg = "" then "" else "\n>> " in
   sprintf
-    "Syntax error %s%s%s"
+    "%s: Syntax error%s%s"
     (Location.to_string (Location.make startpos endpos ()))
     sep
     msg
@@ -368,7 +368,7 @@ let () =
         let msg = SurfaceTyping.msg_from_failure cause in
         match loc with
         | Some loc ->
-            eprintf "Typing error %s\n> %s\n" (Location.to_string loc) msg
+            eprintf "%s: Typing error\n>> %s\n" (Location.to_string loc) msg
         | None -> assert false
       end
     | CompilerError msg -> eprintf "Compilation error: %s\n" msg

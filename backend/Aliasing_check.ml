@@ -186,7 +186,7 @@ let check_program (prog : program) : Imp1.Typed.program Errors.res =
     in
     let msg =
       Printf.sprintf
-        "alias checking of function %s%s\n> %s"
+        "alias checking of function %s%s\n>> %s"
         !curr_fun_name
         stmt_str
         (msg_from_failure cause)
