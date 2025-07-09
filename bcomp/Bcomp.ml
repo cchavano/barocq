@@ -346,11 +346,11 @@ let () =
       match Compiler.compile !opt_debug_aliasing prog with
       | Errors.OK prog ->
           Camlcoq.use_canonical_atoms := true;
-          let ids = Clightgen.program_idents prog in
+          let ids = ClightCegen.program_idents prog in
           record_idents (List.map PrintCommon.ident_to_string ids);
-          PrintClight.destination := Some !c_output;
+          PrintClightCe.destination := Some !c_output;
           (* Program printing *)
-          PrintCprog.print_clight !file_types_impl prog;
+          PrintCprog.print_clightce !file_types_impl prog;
           printf "C file generated at %s\n" !c_output;
           (* Header printing *)
           if !opt_gen_header then begin

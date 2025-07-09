@@ -1,5 +1,5 @@
 From Coq Require Import ZArith String List FMapPositive MSetPositive.
-From compcert Require Import AST Ctypes Clight Clightdefs Cop Maps Integers.
+From compcert Require Import AST Ctypes Clight ClightCe Clightdefs Cop Maps Integers.
 From BarocqComp Require Import Error MapList Utils Types Syntax.
 Import ClightNotations.
 Import Syntax.Typed.
@@ -91,10 +91,10 @@ Section TRANSL.
     | BopGe => ret Oge
     | BopAndbool
     | BopOrbool =>
-        failwith "Clightgen.transl_binary_op: unsupported boolean operator"
+        failwith "ClightCegen.transl_binary_op: unsupported boolean operator"
     end.
 
-  Fixpoint transl_atom (globs: pset) (a: Syntax.Typed.atom) : res Clight.expr :=
+  Fixpoint transl_atom (globs: pset) (a: Syntax.Typed.atom) : res ClightCe.expr :=
     match a with
     | ATrue _ => ret (Econst_int Int.one tbool)
     | AFalse _ => ret (Econst_int Int.zero tbool)
@@ -127,7 +127,7 @@ Section TRANSL.
     | _ => ty
     end.
 
-  Fixpoint transl_deep_access (globs: pset) (a: atom) (acs: list access) : res Clight.expr :=
+  Fixpoint transl_deep_access (globs: pset) (a: atom) (acs: list access) : res ClightCe.expr :=
     match acs with
     | nil => transl_atom globs a
     | ac :: nil =>
@@ -160,7 +160,7 @@ Section TRANSL.
         end
     end.
 
-  Definition transl_expr (globs: pset) (e: Imp2.expr) : res Clight.expr :=
+  Definition transl_expr (globs: pset) (e: Imp2.expr) : res ClightCe.expr :=
     match e with
     | EAtom a _ => transl_atom globs a
     | EArrayGet a1 a2 ty =>
@@ -177,7 +177,7 @@ Section TRANSL.
     | EDeepAccess a acs _ => transl_deep_access globs a (List.rev' acs)
     end.
 
-  Definition transl_ecomp (globs: pset) (ec: Imp2.ecomp) : res (Clight.expr * Clight.statement) :=
+  Definition transl_ecomp (globs: pset) (ec: Imp2.ecomp) : res (ClightCe.expr * ClightCe.statement) :=
     match ec with
     | EcArraySet a1 a2 a3 =>
         let* e1 := transl_atom globs a1 in
@@ -194,7 +194,24 @@ Section TRANSL.
         ret (e1, Sassign (Efield (Ederef e1 tderef) f tfield) e2)
     end.
 
-  Fixpoint transl_statement (globs: pset) (s: Imp2.statement) : res Clight.statement :=
+  Fixpoint transl_cond_atom (globs: pset) (a: atom) : res ClightCe.cexpr :=
+    match transl_atom globs a with
+    | OK a' => ret (CE_expr a')
+    | Error _ =>
+        match a with
+        | ABinaryOp op a1 a2 _ =>
+            let* a1' := transl_cond_atom globs a1 in
+            let* a2' := transl_cond_atom globs a2 in
+            match op with
+            | BopAndbool => ret (CE_and a1' a2')
+            | BopOrbool => ret (CE_or a1' a2')
+            | _ => fail
+            end
+        | _ => fail
+        end
+    end.
+
+  Fixpoint transl_statement (globs: pset) (s: Imp2.statement) : res ClightCe.statement :=
     match s with
     | StSkip => ret Sskip
     | StSetExpr x e =>
@@ -209,7 +226,7 @@ Section TRANSL.
         let* args' := mmap (transl_atom globs) args in
         ret (Scall (Some x) e args')
     | StIfThenElse a s1 s2 =>
-        let* e := transl_atom globs a in
+        let* e := transl_cond_atom globs a in
         let* s1' := transl_statement globs s1 in
         let* s2' := transl_statement globs s2 in
         ret (Sifthenelse e s1' s2')
@@ -222,21 +239,21 @@ Section TRANSL.
         ret (Sreturn (Some e))
     end.
 
-  Definition transl_function (globs: pset) (f: Imp2.function) : res Clight.function :=
+  Definition transl_function (globs: pset) (f: Imp2.function) : res ClightCe.function :=
     let ty := transl_btyp (fn_return f) in
     let params := map_k transl_btyp (fn_params f) in
     let temps := map_k transl_btyp (fn_vars f) in
     let* body := transl_statement globs (fn_body f) in
     ret {|
-      Clight.fn_return := ty;
-      Clight.fn_callconv := cc_default;
-      Clight.fn_params := params;
-      Clight.fn_vars := nil;
-      Clight.fn_temps := temps;
-      Clight.fn_body := body
+      ClightCe.fn_return := ty;
+      ClightCe.fn_callconv := cc_default;
+      ClightCe.fn_params := params;
+      ClightCe.fn_vars := nil;
+      ClightCe.fn_temps := temps;
+      ClightCe.fn_body := body
     |}.
 
-  Definition transl_abs_function (f: ident) (tparams: list (param_attr * btyp)) (tret: btyp) : Clight.fundef :=
+  Definition transl_abs_function (f: ident) (tparams: list (param_attr * btyp)) (tret: btyp) : ClightCe.fundef :=
     let tparams := List.map snd tparams in
     let ext_func :=
       EF_external (string_of_ident f)
@@ -251,7 +268,7 @@ Section TRANSL.
   Import ListNotations.
 
   Definition cglobdef : Type :=
-    AST.ident * AST.globdef (Ctypes.fundef Clight.function) type.
+    AST.ident * AST.globdef (Ctypes.fundef ClightCe.function) type.
 
   Definition literal_size (l: Imp2.literal) : Z :=
     match l with
@@ -359,7 +376,7 @@ Fixpoint mk_abs_types_impl (types: list type_def) : PMap.t Ctypes.type :=
       end
   end.
 
-Definition transl_program (prog: Imp2.program) : res Clight.program :=
+Definition transl_program (prog: Imp2.program) : res ClightCe.program :=
   let types := prog_types prog in
   let defs := prog_defs prog in
   let abs_types_impl := mk_abs_types_impl types in
@@ -369,7 +386,7 @@ Definition transl_program (prog: Imp2.program) : res Clight.program :=
   let main := _main in
   match Ctypes.make_program ts cdefs public main with
   | OK prog => OK prog
-  | Error _ => failwith "Clightgen.transl_program: error when calling Ctypes.make_program"
+  | Error _ => failwith "ClightgenCe.transl_program: error when calling Ctypes.make_program"
   end.
 
 Section IDENTS.
@@ -391,24 +408,24 @@ Section IDENTS.
   Definition typ_idents (t: Ctypes.type) : pset :=
     typ_idents_rec sempty t.
 
-  Definition function_idents (f: Clight.function) : pset :=
+  Definition function_idents (f: ClightCe.function) : pset :=
     let param_idents :=
       List.fold_left
       (fun ids '(pid, pty) =>
         sunion (typ_idents pty) (sadd ids pid))
-      (Clight.fn_params f)
+      (ClightCe.fn_params f)
       sempty
     in
     let var_idents :=
       List.fold_left
         (fun ids vid => sadd ids vid)
-        (List.map fst (Clight.fn_vars f))
+        (List.map fst (ClightCe.fn_vars f))
         sempty
     in
     let temp_idents :=
       List.fold_left
         (fun ids tid => sadd ids tid)
-        (List.map fst (Clight.fn_temps f))
+        (List.map fst (ClightCe.fn_temps f))
         sempty
     in
     sunion (sunion param_idents var_idents) temp_idents.
@@ -437,7 +454,7 @@ Section IDENTS.
   Definition composite_idents (cd: Ctypes.composite_definition) : pset :=
     match cd with Composite x _ m _ => sadd (members_idents m) x end.
 
-  Definition program_idents (prog: Clight.program) : list ident :=
+  Definition program_idents (prog: ClightCe.program) : list ident :=
     let ids :=
       List.fold_left
         (fun ids def => sunion (globdef_idents def) ids)

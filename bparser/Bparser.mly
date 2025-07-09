@@ -58,8 +58,9 @@
 %nonassoc OP_NOTBOOL OP_NOTINT
 %nonassoc LPAREN LBRACKET
 %nonassoc DOT
-%right ARROW
-%nonassoc TYP_ARRAY
+// %right ARROW
+%nonassoc WITH
+// %nonassoc TYP_ARRAY
 
 %start imodul
 %type<SurfaceAST.imodul> imodul

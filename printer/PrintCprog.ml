@@ -2,15 +2,15 @@ open Format
 open PrintCsyntax
 open AST
 
-let print_clight (types_header : string) (prog : Clight.program) : unit =
-  match !PrintClight.destination with
+let print_clightce (types_header : string) (prog : ClightCe.program) : unit =
+  match !PrintClightCe.destination with
   | None -> ()
   | Some f ->
       let oc = open_out f in
       if types_header <> "" then
         Printf.fprintf oc "#include \"%s\"\n\n" types_header;
-      PrintClight.print_program
-        PrintClight.Clight2
+      PrintClightCe.print_program
+        PrintClightCe.Clight2
         (formatter_of_out_channel oc)
         prog;
       close_out oc
@@ -40,12 +40,12 @@ let print_inttype_aliases (oc : out_channel) : unit =
      typedef unsigned long long u64;\n\n"
 
 let print_header (types_header : string) (hfile : string)
-    (prog : Clight.program) : unit =
+    (prog : ClightCe.program) : unit =
   let aux p prog =
     fprintf p "@[<v 0>";
     List.iter (PrintCsyntax.define_composite p) prog.Ctypes.prog_types;
     List.iter (print_header_globdef p) prog.Ctypes.prog_defs;
-    List.iter (PrintClight.print_globdecl p) prog.Ctypes.prog_defs;
+    List.iter (PrintClightCe.print_globdecl p) prog.Ctypes.prog_defs;
     fprintf p "@]@."
   in
   let oc = open_out hfile in

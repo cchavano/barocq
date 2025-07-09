@@ -1,3 +1,3 @@
-val print_clight : string -> Clight.program -> unit
+val print_clightce : string -> ClightCe.program -> unit
 
-val print_header : string -> string -> Clight.program -> unit
+val print_header : string -> string -> ClightCe.program -> unit

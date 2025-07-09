@@ -5,10 +5,10 @@ From BarocqComp Require Import Error Utils Types Syntax Barocq.
 
 (** ** Transformation of logical AND/OR expressions *)
 
-Fixpoint transf_logical_expr (e: Barocq.expr) : Barocq.expr :=
-  let fix transf_logical_access (ac: Barocq.access) : Barocq.access :=
+Fixpoint transf_logical_expr (mktransf: bool) (e: Barocq.expr) {struct e}: Barocq.expr :=
+  let fix transf_logical_access (mktransf: bool) (ac: Barocq.access) {struct ac}: Barocq.access :=
     match ac with
-    | AcArrayIndex e1 => AcArrayIndex (transf_logical_expr e1)
+    | AcArrayIndex e1 => AcArrayIndex (transf_logical_expr mktransf e1)
     | _ => ac
     end
   in
@@ -19,51 +19,53 @@ Fixpoint transf_logical_expr (e: Barocq.expr) : Barocq.expr :=
   | EInt64 _ _
   | EVar _ => e
   | ECast e1 ty =>
-      let e1' := transf_logical_expr e1 in
+      let e1' := transf_logical_expr mktransf e1 in
       ECast e1' ty
   | EUnaryOp op e1 =>
-      let e1' := transf_logical_expr e1 in
+      let e1' := transf_logical_expr mktransf e1 in
       EUnaryOp op e1'
   | EBinaryOp op e1 e2 =>
-      let e1' := transf_logical_expr e1 in
-      let e2' := transf_logical_expr e2 in
-      match op with
-      | BopAndbool => EIfThenElse e1' e2' (EFalse)
-      | BopOrbool => EIfThenElse e1' (ETrue) e2'
-      | _ => e
-      end
+      let e1' := transf_logical_expr mktransf e1 in
+      let e2' := transf_logical_expr mktransf e2 in
+      if mktransf then
+        match op with
+        | BopAndbool => EIfThenElse e1' e2' (EFalse)
+        | BopOrbool => EIfThenElse e1' (ETrue) e2'
+        | _ => e
+        end
+      else EBinaryOp op e1' e2'
   | EArrayGet e1 e2 =>
-      let e1' := transf_logical_expr e1 in
-      let e2' := transf_logical_expr e2 in
+      let e1' := transf_logical_expr mktransf e1 in
+      let e2' := transf_logical_expr mktransf e2 in
       EArrayGet e1' e2'
   | EArraySet e1 e2 e3 =>
-      let e1' := transf_logical_expr e1 in
-      let e2' := transf_logical_expr e2 in
-      let e3' := transf_logical_expr e3 in
+      let e1' := transf_logical_expr mktransf e1 in
+      let e2' := transf_logical_expr mktransf e2 in
+      let e3' := transf_logical_expr mktransf e3 in
       EArraySet e1' e2' e3'
   | EStructProj e1 f =>
-      let e1' := transf_logical_expr e1 in
+      let e1' := transf_logical_expr mktransf e1 in
       EStructProj e1' f
   | EStructUpdate e1 f e2 =>
-      let e1' := transf_logical_expr e1 in
-      let e2' := transf_logical_expr e2 in
+      let e1' := transf_logical_expr mktransf e1 in
+      let e2' := transf_logical_expr mktransf e2 in
       EStructUpdate e1' f e2'
   | EDeepAccess e1 acs =>
-      let e1' := transf_logical_expr e1 in
-      let acs' := List.map transf_logical_access acs in
+      let e1' := transf_logical_expr mktransf e1 in
+      let acs' := List.map (transf_logical_access mktransf) acs in
       EDeepAccess e1' acs'
   | EApp e1 args =>
-      let e1' := transf_logical_expr e1 in
-      let args' := List.map transf_logical_expr args in
+      let e1' := transf_logical_expr mktransf e1 in
+      let args' := List.map (transf_logical_expr mktransf) args in
       EApp e1' args'
   | EIfThenElse e1 e2 e3 =>
-      let e1' := transf_logical_expr e1 in
-      let e2' := transf_logical_expr e2 in
-      let e3' := transf_logical_expr e3 in
+      let e1' := transf_logical_expr false e1 in
+      let e2' := transf_logical_expr mktransf e2 in
+      let e3' := transf_logical_expr mktransf e3 in
       EIfThenElse e1' e2' e3'
   | ELetIn x e1 e2 =>
-      let e1' := transf_logical_expr e1 in
-      let e2' := transf_logical_expr e2 in
+      let e1' := transf_logical_expr mktransf e1 in
+      let e2' := transf_logical_expr mktransf e2 in
       ELetIn x e1' e2' 
   end.
 
@@ -71,7 +73,7 @@ Definition transf_logical_function (f: Barocq.function) : Barocq.function :=
   {|
     fn_return := fn_return f;
     fn_params := fn_params f;
-    fn_body := transf_logical_expr (fn_body f)
+    fn_body := transf_logical_expr true (fn_body f)
   |}.
 
 Definition transf_logical_globdef (def: Barocq.globdef) : Barocq.globdef :=
