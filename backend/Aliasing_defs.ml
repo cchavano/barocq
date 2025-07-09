@@ -444,27 +444,14 @@ module AbsDom = struct
       let next_loc =
         Pos.add BinNums.Coq_xH (Pos.max st1.st_next_loc st2.st_next_loc)
       in
-      (* Check that the domain of locked arrays is the same. *)
-      let arr_locked_locs1 =
-        IdentSet.of_seq (Seq.map fst (IdentMap.to_seq st1.st_arr_locked))
-      in
-      let arr_locked_locs2 =
-        IdentSet.of_seq (Seq.map fst (IdentMap.to_seq st2.st_arr_locked))
-      in
-      if IdentSet.compare arr_locked_locs1 arr_locked_locs2 = 0 then
-        let al_union = arr_locked_union st1.st_arr_locked st2.st_arr_locked in
-        match al_union with
-        | Some al ->
-            AbsState (make_state ev m rev rm res inv inv_res al next_loc)
-        | None ->
-            Top
-              (mk_err_info
-                 "impossible domain union, some arrays are locked on different \
-                  indexes")
-      else
-        Top
-          (mk_err_info
-             "impossible domain union, the set of locked arrays is not the same")
+      let al_union = arr_locked_union st1.st_arr_locked st2.st_arr_locked in
+      match al_union with
+      | Some al -> AbsState (make_state ev m rev rm res inv inv_res al next_loc)
+      | None ->
+          Top
+            (mk_err_info
+               "impossible domain union, some arrays are locked on different \
+                indexes")
     in
     match (d1, d2) with
     | AbsState st1, AbsState st2 -> aux st1 st2
