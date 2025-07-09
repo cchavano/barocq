@@ -37,7 +37,13 @@ Definition spread_atomlist (e: Barocq.expr) (la: list atom) : res BarocqBNF.expr
   | Barocq.EBinaryOp op _ _ =>
       let* a1 := nth_err la 0 in
       let* a2 := nth_err la 1 in
-      eret (EAtom (ABinaryOp op a1 a2))
+      match op with
+      | BopAndbool =>
+          eret (EIfThenElse a1 (EAtom a2) (EAtom AFalse))
+      | BopOrbool =>
+          eret (EIfThenElse a1 (EAtom ATrue) (EAtom a2))
+      | _ => eret (EAtom (ABinaryOp op a1 a2))
+      end
   | Barocq.EArrayGet _ _ =>
       let* a1 := nth_err la 0 in
       let* a2 := nth_err la 1 in
@@ -113,6 +119,37 @@ Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
         ret (ELetIn x be bacs)
     end
   in
+  let fix norm_ite_cond (e: Barocq.expr) : crmon (list (ident * BarocqBNF.expr) * atom) :=
+    match e with
+    | ETrue => ret (nil, ATrue)
+    | EFalse => ret (nil, AFalse)
+    | Barocq.EInt32 i s => ret (nil, AInt32 i s)
+    | Barocq.EInt64 i s => ret (nil, AInt64 i s)
+    | Barocq.EVar x => ret (nil, AVar x)
+    | Barocq.ECast e1 ty =>
+      let* (li1, a1) := norm_ite_cond e1 in
+      ret (li1, ACast a1 ty)
+    | EUnaryOp op e1 =>
+        let* (li, a1) := norm_ite_cond e1 in
+        ret (li, AUnaryOp op a1)
+    | EBinaryOp op e1 e2 =>
+        let* (li1, a1) := norm_ite_cond e1 in
+        let* (li2, a2) := norm_ite_cond e2 in
+        ret (li1 ++ li2, ABinaryOp op a1 a2)
+    | _ =>
+        let* x := fresh_var in
+        let* be := norm_expr_rec e in
+        ret ((x, be) :: nil, AVar x)
+    end
+  in
+  let fix norm_ite (le: list (ident * BarocqBNF.expr)) (c: atom) (a: BarocqBNF.expr) (b: BarocqBNF.expr) : crmon BarocqBNF.expr :=
+    match le with
+    | nil => ret (EIfThenElse c a b)
+    | (x, be) :: le' =>
+        let* ber := norm_ite le' c a b in
+        ret (ELetIn x be ber)
+    end
+  in
   match e with
   | Barocq.ETrue =>
       ret (EAtom ATrue)
@@ -148,9 +185,8 @@ Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
       match atom_of_expr e1 with
       | OK a => ret (EIfThenElse a ne2 ne3)
       | Error _ =>
-          let* x1 := fresh_var in
-          let* ne1 := norm_expr_rec e1 in
-          ret (ELetIn x1 ne1 (EIfThenElse (AVar x1) ne2 ne3))
+          let* (le, c) := norm_ite_cond e1 in
+          norm_ite le c ne2 ne3
       end
   | Barocq.ELetIn x e1 e2 =>
       let* ne1 := norm_expr_rec e1 in

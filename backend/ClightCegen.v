@@ -199,6 +199,12 @@ Section TRANSL.
     | OK a' => ret (CE_expr a')
     | Error _ =>
         match a with
+        | AUnaryOp op a1 _ =>
+            let* a1' := transl_cond_atom globs a1 in
+            match op with
+            | UopNotbool => ret (CE_not a1')
+            | _ => fail
+            end
         | ABinaryOp op a1 a2 _ =>
             let* a1' := transl_cond_atom globs a1 in
             let* a2' := transl_cond_atom globs a2 in
