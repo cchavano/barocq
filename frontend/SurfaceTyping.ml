@@ -396,8 +396,8 @@ let eval_cunop (op : unary_op) (v : cvalue) : cvalue =
   | UopNotint, VInt32 (i, s) -> VInt32 (Int.not i, s)
   | UopNeg, VInt32 (i, s) -> VInt32 (Int.neg i, s)
   | UopPlus, VInt32 (i, s) -> v
-  | UopNotint, VInt64 (i, s) -> VInt32 (Int64.not i, s)
-  | UopNeg, VInt64 (i, s) -> VInt32 (Int64.neg i, s)
+  | UopNotint, VInt64 (i, s) -> VInt64 (Int64.not i, s)
+  | UopNeg, VInt64 (i, s) -> VInt64 (Int64.neg i, s)
   | UopPlus, VInt64 (i, s) -> v
   | _ -> assert false
 
