@@ -37,9 +37,9 @@ let unary_op_to_deep (op : unary_op) : string =
 
 let binary_op_to_deep (op : binary_op) : string =
   match op with
-  | BopAndbool -> "BopAndBool"
-  | BopOrbool -> "BopOrBool"
-  | BopXorbool -> "BopXorBool"
+  | BopAndbool -> "BopAndbool"
+  | BopOrbool -> "BopOrbool"
+  | BopXorbool -> "BopXorbool"
   | BopAdd -> "BopAdd"
   | BopSub -> "BopSub"
   | BopMul -> "BopMul"

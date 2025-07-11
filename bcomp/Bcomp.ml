@@ -3,6 +3,8 @@ open Printf
 
 exception CompilerError of string
 
+exception UnexpectedError of string
+
 exception SyntaxError of lexbuf * string
 
 let syntax_error_msg lexbuf msg =
@@ -250,11 +252,16 @@ let () =
                         Unix.system (dot_png_cmd dotfile_rev dotfile_rev)
                       in
                       ()
-                  | _ -> failwith (sprintf "function \"%s\" is not defined" fid)
+                  | _ ->
+                      eprintf "Error: function \"%s\" is not defined" fid;
+                      exit 1
                 end
               | Errors.Error msg ->
-                  failwith
-                    (sprintf "Imp1 typing error: %s" (C2C.string_of_errmsg msg))
+                  raise
+                  @@ UnexpectedError
+                       (sprintf
+                          "Imp1 typing failed: %s"
+                          (C2C.string_of_errmsg msg))
             end
           | Errors.Error msg ->
               raise @@ CompilerError (C2C.string_of_errmsg msg)
@@ -287,11 +294,16 @@ let () =
                         Unix.system (dot_png_cmd dotfile_rev dotfile_rev)
                       in
                       ()
-                  | _ -> failwith (sprintf "function \"%s\" is not defined" fid)
+                  | _ ->
+                      eprintf "function \"%s\" is not defined" fid;
+                      exit 1
                 end
               | Errors.Error msg ->
-                  failwith
-                    (sprintf "Imp1 typing error: %s" (C2C.string_of_errmsg msg))
+                  raise
+                  @@ UnexpectedError
+                       (sprintf
+                          "Imp1 typing failed: %s"
+                          (C2C.string_of_errmsg msg))
             end
           | Errors.Error msg ->
               raise @@ CompilerError (C2C.string_of_errmsg msg)
@@ -315,11 +327,15 @@ let () =
         match BarocqShallowgen.monadify_norm_program prog with
         | Errors.OK prog ->
             Corresgen.print_proofs oc prog;
-            printf "Correspondence proofs generated at %s\n" proofs_output;
+            printf "Correspondence theorems generated at %s\n" proofs_output;
             close_out oc
         | Errors.Error msg ->
             close_out oc;
-            failwith "Error: fail to generate the correspondence proofs"
+            raise
+            @@ UnexpectedError
+                 (sprintf
+                    "fail to generate the correspondence theorems: %s"
+                    (C2C.string_of_errmsg msg))
       end;
 
       if !opt_gen_shallow then begin
@@ -332,7 +348,11 @@ let () =
             close_out oc
         | Errors.Error msg ->
             close_out oc;
-            failwith "Error: fail to generate the shallow-embedding"
+            raise
+            @@ UnexpectedError
+                 (sprintf
+                    "fail to generate the shallow-embedding: %s"
+                    (C2C.string_of_errmsg msg))
       end;
 
       if !opt_gen_deep then begin
@@ -374,6 +394,8 @@ let () =
         | None -> assert false
       end
     | CompilerError msg -> eprintf "Compilation error: %s\n" msg
+    | UnexpectedError msg ->
+        eprintf "Unexpected error: %s\nPlease, make a bug report.\n" msg
     | Aliasing_impl.UnsupportedFeature msg ->
         eprintf "Compilation error: %s\n" msg
   end;

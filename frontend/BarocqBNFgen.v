@@ -72,54 +72,7 @@ Open Scope state_err_monad_scope.
 Definition fresh_var : crmon ident := Utils.fresh_var_err "b".
 
 Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
-  let fix norm_exprlist_rec (e: Barocq.expr) (le: list Barocq.expr) (la: list atom) : crmon BarocqBNF.expr :=
-    match le with
-    | nil => lift_err (spread_atomlist e (rev' la))
-    | e1 :: le' =>
-        match atom_of_expr e1 with
-        | OK a => norm_exprlist_rec e le' (a :: la)
-        | Error _ =>
-            let* x := fresh_var in
-            let* ne1 := norm_expr_rec e1 in
-            let* ler := norm_exprlist_rec e le' (AVar x :: la) in
-            ret (ELetIn x ne1 ler)
-        end
-    end
-  in
-  let norm_exprlist (e: Barocq.expr) (le: list Barocq.expr) : crmon BarocqBNF.expr :=
-    norm_exprlist_rec e le nil
-  in
-  let fix norm_access_list_rec (a: atom) (acs: list Barocq.access) (acs_norm: list Syntax.access)
-    : crmon BarocqBNF.expr :=
-    match acs with
-    | nil => ret (EDeepAccess a (rev acs_norm))
-    | ac :: acs' =>
-        match ac with
-        | Barocq.AcStructField f =>
-            norm_access_list_rec a acs' (Syntax.AcStructField f :: acs_norm)
-        | Barocq.AcArrayIndex e =>
-            match atom_of_expr e with
-            | OK ae => norm_access_list_rec a acs' ((Syntax.AcArrayIndex ae) :: acs_norm)
-            | Error _ =>
-              let* xe := fresh_var in
-              let* be := norm_expr_rec e in
-              let* ber := norm_access_list_rec a acs' ((Syntax.AcArrayIndex (AVar xe)) :: acs_norm) in
-              ret (ELetIn xe be ber)
-            end
-        end
-    end
-  in
-  let norm_deep_access (e: Barocq.expr) (acs: list Barocq.access) : crmon BarocqBNF.expr :=
-    match atom_of_expr e with
-    | OK a => norm_access_list_rec a acs nil
-    | Error _ =>
-        let* x := fresh_var in
-        let* be := norm_expr_rec e in
-        let* bacs := norm_access_list_rec (AVar x) acs nil in
-        ret (ELetIn x be bacs)
-    end
-  in
-  let fix norm_ite_cond (e: Barocq.expr) : crmon (list (ident * BarocqBNF.expr) * atom) :=
+  let fix norm_expr_aux (ifc: bool) (e: Barocq.expr) : crmon (list (ident * BarocqBNF.expr) * atom) :=
     match e with
     | ETrue => ret (nil, ATrue)
     | EFalse => ret (nil, AFalse)
@@ -127,28 +80,82 @@ Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
     | Barocq.EInt64 i s => ret (nil, AInt64 i s)
     | Barocq.EVar x => ret (nil, AVar x)
     | Barocq.ECast e1 ty =>
-      let* (li1, a1) := norm_ite_cond e1 in
-      ret (li1, ACast a1 ty)
+        let* (li1, a1) := norm_expr_aux ifc e1 in
+        ret (li1, ACast a1 ty)
     | EUnaryOp op e1 =>
-        let* (li, a1) := norm_ite_cond e1 in
+        let* (li, a1) := norm_expr_aux ifc e1 in
         ret (li, AUnaryOp op a1)
     | EBinaryOp op e1 e2 =>
-        let* (li1, a1) := norm_ite_cond e1 in
-        let* (li2, a2) := norm_ite_cond e2 in
-        ret (li1 ++ li2, ABinaryOp op a1 a2)
+        let op_and_or :=
+          match op with
+          | BopAndbool | BopOrbool => true
+          | _ => false
+          end
+        in
+        if ifc then
+          let* (li1, a1) := norm_expr_aux ifc e1 in
+          let* (li2, a2) := norm_expr_aux ifc e2 in
+          ret (li1 ++ li2, ABinaryOp op a1 a2)
+        else
+          match op with
+          | BopAndbool | BopOrbool =>
+              let* x := fresh_var in
+              let* be := norm_expr_rec e in
+              ret ((x, be) :: nil, AVar x)
+          | _ =>
+              let* (li1, a1) := norm_expr_aux ifc e1 in
+              let* (li2, a2) := norm_expr_aux ifc e2 in
+              ret (li1 ++ li2, ABinaryOp op a1 a2)
+          end
     | _ =>
         let* x := fresh_var in
         let* be := norm_expr_rec e in
         ret ((x, be) :: nil, AVar x)
     end
   in
-  let fix norm_ite (le: list (ident * BarocqBNF.expr)) (c: atom) (a: BarocqBNF.expr) (b: BarocqBNF.expr) : crmon BarocqBNF.expr :=
+  let fix mk_norm (le: list (ident * BarocqBNF.expr)) (e: expr) : BarocqBNF.expr :=
     match le with
-    | nil => ret (EIfThenElse c a b)
+    | nil => e
     | (x, be) :: le' =>
-        let* ber := norm_ite le' c a b in
-        ret (ELetIn x be ber)
+        (* let* ber := mk_norm le' e in *)
+        ELetIn x be (mk_norm le' e)
     end
+  in
+  let fix norm_exprlist_rec (e: Barocq.expr) (la: list atom) (le: list Barocq.expr) : crmon (list (ident * BarocqBNF.expr) * BarocqBNF.expr) :=
+    match le with
+    | nil =>
+        let* er := lift_err (spread_atomlist e (rev' la)) in
+        ret (nil, er)
+    | e1 :: le' =>
+        let* (lx, a1) := norm_expr_aux false e1 in
+        let* (lr, er) := norm_exprlist_rec e (a1 :: la) le' in
+        ret (lx ++ lr, er)
+    end
+  in
+  let norm_exprlist (e: Barocq.expr) (le: list Barocq.expr) : crmon BarocqBNF.expr :=
+    let* (lx, er) := norm_exprlist_rec e [] le in
+    ret (mk_norm lx er)
+  in
+  let fix norm_access_list_rec (a: atom) (acs: list Barocq.access) (acs_norm: list Syntax.access)
+    : crmon (list (ident * BarocqBNF.expr) * BarocqBNF.expr) :=
+    match acs with
+    | nil => 
+        ret (nil, EDeepAccess a (rev acs_norm))
+    | ac :: acs' =>
+        match ac with
+        | Barocq.AcStructField f =>
+            norm_access_list_rec a acs' (Syntax.AcStructField f :: acs_norm)
+        | Barocq.AcArrayIndex e =>
+            let* (lac, ae) := norm_expr_aux false e in
+            let* (lr, er) := norm_access_list_rec a acs' (Syntax.AcArrayIndex ae :: acs_norm) in
+            ret (lac ++ lr, er)
+        end
+    end
+  in
+  let norm_deep_access (e: Barocq.expr) (acs: list Barocq.access) : crmon BarocqBNF.expr :=
+    let* (le, ba) := norm_expr_aux false e in
+    let* (lacs, bacs) := norm_access_list_rec ba acs nil in
+    ret (mk_norm (le ++ lacs) bacs)
   in
   match e with
   | Barocq.ETrue =>
@@ -180,14 +187,10 @@ Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
   | Barocq.EApp e1 args =>
       norm_exprlist e (e1 :: args)
   | Barocq.EIfThenElse e1 e2 e3 =>
+      let* (le, c) := norm_expr_aux true e1 in
       let* ne2 := norm_expr_rec e2 in
       let* ne3 := norm_expr_rec e3 in
-      match atom_of_expr e1 with
-      | OK a => ret (EIfThenElse a ne2 ne3)
-      | Error _ =>
-          let* (le, c) := norm_ite_cond e1 in
-          norm_ite le c ne2 ne3
-      end
+      ret (mk_norm le (EIfThenElse c ne2 ne3))
   | Barocq.ELetIn x e1 e2 =>
       let* ne1 := norm_expr_rec e1 in
       let* ne2 := norm_expr_rec e2 in

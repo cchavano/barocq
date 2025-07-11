@@ -8,37 +8,6 @@ Module Normalization.
 
   Import BNF.
 
-  Fixpoint atom_of_expr (e: Barocq.expr) : res atom :=
-    match e with
-    | Barocq.ETrue => eret ATrue
-    | Barocq.EFalse => eret AFalse
-    | Barocq.EInt32 i s => eret (AInt32 i s)
-    | Barocq.EInt64 i s => eret (AInt64 i s)
-    | Barocq.EVar x => eret (AVar x)
-    | Barocq.ECast e1 ty =>
-        let* a1 := atom_of_expr e1 in
-        eret (ACast a1 ty)
-    | Barocq.EUnaryOp op e1 =>
-        let* a1 := atom_of_expr e1 in
-        eret (AUnaryOp op a1)
-    | Barocq.EBinaryOp op e1 e2 =>
-        match op with
-        | BopDiv | BopMod => MonError.fail
-        | _ =>
-            let* a1 := atom_of_expr e1 in
-            let* a2 := atom_of_expr e2 in
-            eret (ABinaryOp op a1 a2)
-        end
-    | Barocq.EStructProj e1 x =>
-        let* a1 := atom_of_expr e1 in
-        eret (AStructProj a1 x)
-    | Barocq.EStructUpdate e1 x e2 =>
-        let* a1 := atom_of_expr e1 in
-        let* a2 := atom_of_expr e2 in
-        eret (AStructUpdate a1 x a2)
-    | _ => MonError.fail
-    end.
-
   Definition spread_atomlist (e: Barocq.expr) (la: list atom) : res BNF.expr :=
     match e with
     | Barocq.ECast _ ty =>
@@ -79,22 +48,64 @@ Module Normalization.
   Definition fresh_var : crmon ident := Utils.fresh_var_err "b".
 
   Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BNF.expr :=
-    let fix norm_exprlist_rec (e: Barocq.expr) (le: list Barocq.expr) (la: list atom) : crmon BNF.expr :=
-      match le with
-      | nil => lift_err (spread_atomlist e (rev' la))
-      | e1 :: le' =>
-          match atom_of_expr e1 with
-          | OK a => norm_exprlist_rec e le' (a :: la)
-          | Error _ =>
+    let fix norm_expr_aux (e: Barocq.expr) : crmon (list (ident * BNF.expr) * atom) :=
+      match e with
+      | ETrue => ret (nil, ATrue)
+      | EFalse => ret (nil, AFalse)
+      | Barocq.EInt32 i s => ret (nil, AInt32 i s)
+      | Barocq.EInt64 i s => ret (nil, AInt64 i s)
+      | Barocq.EVar x => ret (nil, AVar x)
+      | Barocq.ECast e1 ty =>
+          let* (li1, a1) := norm_expr_aux e1 in
+          ret (li1, ACast a1 ty)
+      | EUnaryOp op e1 =>
+          let* (li, a1) := norm_expr_aux e1 in
+          ret (li, AUnaryOp op a1)
+      | EBinaryOp op e1 e2 =>
+          match op with
+          | BopDiv | BopMod =>
               let* x := fresh_var in
-              let* ne1 := norm_expr_rec e1 in
-              let* ler := norm_exprlist_rec e le' (AVar x :: la) in
-              ret (ELetIn x ne1 ler)
+              let* be := norm_expr_rec e in
+              ret ((x, be) :: nil, AVar x)
+          | _ =>
+            let* (li1, a1) := norm_expr_aux e1 in
+            let* (li2, a2) := norm_expr_aux e2 in
+            ret (li1 ++ li2, ABinaryOp op a1 a2)
           end
+      | EStructProj e1 f =>
+          let* (li1, a1) := norm_expr_aux e1 in
+          ret (li1, AStructProj a1 f)
+      | EStructUpdate e1 f e2 =>
+          let* (li1, a1) := norm_expr_aux e1 in
+          let* (li2, a2) := norm_expr_aux e2 in
+          ret (li1 ++ li2, AStructUpdate a1 f a2)
+      | _ =>
+          let* x := fresh_var in
+          let* be := norm_expr_rec e in
+          ret ((x, be) :: nil, AVar x)
+      end
+    in
+    let fix mk_norm (le: list (ident * BNF.expr)) (e: expr) : BNF.expr :=
+      match le with
+      | nil => e
+      | (x, be) :: le' =>
+          ELetIn x be (mk_norm le' e)
+      end
+    in
+    let fix norm_exprlist_rec (e: Barocq.expr) (la: list atom) (le: list Barocq.expr) : crmon (list (ident * BNF.expr) * BNF.expr) :=
+      match le with
+      | nil =>
+          let* er := lift_err (spread_atomlist e (rev' la)) in
+          ret (nil, er)
+      | e1 :: le' =>
+          let* (lx, a1) := norm_expr_aux e1 in
+          let* (lr, er) := norm_exprlist_rec e (a1 :: la) le' in
+          ret (lx ++ lr, er)
       end
     in
     let norm_exprlist (e: Barocq.expr) (le: list Barocq.expr) : crmon BNF.expr :=
-      norm_exprlist_rec e le nil
+      let* (lx, er) := norm_exprlist_rec e [] le in
+      ret (mk_norm lx er)
     in
     match e with
     | Barocq.ETrue =>
@@ -108,7 +119,7 @@ Module Normalization.
     | Barocq.EVar x =>
         ret (EAtom (AVar x))
     | Barocq.ECast e1 ty =>
-      norm_exprlist e [e1]
+        norm_exprlist e [e1]
     | Barocq.EUnaryOp op e1 =>
         norm_exprlist e [e1]
     | Barocq.EBinaryOp op e1 e2 =>
@@ -125,15 +136,10 @@ Module Normalization.
     | Barocq.EApp e1 args =>
         norm_exprlist e (e1 :: args)
     | Barocq.EIfThenElse e1 e2 e3 =>
+        let* (le, c) := norm_expr_aux e1 in
         let* ne2 := norm_expr_rec e2 in
         let* ne3 := norm_expr_rec e3 in
-        match atom_of_expr e1 with
-        | OK a => ret (EIfThenElse a ne2 ne3)
-        | Error _ =>
-            let* x1 := fresh_var in
-            let* ne1 := norm_expr_rec e1 in
-            ret (ELetIn x1 ne1 (EIfThenElse (AVar x1) ne2 ne3))
-        end
+        ret (mk_norm le (EIfThenElse c ne2 ne3))
     | Barocq.ELetIn x e1 e2 =>
         let* ne1 := norm_expr_rec e1 in
         let* ne2 := norm_expr_rec e2 in
@@ -740,5 +746,6 @@ End Monadification.
 Open Scope error_monad_scope.
 
 Definition monadify_norm_program (prog: Barocq.program) : res Monadic.program :=
-  let* bnf := Normalization.norm_program prog in
-  Monadification.monadify_program bnf.
+  let/catch bnf := Normalization.norm_program prog /> "unable to normalize the program" in
+  let/catch mon := Monadification.monadify_program bnf /> "unable to monadify the program" in
+  eret mon.
