@@ -16,7 +16,7 @@ let path_to_string (p : path) : string =
 let rec path_of_access_list (acs : Syntax.Typed.access list) : path =
   match acs with
   | [] -> []
-  | Syntax.Typed.AcStructField (f, _) :: acs' -> f :: path_of_access_list acs'
+  | Syntax.Typed.AcRecordField (f, _) :: acs' -> f :: path_of_access_list acs'
   | Syntax.Typed.AcArrayIndex (_, _) :: acs' ->
       _CONTENT :: path_of_access_list acs'
 

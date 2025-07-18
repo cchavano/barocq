@@ -13,7 +13,7 @@ type btyp =
   | BInt32 of Types.signedness
   | BInt64 of Types.signedness
   | BArray of btyp
-  | BStruct of string * string
+  | BRecord of string * string
   | BAbs of string * string
   | BFun of btyp list * btyp
 
@@ -22,13 +22,13 @@ type expected_typ =
   | Expect_int
   | Expect_int_or_bool
   | Expect_array
-  | Expect_struct
+  | Expect_record
   | Expect_function
 
 type current_typ =
   | Current_typ of btyp
   | Current_array
-  | Current_struct
+  | Current_record
 
 type error_cause =
   | Type_mismatch of expected_typ * current_typ
@@ -41,10 +41,10 @@ type error_cause =
   | Variable_shadowing_diff_type of string * btyp
   | Already_defined_type of string
   | Already_defined_glob of string
-  | Duplicated_struct_field of string * string
+  | Duplicated_record_field of string * string
   | Duplicated_param of string * string
   | Duplicated_module of string
-  | Missing_struct_fields of string list
+  | Missing_record_fields of string list
   | Missing_param_write of string * btyp
   | Too_many_param_write of string
   | Mismatch_type_param_write of string * btyp * btyp
@@ -64,7 +64,7 @@ let rec btyp_to_string (ty : btyp) : string =
   | BInt64 Types.Unsigned -> "u64"
   | BArray (BArray t) -> sprintf "array (%s)" (btyp_to_string t)
   | BArray t -> sprintf "array %s" (btyp_to_string t)
-  | BStruct (mname, cid) | BAbs (mname, cid) ->
+  | BRecord (mname, cid) | BAbs (mname, cid) ->
       if mname = !curr_mname then cid else sprintf "%s::%s" mname cid
   | BFun (tparams, tret) ->
       PrintTypes.funtyp_to_string btyp_to_string tparams tret
@@ -83,7 +83,7 @@ let msg_from_failure (cause : error_cause) : string =
         | Current_typ ty ->
             sprintf "this expression has type %s" (btyp_to_string ty)
         | Current_array -> sprintf "this expression is an array"
-        | Current_struct -> sprintf "this expression is a struct"
+        | Current_record -> sprintf "this expression is a record"
       in
       let suffix =
         match ety with
@@ -95,12 +95,12 @@ let msg_from_failure (cause : error_cause) : string =
         | Expect_int_or_bool ->
             sprintf "but a boolean or integer expression was expected"
         | Expect_array -> sprintf "but an array was expected"
-        | Expect_struct -> sprintf "but a struct was expected"
+        | Expect_record -> sprintf "but a record was expected"
         | Expect_function -> sprintf "but a function was expected"
       in
       sprintf "%s %s" prefix suffix
-  | Unknown_field (f, st) ->
-      sprintf "field %s is not defined for struct type %s" f st
+  | Unknown_field (f, rc) ->
+      sprintf "field %s is not defined for record type %s" f rc
   | Wrong_argument_number (exp, curr) ->
       let plurial = if exp > 1 then "s" else "" in
       let verb = if curr > 1 then "are" else "is" in
@@ -119,8 +119,8 @@ let msg_from_failure (cause : error_cause) : string =
   | Already_defined_glob gid ->
       sprintf "global identifier %s cannot be redefined" gid
   | Undefined_type tid -> sprintf "type %s is not defined" tid
-  | Duplicated_struct_field (fname, sid) ->
-      sprintf "field %s is duplicated in struct type %s" fname sid
+  | Duplicated_record_field (fname, rid) ->
+      sprintf "field %s is duplicated in record type %s" fname rid
   | Duplicated_param (p, f) ->
       sprintf "parameter %s is duplicated in the definition of function %s" p f
   | Forbidden_cast (t1, t2) ->
@@ -131,9 +131,9 @@ let msg_from_failure (cause : error_cause) : string =
   | Module_not_found mname -> sprintf "module %s not found" mname
   | Duplicated_module mname ->
       sprintf "a module with name %s already exists" mname
-  | Missing_struct_fields mfields ->
+  | Missing_record_fields mfields ->
       sprintf
-        "the following struct fields are missing: %s"
+        "the following record fields are missing: %s"
         (PrintCommon.list_to_string "" "" ", " (fun x -> x) mfields)
   | Too_many_param_write id ->
       sprintf
@@ -179,18 +179,18 @@ let update_error_loc (cause : error_cause) (loc1 : unit Location.t option)
 module IdentMap = Map.Make (String)
 module IdentSet = Set.Make (String)
 
-type senv = (string * btyp) list IdentMap.t
+type renv = (string * btyp) list IdentMap.t
 
 type tenv = {
   tenv_aliases : btyp IdentMap.t;
-  tenv_structs : senv;
+  tenv_records : renv;
   tenv_abstracts : IdentSet.t;
 }
 
 let tenv_empty =
   {
     tenv_aliases = IdentMap.empty;
-    tenv_structs = IdentMap.empty;
+    tenv_records = IdentMap.empty;
     tenv_abstracts = IdentSet.empty;
   }
 
@@ -212,8 +212,8 @@ let tenv_get (mname : string) (te : tenv) (tid : ident) : btyp option =
   match IdentMap.find_opt tid.content te.tenv_aliases with
   | Some ty -> Some ty
   | None -> begin
-      match IdentMap.find_opt tid.content te.tenv_structs with
-      | Some _ -> Some (BStruct (mname, tid.content))
+      match IdentMap.find_opt tid.content te.tenv_records with
+      | Some _ -> Some (BRecord (mname, tid.content))
       | None -> begin
           match IdentSet.find_opt tid.content te.tenv_abstracts with
           | Some _ -> Some (BAbs (mname, tid.content))
@@ -254,26 +254,26 @@ let gtenv_get_fields (imports : ident list) (gte : gtenv) (cid : cident) :
     (string * btyp) list =
   let ty = gtenv_get imports gte cid in
   match ty with
-  | BStruct (mname, sid) ->
-      let se, sid' =
-        if mname = !curr_mname then (gte.gtenv_local.tenv_structs, sid)
+  | BRecord (mname, rid) ->
+      let re, rid' =
+        if mname = !curr_mname then (gte.gtenv_local.tenv_records, rid)
         else
           match IdentMap.find_opt mname gte.gtenv_extern with
-          | Some te -> (te.tenv_structs, compose_idents mname sid)
+          | Some te -> (te.tenv_records, compose_idents mname rid)
           | None -> assert false (* Ill-typed environment *)
       in
       begin
-        match IdentMap.find_opt sid se with
+        match IdentMap.find_opt rid re with
         | Some fields -> fields
         | _ -> assert false (* Ill-typed environment *)
       end
-  | _ -> error (Type_mismatch (Expect_struct, Current_typ ty))
+  | _ -> error (Type_mismatch (Expect_record, Current_typ ty))
 
 let is_local_type_defined (te : tenv) (tid : string) : bool =
   match IdentMap.find_opt tid te.tenv_aliases with
   | Some _ -> true
   | None -> begin
-      match IdentMap.find_opt tid te.tenv_structs with
+      match IdentMap.find_opt tid te.tenv_records with
       | Some _ -> true
       | None -> false
     end
@@ -283,12 +283,12 @@ let tenv_update_aliases (te : tenv) (alias : ident) (ty : btyp) : tenv =
     error (Already_defined_type alias.content) ~loc:(Some alias)
   else { te with tenv_aliases = IdentMap.add alias.content ty te.tenv_aliases }
 
-let tenv_update_structs (te : tenv) (sid : ident)
+let tenv_update_records (te : tenv) (rid : ident)
     (fields : (string * btyp) list) : tenv =
-  if is_local_type_defined te sid.content then
-    error (Already_defined_type sid.content) ~loc:(Some sid)
+  if is_local_type_defined te rid.content then
+    error (Already_defined_type rid.content) ~loc:(Some rid)
   else
-    { te with tenv_structs = IdentMap.add sid.content fields te.tenv_structs }
+    { te with tenv_records = IdentMap.add rid.content fields te.tenv_records }
 
 let tenv_update_abstracts (te : tenv) (tid : ident) : tenv =
   if is_local_type_defined te tid.content then
@@ -299,9 +299,9 @@ let gtenv_update_local_aliases (gte : gtenv) (alias : ident) (ty : btyp) : gtenv
     =
   { gte with gtenv_local = tenv_update_aliases gte.gtenv_local alias ty }
 
-let gtenv_update_local_structs (gte : gtenv) (sid : ident)
+let gtenv_update_local_records (gte : gtenv) (rid : ident)
     (fields : (string * btyp) list) : gtenv =
-  { gte with gtenv_local = tenv_update_structs gte.gtenv_local sid fields }
+  { gte with gtenv_local = tenv_update_records gte.gtenv_local rid fields }
 
 let gtenv_update_local_abstracts (gte : gtenv) (tid : ident) : gtenv =
   { gte with gtenv_local = tenv_update_abstracts gte.gtenv_local tid }
@@ -699,7 +699,7 @@ let gcontext_get (imports : ident list) (gx : gcontext) (cid : cident) : btyp =
       end
   in
   match ty with
-  | BArray _ | BStruct _ | BAbs _ -> error Use_of_non_prim_glob
+  | BArray _ | BRecord _ | BAbs _ -> error Use_of_non_prim_glob
   | _ -> ty
 
 let gcontext_update_local (gx : gcontext) (x : ident) (ty : btyp) : gcontext =
@@ -774,20 +774,20 @@ let typecheck_cast (from_ty : btyp) (to_ty : btyp) : btyp =
     end
   | _ -> error (Forbidden_cast (from_ty, to_ty))
 
-let typecheck_struct_proj (gte : gtenv) (mname : string) (sid : string)
+let typecheck_record_proj (gte : gtenv) (mname : string) (rid : string)
     (f : ident) : btyp =
-  let se, sid' =
-    if mname = !curr_mname then (gte.gtenv_local.tenv_structs, sid)
+  let re, rid' =
+    if mname = !curr_mname then (gte.gtenv_local.tenv_records, rid)
     else
       match IdentMap.find_opt mname gte.gtenv_extern with
-      | Some te -> (te.tenv_structs, compose_idents mname sid)
+      | Some te -> (te.tenv_records, compose_idents mname rid)
       | None -> assert false (* Ill-typed environment *)
   in
-  match IdentMap.find_opt sid se with
+  match IdentMap.find_opt rid re with
   | Some fields -> begin
       match List.assoc_opt f.content fields with
       | Some tf -> tf
-      | None -> error (Unknown_field (f.content, sid'))
+      | None -> error (Unknown_field (f.content, rid'))
     end
   | None -> assert false (* Ill-typed environment *)
 
@@ -831,9 +831,9 @@ let rec transl_btyp (ty : btyp) : Types.btyp =
   | BInt32 s -> Types.BInt32 s
   | BInt64 s -> Types.BInt64 s
   | BArray ta -> Types.BArray (transl_btyp ta)
-  | BStruct (mname, sid) ->
-      let sid' = PrintCommon.ident_of_string (sprintf "%s_%s" mname sid) in
-      Types.BStruct sid'
+  | BRecord (mname, rid) ->
+      let rid' = PrintCommon.ident_of_string (sprintf "%s_%s" mname rid) in
+      Types.BRecord rid'
   | BAbs (mname, cid) ->
       let cid' = PrintCommon.ident_of_string (sprintf "%s_%s" mname cid) in
       Types.BAbs cid'
@@ -864,9 +864,9 @@ let check_expected_typ (texp : expected_typ) (ty : btyp) (r : 'a) : 'a =
       | BArray _ -> r
       | _ -> error (Type_mismatch (texp, Current_typ ty))
     end
-  | Expect_struct -> begin
+  | Expect_record -> begin
       match ty with
-      | BStruct _ -> r
+      | BRecord _ -> r
       | _ -> error (Type_mismatch (texp, Current_typ ty))
     end
   | Expect_function -> begin
@@ -952,19 +952,19 @@ let rec typecheck_raw_expr (imports : ident list) (gte : gtenv) (gx : gcontext)
             (Barocq.EArraySet (e1', e2', e3'), t1)
         | _ -> assert false
       end
-  | EStructProj (e1, f) ->
+  | ERecordProj (e1, f) ->
       let e1', t1 =
-        typecheck_expr_expecting imports gte gx lx e1 Expect_struct
+        typecheck_expr_expecting imports gte gx lx e1 Expect_record
       in
       begin
         match t1 with
-        | BStruct (mname, sid) ->
+        | BRecord (mname, rid) ->
             let f' = transl_field_name f in
-            let t = typecheck_struct_proj gte mname sid f in
-            (Barocq.EStructProj (e1', f'), t)
+            let t = typecheck_record_proj gte mname rid f in
+            (Barocq.ERecordProj (e1', f'), t)
         | _ -> assert false
       end
-  | EStructUpdate (e1, le) -> typecheck_struct_update imports gte gx lx e1 le
+  | ERecordUpdate (e1, le) -> typecheck_record_update imports gte gx lx e1 le
   | EApp (e1, args) ->
       let e1', t1 =
         typecheck_expr_expecting imports gte gx lx e1 Expect_function
@@ -1004,13 +1004,13 @@ and typecheck_expr_expecting (imports : ident list) (gte : gtenv)
     check_expected_typ texp ty r
   with Error (cause, loc) -> update_error_loc cause loc e
 
-and typecheck_struct_update (imports : ident list) (gte : gtenv) (gx : gcontext)
+and typecheck_record_update (imports : ident list) (gte : gtenv) (gx : gcontext)
     (lx : lcontext) (e : expr) (le : (ident * expr) list) : Barocq.expr * btyp =
   let check_one_update (st_mname : string) (st_sid : string) ste f e =
     let f' = transl_field_name f in
-    let tf = typecheck_struct_proj gte st_mname st_sid f in
+    let tf = typecheck_record_proj gte st_mname st_sid f in
     let e', _ = typecheck_expr_expecting imports gte gx lx e (Expect_typ tf) in
-    (Barocq.EStructUpdate (ste, f', e'), BStruct (st_mname, st_sid))
+    (Barocq.ERecordUpdate (ste, f', e'), BRecord (st_mname, st_sid))
   in
   let rec check_update_list (st_mname : string) (st_sid : string)
       (e : Barocq.expr) (le : (ident * expr) list) : Barocq.expr * btyp =
@@ -1021,9 +1021,9 @@ and typecheck_struct_update (imports : ident list) (gte : gtenv) (gx : gcontext)
         let bei, ti = check_one_update st_mname st_sid e fi ei in
         check_update_list st_mname st_sid bei le'
   in
-  let e', t = typecheck_expr_expecting imports gte gx lx e Expect_struct in
+  let e', t = typecheck_expr_expecting imports gte gx lx e Expect_record in
   match t with
-  | BStruct (mname, sid) -> check_update_list mname sid e' le
+  | BRecord (mname, rid) -> check_update_list mname rid e' le
   | _ -> assert false
 
 and typecheck_app (imports : ident list) (gte : gtenv) (gx : gcontext)
@@ -1083,31 +1083,31 @@ let rec typecheck_const (imports : ident list) (gte : gtenv) (ce : cenv)
           List.map (fun c -> fst (typecheck_const imports gte ce gx ta c)) a
         in
         (Syntax.LArray a', ty)
-    | CStruct st, BStruct (mname, sid) ->
-        let fields, sid' =
-          let te, sid' =
+    | CRecord rc, BRecord (mname, rid) ->
+        let fields, rid' =
+          let te, rid' =
             if mname <> !curr_mname then
               match IdentMap.find_opt mname gte.gtenv_extern with
-              | Some te -> (te, compose_idents mname sid)
+              | Some te -> (te, compose_idents mname rid)
               | None -> assert false (* Ill-typed environment *)
-            else (gte.gtenv_local, sid)
+            else (gte.gtenv_local, rid)
           in
           let fields =
-            match IdentMap.find_opt sid te.tenv_structs with
+            match IdentMap.find_opt rid te.tenv_records with
             | Some fields -> fields
             | None -> assert false (* Ill-typed environment *)
           in
-          (fields, sid')
+          (fields, rid')
         in
-        let st' = typecheck_const_struct imports gte ce gx sid' st fields in
-        let sid =
+        let rc' = typecheck_const_record imports gte ce gx rid' rc fields in
+        let rid =
           match transl_btyp ty with
-          | Types.BStruct sid -> sid
+          | Types.BRecord rid -> rid
           | _ -> assert false
         in
-        (Syntax.LStruct (st', sid), ty)
+        (Syntax.LRecord (rc', rid), ty)
     | CArray _, _ -> error (Type_mismatch (Expect_typ ty, Current_array))
-    | CStruct _, _ -> error (Type_mismatch (Expect_typ ty, Current_struct))
+    | CRecord _, _ -> error (Type_mismatch (Expect_typ ty, Current_record))
   with Error (cause, loc) -> update_error_loc cause loc c
 
 and typecheck_const_op (imports : ident list) (gte : gtenv) (ce : cenv)
@@ -1156,30 +1156,30 @@ and typecheck_const_op_expecting (imports : ident list) (gte : gtenv)
     check_expected_typ texp ty r
   with Error (cause, loc) -> update_error_loc cause loc c
 
-and typecheck_const_struct (imports : ident list) (gte : gtenv) (ce : cenv)
-    (gx : gcontext) (sid : string) (st : (ident * const) list)
+and typecheck_const_record (imports : ident list) (gte : gtenv) (ce : cenv)
+    (gx : gcontext) (rid : string) (rc : (ident * const) list)
     (fields : (string * btyp) list) : (Syntax.ident * Syntax.literal) list =
-  match st with
+  match rc with
   | [] ->
       if List.length fields = 0 then []
-      else error (Missing_struct_fields (List.map fst fields))
-  | (fname, lit) :: st' -> begin
+      else error (Missing_record_fields (List.map fst fields))
+  | (fname, lit) :: rc' -> begin
       match List.assoc_opt fname.content fields with
       | Some ftyp ->
           let c', _ = typecheck_const imports gte ce gx ftyp lit in
           let r =
-            typecheck_const_struct
+            typecheck_const_record
               imports
               gte
               ce
               gx
-              sid
-              st'
+              rid
+              rc'
               (List.remove_assoc fname.content fields)
           in
           let fname' = transl_field_name fname in
           (fname', c') :: r
-      | None -> error (Unknown_field (fname.content, sid)) ~loc:(Some fname)
+      | None -> error (Unknown_field (fname.content, rid)) ~loc:(Some fname)
     end
 
 let find_duplicate_ident (l : ident list) : ident option =
@@ -1270,11 +1270,11 @@ let typecheck_globdef (imports : ident list) (gte : gtenv) (ce : cenv)
   | DefAlias (alias, sty) ->
       let ty = styp_to_btyp imports gte sty in
       (None, gtenv_update_local_aliases gte alias ty, ce, gx)
-  | DefType (sid, fields) -> begin
+  | DefType (rid, fields) -> begin
       match find_duplicate_ident (List.map fst fields) with
       | Some fname ->
           error
-            (Duplicated_struct_field (fname.content, sid.content))
+            (Duplicated_record_field (fname.content, rid.content))
             ~loc:(Some fname)
       | None ->
           let fields' =
@@ -1283,7 +1283,7 @@ let typecheck_globdef (imports : ident list) (gte : gtenv) (ce : cenv)
                 (fname.content, styp_to_btyp imports gte ftyp))
               fields
           in
-          let bsid = transl_globdef_name !curr_mname sid in
+          let bsid = transl_globdef_name !curr_mname rid in
           let bfields =
             List.map
               (fun (fname, ftyp) ->
@@ -1292,7 +1292,7 @@ let typecheck_globdef (imports : ident list) (gte : gtenv) (ce : cenv)
                 (fname', ftyp'))
               fields'
           in
-          let gte' = gtenv_update_local_structs gte sid fields' in
+          let gte' = gtenv_update_local_records gte rid fields' in
           (Some (Barocq.DefType (bsid, bfields)), gte', ce, gx)
     end
   | DefConst (id, c, sty) ->

@@ -16,8 +16,8 @@ Inductive expr : Type :=
   | EAtom : atom -> expr
   | EArrayGet : atom -> atom -> expr
   | EArraySet : atom -> atom -> atom -> expr
-  | EStructProj : atom -> ident -> expr
-  | EStructUpdate : atom -> ident -> atom -> expr
+  | ERecordProj : atom -> ident -> expr
+  | ERecordUpdate : atom -> ident -> atom -> expr
   | EDeepAccess : atom -> list access -> expr
   | EApp : atom -> list atom -> expr
   | EIfThenElse : atom -> expr -> expr -> expr

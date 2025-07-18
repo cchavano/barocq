@@ -13,7 +13,7 @@ let rec literal_to_string (l : literal) : string =
   | LInt64 (i, Signed) -> i64_to_string i
   | LInt64 (i, Unsigned) -> u64_to_string i
   | LArray a -> list_to_string_bracketbar literal_to_string a
-  | LStruct (st, t) ->
+  | LRecord (st, t) ->
       list_to_string_braces
         (fun (x, lx) ->
           sprintf "%s = %s" (ident_to_string x) (literal_to_string lx))
@@ -77,7 +77,7 @@ and opt_parens (a : atom) : string =
 
 let access_to_string (ac : access) : string =
   match ac with
-  | AcStructField f -> sprintf ".%s" (ident_to_string f)
+  | AcRecordField f -> sprintf ".%s" (ident_to_string f)
   | AcArrayIndex i -> sprintf "[%s]" (atom_to_string i)
 
 let access_list_to_string (acs : access list) : string =
@@ -94,9 +94,9 @@ let comp_to_string (c : comp) : string =
         (atom_to_string a1)
         (atom_to_string a2)
         (opt_parens a3)
-  | CpStructProj (a, x) ->
+  | CpRecordProj (a, x) ->
       sprintf "%s.%s" (atom_to_string a) (ident_to_string x)
-  | CpStructUpdate (a1, x, a2) ->
+  | CpRecordUpdate (a1, x, a2) ->
       sprintf
         "%s.%s <- %s"
         (atom_to_string a1)
@@ -138,7 +138,7 @@ module Typed = struct
 
   let untype_access (ac : Syntax.Typed.access) : Syntax.access =
     match ac with
-    | Syntax.Typed.AcStructField (f, _) -> AcStructField f
+    | Syntax.Typed.AcRecordField (f, _) -> AcRecordField f
     | Syntax.Typed.AcArrayIndex (a, _) -> AcArrayIndex (untype_atom a)
 
   let untype_comp (c : Syntax.Typed.comp) : comp =
@@ -148,9 +148,9 @@ module Typed = struct
         CpArrayGet (untype_atom a1, untype_atom a2)
     | Syntax.Typed.CpArraySet (a1, a2, a3, _) ->
         CpArraySet (untype_atom a1, untype_atom a2, untype_atom a3)
-    | Syntax.Typed.CpStructProj (a', f, _) -> CpStructProj (untype_atom a', f)
-    | Syntax.Typed.CpStructUpdate (a1, f, a2, _) ->
-        CpStructUpdate (untype_atom a1, f, untype_atom a2)
+    | Syntax.Typed.CpRecordProj (a', f, _) -> CpRecordProj (untype_atom a', f)
+    | Syntax.Typed.CpRecordUpdate (a1, f, a2, _) ->
+        CpRecordUpdate (untype_atom a1, f, untype_atom a2)
     | Syntax.Typed.CpDeepAccess (a, acs, _) ->
         CpDeepAccess (untype_atom a, List.map untype_access acs)
     | Syntax.Typed.CpCall (a', args, _) ->
@@ -196,16 +196,16 @@ let globdef_to_string (lit_to_string : 'a -> string)
         (btyp_to_string (mk_fun_btyp tparams tret))
         fsep
 
-let struct_def_to_tring (sep : string) (st : struct_def) : string =
+let record_def_to_tring (sep : string) (st : record_def) : string =
   sprintf
     "type %s = %s%s"
-    (ident_to_string st.sd_name)
-    (structtyp_to_string btyp_to_string st.sd_fields)
+    (ident_to_string st.rd_name)
+    (recordtyp_to_string btyp_to_string st.rd_fields)
     sep
 
 let type_def_to_string (sep : string) (td : type_def) : string =
   match td with
-  | TdStruct sd -> struct_def_to_tring sep sd
+  | TdRecord sd -> record_def_to_tring sep sd
   | TdAbstract (t, _) -> sprintf "type %s" (ident_to_string t)
 
 let print_program (out : out_channel) (tsep : string)

@@ -1,6 +1,6 @@
 From Coq Require Import List.
 From compcert Require Import Integers Maps.
-From BarocqComp Require Import Error Array Struct Ident MapList.
+From BarocqComp Require Import Error Array Brecord Ident MapList.
 
 Definition ident := Ident.t.
 
@@ -22,7 +22,7 @@ Inductive typ : Type :=
   | TInt32 : signedness -> typ
   | TInt64 : signedness -> typ
   | TArray : typ -> typ
-  | TStruct : ident -> list (ident * typ) -> typ
+  | TRecord : ident -> list (ident * typ) -> typ
   | TFun : list typ -> typ -> typ
   | TAbs : ident -> typ.
 
@@ -38,7 +38,7 @@ Inductive btyp : Type :=
   | BInt32 : signedness -> btyp
   | BInt64 : signedness -> btyp
   | BArray : btyp -> btyp
-  | BStruct : ident -> btyp
+  | BRecord : ident -> btyp
   | BFun : list btyp -> btyp -> btyp
   | BAbs : ident -> btyp.
 
@@ -88,32 +88,32 @@ Section EVALTYP.
   Definition eval_fields_typ (fields: list (ident * typ)) : list (ident * Type) :=
     map_k eval_typ fields.
 
-  Definition eval_structtyp (fields: list (ident * typ)) : Type :=
-    struct_t (eval_fields_typ fields).
+  Definition eval_recordtyp (fields: list (ident * typ)) : Type :=
+    record_t (eval_fields_typ fields).
 
   Definition eval_funtyp (tparams: list typ) (tret: typ) : Type :=
     fold_right (fun tx acc => (eval_typ tx) -> acc) (res (eval_typ tret)) tparams.
 
 End EVALTYP.
 
-Fixpoint eval_typ (am: ident -> Type) (t: typ) : Type :=
+Fixpoint eval_typ (am: PMap.t Type) (t: typ) : Type :=
   match t with
   | TBool => bool
   | TInt32 _ => int
   | TInt64 _ => int64
   | TArray ta => array (eval_typ am ta)
-  | TStruct _ fields => eval_structtyp (eval_typ am) fields
+  | TRecord _ fields => eval_recordtyp (eval_typ am) fields
   | TFun tparams tret =>
       match tparams with
       | nil => unit -> res (eval_typ am tret)
       | _ => eval_funtyp (eval_typ am) tparams tret
       end
-  | TAbs t => am t
+  | TAbs t => PMap.get t am 
   end.
 
 (** ** Type cast w.r.t. type equality *)
 
-Definition typ_cast {t1 t2: typ} (am: ident -> Type) (Heq: t1 = t2) (x: eval_typ am t1) : eval_typ am t2.
+Definition typ_cast {t1 t2: typ} (am: PMap.t Type) (Heq: t1 = t2) (x: eval_typ am t1) : eval_typ am t2.
 Proof.
   subst. exact x.
 Defined.

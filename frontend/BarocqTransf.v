@@ -7,7 +7,7 @@ From BarocqComp Require Import Error Utils Types Syntax Barocq.
 
 (* The parser does not create deep access expressions. Each deep access
    eX1X2...Xn is parsed as (...((eX1)X2)...)Xn, i.e. a sequence of
-   EArrayGet and EStructProj, not as a EDeepAccess.
+   EArrayGet and ERecordProj, not as a EDeepAccess.
    Deep accesses are only generated for accesses to a primitive value. *)
 
 Fixpoint access_list_typ (acs: list BarocqTyped.access) : btyp :=
@@ -15,7 +15,7 @@ Fixpoint access_list_typ (acs: list BarocqTyped.access) : btyp :=
   | nil => BBool (* arbitrary type *)
   | ac :: nil =>
       match ac with
-      | BarocqTyped.AcStructField _ ty => ty
+      | BarocqTyped.AcRecordField _ ty => ty
       | BarocqTyped.AcArrayIndex _ ty => ty
       end
   | _ :: acs' => access_list_typ acs'
@@ -37,12 +37,12 @@ Fixpoint create_deep_access_expr (e: BarocqTyped.expr) : Barocq.expr :=
         else
           let e1' := create_deep_access_expr e1 in
           (Barocq.EArrayGet e1' e2', acs)
-    | BarocqTyped.EStructProj e1 f ty =>
+    | BarocqTyped.ERecordProj e1 f ty =>
         if orb (btyp_is_prim ty) (negb (list_is_empty acs)) then
-          create_deep_access_rec e1 (AcStructField f :: acs)
+          create_deep_access_rec e1 (AcRecordField f :: acs)
         else
           let e1' := create_deep_access_expr e1 in
-          (Barocq.EStructProj e1' f, acs)
+          (Barocq.ERecordProj e1' f, acs)
     | BarocqTyped.ECast e1 ty =>
         let e1' := create_deep_access_expr e1 in
         (Barocq.ECast e1' ty, acs)
@@ -58,10 +58,10 @@ Fixpoint create_deep_access_expr (e: BarocqTyped.expr) : Barocq.expr :=
         let e2' := create_deep_access_expr e2 in
         let e3' := create_deep_access_expr e3 in
         (Barocq.EArraySet e1' e2' e3', acs)
-    | BarocqTyped.EStructUpdate e1 f e2 _ =>
+    | BarocqTyped.ERecordUpdate e1 f e2 _ =>
         let e1' := create_deep_access_expr e1 in
         let e2' := create_deep_access_expr e2 in
-        (Barocq.EStructUpdate e1' f e2', acs)
+        (Barocq.ERecordUpdate e1' f e2', acs)
     | BarocqTyped.EDeepAccess e1 acs1 ty =>
         (* Should be dead code. *)
         let e1' := create_deep_access_expr e1 in
@@ -69,7 +69,7 @@ Fixpoint create_deep_access_expr (e: BarocqTyped.expr) : Barocq.expr :=
           List.map
             (fun ac =>
               match ac with
-              | BarocqTyped.AcStructField f _ => AcStructField f
+              | BarocqTyped.AcRecordField f _ => AcRecordField f
               | BarocqTyped.AcArrayIndex ei _ =>
                   let ei' := create_deep_access_expr ei in
                   AcArrayIndex ei'

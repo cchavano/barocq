@@ -14,14 +14,14 @@ Fixpoint transl_statement (s: Imp1Typed.statement) : Imp2.statement :=
       StSetExpr x (EAtom a ty)
   | Imp1Typed.StSet x (CpArrayGet a1 a2 ty) =>
       StSetExpr x (EArrayGet a1 a2 ty)
-  | Imp1Typed.StSet x (CpStructProj a1 f ty) =>
-      StSetExpr x (EStructProj a1 f ty)
+  | Imp1Typed.StSet x (CpRecordProj a1 f ty) =>
+      StSetExpr x (ERecordProj a1 f ty)
   | Imp1Typed.StSet x (CpDeepAccess a acs ty) =>
       StSetExpr x (EDeepAccess a acs ty)
   | Imp1Typed.StSet x (CpArraySet a1 a2 a3 _) =>
       StSetEcomp x (EcArraySet a1 a2 a3)
-  | Imp1Typed.StSet x (CpStructUpdate a1 f a2 _) =>
-      StSetEcomp x (EcStructUpdate a1 f a2)
+  | Imp1Typed.StSet x (CpRecordUpdate a1 f a2 _) =>
+      StSetEcomp x (EcRecordUpdate a1 f a2)
   | Imp1Typed.StSet x (CpCall a args _) => StCall x a args
   | Imp1Typed.StIfThenElse a s1 s2 =>
       StIfThenElse a (transl_statement s1) (transl_statement s2)
@@ -84,10 +84,10 @@ Fixpoint transl_literal_rec (l: Imp1Typed.literal) (defs: list (ident * Imp2.lit
       let* (a', defs) := transl_array_lit transl_literal_rec a defs in
       let* x := fresh_var in
       ret (LbVar x, (x, LArray a' ty) :: defs)
-  | Syntax.Typed.LStruct st ty =>
+  | Syntax.Typed.LRecord st ty =>
       let* (st', defs) := transl_struct_lit transl_literal_rec st defs in
       let* x := fresh_var in
-      ret (LbVar x, (x, LStruct st' ty) :: defs)
+      ret (LbVar x, (x, LRecord st' ty) :: defs)
   end.
 
 Definition transl_literal (l: Imp1Typed.literal) : cmon (Imp2.literal * list (ident * Imp2.literal)) :=
@@ -105,7 +105,7 @@ Definition transl_literal (l: Imp1Typed.literal) : cmon (Imp2.literal * list (id
 Definition typof_literal (l: Imp2.literal) : btyp :=
   match l with
   | LBase _ ty => ty
-  | LStruct _ ty => ty
+  | LRecord _ ty => ty
   | LArray _ ty => ty
   end.
 

@@ -53,13 +53,13 @@ Definition spread_atomlist (e: Barocq.expr) (la: list atom) : res BarocqBNF.expr
       let* a2 := nth_err la 1 in
       let* a3 := nth_err la 2 in
       eret (EArraySet a1 a2 a3)
-  | Barocq.EStructProj _ x =>
+  | Barocq.ERecordProj _ x =>
       let* a := nth_err la 0 in
-      eret (EStructProj a x)
-  | Barocq.EStructUpdate _ x _ =>
+      eret (ERecordProj a x)
+  | Barocq.ERecordUpdate _ x _ =>
       let* a1 := nth_err la 0 in
       let* a2 := nth_err la 1 in
-      eret (EStructUpdate a1 x a2)
+      eret (ERecordUpdate a1 x a2)
   | Barocq.EApp _ _ =>
       let* a := nth_err la 0 in
       let args := tail la in
@@ -143,8 +143,8 @@ Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
         ret (nil, EDeepAccess a (rev acs_norm))
     | ac :: acs' =>
         match ac with
-        | Barocq.AcStructField f =>
-            norm_access_list_rec a acs' (Syntax.AcStructField f :: acs_norm)
+        | Barocq.AcRecordField f =>
+            norm_access_list_rec a acs' (Syntax.AcRecordField f :: acs_norm)
         | Barocq.AcArrayIndex e =>
             let* (lac, ae) := norm_expr_aux false e in
             let* (lr, er) := norm_access_list_rec a acs' (Syntax.AcArrayIndex ae :: acs_norm) in
@@ -178,9 +178,9 @@ Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
       norm_exprlist e [e1; e2]
   | Barocq.EArraySet e1 e2 e3 =>
       norm_exprlist e [e1; e2; e3]
-  | Barocq.EStructProj e1 k =>
+  | Barocq.ERecordProj e1 k =>
       norm_exprlist e [e1]
-  | Barocq.EStructUpdate e1 k e2 =>
+  | Barocq.ERecordUpdate e1 k e2 =>
       norm_exprlist e [e1; e2]
   | Barocq.EDeepAccess e1 acs =>
       norm_deep_access e1 acs
@@ -218,7 +218,7 @@ Fixpoint norm_program_rec (prog: Barocq.program) : res (list BarocqBNF.globdef *
       match d with
       | Barocq.DefType a fields =>
           let* (ndefs, types) := norm_program_rec prog' in
-          eret (ndefs, TdStruct {| sd_name := a; sd_fields := fields |} :: types)
+          eret (ndefs, TdRecord {| rd_name := a; rd_fields := fields |} :: types)
       | Barocq.DefConst x l ty =>
           let* (ndefs, types) := norm_program_rec prog' in
           eret (Syntax.DefConst x l ty :: ndefs, types)

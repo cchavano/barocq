@@ -15,7 +15,7 @@ let rec val_to_string (ty : typ) (x : 'a) : string =
   | TInt64 Signed -> i64_to_string o
   | TInt64 Unsigned -> u64_to_string o
   | TArray ta -> list_to_string_bracketbar (val_to_string ta) o
-  | TStruct (_, fields) -> struct_to_string fields o
+  | TRecord (_, fields) -> struct_to_string fields o
   | TAbs _ -> "<abs>"
   | TFun _ -> "<fun>"
 
@@ -35,11 +35,11 @@ and struct_to_string (fields : (ident * typ) list) (st : 'a) : string =
     (fun (x, t, o) -> sprintf "%s = %s" (ident_to_string x) (val_to_string t o))
     l
 
-let value_to_string (vv : unit value) : string =
+let value_to_string (vv : value) : string =
   match vv with
   | Val (tv, v) -> sprintf "val %s : %s" (val_to_string tv v) (typ_to_string tv)
 
 let interpret (p : iprogram) : unit =
-  match interpret p with
+  match interpret (Maps.PMap.init (Obj.magic ())) p with
   | Errors.OK lv -> List.iter (fun v -> printf "%s\n" (value_to_string v)) lv
   | Errors.Error msg -> raise @@ Error (C2C.string_of_errmsg msg)

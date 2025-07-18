@@ -2,7 +2,7 @@ open Printf
 open Types
 open PrintCommon
 
-let structtyp_to_string (f : 'typ -> string) (fields : (ident * 'typ) list) :
+let recordtyp_to_string (f : 'typ -> string) (fields : (ident * 'typ) list) :
     string =
   list_to_string
     "{"
@@ -33,7 +33,7 @@ let rec typ_to_string (ty : typ) : string =
   | TInt64 Signed -> "i64"
   | TInt64 Unsigned -> "u64"
   | TArray t -> sprintf "array %s" (opt_parens t)
-  | TStruct (x, _) -> sprintf "%s" (ident_to_string x)
+  | TRecord (x, _) -> sprintf "%s" (ident_to_string x)
   | TAbs t -> ident_to_string t
   | TFun (tparams, tret) -> funtyp_to_string typ_to_string tparams tret
 
@@ -48,6 +48,6 @@ let rec btyp_to_string (ty : btyp) : string =
   | BInt64 Unsigned -> "u64"
   | BArray (BArray t) -> sprintf "array (%s)" (btyp_to_string t)
   | BArray t -> sprintf "array %s" (btyp_to_string t)
-  | BStruct a -> ident_to_string a
+  | BRecord a -> ident_to_string a
   | BAbs t -> ident_to_string t
   | BFun (tparams, tret) -> funtyp_to_string btyp_to_string tparams tret

@@ -1,5 +1,5 @@
 From compcert Require Import Ctypes Integers.
-From BarocqComp Require Import Utils Types Syntax.
+From BarocqComp Require Import Array Utils Types Syntax.
 
 Module BNF.
 
@@ -20,8 +20,8 @@ Module BNF.
     | ACast : atom -> btyp -> atom
     | AUnaryOp : unary_op -> atom -> atom
     | ABinaryOp : binary_op -> atom -> atom -> atom
-    | AStructProj : atom -> ident -> atom
-    | AStructUpdate : atom -> ident -> atom -> atom.
+    | ARecordProj : atom -> ident -> atom
+    | ARecordUpdate : atom -> ident -> atom -> atom.
 
   (** ** Expressions *)
 
@@ -61,10 +61,20 @@ Module Monadic.
     | MInt32 : signedness -> mtyp
     | MInt64 : signedness -> mtyp
     | MArray : mtyp -> mtyp
-    | MStruct : ident -> mtyp
+    | MRecord : ident -> mtyp
     | MFun : list mtyp -> mtyp -> mtyp
     | MAbs : ident -> mtyp
     | MRes : mtyp -> mtyp.
+
+  (** Literals *)
+
+  Inductive literal :=
+    | LTrue : mtyp -> literal
+    | LFalse : mtyp -> literal
+    | LInt32 : int -> mtyp -> literal
+    | LInt64 : int64 -> mtyp -> literal
+    | LArray : array literal -> mtyp -> literal
+    | LRecord : list (ident * literal) -> mtyp -> literal.
 
   (** ** Atoms *)
 
@@ -77,8 +87,8 @@ Module Monadic.
     | ACast : atom -> mtyp -> atom
     | AUnaryOp : unary_op -> atom -> mtyp -> atom
     | ABinaryOp : binary_op -> atom -> atom -> mtyp ->  atom
-    | AStructProj : atom -> ident -> mtyp -> atom
-    | AStructUpdate : atom -> ident -> atom -> mtyp -> atom
+    | ARecordProj : atom -> ident -> mtyp -> atom
+    | ARecordUpdate : atom -> ident -> atom -> mtyp -> atom
     | ALambda : list ident -> atom -> mtyp -> atom
     | ALambdaRet : list ident -> atom -> mtyp -> atom
     | AApp : ident -> list ident -> mtyp -> atom.
@@ -113,13 +123,13 @@ Module Monadic.
 
   (** ** Programs *)
 
-  Record struct_def := mk_struct_def {
-    sd_name : ident;
-    sd_fields : list (ident * mtyp)
+  Record record_def := mk_record_def {
+    rd_name : ident;
+    rd_fields : list (ident * mtyp)
   }.
 
   Inductive type_def : Type :=
-    | TdStruct : struct_def -> type_def
+    | TdRecord : record_def -> type_def
     | TdAbstract : ident -> struct_or_union -> type_def. 
 
   Record program : Type := mk_program {
@@ -127,11 +137,11 @@ Module Monadic.
     prog_types : list type_def
   }.
 
-  Definition get_struct_defs (types: list type_def) : list struct_def :=
+  Definition get_record_defs (types: list type_def) : list record_def :=
     List.fold_right
       (fun td acc =>
         match td with
-        | TdStruct sd => cons sd acc
+        | TdRecord rd => cons rd acc
         | _ => acc
         end)
       nil

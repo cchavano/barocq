@@ -63,11 +63,11 @@ Separate Extraction
   Barocq.interpret
   Barocq.iprog_to_prog
   Barocq.eval_def
-  Barocq.eval_struct_btyp
+  Barocq.eval_record_btyp
   Compiler.aliascheck_program
   Compiler.compile_to_imp1
   Compiler.compile
   BarocqShallowgen.monadify_norm_program
-  BarocqShallow.Monadic.get_struct_defs
+  BarocqShallow.Monadic.get_record_defs
   Imp1.Aliasing_AST.program
   Ident.

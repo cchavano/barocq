@@ -52,7 +52,7 @@ Definition list_is_empty {A: Type} (l: list A) : bool :=
   | _ => false
   end.
 
-(** * Maps *)
+(** * Trees *)
 
 Notation ptree := PTree.t.
 

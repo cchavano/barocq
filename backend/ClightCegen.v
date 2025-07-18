@@ -20,7 +20,7 @@ Section TRANSL.
     | BInt64 Signed => tlong
     | BInt64 Unsigned => tulong
     | BArray ta => tptr (transl_btyp ta)
-    | BStruct t => tptr (Tstruct t noattr)
+    | BRecord t => tptr (Tstruct t noattr)
     | BFun tparams tret =>
         let tparams' := List.map transl_btyp tparams in
         let tret' := transl_btyp tret in
@@ -34,7 +34,7 @@ Section TRANSL.
     | BInt32 _ => Xint
     | BInt64 _ => Xlong
     | BArray _
-    | BStruct _
+    | BRecord _
     | BFun _ _ 
     | BAbs _ => Xptr
     end.
@@ -42,7 +42,7 @@ Section TRANSL.
   Definition transl_btyp_lit (ty: btyp) (n: Z) : Ctypes.type :=
     match ty with
     | BArray ta => Tarray (transl_btyp ta) n noattr
-    | BStruct t => Tstruct t noattr
+    | BRecord t => Tstruct t noattr
     | _ => transl_btyp ty
     end.
 
@@ -59,7 +59,7 @@ Section TRANSL.
     match l with
     | Imp2.LBase b _ => transl_literal_base b :: nil
     | Imp2.LArray a _ => map transl_literal_base a
-    | Imp2.LStruct st _ => map (fun '(_, lx) => transl_literal_base lx) st
+    | Imp2.LRecord st _ => map (fun '(_, lx) => transl_literal_base lx) st
     end.
 
   Definition transl_unary_op (op: Syntax.unary_op) : res Cop.unary_operation :=
@@ -132,7 +132,7 @@ Section TRANSL.
     | nil => transl_atom globs a
     | ac :: nil =>
         match ac with
-        | AcStructField f ty =>
+        | AcRecordField f ty =>
             let* e := transl_atom globs a in
             let tderef := deref_pointer (typeof e) in
             let tfield := transl_btyp ty in
@@ -146,7 +146,7 @@ Section TRANSL.
         end
     | ac :: acs' =>
         match ac with
-        | AcStructField f ty =>
+        | AcRecordField f ty =>
           let* er := transl_deep_access globs a acs' in
           let tderef := deref_pointer (typeof er) in
           let tfield := transl_btyp ty in
@@ -169,7 +169,7 @@ Section TRANSL.
         let tarith := typeof e1 in
         let tderef := transl_btyp ty in
         ret (Ederef (Ebinop Oadd e1 e2 tarith) tderef)
-    | EStructProj a f ty =>
+    | ERecordProj a f ty =>
         let* e := transl_atom globs a in
         let tderef := deref_pointer (typeof e) in
         let tfield := transl_btyp ty in
@@ -186,7 +186,7 @@ Section TRANSL.
         let tarith := typeof e1 in
         let tderef := typeof e3 in
         ret (e1, Sassign (Ederef (Ebinop Oadd e1 e2 tarith) tderef) e3)
-    | EcStructUpdate a1 f a2 =>
+    | EcRecordUpdate a1 f a2 =>
         let* e1 := transl_atom globs a1 in
         let* e2 := transl_atom globs a2 in
         let tderef := deref_pointer (typeof e1) in
@@ -292,7 +292,7 @@ Section TRANSL.
             let t := transl_btyp_lit ty (literal_size l) in
             let t :=
               match ty, l with
-              | BStruct _, LBase (LbVar _) _ => tptr t
+              | BRecord _, LBase (LbVar _) _ => tptr t
               | _, _ => t
               end
             in
@@ -344,8 +344,8 @@ Section TRANSL.
 
   Definition transl_prog_types (types: list type_def) : list Ctypes.composite_definition :=
     List.map
-      (fun sd => transl_struct_btyp (sd_name sd) (sd_fields sd))
-      (Syntax.get_struct_defs types).
+      (fun sd => transl_struct_btyp (rd_name sd) (rd_fields sd))
+      (Syntax.get_record_defs types).
 
   Fixpoint public_idents (defs: list Imp2.globdef) : list ident :=
     match defs with

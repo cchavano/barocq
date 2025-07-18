@@ -120,9 +120,9 @@ raw_expr:
   | e = expr AS ty = styp { ECast (e, ty) }
   | e1 = expr LBRACKET e2 = expr RBRACKET { EArrayGet (e1, e2) }
   | e1 = expr LBRACKET e2 = expr RBRACKET ARROW_INV e3 = expr { EArraySet (e1, e2, e3) }
-  | e1 = expr DOT key = ident { EStructProj (e1, key) }
-  | e1 = expr DOT key = ident ARROW_INV e2 = expr { EStructUpdate (e1, [(key, e2)]) }
-  | e1 = expr WITH le = delimited(LBRACE, nonempty_list(field_update), RBRACE) { EStructUpdate (e1, le) }
+  | e1 = expr DOT key = ident { ERecordProj (e1, key) }
+  | e1 = expr DOT key = ident ARROW_INV e2 = expr { ERecordUpdate (e1, [(key, e2)]) }
+  | e1 = expr WITH le = delimited(LBRACE, nonempty_list(field_update), RBRACE) { ERecordUpdate (e1, le) }
   | LET le = separated_nonempty_list(AND, binding) IN e = expr { ELetIn (le, e) }
   | IF e1 = expr THEN e2 = expr ELSE e3 = expr { EIfThenElse (e1, e2, e3) }
   | op = unary_op e = expr { EUnaryOp (op, e) }
@@ -145,8 +145,8 @@ raw_const:
   | i = LIT_INT32 { SurfaceAST.CInt32 (coqint_of_camlint (fst i), (snd i)) }
   | i = LIT_INT64 { SurfaceAST.CInt64 (coqint_of_camlint64 (fst i), (snd i)) }
   | a = delimited(LBRACKETBAR, separated_list(SEMICOLON, const), RBRACKETBAR) { SurfaceAST.CArray a }
-  | st = delimited(LBRACE, nonempty_list(const_field), RBRACE)
-    { SurfaceAST.CStruct st }
+  | rc = delimited(LBRACE, nonempty_list(const_field), RBRACE)
+    { SurfaceAST.CRecord rc }
   | id = cident { SurfaceAST.CVar id }
   | op = unary_op c = const { SurfaceAST.CUnop (op, c) }
   | c1 = const op = binary_op c2 = const { SurfaceAST.CBinop (op, c1, c2) }

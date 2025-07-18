@@ -30,8 +30,8 @@ type raw_expr =
   | EBinaryOp of binary_op * expr * expr
   | EArrayGet of expr * expr
   | EArraySet of expr * expr * expr
-  | EStructProj of expr * ident
-  | EStructUpdate of expr * (ident * expr) list
+  | ERecordProj of expr * ident
+  | ERecordUpdate of expr * (ident * expr) list
   | EApp of expr * expr list
   | EIfThenElse of expr * expr * expr
   | ELetIn of (ident * expr) list * expr
@@ -51,7 +51,7 @@ type raw_const =
   | CInt64 of Integers.Int64.int * Types.signedness
   | CVar of cident
   | CArray of const list
-  | CStruct of (ident * const) list
+  | CRecord of (ident * const) list
   | CUnop of unary_op * const
   | CBinop of binary_op * const * const
   | CCast of const * styp

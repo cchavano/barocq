@@ -43,6 +43,8 @@ let opt_gen_deep = ref false
 
 let opt_gen_corres = ref false
 
+let opt_gen_corres_all = ref false
+
 let opt_gen_alias_call_state_of = ref ""
 
 let opt_gen_alias_return_state_of = ref ""
@@ -82,14 +84,17 @@ let options =
     ("-gen-header", Arg.Set opt_gen_header, "\t\t\t\tGenerate the C header file");
     ( "-gen-shallow",
       Arg.Set opt_gen_shallow,
-      "\t\t\t\tGenerate the Rocq shallow-embedding" );
+      "\t\t\t\tGenerate the Rocq shallow embedding" );
     ( "-gen-deep",
       Arg.Set opt_gen_deep,
-      "\t\t\t\tGenerate the Rocq deep-embedding" );
+      "\t\t\t\tGenerate the Rocq deep embedding" );
     ( "-gen-corres",
       Arg.Set opt_gen_corres,
-      "\t\t\t\tGenerate the correspondance proofs between the Rocq embeddings"
+      "\t\t\t\tGenerate the correspondance theorems between the Rocq embeddings"
     );
+    ( "-gen-corres-all",
+      Arg.Set opt_gen_corres_all,
+      "\t\t\tGenerate the embeddings and the correspondence theorems" );
     ( "-gen-call-state-of",
       Arg.Set_string opt_gen_alias_call_state_of,
       "<fun_name>\t\tGenerate the aliasing call state of <fun_name>" );
@@ -310,23 +315,27 @@ let () =
         end
       end;
 
-      if !opt_gen_corres then begin
+      if !opt_gen_corres_all then begin
+        opt_gen_corres := true;
         opt_gen_shallow := true;
-        opt_gen_deep := true;
+        opt_gen_deep := true
+      end;
+
+      if !opt_gen_corres then begin
         let rawname = get_raw_filename !c_output in
-        let coqlib =
+        (* let coqlib =
           let bytes = String.to_bytes rawname in
           Bytes.fill bytes 0 1 (Char.uppercase_ascii (String.get rawname 0));
           Bytes.to_string bytes
-        in
-        Corresgen.coqlib := coqlib;
+        in *)
+        Corresgen.coqlib := rawname;
         Corresgen.shallowfile := rawname ^ "_Shallow";
         Corresgen.deepfile := rawname ^ "_Deep";
         let proofs_output = get_full_filename !c_output "_Corres.v" in
         let oc = open_out proofs_output in
         match BarocqShallowgen.monadify_norm_program prog with
         | Errors.OK prog ->
-            Corresgen.print_proofs oc prog;
+            Corresgen.print_program oc prog;
             printf "Correspondence theorems generated at %s\n" proofs_output;
             close_out oc
         | Errors.Error msg ->

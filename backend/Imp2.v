@@ -16,7 +16,7 @@ Inductive literal_base : Type :=
 Inductive literal : Type :=
   | LBase : literal_base -> btyp -> literal
   | LArray : list literal_base -> btyp -> literal
-  | LStruct : list (ident * literal_base) -> btyp -> literal.
+  | LRecord : list (ident * literal_base) -> btyp -> literal.
 
 (** ** Atoms *)
 
@@ -29,14 +29,14 @@ Definition access : Type := Syntax.Typed.access.
 Inductive expr : Type :=
   | EAtom : atom -> btyp -> expr
   | EArrayGet : atom -> atom -> btyp -> expr
-  | EStructProj : atom -> ident -> btyp -> expr
+  | ERecordProj : atom -> ident -> btyp -> expr
   | EDeepAccess : atom -> list access -> btyp -> expr.
 
 (** ** "Effectul" computations *)
 
 Inductive ecomp : Type :=
   | EcArraySet : atom -> atom -> atom -> ecomp
-  | EcStructUpdate : atom -> ident -> atom -> ecomp.
+  | EcRecordUpdate : atom -> ident -> atom -> ecomp.
 
 (** ** Statements *)
 

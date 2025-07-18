@@ -16,9 +16,9 @@ let rec expr_to_string_pref (prefix : string) (e : expr) : string =
           (atom_to_string a1)
           (atom_to_string a2)
           (PrintSyntax.opt_parens a3)
-    | EStructProj (a, x) ->
+    | ERecordProj (a, x) ->
         sprintf "%s.%s" (atom_to_string a) (ident_to_string x)
-    | EStructUpdate (a1, x, a2) ->
+    | ERecordUpdate (a1, x, a2) ->
         sprintf
           "%s.%s <- %s"
           (atom_to_string a1)

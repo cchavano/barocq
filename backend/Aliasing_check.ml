@@ -73,7 +73,7 @@ let check_deep_access (d : absdom) (a : atom) (acs : access list) : bool =
     match acs with
     | [] -> true
     | Syntax.Typed.AcArrayIndex (i, _) :: acs' -> check_atom d i && aux acs'
-    | Syntax.Typed.AcStructField _ :: acs' -> aux acs'
+    | Syntax.Typed.AcRecordField _ :: acs' -> aux acs'
   in
   match a with
   | AVar (x, _) -> aux acs && AbsDom.is_valid_path d x (path_of_access_list acs)
@@ -90,9 +90,9 @@ let check_comp (d : absdom) (c : comp) : comp =
       if check_atom d i then
         if check_atom d v then c else error (Invalid_atom v)
       else error (Invalid_atom i)
-  | CpStructProj (AVar (y, _), f, _) ->
+  | CpRecordProj (AVar (y, _), f, _) ->
       if AbsDom.is_valid_path d y [f] then c else error (Invalid_path (y, [f]))
-  | CpStructUpdate (_, _, v, _) ->
+  | CpRecordUpdate (_, _, v, _) ->
       if check_atom d v then c else error (Invalid_atom v)
   | CpCall (_, args, _) -> begin
       match List.filter (fun a -> not (check_atom d a)) args with
@@ -102,7 +102,7 @@ let check_comp (d : absdom) (c : comp) : comp =
   | CpDeepAccess (a, acs, _) ->
       if check_deep_access d a acs then c
       else error (Invalid_deep_access (a, acs))
-  | CpStructProj _ -> assert false
+  | CpRecordProj _ -> assert false
 
 (** [check_params_on_return_rec st params] checks that any parameter in [params]
     is not modified if the returned locations does not match the locations

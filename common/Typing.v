@@ -5,20 +5,20 @@ Import Syntax.Typed.
 
 (** * Environments for types *)
 
-(** ** Struct name to concrete struct fields *)
+(** ** Record name to concrete record fields *)
 
-Definition senv : Type := ptree (list (ident * btyp)).
+Definition renv : Type := ptree (list (ident * btyp)).
 
-Definition senv_get (se: senv) (x: ident) : res (list (ident * btyp)) :=
-  err_of_opt (tget se x).
+Definition renv_get (re: renv) (x: ident) : res (list (ident * btyp)) :=
+  err_of_opt (tget re x).
 
-Definition senv_update (se: senv) (x: ident) (fields: list (ident * btyp)) : res senv :=
-  match senv_get se x with
+Definition renv_update (re: renv) (x: ident) (fields: list (ident * btyp)) : res renv :=
+  match renv_get re x with
   | OK _ => fail
-  | Error _ => ret (tset se x fields)
+  | Error _ => ret (tset re x fields)
   end.
  
-(** ** Struct name to plain struct fields *)
+(** ** Record name to plain record fields *)
 
 Definition tenv : Type := ptree (list (ident * typ)).
 
@@ -40,9 +40,9 @@ Fixpoint btyp_to_typ (te: tenv) (ty: btyp) : res typ :=
   | BArray ta =>
       let* ta' := btyp_to_typ te ta in 
       ret (TArray ta')
-  | BStruct tx =>
+  | BRecord tx =>
       let* fields := tenv_get te tx in
-      ret (TStruct tx fields)
+      ret (TRecord tx fields)
   | BFun tparams tret =>
       let* tparams' := mmap (btyp_to_typ te) tparams in
       let* tret' := btyp_to_typ te tret in
@@ -57,7 +57,7 @@ Definition typof_literal (l: literal) : btyp :=
   | LInt32 _ ty => ty
   | LInt64 _ ty => ty
   | LArray _ ty => ty
-  | LStruct _ ty => ty
+  | LRecord _ ty => ty
   end.
 
 Definition typof_atom (a: atom) : btyp :=
@@ -77,8 +77,8 @@ Definition typof_comp (c: comp) : btyp :=
   | CpAtom _ ty
   | CpArrayGet _ _ ty
   | CpArraySet _ _ _ ty
-  | CpStructProj _ _ ty
-  | CpStructUpdate _ _ _ ty
+  | CpRecordProj _ _ ty
+  | CpRecordUpdate _ _ _ ty
   | CpDeepAccess _ _ ty
   | CpCall _ _ ty => ty
   end.
@@ -205,44 +205,44 @@ Definition typecheck_array_set (ty1 ty2 ty3: btyp) : res btyp :=
   | _ => failwith "Typing.typecheck_array_set: array type expected"
   end.
 
-Definition typecheck_struct_proj (se: senv) (ty: btyp) (x: ident) : res btyp :=
+Definition typecheck_record_proj (re: renv) (ty: btyp) (x: ident) : res btyp :=
   match ty with
-  | BStruct t =>
-      let/catch fields := senv_get se t
-        /> "Typing.typecheck_struct_proj: unknown struct type"
+  | BRecord t =>
+      let/catch fields := renv_get re t
+        /> "Typing.typecheck_record_proj: unknown struct type"
       in
       btypof_field x fields
-  | _ => failwith "Typing.typecheck_struct_proj: struct type expected"
+  | _ => failwith "Typing.typecheck_record_proj: struct type expected"
   end.
 
-Definition typecheck_struct_update (se: senv) (ty1 ty2: btyp) (x: ident) : res btyp :=
+Definition typecheck_record_update (re: renv) (ty1 ty2: btyp) (x: ident) : res btyp :=
   match ty1 with
-  | BStruct t =>
-      let/catch fields := senv_get se t
-        /> "Typing.typecheck_struct_proj: unknown struct type"
+  | BRecord t =>
+      let/catch fields := renv_get re t
+        /> "Typing.typecheck_record_proj: unknown struct type"
       in
       let* tx := btypof_field x fields in
       if btyp_eq_dec tx ty2 then ret ty1
-      else failwith "Typing.typecheck_struct_update: type mismatch"
-  | _ => failwith "Typing.typecheck_struct_update: struct type expected"
+      else failwith "Typing.typecheck_record_update: type mismatch"
+  | _ => failwith "Typing.typecheck_record_update: struct type expected"
   end.
 
   Inductive access_btyp : Type :=
-    | AbtypAcStructField : ident -> access_btyp
+    | AbtypAcRecordField : ident -> access_btyp
     | AbtypAcArrayIndex : btyp -> access_btyp.
 
-  Fixpoint typecheck_access (se: senv) (gx: gcontext) (lx: lcontext) (ty: btyp) (acs: list access_btyp) : res (btyp * list btyp) := 
+  Fixpoint typecheck_access (re: renv) (gx: gcontext) (lx: lcontext) (ty: btyp) (acs: list access_btyp) : res (btyp * list btyp) := 
     match acs with
     | nil => ret (ty, nil)
     | ac :: acs' =>
         match ac with
-        | AbtypAcStructField f =>
-            let* ty' := typecheck_struct_proj se ty f in
-            let* (r, lr) := typecheck_access se gx lx ty' acs' in
+        | AbtypAcRecordField f =>
+            let* ty' := typecheck_record_proj re ty f in
+            let* (r, lr) := typecheck_access re gx lx ty' acs' in
             ret (r, ty' :: lr)
         | AbtypAcArrayIndex ta =>
             let* ty' := typecheck_array_get ty ta in
-            let* (r, lr) := typecheck_access se gx lx ty' acs' in
+            let* (r, lr) := typecheck_access re gx lx ty' acs' in
             ret (r, ty' :: lr)
         end
     end.
@@ -285,19 +285,19 @@ Fixpoint typecheck_struct_lit (l1: list (ident * literal)) (l2: list (ident * bt
   | _, _ => false
   end.
 
-Fixpoint typecheck_literal (se: senv) (l: Syntax.literal) : res literal :=
+Fixpoint typecheck_literal (re: renv) (l: Syntax.literal) : res literal :=
   match l with
   | Syntax.LTrue => ret (LTrue BBool)
   | Syntax.LFalse => ret (LFalse BBool)
   | Syntax.LInt32 i s => ret (LInt32 i (BInt32 s))
   | Syntax.LInt64 i s => ret (LInt64 i (BInt64 s))
   | Syntax.LArray a =>
-      let* a' := mmap (typecheck_literal se) a in
+      let* a' := mmap (typecheck_literal re) a in
       let* t := typecheck_array_lit a' in
       ret (LArray a' (BArray t))
-  | Syntax.LStruct st x =>
-      let* st' := map_k_err (typecheck_literal se) st in
-      let* t := senv_get se x in
-      if typecheck_struct_lit st' t then ret (LStruct st' (BStruct x))
+  | Syntax.LRecord rc x =>
+      let* rc' := map_k_err (typecheck_literal re) rc in
+      let* t := renv_get re x in
+      if typecheck_struct_lit rc' t then ret (LRecord rc' (BRecord x))
       else failwith "Typing.typecheck_literal: struct type mismatch"
   end.

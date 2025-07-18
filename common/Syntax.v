@@ -15,7 +15,7 @@ Inductive literal :=
   | LInt32 : int -> signedness -> literal
   | LInt64 : int64 -> signedness -> literal
   | LArray : array literal -> literal
-  | LStruct : list (ident * literal) -> ident -> literal.
+  | LRecord : list (ident * literal) -> ident -> literal.
 
 (** * Operators *)
 
@@ -63,7 +63,7 @@ Inductive atom : Type :=
 (** Deep accesses with atomics array indexes. *)
 
 Inductive access : Type :=
-  | AcStructField : ident -> access
+  | AcRecordField : ident -> access
   | AcArrayIndex : atom -> access.
 
 (** * Computations with atomic operands *)
@@ -72,8 +72,8 @@ Inductive comp : Type :=
   | CpAtom : atom -> comp
   | CpArrayGet : atom -> atom -> comp
   | CpArraySet : atom -> atom -> atom -> comp
-  | CpStructProj : atom -> ident -> comp
-  | CpStructUpdate : atom -> ident -> atom -> comp
+  | CpRecordProj : atom -> ident -> comp
+  | CpRecordUpdate : atom -> ident -> atom -> comp
   | CpDeepAccess : atom -> list access -> comp
   | CpCall : atom -> list atom -> comp.
 
@@ -87,7 +87,7 @@ Module Typed.
     | LInt32 : int -> btyp -> literal
     | LInt64 : int64 -> btyp -> literal
     | LArray : array literal -> btyp -> literal
-    | LStruct : list (ident * literal) -> btyp -> literal.
+    | LRecord : list (ident * literal) -> btyp -> literal.
 
   Inductive atom :=
     | ATrue : btyp -> atom
@@ -100,15 +100,15 @@ Module Typed.
     | ABinaryOp : binary_op -> atom -> atom -> btyp -> atom.
 
   Inductive access : Type :=
-    | AcStructField : ident -> btyp -> access
+    | AcRecordField : ident -> btyp -> access
     | AcArrayIndex : atom -> btyp -> access.
 
   Inductive comp : Type := 
     | CpAtom : atom -> btyp -> comp
     | CpArrayGet : atom -> atom -> btyp -> comp
     | CpArraySet : atom -> atom -> atom -> btyp -> comp
-    | CpStructProj : atom -> ident -> btyp -> comp
-    | CpStructUpdate : atom -> ident -> atom -> btyp -> comp
+    | CpRecordProj : atom -> ident -> btyp -> comp
+    | CpRecordUpdate : atom -> ident -> atom -> btyp -> comp
     | CpDeepAccess : atom -> list access -> btyp -> comp
     | CpCall : atom -> list atom -> btyp -> comp.
 
@@ -137,13 +137,13 @@ Inductive globdef (C F: Type) : Type :=
 
 (** * Programs *)
 
-Record struct_def := mk_struct_def {
-  sd_name : ident;
-  sd_fields : list (ident * btyp)
+Record record_def := mk_record_def {
+  rd_name : ident;
+  rd_fields : list (ident * btyp)
 }.
 
 Inductive type_def : Type :=
-  | TdStruct : struct_def -> type_def
+  | TdRecord : record_def -> type_def
   | TdAbstract : ident -> struct_or_union -> type_def. 
 
 Record program (G: Type) : Type := mk_program {
@@ -151,11 +151,11 @@ Record program (G: Type) : Type := mk_program {
   prog_types : list type_def;
 }.
 
-Definition get_struct_defs (types: list type_def) : list struct_def :=
+Definition get_record_defs (types: list type_def) : list record_def :=
   List.fold_right
     (fun td acc =>
       match td with
-      | TdStruct sd => cons sd acc
+      | TdRecord sd => cons sd acc
       | _ => acc
       end)
     nil

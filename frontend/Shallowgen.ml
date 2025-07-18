@@ -108,8 +108,8 @@ let binary_op_to_rocq (ty : mtyp) (op : binary_op) : string =
     sprintf "%s.%s%s" intmod o suffix
   in
   match op with
-  | BopAndbool -> "andb"
-  | BopOrbool -> "orb"
+  | BopAndbool -> "&&"
+  | BopOrbool -> "||"
   | BopXorbool -> "xorb"
   | BopAdd -> intop "add"
   | BopSub -> intop "sub"
@@ -139,6 +139,13 @@ let is_simpl_atom (a : atom) : bool =
   | ATrue _ | AFalse _ | AVar _ -> true
   | _ -> false
 
+let field_name_prefix (ty : mtyp) : string =
+  match ty with
+  | MRecord rid -> String.lowercase_ascii (ident_to_string rid)
+  | _ -> assert false
+
+let typof_atom (a : atom) : mtyp = BarocqShallowgen.Monadification.typof_atom a
+
 let rec atom_to_rocq (a : atom) : string =
   match a with
   | ATrue _ -> "true"
@@ -147,34 +154,41 @@ let rec atom_to_rocq (a : atom) : string =
   | AInt64 (i, ty) -> int64_to_rocq i ty
   | AVar (x, _) -> ident_to_string x
   | ACast (a1, ty) ->
-      let castfunc =
-        cast_to_rocq (BarocqShallowgen.Monadification.typof_atom a1) ty
-      in
+      let castfunc = cast_to_rocq (typof_atom a1) ty in
       sprintf "%s %s" castfunc (opt_parens a1)
   | AUnaryOp (op, a, _) ->
-      let ty = BarocqShallowgen.Monadification.typof_atom a in
+      let ty = typof_atom a in
       sprintf "%s%s" (unary_op_to_rocq ty op) (opt_parens a)
   | ABinaryOp (op, a1, a2, ty) ->
-      let ty1 = BarocqShallowgen.Monadification.typof_atom a1 in
+      let ty1 = typof_atom a1 in
+      begin
+        match op with
+        | BopAndbool | BopOrbool ->
+            sprintf
+              "%s %s %s"
+              (opt_parens a1)
+              (binary_op_to_rocq ty1 op)
+              (opt_parens a2)
+        | _ ->
+            sprintf
+              "%s %s %s"
+              (binary_op_to_rocq ty1 op)
+              (opt_parens a1)
+              (opt_parens a2)
+      end
+  | ARecordProj (a1, x, _) ->
       sprintf
-        "%s %s %s"
-        (binary_op_to_rocq ty1 op)
+        "%s.(%s_%s)"
         (opt_parens a1)
-        (opt_parens a2)
-  | AStructProj (a1, x, _) ->
-      sprintf "%s %s" (ident_to_string x) (opt_parens a1)
-  | AStructUpdate (a1, x, a2, ty) ->
-      let stid =
-        match ty with
-        | MStruct st -> st
-        | _ -> assert false
-      in
-      sprintf
-        "set_%s_%s %s %s"
-        (ident_to_string stid)
+        (field_name_prefix (typof_atom a1))
         (ident_to_string x)
+  | ARecordUpdate (a1, x, a2, ty) ->
+      sprintf
+        "%s <| %s_%s := %s |>"
         (opt_parens a1)
-        (opt_parens a2)
+        (field_name_prefix ty)
+        (ident_to_string x)
+        (atom_to_rocq a2)
   | ALambda (params, a1, _) ->
       sprintf
         "fun %s => %s"
@@ -218,13 +232,25 @@ let rec expr_to_rocq_rec (prefix : string) (e : expr) : string =
           | _ -> list_to_string "" "" " " opt_parens args
         in
         sprintf "%s %s" (opt_parens a1) sargs
-    | EIfThenElse (a1, e2, e3, _) ->
-        sprintf
-          "if %s then\n%s\n%selse\n%s"
-          (opt_parens a1)
-          (expr_to_rocq_rec prefix' e2)
-          prefix
-          (expr_to_rocq_rec prefix' e3)
+    | EIfThenElse (a1, e2, e3, _) -> begin
+        match e3 with
+        | EIfThenElse _ ->
+            sprintf
+              "if %s then\n%s\n%selse%s"
+              (opt_parens a1)
+              (expr_to_rocq_rec prefix' e2)
+              prefix
+              (let e3_str = expr_to_rocq_rec prefix e3 in
+               let e3_start = String.length prefix - 1 in
+               String.sub e3_str e3_start (String.length e3_str - e3_start))
+        | _ ->
+            sprintf
+              "if %s then\n%s\n%selse\n%s"
+              (opt_parens a1)
+              (expr_to_rocq_rec prefix' e2)
+              prefix
+              (expr_to_rocq_rec prefix' e3)
+      end
     | ELetIn (x, e1, e2, _) -> (
         match e1 with
         | ELetIn _ | ELetMon _ | EIfThenElse _ ->
@@ -268,7 +294,7 @@ let expr_to_rocq (e : expr) : string = expr_to_rocq_rec PrintCommon.indent e
 
 let rec is_simpl_mtyp (ty : mtyp) : bool =
   match ty with
-  | MBool | MInt32 _ | MInt64 _ | MStruct _ -> true
+  | MBool | MInt32 _ | MInt64 _ | MRecord _ | MAbs _ -> true
   | MRes ty' -> is_simpl_mtyp ty'
   | _ -> false
 
@@ -278,7 +304,7 @@ let rec mtyp_to_rocq (ty : mtyp) : string =
   | MInt32 _ -> "int"
   | MInt64 _ -> "int64"
   | MArray ta -> sprintf "array %s" (opt_parens ta)
-  | MStruct ts -> ident_to_string ts
+  | MRecord ts -> ident_to_string ts
   | MAbs t -> ident_to_string t
   | MFun (tparams, tret) -> (
       match tparams with
@@ -310,39 +336,54 @@ let function_to_rocq (f : coq_function) : string =
 
 let is_simpl_lit (l : literal) : bool =
   match l with
-  | LTrue | LFalse -> true
+  | LTrue _ | LFalse _ -> true
   | _ -> false
 
 let rec literal_to_rocq (l : literal) : string =
   match l with
-  | LTrue -> "true"
-  | LFalse -> "false"
-  | LInt32 (i, s) -> int_to_rocq i (MInt32 s) (* Check for signedness ? *)
-  | LInt64 (i, s) -> int64_to_rocq i (MInt64 s) (* Check for signedness ? *)
-  | LArray la -> list_to_string_bracket literal_to_rocq la
-  | LStruct (st, _) -> struct_lit_to_rocq st
+  | LTrue _ -> "true"
+  | LFalse _ -> "false"
+  | LInt32 (i, t) -> int_to_rocq i t
+  | LInt64 (i, t) -> int64_to_rocq i t
+  | LArray (la, _) -> list_to_string_bracket literal_to_rocq la
+  | LRecord (rc, t) -> begin
+      match t with
+      | MRecord rid -> record_lit_to_rocq (ident_to_string rid) rc
+      | _ -> assert false
+    end
 
-and field_lit_to_rocq (fl : ident * literal) : string =
-  sprintf "%s := %s" (ident_to_string (fst fl)) (opt_parens (snd fl))
+and field_lit_to_rocq (rid : string) (fl : ident * literal) : string =
+  sprintf
+    "%s_%s := %s"
+    (String.lowercase_ascii rid)
+    (ident_to_string (fst fl))
+    (opt_parens (snd fl))
 
-and struct_lit_to_rocq (st : (ident * literal) list) : string =
-  list_to_string "{| " " |}" "; " field_lit_to_rocq st
+and record_lit_to_rocq (rid : string) (rc : (ident * literal) list) : string =
+  list_to_string "{| " " |}" "; " (field_lit_to_rocq rid) rc
 
 and opt_parens (l : literal) : string =
   PrintCommon.opt_parens is_simpl_lit literal_to_rocq l
 
-let field_typ_to_rocq ((fname, ftyp) : ident * mtyp) : string =
-  sprintf "%s%s: %s" indent (ident_to_string fname) (mtyp_to_rocq ftyp)
-
-let struct_def_to_rocq (st : struct_def) : string =
+let field_typ_to_rocq (rid : string) ((fname, ftyp) : ident * mtyp) : string =
   sprintf
-    "Record %s := {\n%s\n}."
-    (ident_to_string st.sd_name)
-    (list_to_string "" "" ";\n" field_typ_to_rocq st.sd_fields)
+    "%s%s_%s: %s"
+    indent
+    (String.lowercase_ascii rid)
+    (ident_to_string fname)
+    (mtyp_to_rocq ftyp)
+
+let record_def_to_rocq (st : record_def) : string =
+  let rid = ident_to_string st.rd_name in
+  sprintf
+    "Record %s := mk_%s {\n%s\n}."
+    rid
+    rid
+    (list_to_string "" "" ";\n" (field_typ_to_rocq rid) st.rd_fields)
 
 let type_def_to_rocq (td : type_def) : string =
   match td with
-  | TdStruct st -> struct_def_to_rocq st
+  | TdRecord st -> record_def_to_rocq st
   | TdAbstract (t, _) -> sprintf "Parameter %s : Type." (ident_to_string t)
 
 let globdef_to_rocq (def : globdef) : string =
@@ -361,55 +402,44 @@ let globdef_to_rocq (def : globdef) : string =
       let ty = MFun (List.map snd tparams, tret) in
       sprintf "Parameter %s : %s." (ident_to_string x) (mtyp_to_rocq ty)
 
-let gen_field_setter (id : ident) ((fname, ftyp) : ident * mtyp) (args : string)
-    : string =
-  let id_str = ident_to_string id in
-  let fname_str = ident_to_string fname in
+let gen_record_eta_update (sd : record_def) : string =
+  let rid = ident_to_string sd.rd_name in
+  let fnames =
+    List.map
+      (fun (fname, _) ->
+        sprintf "%s_%s" (String.lowercase_ascii rid) (ident_to_string fname))
+      sd.rd_fields
+  in
   sprintf
-    "Definition set_%s_%s (s: %s) (v: %s) : %s :=\n%sBuild_%s %s."
-    id_str
-    fname_str
-    id_str
-    (mtyp_to_rocq ftyp)
-    id_str
-    indent
-    id_str
-    args
+    "Instance eta_%s : Settable %s :=\n%ssettable! mk_%s <%s>."
+    rid
+    rid
+    (String.make 2 ' ')
+    rid
+    (PrintCommon.list_to_string "" "" "; " (fun x -> x) fnames)
 
-let gen_field_setter_arg (id : ident) (x : ident) ((fname, ftyp) : ident * mtyp)
-    : string =
-  if x = fname then "v" else sprintf "(%s s)" (ident_to_string fname)
-
-let gen_field_setter_args (id : ident) (fields : (ident * mtyp) list)
-    (x : ident) : string =
-  list_to_string "" "" " " (fun field -> gen_field_setter_arg id x field) fields
-
-let print_struct_setters (out : out_channel) (st : struct_def) : unit =
-  List.iter
-    (fun field ->
-      let args = gen_field_setter_args st.sd_name st.sd_fields (fst field) in
-      fprintf out "%s\n\n" (gen_field_setter st.sd_name field args))
-    st.sd_fields
-
-let headers : string =
-  "From Coq Require Import List BinIntDef.\n\
+let imports : string =
+  "From Coq Require Import Bool List BinIntDef.\n\
    From compcert Require Import Integers.\n\
+   From RecordUpdate Require Import RecordUpdate.\n\
    From BarocqComp Require Import Error Array Intop.\n\
-   Import ListNotations.\n\n\
-   Open Scope error_monad_scope.\n\n"
+   Import BoolNotations ListNotations.\n\n\
+   Open Scope error_monad_scope.\n"
 
 let print_program (out : out_channel) (prog : program) : unit =
   let types = prog.prog_types in
   let defs = prog.prog_defs in
-  let s, e =
-    match (types, defs) with
-    | [], [] -> ("", "")
-    | _ :: _, [] -> ("\n", "")
-    | _ :: _, _ :: _ -> ("\n\n", "\n")
-    | [], _ :: _ -> ("", "\n")
-  in
-  fprintf out "%s" headers;
-  print_list out "" s "\n\n" type_def_to_rocq types;
-  let structs = get_struct_defs types in
-  List.iter (print_struct_setters out) structs;
-  print_list out "" e "\n\n" globdef_to_rocq defs
+  fprintf out "%s" imports;
+  if types <> [] then begin
+    fprintf out "\n";
+    print_list out "" "\n" "\n\n" type_def_to_rocq types
+  end;
+  let records = get_record_defs types in
+  if records <> [] then begin
+    fprintf out "\n";
+    print_list out "" "\n" "\n\n" gen_record_eta_update records
+  end;
+  if defs <> [] then begin
+    fprintf out "\n";
+    print_list out "" "\n" "\n\n" globdef_to_rocq defs
+  end

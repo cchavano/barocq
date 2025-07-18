@@ -157,10 +157,10 @@ let vars_aliased_to_locs (rev : rev_absenv) (locs : pointsto_set) : var_set =
     locs
     set_empty
 
-(** [exec_set_struct_proj x a f ty st] computes the transfer function for the
+(** [exec_set_record_proj x a f ty st] computes the transfer function for the
     statement [set x := a.f] on [st]. [ty] is the type of the field [f] in the
-    struct [a]. *)
-let exec_set_struct_proj (x : ident) (a : atom) (f : ident) (ty : btyp)
+    record [a]. *)
+let exec_set_record_proj (x : ident) (a : atom) (f : ident) (ty : btyp)
     (st : absstate) : absstate =
   match a with
   | AVar (y, _) ->
@@ -190,12 +190,12 @@ let exec_set_struct_proj (x : ident) (a : atom) (f : ident) (ty : btyp)
       end
   | _ -> assert false
 
-(** [exec_set_struct_update  x a f v st] computes the transfer function for the
+(** [exec_set_record_update  x a f v st] computes the transfer function for the
     statement [set x := y.f <- v] on [st]. *)
-let exec_set_struct_update (se : senv) (x : ident) (a : atom) (f : ident)
+let exec_set_record_update (re : renv) (x : ident) (a : atom) (f : ident)
     (v : atom) (st : absstate) : absstate =
   match a with
-  | AVar (y, BStruct sy) ->
+  | AVar (y, BRecord ry) ->
       let ly = IdentMap.find y st.st_env in
       (* All paths leading to all locations pointed by y, suffixed by f, are now invalid. *)
       let inv' =
@@ -220,7 +220,7 @@ let exec_set_struct_update (se : senv) (x : ident) (a : atom) (f : ident)
       let y_inv =
         match invalid_paths_with_prefix st.st_inv y [] with
         | Some (Leaf | Node []) -> begin
-            match senv_get se sy with
+            match renv_get re ry with
             | Errors.OK fields ->
                 let ln =
                   List.fold_left
@@ -693,18 +693,18 @@ let rec args_bijection (params : ident list) (args : atom list) :
       end
   | _, _ -> assert false
 
-(** [mem_bijection se edges loc1 loc2 m1 m2 bij] computes the bijection between
+(** [mem_bijection re edges loc1 loc2 m1 m2 bij] computes the bijection between
     the memories [m1] and [m2], starting at locations [loc1] in [m1] and [loc2]
-    in [m2]. [se] is the struct type environment, [edges] is a list of typed
+    in [m2]. [re] is the record type environment, [edges] is a list of typed
     edges that should go out [loc1] and [loc2]. [bij] is an accumulator storing
     the bijection computed until now. *)
-let rec mem_bijection (se : senv) (edges : (ident * btyp) list) (loc1 : absloc)
+let rec mem_bijection (re : renv) (edges : (ident * btyp) list) (loc1 : absloc)
     (loc2 : absloc) (m1 : absmem) (m2 : absmem) (bij : ident IdentMap.t) :
     ident IdentMap.t =
   match edges with
   | [] -> bij
   | (eid, etyp) :: edges' ->
-      if is_prim etyp then mem_bijection se edges' loc1 loc2 m1 m2 bij
+      if is_prim etyp then mem_bijection re edges' loc1 loc2 m1 m2 bij
       else
         let l1 = IdentPairMap.find (loc1, eid) m1 in
         let l2 = IdentPairMap.find (loc2, eid) m2 in
@@ -713,8 +713,8 @@ let rec mem_bijection (se : senv) (edges : (ident * btyp) list) (loc1 : absloc)
           let lv2 = IdentSet.choose l2 in
           let edges_e =
             match etyp with
-            | BStruct sid -> begin
-                match senv_get se sid with
+            | BRecord rid -> begin
+                match renv_get re rid with
                 | Errors.OK fields -> fields
                 | Errors.Error _ -> assert false
               end
@@ -723,16 +723,16 @@ let rec mem_bijection (se : senv) (edges : (ident * btyp) list) (loc1 : absloc)
             | _ -> assert false
           in
           let bij' =
-            mem_bijection se edges_e lv1 lv2 m1 m2 (IdentMap.add lv1 lv2 bij)
+            mem_bijection re edges_e lv1 lv2 m1 m2 (IdentMap.add lv1 lv2 bij)
           in
-          mem_bijection se edges' loc1 loc2 m1 m2 bij'
+          mem_bijection re edges' loc1 loc2 m1 m2 bij'
         else assert false
 
-(** [locs_bijection se v1 v2 ty st1 st2] computes the bijection between all
+(** [locs_bijection re v1 v2 ty st1 st2] computes the bijection between all
     locations contained in [st1] and [st2], starting from the variables [v1] of
-    [st1] and [v2] of [st2]. [se] is the struct type environment. [ty] is the
+    [st1] and [v2] of [st2]. [re] is the record type environment. [ty] is the
     type of the variables. *)
-let locs_bijection (se : senv) (v1 : ident) (v2 : ident) (ty : btyp)
+let locs_bijection (re : renv) (v1 : ident) (v2 : ident) (ty : btyp)
     (st1 : absstate) (st2 : absstate) : ident IdentMap.t =
   let l1 = IdentMap.find v1 st1.st_env in
   let l2 = IdentMap.find v2 st2.st_env in
@@ -741,8 +741,8 @@ let locs_bijection (se : senv) (v1 : ident) (v2 : ident) (ty : btyp)
     let lv2 = IdentSet.choose l2 in
     let edges =
       match ty with
-      | BStruct sid -> begin
-          match senv_get se sid with
+      | BRecord rid -> begin
+          match renv_get re rid with
           | Errors.OK fields -> fields
           | Errors.Error _ -> assert false
         end
@@ -751,7 +751,7 @@ let locs_bijection (se : senv) (v1 : ident) (v2 : ident) (ty : btyp)
       | _ -> assert false
     in
     mem_bijection
-      se
+      re
       edges
       lv1
       lv2
@@ -760,12 +760,12 @@ let locs_bijection (se : senv) (v1 : ident) (v2 : ident) (ty : btyp)
       (IdentMap.add lv1 lv2 IdentMap.empty)
   else assert false
 
-(** [funcall_bijection se args params stcallee stcaller] computes the bijection
+(** [funcall_bijection re args params stcallee stcaller] computes the bijection
     between the state of the callee and the state of the caller. It returns a
     map which associate each paramater in [params] to its corresponding argument
     in [args], and associated each location of [stcallee] to its corresponding
-    location in [stcaller]. [se] is the struct type environment. *)
-let funcall_bijection (show_debug : bool) (se : senv)
+    location in [stcaller]. [re] is the record type environment. *)
+let funcall_bijection (show_debug : bool) (re : renv)
     (params : (ident * btyp) list) (args : atom list) (stcallee : absstate)
     (stcaller : absstate) : ident IdentMap.t * ident IdentMap.t =
   let vars_bij = args_bijection (List.map fst params) args in
@@ -781,7 +781,7 @@ let funcall_bijection (show_debug : bool) (se : senv)
       (fun acc (v, ty) ->
         IdentMap.union
           (fun _ l1 l2 -> if l1 <> l2 then assert false else Some l1)
-          (locs_bijection se v (IdentMap.find v vars_bij) ty stcallee stcaller)
+          (locs_bijection re v (IdentMap.find v vars_bij) ty stcallee stcaller)
           acc)
       IdentMap.empty
       (List.fold_right
@@ -937,7 +937,7 @@ let build_call_state (st : absstate) (args : atom list) : absstate =
 (** [exec_set_call x a args ty fe st nctr] computes the transfer function for
     the statement [set x = a (args)] on [st]. [fe] is the function descriptor
     environment. [ty] is the type of the return value. *)
-let exec_set_call (show_debug : bool) (se : senv) (x : ident) (a : atom)
+let exec_set_call (show_debug : bool) (re : renv) (x : ident) (a : atom)
     (args : atom list) (ty : btyp) (fe : fenv) (st : absstate) : absdom =
   match a with
   | AVar (y, _) ->
@@ -975,7 +975,7 @@ let exec_set_call (show_debug : bool) (se : senv) (x : ident) (a : atom)
         (* We build the bijections for the variables and the locations between the current call state,
             and the pre-requisite call state of the callee. *)
         let vars_bij, locs_bij =
-          funcall_bijection show_debug se fd_params args fd_callstate stcall
+          funcall_bijection show_debug re fd_params args fd_callstate stcall
         in
 
         (* The return state is the one given by the function descriptor on which we apply the bijection. *)
@@ -1171,10 +1171,10 @@ let update_err_stmt (stmt : Imp1Typed.statement) (err : err_info) : err_info =
           err.ei_msg
       else err
 
-(** [absexec se fe ce d s] computes the transfer function for the statement [s]
-    on [d]. [fe] is the function descriptor environement. [se] is the struct
+(** [absexec re fe ce d s] computes the transfer function for the statement [s]
+    on [d]. [fe] is the function descriptor environement. [re] is the record
     types environment. *)
-let rec absexec (show_debug : bool) (se : senv) (fe : fenv) (d : absdom)
+let rec absexec (show_debug : bool) (re : renv) (fe : fenv) (d : absdom)
     (s : Imp1Typed.statement) : Imp1.Aliasing_AST.statement * absdom =
   let d_in = d in
   let s', d_out =
@@ -1197,16 +1197,16 @@ let rec absexec (show_debug : bool) (se : senv) (fe : fenv) (d : absdom)
           else
             match c with
             | CpAtom (a, _) -> AbsState (exec_set_atom x a st)
-            | CpStructProj (a, f, ty) ->
-                AbsState (exec_set_struct_proj x a f ty st)
-            | CpStructUpdate (a, f, v, _) ->
-                AbsState (exec_set_struct_update se x a f v st)
+            | CpRecordProj (a, f, ty) ->
+                AbsState (exec_set_record_proj x a f ty st)
+            | CpRecordUpdate (a, f, v, _) ->
+                AbsState (exec_set_record_update re x a f v st)
             | CpCall (a, args, ty) ->
                 debug_info show_debug
                 @@ sprintf
                      "Entering function call \"%s\" ==========\n"
                      (PrintSyntax.Typed.comp_to_string c);
-                let r = exec_set_call show_debug se x a args ty fe st in
+                let r = exec_set_call show_debug re x a args ty fe st in
                 debug_info show_debug
                 @@ sprintf
                      "Exiting function call \"%s\" ===========\n"
@@ -1228,8 +1228,8 @@ let rec absexec (show_debug : bool) (se : senv) (fe : fenv) (d : absdom)
         @@ sprintf
              ">> Entering if-then-else \"if %s\" ======================\n"
              (PrintSyntax.Typed.atom_to_string a);
-        let s1', d1 = absexec show_debug se fe d s1 in
-        let s2', d2 = absexec show_debug se fe d s2 in
+        let s1', d1 = absexec show_debug re fe d s1 in
+        let s2', d2 = absexec show_debug re fe d s2 in
         let d_out =
           match AbsDom.union d1 d2 with
           | Top err -> Top err
@@ -1242,8 +1242,8 @@ let rec absexec (show_debug : bool) (se : senv) (fe : fenv) (d : absdom)
         print_dom_debug show_debug d_out "OUT" true;
         (Imp1.Aliasing_AST.StIfThenElse (a, s1', s2', d_in, d_out), d_out)
     | StSequence (s1, s2) ->
-        let s1', d1 = absexec show_debug se fe d s1 in
-        let s2', d2 = absexec show_debug se fe d1 s2 in
+        let s1', d1 = absexec show_debug re fe d s1 in
+        let s2', d2 = absexec show_debug re fe d1 s2 in
         (Imp1.Aliasing_AST.StSequence (s1', s2'), d2)
     | StReturn a ->
         print_dom_debug show_debug d "IN" false;
@@ -1269,10 +1269,10 @@ let rec absexec (show_debug : bool) (se : senv) (fe : fenv) (d : absdom)
 
 let fresh_loc (l : absloc) : absloc = Pos.add BinNums.Coq_xH l
 
-(** [add_memory_object_aux se st ty] adds a new memory object reflecting type
-    [ty] in [st] and attached it to root [root]. [se] is the struct type
+(** [add_memory_object_aux re st ty] adds a new memory object reflecting type
+    [ty] in [st] and attached it to root [root]. [re] is the record type
     environment. *)
-let add_memory_object_aux (se : senv) (st : absstate) (root : absloc)
+let add_memory_object_aux (re : renv) (st : absstate) (root : absloc)
     (ty : btyp) : absstate =
   let next_loc = ref st.st_next_loc in
   let fresh_loc () =
@@ -1284,7 +1284,7 @@ let add_memory_object_aux (se : senv) (st : absstate) (root : absloc)
     match ty with
     | BBool | BInt32 _ | BInt64 _ | BAbs _ -> m
     | BArray ta -> gen_array_mem_layout m root ta
-    | BStruct ts -> gen_struct_mem_layout m root ts
+    | BRecord ts -> gen_record_mem_layout m root ts
     | _ -> raise unsupported
   and gen_array_mem_layout (m : absmem) (root : absloc) (ta : btyp) : absmem =
     if is_prim ta then m
@@ -1292,11 +1292,11 @@ let add_memory_object_aux (se : senv) (st : absstate) (root : absloc)
       let lid = fresh_loc () in
       let m = gen_val_mem_layout m lid ta in
       IdentPairMap.add (root, _CONTENT) (IdentSet.singleton lid) m
-  and gen_struct_mem_layout (m : absmem) (root : absloc) (sid : ident) : absmem
+  and gen_record_mem_layout (m : absmem) (root : absloc) (rid : ident) : absmem
       =
-    match senv_get se sid with
+    match renv_get re rid with
     | Errors.OK fields ->
-        (* Printf.printf "Fields: %s\n" (PrintTypes.structtyp_to_string PrintTypes.btyp_to_string fields); *)
+        (* Printf.printf "Fields: %s\n" (PrintTypes.recordtyp_to_string PrintTypes.btyp_to_string fields); *)
         List.fold_left
           (fun acc (fname, fty) ->
             if is_prim fty then acc
@@ -1313,20 +1313,20 @@ let add_memory_object_aux (se : senv) (st : absstate) (root : absloc)
   let rm = mem_reverse m in
   { st with st_mem = m; st_rev_mem = rm; st_next_loc = !next_loc }
 
-let add_memory_object (se : senv) (st : absstate) (ty : btyp) : ident * absstate
+let add_memory_object (re : renv) (st : absstate) (ty : btyp) : ident * absstate
     =
   let root = st.st_next_loc in
   let st = { st with st_next_loc = fresh_loc st.st_next_loc } in
-  (root, add_memory_object_aux se st root ty)
+  (root, add_memory_object_aux re st root ty)
 
-(** [gen_valid_call_state se params] generates a valid call state w.r.t. the
+(** [gen_valid_call_state re params] generates a valid call state w.r.t. the
     function parameters [params]. *)
-let gen_valid_call_state (se : senv) (params : (ident * btyp) list) : absstate =
+let gen_valid_call_state (re : renv) (params : (ident * btyp) list) : absstate =
   List.fold_left
     (fun st (pid, pty) ->
       if is_prim pty then st
       else
-        let root, st' = add_memory_object se st pty in
+        let root, st' = add_memory_object re st pty in
         env_add st' pid (IdentSet.singleton root))
     (make_state2 IdentMap.empty IdentPairMap.empty)
     params
@@ -1371,15 +1371,15 @@ let wf_params (st : absstate) (params : (ident * btyp) list) : bool =
 let params_pointsto_unique (st : absstate) (params : ident list) : bool =
   List.for_all (pointsto_unique st) params
 
-(** [gen_fun_descr show_debug se fe f] generates the function descriptor for
+(** [gen_fun_descr show_debug re fe f] generates the function descriptor for
     [f]. *)
-let gen_fun_descr_and_ast (show_debug : bool) (se : senv) (fe : fenv)
+let gen_fun_descr_and_ast (show_debug : bool) (re : renv) (fe : fenv)
     (f : coq_function) : fun_descr * Imp1.Aliasing_AST.statement =
-  let callstate = gen_valid_call_state se f.fn_params in
+  let callstate = gen_valid_call_state re f.fn_params in
   assert (wf_params callstate f.fn_params);
   assert (params_pointsto_unique callstate (List.map fst f.fn_params));
   let ast, returnstate =
-    absexec show_debug se fe (AbsState callstate) f.fn_body
+    absexec show_debug re fe (AbsState callstate) f.fn_body
   in
   let returnstate =
     let* retstate = returnstate in
@@ -1405,17 +1405,17 @@ let gen_fun_descr_and_ast (show_debug : bool) (se : senv) (fe : fenv)
   | Top _ -> debug_info show_debug @@ sprintf "INV_RET: Top\n");
   (fdescr, ast)
 
-(** [senv_from_struct_defs l] build the struct type environment from the list of
-    struct definition [l]. *)
-let senv_from_struct_defs (l : struct_def list) : senv =
+(** [renv_from_record_defs l] build the record type environment from the list of
+    record definition [l]. *)
+let renv_from_record_defs (l : record_def list) : renv =
   List.fold_left
-    (fun acc st -> Utils.tset acc st.sd_name st.sd_fields)
+    (fun acc st -> Utils.tset acc st.rd_name st.rd_fields)
     Maps.PTree.empty
     l
 
-(** [gen_asbfun_descr se fe tparams tret] generates the function descriptor for
+(** [gen_asbfun_descr re fe tparams tret] generates the function descriptor for
     abstract function described by [tparams] and [tret]. *)
-let gen_absfun_descr (se : senv) (fe : fenv)
+let gen_absfun_descr (re : renv) (fe : fenv)
     (tparams : (param_attr * btyp) list) (tret : btyp) : fun_descr =
   let gen_param_id pos = ident_of_string (sprintf "p%d" pos) in
   let params1 =
@@ -1428,7 +1428,7 @@ let gen_absfun_descr (se : senv) (fe : fenv)
     |> snd |> List.rev
   in
   let params = List.map snd params1 in
-  let callstate = gen_valid_call_state se params in
+  let callstate = gen_valid_call_state re params in
   assert (wf_params callstate params);
   assert (params_pointsto_unique callstate (List.map fst params));
   let returnstate =
@@ -1459,26 +1459,26 @@ let gen_absfun_descr (se : senv) (fe : fenv)
     function is defined or declared with this name in the program [p]. *)
 let get_fun_descr (p : program) (fname : string) : fun_descr option =
   let fid = ident_of_string fname in
-  let se = senv_from_struct_defs (get_struct_defs p.prog_types) in
+  let re = renv_from_record_defs (get_record_defs p.prog_types) in
   let rec aux fe defs =
     match defs with
     | [] -> None
     | DefFun (x, f) :: defs' ->
-        let fdescr, _ = gen_fun_descr_and_ast false se fe f in
+        let fdescr, _ = gen_fun_descr_and_ast false re fe f in
         if x = fid then Some fdescr else aux (IdentMap.add x fdescr fe) defs'
     | DeclFun (x, tparams, tret) :: defs' ->
-        let fdescr = gen_absfun_descr se fe tparams tret in
+        let fdescr = gen_absfun_descr re fe tparams tret in
         if x = fid then Some fdescr else aux (IdentMap.add x fdescr fe) defs'
     | _ :: defs' -> aux fe defs'
   in
   aux IdentMap.empty p.prog_defs
 
-(** [gen_aliasing_function se fe f] generates the AST corresponding to the
+(** [gen_aliasing_function re fe f] generates the AST corresponding to the
     function [f] with the aliasing information. *)
-let gen_aliasing_function (show_debug : bool) (se : senv) (fe : fenv)
+let gen_aliasing_function (show_debug : bool) (re : renv) (fe : fenv)
     (x : ident) (f : Imp1Typed.coq_function) :
     (Imp1.Aliasing_AST.coq_function * fenv) Errors.res =
-  let fdescr, body' = gen_fun_descr_and_ast show_debug se fe f in
+  let fdescr, body' = gen_fun_descr_and_ast show_debug re fe f in
   let fe' = IdentMap.add x fdescr fe in
   match fdescr.fd_returnstate with
   | AbsState st' ->
@@ -1501,17 +1501,17 @@ let gen_aliasing_function (show_debug : bool) (se : senv) (fe : fenv)
       in
       Errors.Error (Errors.msg (Camlcoq.coqstring_of_camlstring msg))
 
-(** [gen_aliasing_globdef se fe def] generates the aliasing AST for the global
+(** [gen_aliasing_globdef re fe def] generates the aliasing AST for the global
     definition [def]. It also returns the new function descriptor environment if
     the global def is a function. *)
-let gen_aliasing_globdef (se : senv) (fe : fenv) (def : Imp1Typed.globdef)
+let gen_aliasing_globdef (re : renv) (fe : fenv) (def : Imp1Typed.globdef)
     (show_debug : bool) : (Imp1.Aliasing_AST.globdef * fenv) Errors.res =
   match def with
   | DefFun (x, f) ->
       debug_info show_debug
       @@ sprintf "Analysing function %s...\n\n" (ident_to_string x);
       let r =
-        match gen_aliasing_function show_debug se fe x f with
+        match gen_aliasing_function show_debug re fe x f with
         | Errors.OK (f', fe') -> Errors.OK (DefFun (x, f'), fe')
         | Errors.Error _ as err -> err
       in
@@ -1521,7 +1521,7 @@ let gen_aliasing_globdef (se : senv) (fe : fenv) (def : Imp1Typed.globdef)
   | DefConst (x, l, ty) -> Errors.OK (DefConst (x, l, ty), fe)
   | DeclConst (x, ty) -> Errors.OK (DeclConst (x, ty), fe)
   | DeclFun (x, tparams, tret) ->
-      let fdescr = gen_absfun_descr se fe tparams tret in
+      let fdescr = gen_absfun_descr re fe tparams tret in
       let fe' = IdentMap.add x fdescr fe in
       Errors.OK (DeclFun (x, tparams, tret), fe')
 
@@ -1533,8 +1533,8 @@ let gen_aliasing_program (show_debug : bool) (prog : Imp1Typed.program) :
     match defs with
     | [] -> Errors.OK []
     | d :: defs' -> begin
-        let se = senv_from_struct_defs (get_struct_defs prog.prog_types) in
-        match gen_aliasing_globdef se fe d show_debug with
+        let re = renv_from_record_defs (get_record_defs prog.prog_types) in
+        match gen_aliasing_globdef re fe d show_debug with
         | Errors.OK (d', fe') -> begin
             match aux fe' defs' with
             | Errors.OK r -> Errors.OK (d' :: r)
