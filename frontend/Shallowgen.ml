@@ -218,13 +218,13 @@ let rec expr_to_rocq_rec (prefix : string) (e : expr) : string =
           if Archi.ptr64 then opt_parens a2
           else sprintf "(uint_to_uint64 %s)" (opt_parens a2)
         in
-        sprintf "Array.get %s %s" (opt_parens a1) sa2
+        sprintf "Barray.get %s %s" (opt_parens a1) sa2
     | EArraySet (a1, a2, a3, _) ->
         let sa2 =
           if Archi.ptr64 then opt_parens a2
           else sprintf "(uint_to_uint64 %s)" (opt_parens a2)
         in
-        sprintf "Array.set %s %s %s" (opt_parens a1) sa2 (opt_parens a3)
+        sprintf "Barray.set %s %s %s" (opt_parens a1) sa2 (opt_parens a3)
     | EApp (a1, args, _) ->
         let sargs =
           match args with
@@ -422,7 +422,7 @@ let imports : string =
   "From Coq Require Import Bool List BinIntDef.\n\
    From compcert Require Import Integers.\n\
    From RecordUpdate Require Import RecordUpdate.\n\
-   From BarocqComp Require Import Error Array Intop.\n\
+   From BarocqComp Require Import Error Barray Intop.\n\
    Import BoolNotations ListNotations.\n\n\
    Open Scope error_monad_scope.\n"
 

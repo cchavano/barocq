@@ -1,6 +1,6 @@
 From Coq Require Import List String.
 From compcert Require Import Maps.
-From BarocqComp Require Import Monads Error MapList Types Utils Syntax  Array Barocq BarocqTransf BarocqShallow.
+From BarocqComp Require Import Monads Error MapList Types Utils Syntax Barray Barocq BarocqTransf BarocqShallow.
 Import ListNotations.
 Import MonCounterErr.
 

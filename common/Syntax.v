@@ -1,5 +1,5 @@
 From compcert Require Import Integers Ctypes.
-From BarocqComp Require Import Utils Array Ident Types.
+From BarocqComp Require Import Utils Barray Ident Types.
 
 (** * Identfitiers *)
 

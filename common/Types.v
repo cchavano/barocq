@@ -1,6 +1,6 @@
 From Coq Require Import List.
 From compcert Require Import Integers Maps.
-From BarocqComp Require Import Error Array Brecord Ident MapList.
+From BarocqComp Require Import Error Barray Brecord Ident MapList.
 
 Definition ident := Ident.t.
 
@@ -89,7 +89,7 @@ Section EVALTYP.
     map_k eval_typ fields.
 
   Definition eval_recordtyp (fields: list (ident * typ)) : Type :=
-    record_t (eval_fields_typ fields).
+    record (eval_fields_typ fields).
 
   Definition eval_funtyp (tparams: list typ) (tret: typ) : Type :=
     fold_right (fun tx acc => (eval_typ tx) -> acc) (res (eval_typ tret)) tparams.

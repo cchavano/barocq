@@ -1,5 +1,5 @@
 From compcert Require Import Ctypes Integers.
-From BarocqComp Require Import Array Utils Types Syntax.
+From BarocqComp Require Import Barray Utils Types Syntax.
 
 Module BNF.
 

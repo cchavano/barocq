@@ -1,5 +1,5 @@
 From Coq Require Import List String.
-From BarocqComp Require Import Error MapList Utils Types Syntax Array.
+From BarocqComp Require Import Error MapList Utils Types Syntax Barray.
 Import ListNotations.
 Import Syntax.Typed.
 

@@ -547,7 +547,7 @@ let imports () : string =
   sprintf
     "From Coq Require Import BinPosDef String List.\n\
      From compcert Require Import Integers Maps Clightdefs.\n\
-     From BarocqComp Require Import Error Array Brecord Types Barocq.\n\
+     From BarocqComp Require Import Error Barray Brecord Types Barocq.\n\
      From %s Require Import %s %s.\n\n\
      Import ClightNotations.\n\
      Import ListNotations.\n\n\

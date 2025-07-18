@@ -1,6 +1,6 @@
 From Coq Require Import List String ListDec PArith Bool.
 From compcert Require Import Integers Maps Ctypes.
-From BarocqComp Require Import Error MapList Utils Intop Array Brecord Types Typing Syntax.
+From BarocqComp Require Import Error MapList Utils Intop Barray Brecord Types Typing Syntax.
 Import ListNotations.
 
 (** * Abstract syntax *)
@@ -654,13 +654,13 @@ Section DENOT.
     {
       destruct Archi.ptr64 eqn:Earch.
         - destruct (typ_eq_dec t2 (TInt64 Unsigned)).
-          + subst. simpl in i. simpl in a. destruct (Array.get a i).
+          + subst. simpl in i. simpl in a. destruct (Barray.get a i).
             * apply (ret (Val ta e)).
             * apply fail. 
           + apply fail.
         - destruct (typ_eq_dec t2 (TInt32 Unsigned)).
           + subst. simpl in i. simpl in a.
-            destruct (Array.get a (U64.of_u32 i)).
+            destruct (Barray.get a (U64.of_u32 i)).
               * apply (ret (Val ta e)).
               * apply fail.
           + apply fail.
@@ -676,14 +676,14 @@ Section DENOT.
       destruct Archi.ptr64 eqn:Earch.
       - destruct (typ_eq_dec t2 (TInt64 Unsigned)).
         + destruct (typ_eq_dec ta t).
-          * subst. simpl in i. simpl in a. destruct (Array.set a i v).
+          * subst. simpl in i. simpl in a. destruct (Barray.set a i v).
             -- apply (ret (Val (TArray t) a0)).
             -- apply fail.
           * apply fail.
         + apply fail.
       - destruct (typ_eq_dec t2 (TInt32 Unsigned)).
         + destruct (typ_eq_dec ta t).
-          * subst. simpl in i. simpl in a. destruct (Array.set a (U64.of_u32 i) v).
+          * subst. simpl in i. simpl in a. destruct (Barray.set a (U64.of_u32 i) v).
             -- apply (ret (Val (TArray t) a0)).
             -- apply fail.
           * apply fail.

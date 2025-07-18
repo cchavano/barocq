@@ -1,6 +1,6 @@
 From Coq Require Import List String.
 From compcert Require Import Maps.
-From BarocqComp Require Import Monads MapList Utils Array Syntax Types Typing Imp1.
+From BarocqComp Require Import Monads MapList Utils Barray Syntax Types Typing Imp1.
 Import ListNotations.
 Import Syntax.Typed.
 Import Imp1Typed.

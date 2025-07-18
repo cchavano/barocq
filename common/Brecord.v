@@ -13,10 +13,10 @@ Arguments Field k {A}.
 Definition type_of_field (k: key) (fields: list (key * Type)) : Type :=
   find_k key_eq_dec k fields unit.
 
-Definition record_t (fields: list (key * Type)) : Type :=
+Definition record (fields: list (key * Type)) : Type :=
   fold_right (fun '(k, t) acc => prod (field k t) acc) unit fields.
 
-Fixpoint proj {fields: list (key * Type)} (rc: record_t fields) (k: key) {struct fields} : res (type_of_field k fields).
+Fixpoint proj {fields: list (key * Type)} (rc: record fields) (k: key) {struct fields} : res (type_of_field k fields).
   destruct fields as [| [x tx] fields'].
   - apply fail.
   - simpl in rc. destruct rc eqn:Erc. destruct f.
@@ -25,7 +25,7 @@ Fixpoint proj {fields: list (key * Type)} (rc: record_t fields) (k: key) {struct
     + apply (proj fields' r).
 Defined.
 
-Fixpoint update {fields: list (key * Type)} (rc: record_t fields) (k: key) (v: type_of_field k fields) {struct fields} : res (record_t fields).
+Fixpoint update {fields: list (key * Type)} (rc: record fields) (k: key) (v: type_of_field k fields) {struct fields} : res (record fields).
   destruct fields as [| [x tx] fields'].
   - apply fail.
   - simpl in rc. destruct rc eqn:Est. destruct f.
