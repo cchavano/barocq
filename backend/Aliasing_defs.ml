@@ -10,7 +10,14 @@ type path = ident list
 let _CONTENT : ident = ident_of_string "[*]"
 
 let path_to_string (p : path) : string =
-  list_to_string "" "" "." ident_to_string p
+  list_to_string
+    ""
+    ""
+    ""
+    (fun f ->
+      let fstr = ident_to_string f in
+      if f = _CONTENT then fstr else Printf.sprintf ".%s" fstr)
+    p
 
 (** [path_of_access_list acs] transforms the access list [acs] into a path. *)
 let rec path_of_access_list (acs : Syntax.Typed.access list) : path =
@@ -325,18 +332,9 @@ module AbsDom = struct
       st_next_loc = Pos.add BinNums.Coq_xH (Pos.max st.st_next_loc l);
     }
 
-  (* let mem_strong_update (st : absstate) ((l, f) : ident * ident)
-      (locs : pointsto_set) : absstate =
-    let m = IdentPairMap.add (l, f) locs st.st_mem in
-    {
-      st with
-      st_mem = m;
-      st_rev_mem = mem_reverse m;
-      st_next_loc = Pos.add BinNums.Coq_xH (Pos.max st.st_next_loc l);
-    } *)
-
   (** [mem_get m l f] returns the points-to set associated with [(l, f)] in [m].
       Returns an empty set if [(l, f)] is not a key of [m]. *)
+
   let mem_get (m : absmem) (l : absloc) (f : ident) : pointsto_set =
     match IdentPairMap.find_opt (l, f) m with
     | Some l_f -> l_f

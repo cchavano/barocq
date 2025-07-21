@@ -27,10 +27,11 @@ let ( let* ) = AbsDom.dbind
 let absloc_to_string (l : absloc) : string =
   ident_to_string (Ident.concat (ident_of_string "l") (Ident.of_str_pos l))
 
-(** [paths_to_string paths] transforms an invalid path map into a string. *)
-let paths_to_string (paths : path_map) : string =
+(** [path_map_to_string paths] transforms a map of invalid paths into a string.
+*)
+let path_map_to_string (paths : path_map) : string =
   list_to_string_bracket
-    (fun (x, t) -> sprintf "%s.%s" (ident_to_string x) (PathTree.to_string t))
+    (fun (x, t) -> sprintf "%s%s" (ident_to_string x) (PathTree.to_string t))
     (List.of_seq (IdentMap.to_seq paths))
 
 (** [is_prim ty] checks wether a value of type [ty] is primitive (i.e. it's a
@@ -38,13 +39,6 @@ let paths_to_string (paths : path_map) : string =
 let is_prim (ty : btyp) : bool =
   match ty with
   | BBool | BInt32 _ | BInt64 _ -> true
-  | BFun (_, _) -> raise unsupported
-  | _ -> false
-
-(** [is_array ty] checks wether a value of type [ty] is an array. *)
-let is_array (ty : btyp) : bool =
-  match ty with
-  | BArray _ -> true
   | BFun (_, _) -> raise unsupported
   | _ -> false
 
@@ -73,7 +67,7 @@ let rec inv_paths_to_loc_rec (rev : rev_absenv) (rm : rev_absmem)
     | None -> paths
   in
   match IdentMap.find_opt curr rm with
-  | Some adj ->
+  | Some adjs ->
       List.fold_left
         (fun accL (f, lf) ->
           IdentSet.fold
@@ -81,7 +75,7 @@ let rec inv_paths_to_loc_rec (rev : rev_absenv) (rm : rev_absmem)
             lf
             accL)
         paths'
-        adj
+        adjs
   | None -> paths'
 
 (** [inv_paths_to_loc st loc] computes the map of all paths leading to the
@@ -119,6 +113,37 @@ let rec invalid_paths_of_atom (inv : path_map) (a : atom) : path_tree option =
       | _, _ -> None
     end
   | _ -> None
+
+(** [dfs_mem m root] computes a DSF algorithm on the memory m and returns the
+    visited nodes. *)
+let rec dfs_mem (m : absmem) (root : absloc) (visited : IdentSet.t) : IdentSet.t
+    =
+  if IdentSet.mem root visited then visited
+  else
+    let visited' =
+      IdentPairMap.fold
+        (fun (l, f) locs accV ->
+          if l = root then
+            IdentSet.fold (fun loc accV1 -> dfs_mem m loc accV1) locs accV
+          else accV)
+        m
+        visited
+    in
+    IdentSet.add root visited'
+
+(** [invalidate_mem_from_locs st roots] invalidate all the paths leading to the
+    memory part in [st] reachable from the locations [roots]. *)
+let invalidate_mem_from_locs (st : absstate) (roots : IdentSet.t) : path_map =
+  let all_locs =
+    IdentSet.fold
+      (fun l acc -> IdentSet.union (dfs_mem st.st_mem l set_empty) acc)
+      roots
+      IdentSet.empty
+  in
+  IdentSet.fold
+    (fun l acc -> inv_union (inv_paths_to_loc st l) acc)
+    all_locs
+    IdentMap.empty
 
 (** [exec_set_atom x a st] computes the transfer function for the statement
     [set x := a] on [st]. *)
@@ -389,20 +414,15 @@ let exec_set_array_set (x : ident) (a : atom) (i : atom) (v : atom)
           | None -> inv'
         in
         (* As we can not detect sharing with our abstraction of arrays,
-           variables (and its aliases) set as an element of array become invalid. *)
+           variables (and their (sub-)aliases) set as an element of an array become invalid. *)
         let inv' =
           match v with
           | AVar (xv, ty) ->
               if is_prim ty then inv'
               else
-                let lyv = IdentMap.find xv st'.st_env in
-                let xv_and_aliased_vars =
-                  vars_aliased_to_locs st.st_rev_env lyv
-                in
-                IdentSet.fold
-                  (fun var acc -> IdentMap.add var Leaf acc)
-                  xv_and_aliased_vars
-                  inv'
+                let lyv = IdentMap.find xv st.st_env in
+                let inv_from_v = invalidate_mem_from_locs st lyv in
+                IdentMap.remove x (inv_union inv' inv_from_v)
           | _ -> inv'
         in
         (* We now unlock the locations pointed by y. *)
@@ -438,16 +458,6 @@ let exec_set_deep_access (x : ident) (a : atom) (acs : access list) (ty : btyp)
             { st with st_inv = IdentMap.remove x st.st_inv }
       else assert false
   | _ -> assert false
-
-(** [is_arg v args] checks wether the variable [v] is contained in the argument
-    list [args]. *)
-(* let is_arg (v : ident) (args : atom list) : bool =
-  List.exists
-    (fun a ->
-      match a with
-      | Syntax.Typed.AVar (x, _) -> if x = v then true else false
-      | _ -> false)
-    args *)
 
 (** [pointsto_unique st x] checks wether the variable [x] points to only one
     abstract location in [st]. *)
@@ -486,38 +496,37 @@ let rec is_tree_loc_aux (m : absmem) (curr : absloc) (visited : IdentSet.t) :
         m
         []
     in
-    let b, visited' = is_tree_locs_aux m (true, visited) adjacents in
-    let visited' = IdentSet.add curr visited' in
-    if b then (true, visited') else (false, visited')
+    let b, visited' = is_forest_locs_aux m visited adjacents in
+    (b, IdentSet.add curr visited')
 
-(** [is_tree_locs_aux m (b, vis) locs] checks that the memory region reachable
+(** [is_forest_locs_aux m (b, vis) locs] checks that the memory region reachable
     from the location [locs] is a multi-rooted tree, given that the
     alread-explored memory region composed of the locations [vis] is itself a
     tree or not (according to [b]). *)
-and is_tree_locs_aux (m : absmem) ((b, vis) : bool * IdentSet.t)
-    (locs : absloc list) : bool * IdentSet.t =
+and is_forest_locs_aux (m : absmem) (visited : IdentSet.t) (locs : absloc list)
+    : bool * IdentSet.t =
   match locs with
-  | [] -> (b, vis)
+  | [] -> (true, visited)
   | l :: locs' ->
-      let b', vis' = is_tree_loc_aux m l vis in
-      let visu = IdentSet.union vis vis' in
-      if b' then is_tree_locs_aux m (b', visu) locs' else (false, visu)
+      let b, visited' = is_tree_loc_aux m l visited in
+      let visu = IdentSet.union visited visited' in
+      if b then is_forest_locs_aux m visu locs' else (false, visu)
 
 (** [is_tree_loc m curr visited] checks wether the memory layout of [m] is a
     tree starting from [root] and given the already visited nodes [visited]. *)
 let is_tree_loc (m : absmem) (root : absloc) (visited : IdentSet.t) : bool =
   fst (is_tree_loc_aux m root visited)
 
-(** [is_tree_locs m locs] checks wether the memory layout of [m] is a
-    multi-rooted tree starting from the locations [roots]. *)
-let is_tree_locs (m : absmem) (roots : ident list) : bool =
-  fst (is_tree_locs_aux m (true, set_empty) roots)
+(** [is_forest_locs m locs] checks wether the memory layout of [m] is a forest
+    starting from the locations [roots]. *)
+let is_forest_locs (m : absmem) (roots : ident list) : bool =
+  fst (is_forest_locs_aux m set_empty roots)
 
 (** [is_tree_var st x] checks wether the memory layout in [st] is a tree
     starting from the variable [x]. *)
 let is_tree_var (st : absstate) (x : ident) : bool =
   match IdentMap.find_opt x st.st_env with
-  | Some locs -> is_tree_locs st.st_mem (IdentSet.elements locs)
+  | Some locs -> is_forest_locs st.st_mem (IdentSet.elements locs)
   | None -> false
 
 (** [wf_args st args] checks that all arguments [args] are well-formed at
@@ -532,124 +541,7 @@ let wf_args (st : absstate) (args : atom list) : bool =
       []
       args
   in
-  is_tree_locs st.st_mem arg_roots
-
-let rec aliased_paths_rec (m : absmem) (rev : rev_absenv) (rm : rev_absmem)
-    (loc : absloc) (p : path) (paths : path_map) : path_map =
-  match p with
-  | [] ->
-      let vars = vars_aliased_to_loc rev loc in
-      IdentSet.fold
-        (fun v acc ->
-          IdentMap.update
-            v
-            (fun t ->
-              match t with
-              | Some t -> Some (PathTree.add t p)
-              | None -> Some (PathTree.create p))
-            acc)
-        vars
-        paths
-  | f :: p' ->
-      let vars = vars_aliased_to_loc rev loc in
-      let paths' =
-        IdentSet.fold
-          (fun v acc ->
-            IdentMap.update
-              v
-              (fun t ->
-                match t with
-                | Some t -> Some (PathTree.add t p)
-                | None -> Some (PathTree.create p))
-              acc)
-          vars
-          paths
-      in
-      let locs = mem_get m loc f in
-      IdentSet.fold
-        (fun l acc -> aliased_paths_rec m rev rm l p' acc)
-        locs
-        paths'
-
-(** [aliased_path st x p] returns the map of paths aliased with [x.p] in [st].
-*)
-let aliased_paths (st : absstate) (x : ident) (p : path) : path_map =
-  match IdentMap.find_opt x st.st_env with
-  | Some locs ->
-      IdentSet.fold
-        (fun l acc ->
-          aliased_paths_rec st.st_mem st.st_rev_env st.st_rev_mem l p acc)
-        locs
-        IdentMap.empty
-  | None -> IdentMap.empty
-
-(** [aliased_paths_of_ptree st x t] returns a path tree which contain all paths
-    aliased to those contained in [t] prefixed by the variable [x]. *)
-let aliased_paths_of_ptree (st : absstate) (x : ident) (t : path_tree) :
-    path_map =
-  let paths = PathTree.flatten t in
-  List.fold_left
-    (fun acc p -> inv_union acc (aliased_paths st x p))
-    IdentMap.empty
-    paths
-
-(** [aliased_paths_of_pmap st pm] returns a path map which, for each variable
-    binding x -> t in [pm], contain all paths aliased to those belonging to [t]
-    prefixed by the variable [x]. *)
-let aliased_paths_of_pmap (st : absstate) (pm : path_map) : path_map =
-  IdentMap.fold
-    (fun k t acc -> inv_union (aliased_paths_of_ptree st k t) acc)
-    pm
-    IdentMap.empty
-
-(** [sub_aliases_of_loc_aux st root visited] returns the map of paths aliased
-    with sub-elements of the location [root] in the state [st]. [visited] are
-    the already visited locations. *)
-let rec sub_aliases_of_loc_aux (st : absstate) (root : absloc)
-    (visited : IdentSet.t) : path_map * IdentSet.t =
-  if IdentSet.mem root visited then (IdentMap.empty, visited)
-  else
-    let vars = vars_aliased_to_loc st.st_rev_env root in
-    let iv =
-      IdentSet.fold
-        (fun v iv ->
-          let v_inv = aliased_paths st v [] in
-          inv_union iv v_inv)
-        vars
-        IdentMap.empty
-    in
-    let adjacents =
-      IdentPairMap.fold
-        (fun (l, f) locs acc ->
-          if l = root then List.append (IdentSet.elements locs) acc else acc)
-        st.st_mem
-        []
-    in
-    let iv', visited' = sub_aliases_of_locs_aux st adjacents visited in
-    let visited' = IdentSet.add root visited' in
-    (inv_union iv iv', visited')
-
-(** [sub_aliases_of_locs_aux rev m roots visited] returns the map of paths
-    aliased with the sub-elements of the locations contained in [roots] given
-    the state [st] and already visited locations [visited]. *)
-and sub_aliases_of_locs_aux (st : absstate) (roots : absloc list)
-    (visited : IdentSet.t) : path_map * IdentSet.t =
-  List.fold_left
-    (fun (iv, visited) root ->
-      let iv', visited' = sub_aliases_of_loc_aux st root visited in
-      (inv_union iv iv', visited'))
-    (IdentMap.empty, visited)
-    roots
-
-(** [sub_aliases_of_loc st loc] returns the map of paths aliased with the
-    sub-elements of the location [loc] in [st]. *)
-let sub_aliases_of_loc (st : absstate) (loc : absloc) : path_map =
-  fst (sub_aliases_of_loc_aux st loc set_empty)
-
-(** [sub_aliases_of_locs st locs] returns the map of paths aliased with the
-    sub-elements of the locations contained in [locs] given [st]. *)
-let sub_aliases_of_locs (st : absstate) (locs : pointsto_set) : path_map =
-  fst (sub_aliases_of_locs_aux st (IdentSet.elements locs) set_empty)
+  is_forest_locs st.st_mem arg_roots
 
 (** [follow_path_from_loc m p root] returns the set of locations reachable from
     [root] via [p] in the memory [m]. *)
@@ -934,6 +826,28 @@ let build_call_state (st : absstate) (args : atom list) : absstate =
   let stcall = proj_state st vars in
   { stcall with st_res = set_empty }
 
+(** [returnstate_inv_paths st_init inv] computes the new invalid paths that are
+    due to the invalidation of the arguments of a function call. [st_init] is
+    the state before the function call. [inv] is the invalid paths that concern
+    the arguments. *)
+let returnstate_inv_paths (st_init : absstate) (inv : path_map) : path_map =
+  let inv_flat : path list IdentMap.t = IdentMap.map PathTree.flatten inv in
+  (* roots collects all locations reachable from every path contained in inv *)
+  let roots =
+    IdentMap.fold
+      (fun var pl accF ->
+        List.fold_left
+          (fun accL p ->
+            IdentSet.union
+              (follow_path_from_var st_init.st_env st_init.st_mem var p)
+              accL)
+          accF
+          pl)
+      inv_flat
+      set_empty
+  in
+  invalidate_mem_from_locs st_init roots
+
 (** [exec_set_call x a args ty fe st nctr] computes the transfer function for
     the statement [set x = a (args)] on [st]. [fe] is the function descriptor
     environment. [ty] is the type of the return value. *)
@@ -951,12 +865,12 @@ let exec_set_call (show_debug : bool) (re : renv) (x : ident) (a : atom)
 
       let stcall = build_call_state st args in
 
-      (* Before calling the function, we must check the following things: 
-            - All arguments are completely valid;
-            - Each non-primitive argument points to only one abstract location;
-            - Each argument points to a tree-shaped part of the memory;
-            - There is no inter-aliasing between arguments
-            - There is no locked arrays passed as arguments. *)
+      (* Before calling the function, we must check the following properties: 
+          - All arguments are completely valid;
+          - Each non-primitive argument points to only one abstract location;
+          - Each argument points to a tree-shaped part of the memory;
+          - There is no inter-aliasing between arguments
+          - There is no locked arrays passed as arguments. *)
       let args_validity =
         List.for_all (Aliasing_check.check_atom (AbsState stcall)) args
       in
@@ -983,23 +897,24 @@ let exec_set_call (show_debug : bool) (re : renv) (x : ident) (a : atom)
           apply_state_bijection vars_bij locs_bij st.st_next_loc fd_returnstate
         in
         (* The state before the call "st" and the return state "stret" must be merged.
-             The merge operation is the following:
-             - The new environment is the one of the inital state + the new binding for x that points to
-               the result locations of the return state (stret.st_res). 
-               As function parameters are renamed by the frontend, we never assign an argument to another value.
-               So for every key "v" in stret.st_env, s.t. "v" was an argument, the points-to set of "v" is the same
-               in stret.st_env and st.st_env.
-             - If a pair (l, f) is a key of the return state memory, it means that it was accessible from the arguments
-                (and it's also contained in st).
-                We just keep the value associated with (l, f) from this return state in the new memory.
-             - If a pair (l, f) is NOT a key of the return state memory,
-               then we keep the value associated with (l, f) from the initial state.
-             - The invalid paths of the resulting state will contain:
-               + The invalid paths of the initial state;
-               + The invalid paths of the return state;
-               + The paths that were aliased with some arguments that themselves contained invalid paths when the function returns.
-             - The locked arrays are the one of the initial state.
-             - The next fresh location is the one of the initial state. *)
+            The merge operation is the following:
+            - The new environment is the one of the inital state + the new binding for x that points to
+              the result locations of the return state (stret.st_res). 
+              As function parameters are renamed by the frontend, we never assign an argument to another value.
+              So for every key "v" in stret.st_env, s.t. "v" was an argument, the points-to set of "v" is the same
+              in stret.st_env and st.st_env.
+            - If a pair (l, f) is a key of the return state memory, it means that it was accessible from the arguments
+              (and it's also contained in st).
+              We just keep the value associated with (l, f) from this return state in the new memory.
+            - If a pair (l, f) is NOT a key of the return state memory,
+              then we keep the value associated with (l, f) from the initial state.
+            - The invalid paths of the resulting state will contain:
+              + The invalid paths of the initial state;
+              + The invalid paths of the return state;
+              + The paths that were aliased with some arguments that themselves contained invalid paths when the function returns.
+            - The locked arrays are the one of the initial state because we
+              forbid returning a sub-element of an array contained in the arguments.
+            - The next fresh location is the one of the initial state. *)
         let st' = if is_prim ty then st else env_add st x stret.st_res in
         let m_ret =
           IdentPairMap.merge
@@ -1014,28 +929,7 @@ let exec_set_call (show_debug : bool) (re : renv) (x : ident) (a : atom)
         let rm_ret = mem_reverse m_ret in
         let inv_ret =
           let iv_args_alias =
-            let iv_args = aliased_paths_of_pmap st stret.st_inv in
-            (* We gather all of the locations pointed by the paths in iv_args *)
-            let locs =
-              IdentMap.fold
-                (fun v t accM ->
-                  let paths = PathTree.flatten t in
-                  List.fold_left
-                    (fun accL p ->
-                      IdentSet.union
-                        accL
-                        (follow_path_from_var st.st_env st.st_mem v p))
-                    accM
-                    paths)
-                iv_args
-                set_empty
-            in
-            (* We invalidate all paths aliased with sub-elements of the
-              invalid paths returned by the return state. *)
-            let iv_sub = sub_aliases_of_locs st locs in
-            let iv_args = inv_union iv_sub iv_args in
-            (* If variable shadowing occurs, we must remove the binding of x in the map of invalid paths. *)
-            IdentMap.remove x iv_args
+            IdentMap.remove x (returnstate_inv_paths st stret.st_inv)
           in
           let iv_init = IdentMap.remove x st.st_inv in
           let iv_ret = IdentMap.remove x stret.st_inv in
@@ -1061,37 +955,42 @@ let exec_set_call (show_debug : bool) (re : renv) (x : ident) (a : atom)
           }
   | _ -> assert false
 
-(** [invalidate_parent_arrays st] invalidates the paths leading to all arrays
-    for which an element is contained in the returned locations [st.st_res]. *)
-let invalidate_parent_arrays (st : absstate) =
-  (* Get all "[]"-linked parent locations of locations contained in res *)
-  let parent_arrays =
-    IdentSet.fold
-      (fun loc acc ->
-        let parent_assoc_list =
-          match IdentMap.find_opt loc st.st_rev_mem with
-          | Some assoc_list -> assoc_list
-          | None -> []
+(** [is_loc_array_subelem rm loc visited] checks whether the location [loc] is a
+    (sub-)element of an array, i.e. exploring the reverse memory [rm] from [loc]
+    implies taking an edge labelled "\[*\]". *)
+let rec is_loc_array_subelem (rm : rev_absmem) (loc : absloc)
+    (visited : IdentSet.t) : bool * IdentSet.t =
+  if IdentSet.mem loc visited then (false, visited)
+  else
+    match IdentMap.find_opt loc rm with
+    | Some adjacents ->
+        let is_subelem, visited' =
+          are_adjs_array_subelem rm visited loc adjacents
         in
-        let parent_arrays =
-          match List.assoc_opt _CONTENT parent_assoc_list with
-          | Some locs -> locs
-          | _ -> set_empty
+        (is_subelem, IdentSet.add loc visited)
+    | None -> (false, IdentSet.add loc visited)
+
+and are_adjs_array_subelem (rm : rev_absmem) (visited : IdentSet.t)
+    (root : absloc) (adjs : (ident * pointsto_set) list) =
+  match adjs with
+  | [] -> (false, visited)
+  | (f, locs) :: adjs' ->
+      if f = _CONTENT then (true, IdentSet.add root visited)
+      else
+        let is_subelem, visited' =
+          are_locs_array_subelem rm visited (IdentSet.elements locs)
         in
-        IdentSet.union acc parent_arrays)
-      st.st_res
-      set_empty
-  in
-  (* Compute the invalid paths from the parent arrays. *)
-  let inv =
-    IdentSet.fold
-      (fun loc accS ->
-        let paths = inv_paths_to_loc st loc in
-        inv_union accS paths)
-      parent_arrays
-      IdentMap.empty
-  in
-  { st with st_inv = inv_union st.st_inv inv }
+        if is_subelem then (true, visited')
+        else are_adjs_array_subelem rm visited' root adjs'
+
+and are_locs_array_subelem (rm : rev_absmem) (visited : IdentSet.t)
+    (locs : absloc list) : bool * IdentSet.t =
+  match locs with
+  | [] -> (false, visited)
+  | l :: locs' ->
+      let is_subelem, visited' = is_loc_array_subelem rm l visited in
+      if is_subelem then (true, visited')
+      else are_locs_array_subelem rm visited' locs'
 
 (** [exec_return a st] computes the transfer function for the statement [ret a]
     on [st]. *)
@@ -1113,13 +1012,7 @@ let exec_return (a : atom) (st : absstate) : absstate =
     | None, Some ti -> Some ti
     | None, None -> None
   in
-  let st' = { st' with st_inv_res = inv_res } in
-  (* We must invalidate the paths leading to arrays for which an element is returned, 
-     because otherwise we lose the track of the source of the element.
-     This makes the corresponding arrays unsuable after the function call and prevents
-     the user from writing programs that would make sharing in arrays possible
-     by getting an array element via a function call. *)
-  invalidate_parent_arrays st'
+  { st' with st_inv_res = inv_res }
 
 let locked_arrays_to_string (st : absstate) : string =
   let arr_locked_var =
@@ -1146,7 +1039,7 @@ let print_dom_debug (show_debug : bool) (d : absdom) (suffix : string)
       @@ sprintf
            "INV_%s: %s\nARR_LOCKED_%s: %s\n"
            suffix
-           (paths_to_string st.st_inv)
+           (path_map_to_string st.st_inv)
            suffix
            (locked_arrays_to_string st);
       begin
@@ -1252,9 +1145,16 @@ let rec absexec (show_debug : bool) (re : renv) (fe : fenv) (d : absdom)
         let d' =
           let* st = d in
           let st' = exec_return a st in
-          if is_tree_locs st'.st_mem (IdentSet.elements st.st_res) then
-            AbsState st'
-          else top "ill-formed return value"
+          if
+            fst
+              (are_locs_array_subelem
+                 st'.st_rev_mem
+                 set_empty
+                 (IdentSet.elements st'.st_res))
+          then top "returning a (sub-)element of an array is forbidden"
+          else if not (is_forest_locs st'.st_mem (IdentSet.elements st.st_res))
+          then top "ill-formed return value"
+          else AbsState st'
         in
         let s', d' = (Imp1.Aliasing_AST.StReturn (a, d, d'), d') in
         print_dom_debug show_debug d' "OUT" true;
@@ -1296,13 +1196,11 @@ let add_memory_object_aux (re : renv) (st : absstate) (root : absloc)
       =
     match renv_get re rid with
     | Errors.OK fields ->
-        (* Printf.printf "Fields: %s\n" (PrintTypes.recordtyp_to_string PrintTypes.btyp_to_string fields); *)
         List.fold_left
           (fun acc (fname, fty) ->
             if is_prim fty then acc
             else
               let lid = fresh_loc () in
-              (* Printf.printf "Fresh loc: %s\n" (absloc_to_string lid); *)
               let m = gen_val_mem_layout acc lid fty in
               IdentPairMap.add (root, fname) (IdentSet.singleton lid) m)
           m
@@ -1348,7 +1246,7 @@ let build_return_state (st : absstate) (params : (ident * btyp) list) : absstate
 (** [wf_return_val st] checks that the return value in [st] is well-formed, i.e.
     it has a tree structure. *)
 let wf_return_val (st : absstate) : bool =
-  is_tree_locs st.st_mem (IdentSet.elements st.st_res)
+  is_forest_locs st.st_mem (IdentSet.elements st.st_res)
 
 (** [wf_params st params] check that the parameters [params] of the function are
     well-formed in [st], i.e. each parameter points to a tree and there is no
@@ -1364,7 +1262,7 @@ let wf_params (st : absstate) (params : (ident * btyp) list) : bool =
       []
       params
   in
-  is_tree_locs st.st_mem param_roots
+  is_forest_locs st.st_mem param_roots
 
 (** [params_pointsto_unique st params] checks that each parameter in [params]
     points to a unique location in [st]. *)
@@ -1401,7 +1299,7 @@ let gen_fun_descr_and_ast (show_debug : bool) (re : renv) (fe : fenv)
   (match fdescr.fd_returnstate with
   | AbsState st ->
       debug_info show_debug
-      @@ sprintf "INV_RET: %s\n" (paths_to_string st.st_inv)
+      @@ sprintf "INV_RET: %s\n" (path_map_to_string st.st_inv)
   | Top _ -> debug_info show_debug @@ sprintf "INV_RET: Top\n");
   (fdescr, ast)
 
