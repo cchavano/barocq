@@ -12,6 +12,11 @@ A Barocq program can also be translated to a shallow and deep embedding in Coq/R
 The Barocq compiler depends on OCaml, Coq/Rocq and a customized version of the CompCert compiler.
 First, install the OCaml Package Manager (OPAM).
 It is recommended to create a new opam switch for building Barocq.
+Once the switch is initialized, add the Coq package repository:
+
+```bash
+opam repo add coq-released https://coq.inria.fr/opam/released
+```
 
 Then, install the following dependencies with `opam install`:
 
