@@ -10,18 +10,33 @@ let shallowfile : string ref = ref ""
 let deepfile : string ref = ref ""
 
 module Deeptypes = struct
-  let is_simpl_mtyp (ty : mtyp) : bool =
+  let prim_types : string =
+    list_to_string
+      ""
+      "\n"
+      "\n\n"
+      (fun t -> sprintf "%s%s" indent t)
+      [
+        "Definition bool_t := TBool.";
+        "Definition int32_t := TInt32 Signed.";
+        "Definition uint32_t := TInt32 Unsigned.";
+        "Definition int64_t := TInt64 Signed.";
+        "Definition uint64_t := TInt64 Unsigned.";
+      ]
+
+  let rec is_simpl_mtyp (ty : mtyp) : bool =
     match ty with
-    | MBool | MRecord _ -> true
+    | MBool | MInt32 _ | MInt64 _ | MRecord _ -> true
+    | MRes tr -> is_simpl_mtyp tr
     | _ -> false
 
   let rec mtyp_to_typ_string (ty : mtyp) : string =
     match ty with
-    | MBool -> "TBool"
-    | MInt32 Types.Signed -> "TInt32 Signed"
-    | MInt32 Types.Unsigned -> "TInt32 Unsigned"
-    | MInt64 Types.Signed -> "TInt64 Signed"
-    | MInt64 Types.Unsigned -> "TInt64 Unsigned"
+    | MBool -> "bool_t"
+    | MInt32 Types.Signed -> "int32_t"
+    | MInt32 Types.Unsigned -> "uint32_t"
+    | MInt64 Types.Signed -> "int64_t"
+    | MInt64 Types.Unsigned -> "uint64_t"
     | MArray ta -> sprintf "TArray %s" (opt_parens ta)
     | MRecord rid -> ident_to_string rid
     | MFun (tparams, tret) ->
@@ -30,7 +45,7 @@ module Deeptypes = struct
           (list_to_string_bracket mtyp_to_typ_string tparams)
           (opt_parens tret)
     | MAbs tid -> ident_to_string tid
-    | _ -> assert false
+    | MRes tr -> mtyp_to_typ_string tr
 
   and opt_parens (ty : mtyp) : string =
     PrintCommon.opt_parens is_simpl_mtyp mtyp_to_typ_string ty
@@ -55,15 +70,52 @@ module Deeptypes = struct
           (ident_to_string tid)
           (Deepgen.ident_to_deep tid)
 
+  let deftype_to_string (def : globdef) : string =
+    let dt =
+      match def with
+      | DefConst (cid, _, ty) | DeclConst (cid, ty) ->
+          sprintf "%s := %s" (ident_to_string cid) (mtyp_to_typ_string ty)
+      | DefFun (fid, f) ->
+          let fty = MFun (List.map snd f.fn_params, f.fn_return) in
+          sprintf "%s := %s" (ident_to_string fid) (mtyp_to_typ_string fty)
+      | DeclFun (fid, tparams, tret) ->
+          let fty = MFun (List.map snd tparams, tret) in
+          sprintf "%s := %s" (ident_to_string fid) (mtyp_to_typ_string fty)
+    in
+    sprintf "Definition typof_%s." dt
+
   let print_typedefs (out : out_channel) (types : type_def list) : unit =
-    fprintf out "Module Deeptypes.\n\n";
     print_list
       out
       ""
-      "\n\n"
+      "\n"
       "\n\n"
       (fun td -> sprintf "%s%s" indent (typedef_to_string td))
-      types;
+      types
+
+  let print_deftypes (out : out_channel) (defs : globdef list) : unit =
+    print_list
+      out
+      ""
+      "\n"
+      "\n\n"
+      (fun def -> sprintf "%s%s" indent (deftype_to_string def))
+      defs
+
+  let print (out : out_channel) (prog : program) : unit =
+    let types = prog.prog_types in
+    let defs = prog.prog_defs in
+    fprintf out "Module Deeptypes.\n\n";
+    fprintf out "%s" prim_types;
+    fprintf out "\n";
+    if types <> [] then begin
+      print_typedefs out prog.prog_types;
+      fprintf out "\n"
+    end;
+    if defs <> [] then begin
+      print_deftypes out prog.prog_defs;
+      fprintf out "\n"
+    end;
     fprintf out "End Deeptypes.\n"
 end
 
@@ -189,7 +241,10 @@ module RecordConv = struct
     | MRecord rid -> sprintf "conv_%s_BtoR" (ident_to_string rid)
     | MArray ta ->
         let r = conv_mtyp_str_BtoR ta in
-        if r = "" then "" else sprintf "transl_array_err (%s)" r
+        if r = "" then ""
+        else if String.starts_with ~prefix:"conv" r then
+          sprintf "transl_array_err %s" r
+        else sprintf "transl_array_err (%s)" r
     | _ -> ""
 
   let conv_value_BtoR (fty : mtyp) (v : string) : string =
@@ -284,7 +339,7 @@ module RecordConv = struct
         rd.rd_fields
     in
     sprintf
-      "Lemma conv_%s_BtoR_correct :\n\
+      "Lemma conv_%s_RtoB_correct :\n\
        %s%s\n\
        %s%s ->\n\
        %s.\n\
@@ -299,9 +354,71 @@ module RecordConv = struct
       fields_conv
       indent
 
+  let gen_BtoR_conv_correctness_thm (rd : record_def) : string =
+    let rid = ident_to_string rd.rd_name in
+    let forall = sprintf "forall (s: #Deeptypes.%s) (s': %s)," rid rid in
+    let conv_call = sprintf "conv_%s_BtoR s = OK s'" rid in
+    let field_conv (fname : ident) (fty : mtyp) : string * int =
+      let fid = ident_to_string fname in
+      let rval = conv_value_BtoR fty fid in
+      if rval = fid then
+        ( sprintf
+            "%sBrecord.proj s %s = OK s'.(%s_%s)"
+            indent
+            (Deepgen.ident_to_deep fname)
+            (String.lowercase_ascii rid)
+            fid,
+          1 )
+      else
+        ( sprintf
+            "%s(exists %s, Brecord.proj s %s = OK %s /\\ %s = OK s'.(%s_%s))"
+            indent
+            fid
+            (Deepgen.ident_to_deep fname)
+            fid
+            rval
+            (String.lowercase_ascii rid)
+            fid,
+          2 )
+    in
+    let rec fields_conv_rec (fields : (ident * mtyp) list) : string * int =
+      match fields with
+      | [] -> ("", 0)
+      | (fname, fty) :: [] -> field_conv fname fty
+      | (fname, fty) :: fields' ->
+          let conv_str, n = field_conv fname fty in
+          let conv_rest, n' = fields_conv_rec fields' in
+          (sprintf "%s /\\\n%s" conv_str conv_rest, n + n')
+    in
+    let fields_conv, hret_num = fields_conv_rec rd.rd_fields in
+    let proof =
+      sprintf
+        "%sintros s s' Hconv. unfold conv_%s_BtoR in Hconv.\n\
+         %sunfold MonError.bind in Hconv. monadInv Hconv.\n\
+         %sinjection EQ%d as Hret. rewrite <- Hret.\n\
+         %srepeat split; eauto.\n\
+         Qed."
+        indent
+        rid
+        indent
+        indent
+        hret_num
+        indent
+    in
+    sprintf
+      "Lemma conv_%s_BtoR_correct :\n%s%s\n%s%s ->\n%s.\nProof.\n%s"
+      rid
+      indent
+      forall
+      indent
+      conv_call
+      fields_conv
+      proof
+
   let print_correctness_lemmas (out : out_channel) (records : record_def list) :
       unit =
-    print_list out "" "\n" "\n\n" gen_RtoB_conv_correctness_thm records
+    print_list out "" "\n\n" "\n\n" gen_RtoB_conv_correctness_thm records;
+    print_list out "" "\n" "\n\n" gen_BtoR_conv_correctness_thm records
 end
 
 module FFI = struct
@@ -424,13 +541,7 @@ let gen_abs_defs_impl_env (defs : globdef list) : string =
       ""
       ";\n"
       (fun (d, s) ->
-        sprintf
-          "%s(%s, (Val abs_types_impl (typof_def_noerr %s.prog %s) FFI.%s))"
-          prefix
-          d
-          !deepfile
-          d
-          s)
+        sprintf "%s(%s, VAL Deeptypes.typof_%s FFI.%s)" prefix d s s)
       l
   in
   let genv_build genv_list l =
@@ -459,7 +570,8 @@ let gen_abs_defs_impl_env (defs : globdef list) : string =
 let gen_const_corres (cid : ident) (ty : mtyp) : string =
   let thm =
     sprintf
-      "eval_def $\"%s\" = %s"
+      "eval_def %s = OK (VAL Deeptypes.typof_%s %s)"
+      (Deepgen.ident_to_deep cid)
       (ident_to_string cid)
       (RecordConv.conv_value_RtoB
          ty
@@ -480,31 +592,31 @@ let gen_deep_call_args (args : (ident * mtyp) list) : string =
         ""
         ""
         " "
-        (fun (aid, aty) -> RecordConv.conv_value_RtoB aty (ident_to_string aid))
+        (fun (aid, aty) ->
+          let aid = ident_to_string aid in
+          let conv_aid = RecordConv.conv_value_RtoB aty aid in
+          if conv_aid = aid then aid else sprintf "(%s)" conv_aid)
         args
 
-let gen_shallow_call_ret (res : string) (ty : mtyp) : string =
+let gen_shallow_call_ret (call : string) (ty : mtyp) : string =
   match ty with
   | MRes tr ->
-      let v = sprintf "(%s)" res in
-      let conv_v = RecordConv.conv_value_RtoB tr v in
-      if conv_v = v then res else conv_v
-  | _ -> sprintf "OK (%s)" (RecordConv.conv_value_RtoB ty res)
+      let conv_v = RecordConv.conv_value_RtoB tr "r" in
+      if conv_v = "r" then call
+      else sprintf "let* r := %s in\n%s OK (%s)" call indent conv_v
+  | _ -> sprintf "OK (%s)" (RecordConv.conv_value_RtoB ty (sprintf "(%s)" call))
 
 let gen_function_corres (fid : ident) (params : (ident * mtyp) list)
     (tret : mtyp) : string =
   let forall =
     match params with
     | [] -> ""
-    | _ ->
-        sprintf "%sforall %s,\n" indent (Shallowgen.param_list_to_rocq params)
+    | _ -> sprintf "forall %s," (Shallowgen.param_list_to_rocq params)
   in
-  let deep_fun_id = ident_to_string fid in
+  let deep_fun_id = Deepgen.ident_to_deep fid in
+  let shallow_fun_id = ident_to_string fid in
   let deep_call =
-    sprintf
-      "eval_def %s %s"
-      (sprintf "$\"%s\"" deep_fun_id)
-      (gen_deep_call_args params)
+    sprintf "%s_val %s" shallow_fun_id (gen_deep_call_args params)
   in
   let shallow_call =
     let args =
@@ -512,12 +624,25 @@ let gen_function_corres (fid : ident) (params : (ident * mtyp) list)
       | [] -> "tt"
       | _ -> list_to_string "" "" " " ident_to_string (List.map fst params)
     in
-    let base = sprintf "%s.%s %s" !shallowfile (ident_to_string fid) args in
-    gen_shallow_call_ret base tret
+    let call = sprintf "%s.%s %s" !shallowfile shallow_fun_id args in
+    gen_shallow_call_ret call tret
   in
   sprintf
-    "Theorem fun_%s_corres :\n%s%s%s =\n%s%s.\nAdmitted."
-    (ident_to_string fid)
+    "Theorem fun_%s_corres :\n\
+     %sexists %s_val,\n\
+     %seval_def %s = OK (VAL Deeptypes.typof_%s %s_val) /\\\n\
+     %s(%s\n\
+     %s %s =\n\
+     %s %s).\n\
+     Admitted."
+    shallow_fun_id
+    indent
+    shallow_fun_id
+    indent
+    deep_fun_id
+    shallow_fun_id
+    shallow_fun_id
+    indent
     forall
     indent
     deep_call
@@ -547,7 +672,7 @@ let imports () : string =
   sprintf
     "From Coq Require Import BinPosDef String List.\n\
      From compcert Require Import Integers Maps Clightdefs.\n\
-     From BarocqComp Require Import Error Barray Brecord Types Barocq.\n\
+     From BarocqComp Require Import Monads Error Barray Brecord Types Barocq.\n\
      From %s Require Import %s %s.\n\n\
      Import ClightNotations.\n\
      Import ListNotations.\n\n\
@@ -562,11 +687,7 @@ let print_program (out : out_channel) (prog : program) : unit =
   let records = get_record_defs types in
   let defs = prog.prog_defs in
   fprintf out "%s" (imports ());
-  if records <> [] then begin
-    fprintf out "\n";
-    Deeptypes.print_typedefs out types
-  end;
-
+  Deeptypes.print out prog;
   fprintf out "\n";
   fprintf out "(** * Abstract types implementation *)\n\n";
   fprintf out "%s" (gen_abs_types_impl_env types);
@@ -594,12 +715,14 @@ let print_program (out : out_channel) (prog : program) : unit =
     FFI.print_functions out defs
   end;
   fprintf out "\n";
+  fprintf out "Definition VAL (t: typ) (v: #t) := Val abs_types_impl t v.\n";
+  fprintf out "\n";
   fprintf out "%s" (gen_abs_defs_impl_env defs);
   fprintf out "\n";
   fprintf out "(** * Program correspondence theorems *)\n\n";
   fprintf
     out
-    "Definition eval_def := Barocq.eval_def abs_types_impl abs_defs_impl \
+    "Definition eval_def := Barocq.eval_def_aux abs_types_impl abs_defs_impl \
      %s.prog.\n"
     !deepfile;
   if defs <> [] then begin

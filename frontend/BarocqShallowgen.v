@@ -244,7 +244,12 @@ Module Monadification.
 
   Fixpoint mtyp_eq_dec (t1 t2: mtyp) : { t1 = t2 } + { t1 <> t2 }.
   Proof.
-    repeat decide equality.
+    decide equality.
+    - apply signedness_eq_dec.
+    - apply signedness_eq_dec.
+    - apply Ident.eq_dec.
+    - apply list_eq_dec. apply mtyp_eq_dec.
+    - apply Ident.eq_dec.
   Defined.
 
   Definition renv : Type := ptree (list (ident * mtyp)).

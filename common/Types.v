@@ -14,7 +14,11 @@ Inductive signedness : Type :=
 
 Lemma signedness_eq_dec: forall (s1 s2: signedness), {s1 = s2} + {s1 <> s2}.
 Proof.
-  decide equality.
+  intros. destruct s1; destruct s2.
+  - left. reflexivity.
+  - right. discriminate.
+  - right. discriminate.
+  - left. reflexivity.
 Defined.
 
 Inductive typ : Type :=
@@ -28,7 +32,13 @@ Inductive typ : Type :=
 
 Fixpoint typ_eq_dec (t1 t2: typ) : { t1 = t2 } + { t1 <> t2 }.
 Proof.
-  repeat decide equality.
+  decide equality.
+  - apply signedness_eq_dec.
+  - apply signedness_eq_dec.
+  - decide equality. decide equality. apply Ident.eq_dec.
+  - apply Ident.eq_dec.
+  - apply list_eq_dec. apply typ_eq_dec.
+  - apply Ident.eq_dec.
 Defined.
 
 (** ** Concrete types *)
@@ -57,7 +67,12 @@ Definition signed_of_int_btyp (ty: btyp) : signedness :=
 
 Fixpoint btyp_eq_dec (t1 t2: btyp) : { t1 = t2 } + { t1 <> t2 }.
 Proof.
-  repeat decide equality.
+  decide equality.
+  - apply signedness_eq_dec.
+  - apply signedness_eq_dec.
+  - apply Ident.eq_dec.
+  - apply list_eq_dec. apply btyp_eq_dec.
+  - apply Ident.eq_dec.
 Defined.
 
 Definition mk_fun_btyp {A: Type} (params: list (A * btyp)) (tret: btyp) : btyp :=

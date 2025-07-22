@@ -62,19 +62,29 @@ let signedness_to_deep (s : signedness) : string =
   | Signed -> "Signed"
   | Unsigned -> "Unsigned"
 
+let is_simpl_btyp (ty : btyp) : bool =
+  match ty with
+  | BBool | BInt32 _ | BInt64 _ -> true
+  | _ -> false
+
 let rec btyp_to_deep (ty : btyp) : string =
   match ty with
-  | BBool -> "BBool"
-  | BInt32 s -> sprintf "BInt32 %s" (signedness_to_deep s)
-  | BInt64 s -> sprintf "BInt64 %s" (signedness_to_deep s)
-  | BArray ta -> sprintf "BArray (%s)" (btyp_to_deep ta)
-  | BRecord ts -> sprintf "BRecord (%s)" (ident_to_deep ts)
+  | BBool -> "bool_t"
+  | BInt32 Signed -> "int32_t"
+  | BInt32 Unsigned -> "uint32_t"
+  | BInt64 Signed -> "int64_t"
+  | BInt64 Unsigned -> "uint64_t"
+  | BArray ta -> sprintf "BArray %s" (opt_parens ta)
+  | BRecord ts -> sprintf "BRecord %s" (ident_to_deep ts)
   | BAbs t -> sprintf "BAbs %s" (ident_to_deep t)
   | BFun (tparams, tret) ->
       sprintf
-        "BFun %s (%s)"
+        "BFun %s %s"
         (list_to_string_bracket btyp_to_deep tparams)
-        (btyp_to_deep tret)
+        (opt_parens tret)
+
+and opt_parens (ty : btyp) : string =
+  PrintCommon.opt_parens is_simpl_btyp btyp_to_deep ty
 
 let rec expr_to_deep (prefix : string) (e : expr) : string =
   let prefix' = prefix ^ indent in
@@ -267,6 +277,13 @@ let globdef_to_deep (def : globdef) : string =
            tparams)
         (btyp_to_deep tret)
 
+let prim_types : string =
+  "Definition bool_t := BBool.\n\n\
+   Definition int32_t := BInt32 Signed.\n\n\
+   Definition uint32_t := BInt32 Unsigned.\n\n\
+   Definition int64_t := BInt64 Signed.\n\n\
+   Definition uint64_t := BInt64 Unsigned.\n"
+
 let imports : string =
   "From Coq Require Import String List BinIntDef.\n\
    From compcert Require Import Integers Ctypes Clightdefs.\n\
@@ -279,6 +296,8 @@ let imports : string =
 let print_program (out : out_channel) (prog : program) : unit =
   fprintf out "%s" imports;
   if prog <> [] then begin
+    fprintf out "\n";
+    fprintf out "%s" prim_types;
     fprintf out "\n";
     print_globdefs out prog;
     fprintf out "\n";
