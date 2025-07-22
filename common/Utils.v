@@ -28,11 +28,6 @@ Definition fresh_var_err (prefix: string) : crmon ident :=
 
 Close Scope state_err_monad_scope.
 
-(** * Arithmetic *)
-
-Definition uint64_to_nat (i: int64) : nat :=
-  Z.to_nat (Int64.unsigned i).
-
 (** * Lists *)
 
 Definition nth_err {A: Type} (l: list A) (n: nat) : res A :=

@@ -1,3 +1,4 @@
+From Coq Require Import BinIntDef.
 From compcert Require Import Integers.
 From BarocqComp Require Import Error.
 
@@ -112,5 +113,8 @@ Module U64.
 
   Definition of_u32 (x: int) : int64 :=
     Int64.repr (Int.unsigned x).
+
+  Definition to_nat (x: int64) : nat :=
+    Z.to_nat (Int64.unsigned x).
 
 End U64.

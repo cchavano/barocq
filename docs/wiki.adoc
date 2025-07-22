@@ -328,7 +328,7 @@ In this example, `p` should be a record variable, and `x` and `y` fields of the 
 
 IMPORTANT: This syntax is desugarged by a sequence of single-field record updates that keeps the order in which the programmer updated the fields. For example, the code snippet above is desugared as `(p.x \<- 2).y \<- 3`. Using a different order can lead to different errors raised by the compiler if side effects do occur in the update expressions.
 
-NOTE: The type of an array index depends on the CompCert `Archi.ptr64` value. If you compiled CompCert to target a 32-bit architecture, you should use `u32` indices, otherwise you should use `u64` for a 64-bit arch.
+NOTE: The type of array indexes depends on the target architecture for which for you want to compile the generated C code. If the target has a 32-bit architecture, you should use `u32` indices, otherwise you should use `u64` for a 64-bit arch. By default, the compiler uses the CompCert Archi.ptr64 constant to get the target architecture. To set a different value, you can use the `-target-arch` option (cf. `barocq -help`.)
 
 === Definitions
 

@@ -1,6 +1,6 @@
 From Coq Require Import List ZArith.
 From compcert Require Import Integers.
-From BarocqComp Require Import Error Utils.
+From BarocqComp Require Import Intop Error Utils.
 
 Import ListNotations.
 
@@ -16,10 +16,10 @@ Section ARRAYS.
 
   Definition valid_index (a: array A) (i: int64) : bool :=
     Int64.cmpu Cle Int64.zero i &&
-    ((uint64_to_nat i) <? (length a))%nat.
+    ((U64.to_nat i) <? (length a))%nat.
 
   Definition get (a: array A) (i: int64) : res A :=
-    if valid_index a i then err_of_opt (nth_error a (uint64_to_nat i))
+    if valid_index a i then err_of_opt (nth_error a (U64.to_nat i))
     else fail.
   
   Fixpoint set_rec (l: list A) (n: nat) (x: A) {struct n} : list A :=
@@ -30,7 +30,7 @@ Section ARRAYS.
     end.
 
   Definition set (a: array A) (i: int64) (x: A) : res (array A) :=
-    if valid_index a i then ret (set_rec a (uint64_to_nat i) x)
+    if valid_index a i then ret (set_rec a (U64.to_nat i) x)
     else fail.
 
 End ARRAYS.

@@ -23,6 +23,10 @@ let source_files = ref []
 
 let c_output = ref "a.c"
 
+let rocq_output_prefix = ref "a"
+
+let output_dir = ref "."
+
 let opt_interp = ref false
 
 let opt_parse = ref false
@@ -72,6 +76,13 @@ let options =
       Arg.Set opt_aliascheck,
       "\t\t\t\tRun the alias analysis on the input files" );
     ("-o", Arg.Set_string c_output, "<file>\t\t\t\tGenerate C output in <file>");
+    ( "-orocq",
+      Arg.Set_string rocq_output_prefix,
+      "<prefix>\t\t\tPrefix all Rocq generated files with <prefix_> (default: \
+       name of the C output)" );
+    ( "-odir",
+      Arg.Set_string output_dir,
+      "<dir>\t\t\t\tPlace all generated files in <dir>" );
     ( "-print-tokens",
       Arg.Set opt_print_tokens,
       "\t\t\tPrint parsed tokens (stop after lexing)" );
@@ -118,9 +129,19 @@ let get_raw_filename (file : string) : string =
   Filename.remove_extension (Filename.basename file)
 
 let get_full_filename (file : string) (suffix : string) : string =
+  let file = sprintf "%s/%s" !output_dir file in
   let rawname = get_raw_filename file in
   let dirname = Filename.dirname file in
   Printf.sprintf "%s/%s%s" dirname rawname suffix
+
+let clean_filename (file : string) : string =
+  if String.starts_with ~prefix:"./" file then
+    String.sub file 2 (String.length file - 2)
+  else file
+
+let gen_rocq_prefix () : string =
+  if !rocq_output_prefix <> "a" then !rocq_output_prefix
+  else get_raw_filename !c_output
 
 let arch_of_string (s : string) : Target.archi =
   if s = "ptr32" then Target.Ptr32
@@ -263,8 +284,10 @@ let () =
                   match Aliasing_impl.get_fun_descr prog fid with
                   | Some fdescr ->
                       let callstate = fdescr.Aliasing_defs.fd_callstate in
-                      let dotfile = sprintf "%s_call_state.dot" fid in
-                      let dotfile_rev = sprintf "%s_call_state_rev.dot" fid in
+                      let dotfile = get_full_filename fid "_call_state.dot" in
+                      let dotfile_rev =
+                        get_full_filename fid "_call_state_rev.dot"
+                      in
                       let out = open_out dotfile in
                       let out_rev = open_out dotfile_rev in
                       Aliasing_impl.DotExport.print_state
@@ -311,8 +334,10 @@ let () =
                   match Aliasing_impl.get_fun_descr prog fid with
                   | Some fdescr ->
                       let returnstate = fdescr.Aliasing_defs.fd_returnstate in
-                      let dotfile = sprintf "%s_return_state.dot" fid in
-                      let dotfile_rev = sprintf "%s_return_state_rev.dot" fid in
+                      let dotfile = get_full_filename fid "_return_state.dot" in
+                      let dotfile_rev =
+                        get_full_filename fid "_return_state_rev.dot"
+                      in
                       let out = open_out dotfile in
                       let out_rev = open_out dotfile_rev in
                       Aliasing_impl.DotExport.print_state out returnstate;
@@ -349,17 +374,12 @@ let () =
       end;
 
       if !opt_gen_corres then begin
-        let rawname = get_raw_filename !c_output in
-        (* let coqlib =
-          let bytes = String.to_bytes rawname in
-          Bytes.fill bytes 0 1 (Char.uppercase_ascii (String.get rawname 0));
-          Bytes.to_string bytes
-        in *)
+        let rawname = gen_rocq_prefix () in
         Corresgen.coqlib := rawname;
         Corresgen.shallowfile := rawname ^ "_Shallow";
         Corresgen.deepfile := rawname ^ "_Deep";
-        let proofs_output = get_full_filename !c_output "_Corres.v" in
-        let oc = open_out proofs_output in
+        let corres_output = get_full_filename rawname "_Corres.v" in
+        let oc = open_out corres_output in
         match
           BarocqShallowgen.monadify_norm_program
             (arch_of_string !target_arch)
@@ -367,7 +387,9 @@ let () =
         with
         | Errors.OK prog ->
             Corresgen.print_program (arch_of_string !target_arch) oc prog;
-            printf "Correspondence theorems generated at %s\n" proofs_output;
+            printf
+              "Correspondence theorems generated at %s\n"
+              (clean_filename corres_output);
             close_out oc
         | Errors.Error msg ->
             close_out oc;
@@ -379,7 +401,8 @@ let () =
       end;
 
       if !opt_gen_shallow then begin
-        let shallow_output = get_full_filename !c_output "_Shallow.v" in
+        let rawname = gen_rocq_prefix () in
+        let shallow_output = get_full_filename rawname "_Shallow.v" in
         let oc = open_out shallow_output in
         match
           BarocqShallowgen.monadify_norm_program
@@ -388,7 +411,9 @@ let () =
         with
         | Errors.OK prog ->
             Shallowgen.print_program oc prog;
-            printf "Shallow-embedding generated at %s\n" shallow_output;
+            printf
+              "Shallow-embedding generated at %s\n"
+              (clean_filename shallow_output);
             close_out oc
         | Errors.Error msg ->
             close_out oc;
@@ -400,32 +425,46 @@ let () =
       end;
 
       if !opt_gen_deep then begin
-        let deep_output = get_full_filename !c_output "_Deep.v" in
+        let rawname = gen_rocq_prefix () in
+        let deep_output = get_full_filename rawname "_Deep.v" in
         let oc = open_out deep_output in
         Deepgen.print_program oc prog;
-        printf "Deep-embedding generated at %s\n" deep_output;
+        printf "Deep-embedding generated at %s\n" (clean_filename deep_output);
         close_out oc
       end;
 
-      match
-        Compiler.compile !opt_debug_aliasing (arch_of_string !target_arch) prog
-      with
-      | Errors.OK prog ->
-          Camlcoq.use_canonical_atoms := true;
-          let ids = ClightCegen.program_idents prog in
-          record_idents (List.map PrintCommon.ident_to_string ids);
-          PrintClightCe.destination := Some !c_output;
-          (* Program printing *)
-          PrintCprog.print_clightce !file_types_impl prog;
-          printf "C file generated at %s\n" !c_output;
-          (* Header printing *)
-          if !opt_gen_header then begin
-            let header_file = get_full_filename !c_output ".h" in
-            PrintCprog.print_header !file_types_impl header_file prog;
-            printf "Header file generated at %s\n" header_file
-          end;
-          exit 0
-      | Errors.Error msg -> raise @@ CompilerError (C2C.string_of_errmsg msg)
+      let gen_c =
+        not
+          (!opt_gen_shallow || !opt_gen_deep
+          || !opt_gen_alias_call_state_of <> ""
+          || !opt_gen_alias_return_state_of <> "")
+      in
+
+      if gen_c then
+        match
+          Compiler.compile
+            !opt_debug_aliasing
+            (arch_of_string !target_arch)
+            prog
+        with
+        | Errors.OK prog ->
+            Camlcoq.use_canonical_atoms := true;
+            let ids = ClightCegen.program_idents prog in
+            record_idents (List.map PrintCommon.ident_to_string ids);
+            let cfile = get_full_filename !c_output ".c" in
+            PrintClightCe.destination := Some cfile;
+            (* Program printing *)
+            PrintCprog.print_clightce !file_types_impl prog;
+            printf "C file generated at %s\n" (clean_filename cfile);
+            (* Header printing *)
+            if !opt_gen_header then begin
+              let hfile = get_full_filename !c_output ".h" in
+              PrintCprog.print_header !file_types_impl hfile prog;
+              printf "Header file generated at %s\n" (clean_filename hfile)
+            end;
+            exit 0
+        | Errors.Error msg -> raise @@ CompilerError (C2C.string_of_errmsg msg)
+      else exit 0
     with
     | Sys_error msg -> eprintf "System error: %s\n" msg
     | SyntaxError (lexbuf, msg) -> eprintf "%s\n" (syntax_error_msg lexbuf msg)
