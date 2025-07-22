@@ -15,6 +15,8 @@ BCOMP=Compiler.v
 
 VDIRS=common frontend backend bcomp
 
+VDIRS_BUILD=$(addprefix $(BUILD_DIR)/, $(VDIRS))
+
 VSOURCE=\
 	$(addprefix common/,$(COMMON)) $(addprefix frontend/,$(FRONTEND))\
 	$(addprefix backend/,$(BACKEND)) $(addprefix bcomp/,$(BCOMP))
@@ -33,12 +35,12 @@ all:
 	@test -f .depend || $(MAKE) depend
 	$(MAKE) barocq
 
-$(addprefix $(BUILD_DIR)/, VDIRS):
+$(VDIRS_BUILD):
 	@for dir in $(VDIRS) ; do \
 		mkdir -p $(BUILD_DIR)/$$dir ; \
 	done
 
-builddir: $(addprefix $(BUILD_DIR)/, VDIRS)
+builddir: $(VDIRS_BUILD)
 
 # Retrieve necessary files from the CompCert build folder
 
@@ -106,6 +108,16 @@ install:
 uninstall:
 	rm -f $(INSTALL_DIR)/barocq
 
+uninstall-dev:
+	rm -rf $(INSTALL_DEV_DIR)
+
+install-dev:
+	@for d in $(VDIRS); do \
+		set -e; \
+		install -d $(INSTALL_DEV_DIR)/$$d; \
+		install -m 0644 $(BUILD_DIR)/$$d/*.v $(BUILD_DIR)/$$d/*.vo $(BUILD_DIR)/$$d/*.glob $(INSTALL_DEV_DIR)/$$d/; \
+	done
+
 # Formatting
 
 MLSOURCE=$(foreach dir,$(MLDIRS),$(wildcard $(dir)/*.ml $(dir)/*.mli))
@@ -137,6 +149,6 @@ FORCE:
 .PHONY:\
 	builddir extrdep vbuild depend depend1\
     vofiles clean extraction format install FORCE\
-	theories
+	theories install-dev uninstall uninstall-dev
 
 -include .depend
