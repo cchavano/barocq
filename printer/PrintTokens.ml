@@ -80,5 +80,10 @@ let print (lexbuf : Lexing.lexbuf) : unit =
     | _ as tok -> tok :: collect lexbuf
   in
   let token_list = collect lexbuf in
-  PrintCommon.print_list stdout "" "" "\n" token_to_string token_list;
+  PrintCommon.print_list
+    stdout
+    ~delim:("", "")
+    ~sep:"\n"
+    token_to_string
+    token_list;
   printf "\n"

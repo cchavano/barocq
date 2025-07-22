@@ -1454,9 +1454,8 @@ module DotExport = struct
     let lev = List.of_seq (IdentMap.to_seq ev) in
     print_list
       out
-      ""
-      ""
-      ""
+      ~delim:("", "")
+      ~sep:""
       (fun x ->
         sprintf
           "%s%s [shape=rect; color=blue; margin=0.1];\n"
@@ -1465,32 +1464,30 @@ module DotExport = struct
       (List.map fst lev);
     print_list
       out
-      ""
-      ""
-      ""
+      ~delim:("", "")
+      ~sep:""
       (fun (k, lp) ->
         let lp' = IdentSet.elements lp in
         sprintf
           "%s%s -> %s;\n"
           indent
           (ident_to_dotstring k)
-          (list_to_string "{" "}" " " absloc_to_string lp'))
+          (list_to_string ~delim:("{", "}") ~sep:" " absloc_to_string lp'))
       lev
 
   let print_mem (out : out_channel) (m : absmem) : unit =
     let lm = List.of_seq (IdentPairMap.to_seq m) in
     print_list
       out
-      ""
-      ""
-      ""
+      ~delim:("", "")
+      ~sep:""
       (fun ((l, f), lp) ->
         let lp' = IdentSet.elements lp in
         sprintf
           "%s%s -> %s [label=\"%s\"];\n"
           indent
           (absloc_to_string l)
-          (list_to_string "{" "}" " " absloc_to_string lp')
+          (list_to_string ~delim:("{", "}") ~sep:" " absloc_to_string lp')
           (ident_to_string f))
       lm
 
@@ -1505,9 +1502,8 @@ module DotExport = struct
     in
     print_list
       out
-      ""
-      ""
-      ""
+      ~delim:("", "")
+      ~sep:""
       (fun x ->
         sprintf
           "%s%s [shape=rect; color=blue; margin=0.1];\n"
@@ -1516,16 +1512,15 @@ module DotExport = struct
       vars;
     print_list
       out
-      ""
-      ""
-      ""
+      ~delim:("", "")
+      ~sep:""
       (fun (l, vl) ->
         let vl' = IdentSet.elements vl in
         sprintf
           "%s%s -> %s;\n"
           indent
           (absloc_to_string l)
-          (list_to_string "{" "}" " " ident_to_dotstring vl'))
+          (list_to_string ~delim:("{", "}") ~sep:" " ident_to_dotstring vl'))
       lrev
 
   let print_rev_mem (out : out_channel) (rm : rev_absmem) : unit =
@@ -1533,15 +1528,18 @@ module DotExport = struct
     let print_one ((l, vl) : absloc * (ident * var_set) list) : unit =
       print_list
         out
-        ""
-        ""
-        ""
+        ~delim:("", "")
+        ~sep:""
         (fun (f, vs) ->
           sprintf
             "%s%s -> %s [label=\"%s\"];\n"
             indent
             (absloc_to_string l)
-            (list_to_string "{" "}" " " absloc_to_string (IdentSet.elements vs))
+            (list_to_string
+               ~delim:("{", "}")
+               ~sep:" "
+               absloc_to_string
+               (IdentSet.elements vs))
             (ident_to_string f))
         vl
     in
@@ -1555,7 +1553,11 @@ module DotExport = struct
         out
         "%s\"res\" -> %s\n"
         indent
-        (list_to_string "{" "}" " " absloc_to_string (IdentSet.elements locs))
+        (list_to_string
+           ~delim:("{", "}")
+           ~sep:" "
+           absloc_to_string
+           (IdentSet.elements locs))
     end
 
   let print_state (out : out_channel) (d : absdom) : unit =

@@ -25,39 +25,39 @@ let i64_to_string (i : Integers.Int64.int) : string =
 let u64_to_string (i : Integers.Int64.int) : string =
   sprintf "%Lu" (camlint64_of_coqint i)
 
-let list_to_string (b : string) (e : string) (s : string) (f : 'a -> string)
+let list_to_string ~(delim : string * string) ~(sep : string) (f : 'a -> string)
     (l : 'a list) : string =
   let rec aux (l : 'a list) =
     match l with
-    | [] -> sprintf "%s" e
-    | x :: [] -> sprintf "%s%s" (f x) e
-    | x :: r -> sprintf "%s%s%s" (f x) s (aux r)
+    | [] -> sprintf "%s" (snd delim)
+    | x :: [] -> sprintf "%s%s" (f x) (snd delim)
+    | x :: r -> sprintf "%s%s%s" (f x) sep (aux r)
   in
-  sprintf "%s%s" b (aux l)
+  sprintf "%s%s" (fst delim) (aux l)
 
 let list_to_string_bracket (f : 'a -> string) (l : 'a list) : string =
-  list_to_string "[" "]" "; " f l
+  list_to_string ~delim:("[", "]") ~sep:"; " f l
 
 let list_to_string_bracketbar (f : 'a -> string) (l : 'a list) : string =
-  list_to_string "[|" "|]" "; " f l
+  list_to_string ~delim:("[|", "|]") ~sep:"; " f l
 
 let list_to_string_braces (f : 'a -> string) (args : 'a list) : string =
-  list_to_string "{" "}" "; " f args
+  list_to_string ~delim:("{", "}") ~sep:"; " f args
 
 let list_to_string_paren (f : 'a -> string) (args : 'a list) : string =
-  list_to_string "(" ")" ", " f args
+  list_to_string ~delim:("(", ")") ~sep:", " f args
 
-let print_list (out : out_channel) (b : string) (e : string) (s : string)
+let print_list (out : out_channel) ~(delim : string * string) ~(sep : string)
     (f : 'a -> string) (l : 'a list) : unit =
   let rec aux (l : 'a list) =
     match l with
-    | [] -> fprintf out "%s" e
-    | x :: [] -> fprintf out "%s%s" (f x) e
+    | [] -> fprintf out "%s" (snd delim)
+    | x :: [] -> fprintf out "%s%s" (f x) (snd delim)
     | x :: r ->
-        fprintf out "%s%s" (f x) s;
+        fprintf out "%s%s" (f x) sep;
         aux r
   in
-  fprintf out "%s" b;
+  fprintf out "%s" (fst delim);
   aux l
 
 let opt_parens (is_simpl : 'a -> bool) (to_string : 'a -> string) (x : 'a) :

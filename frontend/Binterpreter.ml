@@ -29,9 +29,8 @@ and struct_to_string (fields : (ident * typ) list) (st : 'a) : string =
   in
   let l = aux fields st in
   list_to_string
-    "{"
-    "}"
-    "; "
+    ~delim:("{", "}")
+    ~sep:"; "
     (fun (x, t, o) -> sprintf "%s = %s" (ident_to_string x) (val_to_string t o))
     l
 

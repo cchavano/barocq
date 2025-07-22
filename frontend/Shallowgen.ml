@@ -192,18 +192,18 @@ let rec atom_to_rocq (a : atom) : string =
   | ALambda (params, a1, _) ->
       sprintf
         "fun %s => %s"
-        (list_to_string "" "" " " ident_to_string params)
+        (list_to_string ~delim:("", "") ~sep:" " ident_to_string params)
         (opt_parens a1)
   | ALambdaRet (params, a1, _) ->
       sprintf
         "fun %s => ret %s"
-        (list_to_string "" "" " " ident_to_string params)
+        (list_to_string ~delim:("", "") ~sep:" " ident_to_string params)
         (opt_parens a1)
   | AApp (f, args, _) ->
       sprintf
         "%s %s"
         (ident_to_string f)
-        (list_to_string "" "" " " ident_to_string args)
+        (list_to_string ~delim:("", "") ~sep:" " ident_to_string args)
 
 and opt_parens (a : atom) : string =
   PrintCommon.opt_parens is_simpl_atom atom_to_rocq a
@@ -229,7 +229,7 @@ let rec expr_to_rocq_rec (prefix : string) (e : expr) : string =
         let sargs =
           match args with
           | [] -> "tt"
-          | _ -> list_to_string "" "" " " opt_parens args
+          | _ -> list_to_string ~delim:("", "") ~sep:" " opt_parens args
         in
         sprintf "%s %s" (opt_parens a1) sargs
     | EIfThenElse (a1, e2, e3, _) -> begin
@@ -325,7 +325,7 @@ let param_to_rocq (param : ident * mtyp) : string =
 let param_list_to_rocq (params : (ident * mtyp) list) : string =
   match params with
   | [] -> "(_: unit)"
-  | _ -> list_to_string "" "" " " param_to_rocq params
+  | _ -> list_to_string ~delim:("", "") ~sep:" " param_to_rocq params
 
 let function_to_rocq (f : coq_function) : string =
   sprintf
@@ -360,7 +360,7 @@ and field_lit_to_rocq (rid : string) (fl : ident * literal) : string =
     (opt_parens (snd fl))
 
 and record_lit_to_rocq (rid : string) (rc : (ident * literal) list) : string =
-  list_to_string "{| " " |}" "; " (field_lit_to_rocq rid) rc
+  list_to_string ~delim:("{| ", " |}") ~sep:"; " (field_lit_to_rocq rid) rc
 
 and opt_parens (l : literal) : string =
   PrintCommon.opt_parens is_simpl_lit literal_to_rocq l
@@ -379,7 +379,11 @@ let record_def_to_rocq (st : record_def) : string =
     "Record %s := mk_%s {\n%s\n}."
     rid
     rid
-    (list_to_string "" "" ";\n" (field_typ_to_rocq rid) st.rd_fields)
+    (list_to_string
+       ~delim:("", "")
+       ~sep:";\n"
+       (field_typ_to_rocq rid)
+       st.rd_fields)
 
 let type_def_to_rocq (td : type_def) : string =
   match td with
@@ -416,7 +420,7 @@ let gen_record_eta_update (sd : record_def) : string =
     rid
     (String.make 2 ' ')
     rid
-    (PrintCommon.list_to_string "" "" "; " (fun x -> x) fnames)
+    (PrintCommon.list_to_string ~delim:("", "") ~sep:"; " (fun x -> x) fnames)
 
 let imports : string =
   "From Coq Require Import Bool List BinIntDef.\n\
@@ -432,14 +436,14 @@ let print_program (out : out_channel) (prog : program) : unit =
   fprintf out "%s" imports;
   if types <> [] then begin
     fprintf out "\n";
-    print_list out "" "\n" "\n\n" type_def_to_rocq types
+    print_list out ~delim:("", "\n") ~sep:"\n\n" type_def_to_rocq types
   end;
   let records = get_record_defs types in
   if records <> [] then begin
     fprintf out "\n";
-    print_list out "" "\n" "\n\n" gen_record_eta_update records
+    print_list out ~delim:("", "\n") ~sep:"\n\n" gen_record_eta_update records
   end;
   if defs <> [] then begin
     fprintf out "\n";
-    print_list out "" "\n" "\n\n" globdef_to_rocq defs
+    print_list out ~delim:("", "\n") ~sep:"\n\n" globdef_to_rocq defs
   end

@@ -134,7 +134,11 @@ let msg_from_failure (cause : error_cause) : string =
   | Missing_record_fields mfields ->
       sprintf
         "the following record fields are missing: %s"
-        (PrintCommon.list_to_string "" "" ", " (fun x -> x) mfields)
+        (PrintCommon.list_to_string
+           ~delim:("", "")
+           ~sep:", "
+           (fun x -> x)
+           mfields)
   | Too_many_param_write id ->
       sprintf
         "abstract function %s must only contain one @write-annotated parameter"

@@ -12,9 +12,8 @@ let deepfile : string ref = ref ""
 module Deeptypes = struct
   let prim_types : string =
     list_to_string
-      ""
-      "\n"
-      "\n\n"
+      ~delim:("", "\n")
+      ~sep:"\n\n"
       (fun t -> sprintf "%s%s" indent t)
       [
         "Definition bool_t := TBool.";
@@ -87,18 +86,16 @@ module Deeptypes = struct
   let print_typedefs (out : out_channel) (types : type_def list) : unit =
     print_list
       out
-      ""
-      "\n"
-      "\n\n"
+      ~delim:("", "\n")
+      ~sep:"\n\n"
       (fun td -> sprintf "%s%s" indent (typedef_to_string td))
       types
 
   let print_deftypes (out : out_channel) (defs : globdef list) : unit =
     print_list
       out
-      ""
-      "\n"
-      "\n\n"
+      ~delim:("", "\n")
+      ~sep:"\n\n"
       (fun def -> sprintf "%s%s" indent (deftype_to_string def))
       defs
 
@@ -134,9 +131,8 @@ let gen_abs_types_impl_env (types : type_def list) : string =
   in
   let env_list prefix l =
     list_to_string
-      ""
-      ""
-      ";\n"
+      ~delim:("", "")
+      ~sep:";\n"
       (fun (d, s) -> sprintf "%s(%s, %s.%s : Type)" prefix d !shallowfile s)
       l
   in
@@ -278,7 +274,7 @@ module RecordConv = struct
       vars
       indent
       (ident_to_string rd.rd_name)
-      (list_to_string "" "" " " (fun x -> x) fnames)
+      (list_to_string ~delim:("", "") ~sep:" " (fun x -> x) fnames)
 
   let gen_conv_record_BtoR (rd : record_def) : string =
     let rid = ident_to_string rd.rd_name in
@@ -307,8 +303,13 @@ module RecordConv = struct
          : res (array B) :=\n\
          %sErrors.mmap f a.\n\n"
         indent;
-      print_list out "" "\n\n" "\n\n" gen_conv_record_RtoB records;
-      print_list out "" "\n" "\n\n" gen_conv_record_BtoR records
+      print_list
+        out
+        ~delim:("", "\n\n")
+        ~sep:"\n\n"
+        gen_conv_record_RtoB
+        records;
+      print_list out ~delim:("", "\n") ~sep:"\n\n" gen_conv_record_BtoR records
     end
 
   (* Correctness theorems from Rocq to Barocq *)
@@ -319,9 +320,8 @@ module RecordConv = struct
     let conv_call = sprintf "conv_%s_RtoB s = s'" rid in
     let fields_conv =
       list_to_string
-        ""
-        ""
-        " /\\\n"
+        ~delim:("", "")
+        ~sep:" /\\\n"
         (fun (fname, fty) ->
           let rval =
             conv_value_RtoB
@@ -417,8 +417,18 @@ module RecordConv = struct
 
   let print_correctness_lemmas (out : out_channel) (records : record_def list) :
       unit =
-    print_list out "" "\n\n" "\n\n" gen_RtoB_conv_correctness_thm records;
-    print_list out "" "\n" "\n\n" gen_BtoR_conv_correctness_thm records
+    print_list
+      out
+      ~delim:("", "\n\n")
+      ~sep:"\n\n"
+      gen_RtoB_conv_correctness_thm
+      records;
+    print_list
+      out
+      ~delim:("", "\n")
+      ~sep:"\n\n"
+      gen_BtoR_conv_correctness_thm
+      records
 end
 
 module FFI = struct
@@ -501,9 +511,8 @@ module FFI = struct
     fprintf out "Module FFI.\n\n";
     print_list
       out
-      ""
-      ""
-      ""
+      ~delim:("", "")
+      ~sep:""
       (fun (d : BarocqShallow.Monadic.globdef) ->
         match d with
         | DeclFun (fid, tparams, tret) ->
@@ -537,9 +546,8 @@ let gen_abs_defs_impl_env (defs : globdef list) : string =
   in
   let genv_list prefix l =
     list_to_string
-      ""
-      ""
-      ";\n"
+      ~delim:("", "")
+      ~sep:";\n"
       (fun (d, s) ->
         sprintf "%s(%s, VAL Deeptypes.typof_%s FFI.%s)" prefix d s s)
       l
@@ -589,9 +597,8 @@ let gen_deep_call_args (args : (ident * mtyp) list) : string =
   | [] -> "tt"
   | _ ->
       list_to_string
-        ""
-        ""
-        " "
+        ~delim:("", "")
+        ~sep:" "
         (fun (aid, aty) ->
           let aid = ident_to_string aid in
           let conv_aid = RecordConv.conv_value_RtoB aty aid in
@@ -622,7 +629,12 @@ let gen_function_corres (fid : ident) (params : (ident * mtyp) list)
     let args =
       match params with
       | [] -> "tt"
-      | _ -> list_to_string "" "" " " ident_to_string (List.map fst params)
+      | _ ->
+          list_to_string
+            ~delim:("", "")
+            ~sep:" "
+            ident_to_string
+            (List.map fst params)
     in
     let call = sprintf "%s.%s %s" !shallowfile shallow_fun_id args in
     gen_shallow_call_ret call tret
@@ -652,9 +664,8 @@ let gen_function_corres (fid : ident) (params : (ident * mtyp) list)
 let print_defs_corres (out : out_channel) (defs : globdef list) : unit =
   print_list
     out
-    ""
-    "\n"
-    "\n\n"
+    ~delim:("", "\n")
+    ~sep:"\n\n"
     (fun (d : BarocqShallow.Monadic.globdef) ->
       match d with
       | DefConst (cid, _, ty) | DeclConst (cid, ty) -> gen_const_corres cid ty

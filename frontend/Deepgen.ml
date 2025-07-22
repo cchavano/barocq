@@ -185,9 +185,8 @@ let fields_to_deep (fields : (ident * btyp) list) : string =
   sprintf
     "[\n%s\n]"
     (list_to_string
-       ""
-       ""
-       ";\n"
+       ~delim:("", "")
+       ~sep:";\n"
        (fun (id, ty) ->
          sprintf "%s(%s, %s)" indent (ident_to_deep id) (btyp_to_deep ty))
        fields)
@@ -238,7 +237,7 @@ let print_globdefs (out : out_channel) (defs : globdef list) : unit =
         | _ -> false)
       defs
   in
-  print_list out "" "\n" "\n\n" globdef_to_coqdef defs
+  print_list out ~delim:("", "\n") ~sep:"\n\n" globdef_to_coqdef defs
 
 let param_attr_to_deep (attr : param_attr) : string =
   match attr with
@@ -303,9 +302,8 @@ let print_program (out : out_channel) (prog : program) : unit =
     fprintf out "\n";
     print_list
       out
-      "Definition prog : Barocq.program := [\n"
-      "\n].\n"
-      ";\n"
+      ~delim:("Definition prog : Barocq.program := [\n", "\n].\n")
+      ~sep:";\n"
       (fun d -> sprintf "%s%s" indent (globdef_to_deep d))
       prog
   end

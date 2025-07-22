@@ -5,9 +5,8 @@ open PrintCommon
 let recordtyp_to_string (f : 'typ -> string) (fields : (ident * 'typ) list) :
     string =
   list_to_string
-    "{"
-    ";}"
-    "; "
+    ~delim:("{", ";}")
+    ~sep:"; "
     (fun (x, t) -> sprintf "%s : %s" (ident_to_string x) (f t))
     fields
 

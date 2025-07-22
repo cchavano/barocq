@@ -26,9 +26,8 @@ let msg_from_failure (cause : error_cause) : string =
   | Invalid_deep_access (a, acs) ->
       let acs_str =
         PrintCommon.list_to_string
-          ""
-          ""
-          ""
+          ~delim:("", "")
+          ~sep:""
           (fun ac ->
             PrintSyntax.Typed.untype_access ac |> PrintSyntax.access_to_string)
           acs
