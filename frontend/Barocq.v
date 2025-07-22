@@ -124,6 +124,10 @@ Module Typing.
 
   Import BarocqTyped.
 
+  Section ARCHI.
+
+    Variable arch : Target.archi.
+
   Definition typof_expr (e: expr) : btyp :=
     match e with
     | ETrue ty
@@ -156,7 +160,7 @@ Module Typing.
             ret (r, (AcRecordField f ty') :: lr)
         | Barocq.AcArrayIndex ei =>
             let* ei' := typecheck_expr re gx lx ei in
-            let* ty' := typecheck_array_get ty (typof_expr ei') in
+            let* ty' := typecheck_array_get arch ty (typof_expr ei') in
             let* (r, lr) := typecheck_deep_access typecheck_expr re gx lx ty' acs' in
             ret (r, (AcArrayIndex ei' ty') :: lr)
         end
@@ -187,13 +191,13 @@ Module Typing.
     | Barocq.EArrayGet e1 e2 =>
         let* e1' := typecheck_expr re gx lx e1 in
         let* e2' := typecheck_expr re gx lx e2 in
-        let* t := typecheck_array_get (typof_expr e1') (typof_expr e2') in
+        let* t := typecheck_array_get arch (typof_expr e1') (typof_expr e2') in
         ret (EArrayGet e1' e2' t)
     | Barocq.EArraySet e1 e2 e3 =>
         let* e1' := typecheck_expr re gx lx e1 in
         let* e2' := typecheck_expr re gx lx e2 in
         let* e3' := typecheck_expr re gx lx e3 in
-        let* t := typecheck_array_set (typof_expr e1') (typof_expr e2') (typof_expr e3') in
+        let* t := typecheck_array_set arch (typof_expr e1') (typof_expr e2') (typof_expr e3') in
         ret (EArraySet e1' e2' e3' t)
     | Barocq.ERecordProj e1 x =>
         let* e1' := typecheck_expr re gx lx e1 in
@@ -233,7 +237,7 @@ Module Typing.
         ret (ELetIn x e1' e2' (typof_expr e2'))
     end.
 
-  Definition typecheck_function (re: renv) (gx: gcontext) (f: Barocq.function) : res BarocqTyped.function :=
+  Definition typecheck_function (arch: Target.archi) (re: renv) (gx: gcontext) (f: Barocq.function) : res BarocqTyped.function :=
     let* lx :=
       fold_left_err
         (fun acc '(x, tx) => lcontext_update acc x tx)
@@ -267,7 +271,7 @@ Module Typing.
           else
             failwith "Barocq.Typing.typecheck_globdef: type mismatch in constant definition"
       | Barocq.DefFun x f =>
-          let* f' := typecheck_function re gx f in
+          let* f' := typecheck_function arch re gx f in
           let tf := mk_fun_btyp (fn_params f') (fn_return f') in
           let* gx' := gcontext_update gx x tf in
           let* rd := typecheck_globdefs re gx' defs' in
@@ -290,6 +294,8 @@ Module Typing.
   Definition typecheck_program (prog: Barocq.program) : res BarocqTyped.program :=
     typecheck_globdefs tempty tempty prog.
 
+  End ARCHI.
+
 End Typing.
 
 (** * Denotational semantics *)
@@ -297,6 +303,8 @@ End Typing.
 Section DENOT.
 
   (** The denotational semantics lifts programs to evaluable Coq terms. *)
+
+  Variable arch : Target.archi.
 
   Variable abs_typ_impl : PMap.t Type.
 
@@ -652,17 +660,17 @@ Section DENOT.
     destruct ta.
     4:
     {
-      destruct Archi.ptr64 eqn:Earch.
-        - destruct (typ_eq_dec t2 (TInt64 Unsigned)).
-          + subst. simpl in i. simpl in a. destruct (Barray.get a i).
-            * apply (ret (Val ta e)).
-            * apply fail. 
-          + apply fail.
+      destruct arch eqn:Earch.
         - destruct (typ_eq_dec t2 (TInt32 Unsigned)).
           + subst. simpl in i. simpl in a.
             destruct (Barray.get a (U64.of_u32 i)).
               * apply (ret (Val ta e)).
               * apply fail.
+          + apply fail.
+        - destruct (typ_eq_dec t2 (TInt64 Unsigned)).
+          + subst. simpl in i. simpl in a. destruct (Barray.get a i).
+            * apply (ret (Val ta e)).
+            * apply fail. 
           + apply fail.
     }
     all: apply fail.
@@ -673,17 +681,17 @@ Section DENOT.
     destruct ta.
     4 :
     {
-      destruct Archi.ptr64 eqn:Earch.
-      - destruct (typ_eq_dec t2 (TInt64 Unsigned)).
+      destruct arch eqn:Earch.
+      - destruct (typ_eq_dec t2 (TInt32 Unsigned)).
         + destruct (typ_eq_dec ta t).
-          * subst. simpl in i. simpl in a. destruct (Barray.set a i v).
+          * subst. simpl in i. simpl in a. destruct (Barray.set a (U64.of_u32 i) v).
             -- apply (ret (Val (TArray t) a0)).
             -- apply fail.
           * apply fail.
         + apply fail.
-      - destruct (typ_eq_dec t2 (TInt32 Unsigned)).
+      - destruct (typ_eq_dec t2 (TInt64 Unsigned)).
         + destruct (typ_eq_dec ta t).
-          * subst. simpl in i. simpl in a. destruct (Barray.set a (U64.of_u32 i) v).
+          * subst. simpl in i. simpl in a. destruct (Barray.set a i v).
             -- apply (ret (Val (TArray t) a0)).
             -- apply fail.
           * apply fail.
@@ -971,109 +979,7 @@ Section DENOT.
     | Error _ => unit
     end.
 
-  Definition eval_def_aux (impl: genv) (prog: program) (x: ident) : res value :=
+  Definition eval_def (impl: genv) (prog: program) (x: ident) : res value :=
     eval_def_rec tempty impl prog x.
-
-  Definition eval_def (impl: genv) (prog: program) (x: ident) : eval_value_err_typ (eval_def_aux impl prog x).
-    destruct (eval_def_aux impl prog x) as [[tv v]|].
-    - simpl. apply v.
-    - simpl. apply tt.
-  Defined.
-
-  (* Definition eval_def2 (ge: genv) (x: ident) : eval_value_err_typ (genv_get ge x).
-    destruct (genv_get ge x) as [[tv v]|].
-    - simpl. apply v.
-    - simpl. apply tt.
-  Defined.
-
-  Fixpoint eval_prog_rec (te: tenv) (ge: genv) (prog: program) : res genv :=
-    match prog with
-    | nil => ret ge
-    | d :: prog' =>
-        match d with
-        | DefType a fields =>
-            let* fields' := fields_btyp_to_typ te fields in
-            let* te' := tenv_update te a fields' in
-            eval_prog_rec te' ge prog'
-        | DefConst y l ty =>
-            let* vv := eval_literal te l in
-            let '(Val tv v) := vv in
-            let* ty' := btyp_to_typ te ty in
-            if typ_eq_dec tv ty' then
-              let* ge' := genv_update ge y vv in
-              eval_prog_rec te ge' prog'
-              else fail
-        | DefFun y f =>
-            let* fv := build_fun_value te ge (fn_params f) (fn_return f) (fn_body f) in
-            let* ge' := genv_update ge y fv in
-            eval_prog_rec te ge' prog'
-        | DeclType _ _ => eval_prog_rec te ge prog'
-        | DeclConst y _
-        | DeclFun y _ _ =>
-            eval_prog_rec te ge prog'
-        end
-    end.
-
-  Definition eval_prog (impl: genv) (prog: program) : genv :=
-    match eval_prog_rec tempty impl prog with
-    | OK ge => ge
-    | Error _ => tempty
-    end. *)
-
-  Fixpoint typof_def_rec (te: tenv) (prog: Barocq.program) (x: ident) : res typ :=
-    match prog with
-    | nil => fail
-    | d :: prog' =>
-        match d with
-        | DefType a fields =>
-            let* fields' := fields_btyp_to_typ te fields in
-            let* te' := tenv_update te a fields' in
-            typof_def_rec te' prog' x
-        | DefConst y _ ty
-        | DeclConst y ty =>
-            let* ty' := btyp_to_typ te ty in
-            if Ident.eq_dec y x then ret ty'
-            else typof_def_rec te prog' x
-        | DefFun y f =>
-            let ty := mk_fun_btyp (fn_params f) (fn_return f) in
-            let* ty' := btyp_to_typ te ty in
-            if Ident.eq_dec y x then ret ty'
-            else typof_def_rec te prog' x
-        | DeclType _ _ => typof_def_rec te prog' x
-        | DeclFun y tparams tret =>
-            let ty := mk_fun_btyp tparams tret in
-            let* ty' := btyp_to_typ te ty in
-            if Ident.eq_dec y x then ret ty'
-            else typof_def_rec te prog' x
-        end
-    end.
-
-  Definition typof_def (prog: Barocq.program) (x: ident) : res typ :=
-    typof_def_rec tempty prog x.
-
-  Definition typof_def_noerr (prog: Barocq.program) (x: ident) : typ :=
-    match typof_def prog x with
-    | OK ty => ty
-    | Error _ => TBool
-    end.
-
-  Fixpoint eval_record_btyp_rec (te: tenv) (prog: Barocq.program) (t: ident) : res typ :=
-    match prog with
-    | nil => fail
-    | DefType a fields :: prog' =>
-        let* fields' := fields_btyp_to_typ te fields in
-        if Ident.eq_dec a t then ret (TRecord a fields')
-        else
-          let* te' := tenv_update te a fields' in
-          eval_record_btyp_rec te' prog' t
-    | _ :: prog' =>
-        eval_record_btyp_rec te prog' t
-    end.
-
-  Definition eval_record_btyp (prog: program) (t: ident) : Type :=
-    match eval_record_btyp_rec tempty prog t with
-    | OK t' => eval_typ t'
-    | Error _ => unit
-    end.
 
 End DENOT.

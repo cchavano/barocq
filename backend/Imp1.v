@@ -118,6 +118,10 @@ Module Typing.
   Import Imp1Typed.
   Import ListNotations.
 
+  Section ARCHI.
+
+  Variable arch : Target.archi.
+
   Definition typof_var (gx: gcontext) (lx: lcontext) (x: ident) : res btyp :=
     match lcontext_get lx x with
     | OK ty => eret ty
@@ -170,7 +174,7 @@ Module Typing.
             ret (r, (AcRecordField f ty') :: lr)
         | Syntax.AcArrayIndex ai =>
             let* ai' := typecheck_atom gx lx ai in
-            let* ty' := typecheck_array_get ty (typof_atom ai') in
+            let* ty' := typecheck_array_get arch ty (typof_atom ai') in
             let* (r, lr) := typecheck_access re gx lx ty' acs' in
             ret (r, (AcArrayIndex ai' ty') :: lr)
         end
@@ -186,7 +190,7 @@ Module Typing.
         let* a2' := typecheck_atom gx lx a2 in
         let ty1 := typof_atom a1' in
         let ty2 := typof_atom a2' in
-        let* ty := typecheck_array_get ty1 ty2 in
+        let* ty := typecheck_array_get arch ty1 ty2 in
         ret (CpArrayGet a1' a2' ty)
     | Syntax.CpArraySet a1 a2 a3 =>
         let* a1' := typecheck_atom gx lx a1 in
@@ -195,7 +199,7 @@ Module Typing.
         let ty1 := typof_atom a1' in
         let ty2 := typof_atom a2' in
         let ty3 := typof_atom a3' in
-        let* ty := typecheck_array_set ty1 ty2 ty3 in
+        let* ty := typecheck_array_set arch ty1 ty2 ty3 in
         ret (CpArraySet a1' a2' a3' ty)
     | Syntax.CpRecordProj a x =>
         let* a' := typecheck_atom gx lx a in
@@ -322,6 +326,8 @@ Module Typing.
       prog_defs := defs;
       prog_types := prog_types prog;
     |}.
+
+  End ARCHI.
 
 End Typing.
 

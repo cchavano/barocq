@@ -1,6 +1,6 @@
 From Coq Require Import List.
 From compcert Require Import Integers Maps.
-From BarocqComp Require Import Error Barray Brecord Ident MapList.
+From BarocqComp Require Import Target Error Barray Brecord Ident MapList.
 
 Definition ident := Ident.t.
 
@@ -88,11 +88,17 @@ Definition btypof_field (k: ident) (fields: list (ident * btyp)) : res btyp :=
 
 (* Type for array indexes *)
 
-Definition arr_index_btyp : btyp :=
-  if Archi.ptr64 then BInt64 Unsigned else BInt32 Unsigned.
+Definition arr_index_btyp (arch: Target.archi): btyp :=
+  match arch with
+  | Ptr32 => BInt32 Unsigned
+  | Ptr64 => BInt64 Unsigned
+  end.
 
-Definition arr_index_typ : typ :=
-  if Archi.ptr64 then TInt64 Unsigned else TInt32 Unsigned.
+Definition arr_index_typ (arch: Target.archi) : typ :=
+  match arch with
+  | Ptr32 => TInt32 Unsigned
+  | Ptr64 => TInt64 Unsigned
+  end.
 
 (** * Conversion of a typ to a Coq Type *)
 

@@ -1,3 +1,3 @@
 exception Error of string
 
-val interpret : Barocq.iprogram -> unit
+val interpret : Target.archi -> Barocq.iprogram -> unit

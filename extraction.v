@@ -63,7 +63,6 @@ Separate Extraction
   Barocq.interpret
   Barocq.iprog_to_prog
   Barocq.eval_def
-  Barocq.eval_record_btyp
   Compiler.aliascheck_program
   Compiler.compile_to_imp1
   Compiler.compile

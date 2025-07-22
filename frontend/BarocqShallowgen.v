@@ -1,6 +1,6 @@
 From Coq Require Import List String.
 From compcert Require Import Maps.
-From BarocqComp Require Import Monads Error MapList Types Utils Syntax Barray Barocq BarocqTransf BarocqShallow.
+From BarocqComp Require Import Target Monads Error MapList Types Utils Syntax Barray Barocq BarocqTransf BarocqShallow.
 Import ListNotations.
 Import MonCounterErr.
 
@@ -200,8 +200,15 @@ Module Monadification.
 
   Import Monadic.
 
+  Section ARCHI.
+
+  Variable arch : Target.archi.
+
   Definition arr_index_mtyp : mtyp :=
-    if Archi.ptr64 then MInt64 Unsigned else MInt32 Unsigned.
+    match arch with
+    | Ptr32 => MInt32 Unsigned
+    | Ptr64 => MInt64 Unsigned
+    end.
 
   Definition typof_literal (l: literal) : mtyp :=
     match l with
@@ -813,11 +820,13 @@ Module Monadification.
       prog_defs := defs;
     |}.
 
+  End ARCHI.
+
 End Monadification.
 
 Open Scope error_monad_scope.
 
-Definition monadify_norm_program (prog: Barocq.program) : res Monadic.program :=
+Definition monadify_norm_program (arch: Target.archi) (prog: Barocq.program) : res Monadic.program :=
   let/catch bnf := Normalization.norm_program prog /> "unable to normalize the program" in
-  let/catch mon := Monadification.monadify_program bnf /> "unable to monadify the program" in
+  let/catch mon := Monadification.monadify_program arch bnf /> "unable to monadify the program" in
   eret mon.

@@ -102,6 +102,7 @@ module Deeptypes = struct
   let print (out : out_channel) (prog : program) : unit =
     let types = prog.prog_types in
     let defs = prog.prog_defs in
+    fprintf out "\n";
     fprintf out "Module Deeptypes.\n\n";
     fprintf out "%s" prim_types;
     fprintf out "\n";
@@ -683,7 +684,8 @@ let imports () : string =
   sprintf
     "From Coq Require Import BinPosDef String List.\n\
      From compcert Require Import Integers Maps Clightdefs.\n\
-     From BarocqComp Require Import Monads Error Barray Brecord Types Barocq.\n\
+     From BarocqComp Require Import Target Monads Error Barray Brecord Types \
+     Barocq.\n\
      From %s Require Import %s %s.\n\n\
      Import ClightNotations.\n\
      Import ListNotations.\n\n\
@@ -693,7 +695,13 @@ let imports () : string =
     !shallowfile
     !deepfile
 
-let print_program (out : out_channel) (prog : program) : unit =
+let print_program (arch : Target.archi) (out : out_channel) (prog : program) :
+    unit =
+  let arch_str =
+    match arch with
+    | Target.Ptr32 -> "Ptr32"
+    | Target.Ptr64 -> "Ptr64"
+  in
   let types = prog.prog_types in
   let records = get_record_defs types in
   let defs = prog.prog_defs in
@@ -733,8 +741,9 @@ let print_program (out : out_channel) (prog : program) : unit =
   fprintf out "(** * Program correspondence theorems *)\n\n";
   fprintf
     out
-    "Definition eval_def := Barocq.eval_def_aux abs_types_impl abs_defs_impl \
+    "Definition eval_def := Barocq.eval_def %s abs_types_impl abs_defs_impl \
      %s.prog.\n"
+    arch_str
     !deepfile;
   if defs <> [] then begin
     fprintf out "\n";

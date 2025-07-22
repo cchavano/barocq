@@ -187,18 +187,18 @@ Definition typecheck_binary_op (op: binary_op) (ty1 ty2: btyp) : res btyp :=
       end
   end.
 
-Definition typecheck_array_get (ty1 ty2: btyp) : res btyp :=    
+Definition typecheck_array_get (arch: Target.archi) (ty1 ty2: btyp) : res btyp :=    
   match ty1 with
   | BArray ta =>
-      if btyp_eq_dec ty2 arr_index_btyp then ret ta
+      if btyp_eq_dec ty2 (arr_index_btyp arch) then ret ta
       else failwith "Typing.typecheck_array_get: array index type mismatch"
   | _ => failwith "Typing.typecheck_array_get: array typed expected"
   end.
 
-Definition typecheck_array_set (ty1 ty2 ty3: btyp) : res btyp :=
+Definition typecheck_array_set (arch: Target.archi) (ty1 ty2 ty3: btyp) : res btyp :=
   match ty1 with
   | BArray ta =>
-      if btyp_eq_dec ty2 arr_index_btyp then
+      if btyp_eq_dec ty2 (arr_index_btyp arch) then
         if btyp_eq_dec ta ty3 then ret ty1
         else failwith "Typing.typecheck_array_set: type mismatch"
       else failwith "Typing.typecheck_array_set: array index type mismatch"
@@ -231,18 +231,18 @@ Definition typecheck_record_update (re: renv) (ty1 ty2: btyp) (x: ident) : res b
     | AbtypAcRecordField : ident -> access_btyp
     | AbtypAcArrayIndex : btyp -> access_btyp.
 
-  Fixpoint typecheck_access (re: renv) (gx: gcontext) (lx: lcontext) (ty: btyp) (acs: list access_btyp) : res (btyp * list btyp) := 
+  Fixpoint typecheck_access (arch: Target.archi) (re: renv) (gx: gcontext) (lx: lcontext) (ty: btyp) (acs: list access_btyp) : res (btyp * list btyp) := 
     match acs with
     | nil => ret (ty, nil)
     | ac :: acs' =>
         match ac with
         | AbtypAcRecordField f =>
             let* ty' := typecheck_record_proj re ty f in
-            let* (r, lr) := typecheck_access re gx lx ty' acs' in
+            let* (r, lr) := typecheck_access arch re gx lx ty' acs' in
             ret (r, ty' :: lr)
         | AbtypAcArrayIndex ta =>
-            let* ty' := typecheck_array_get ty ta in
-            let* (r, lr) := typecheck_access re gx lx ty' acs' in
+            let* ty' := typecheck_array_get arch ty ta in
+            let* (r, lr) := typecheck_access arch re gx lx ty' acs' in
             ret (r, ty' :: lr)
         end
     end.

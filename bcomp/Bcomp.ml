@@ -7,6 +7,8 @@ exception UnexpectedError of string
 
 exception SyntaxError of lexbuf * string
 
+exception UnknownTargetArch
+
 let syntax_error_msg lexbuf msg =
   let startpos = Lexing.lexeme_start_p lexbuf in
   let endpos = Lexing.lexeme_end_p lexbuf in
@@ -50,6 +52,8 @@ let opt_gen_alias_call_state_of = ref ""
 let opt_gen_alias_return_state_of = ref ""
 
 let opt_debug_aliasing = ref false
+
+let target_arch = ref (if Archi.ptr64 then "ptr64" else "ptr32")
 
 let file_types_impl = ref ""
 
@@ -101,6 +105,10 @@ let options =
     ( "-gen-return-state-of",
       Arg.Set_string opt_gen_alias_return_state_of,
       "<fun_name>\tGenerate the aliasing return state of <fun_name>" );
+    ( "-target-arch",
+      Arg.Set_string target_arch,
+      "\t\t\t\tSet the target architecture for which the generated C will be \
+       compiled (ptr32 or ptr64)" );
   ]
 
 let set_source_files (file : string) : unit =
@@ -114,8 +122,10 @@ let get_full_filename (file : string) (suffix : string) : string =
   let dirname = Filename.dirname file in
   Printf.sprintf "%s/%s%s" dirname rawname suffix
 
-(* let set_c_filename (file : string) : unit =
-  if !c_output = "" then c_output := get_full_filename file ".c" else () *)
+let arch_of_string (s : string) : Target.archi =
+  if s = "ptr32" then Target.Ptr32
+  else if s = "ptr64" then Target.Ptr64
+  else raise @@ UnknownTargetArch
 
 let rec record_idents (ids : string list) : unit =
   match ids with
@@ -193,13 +203,18 @@ let () =
       end;
 
       if !opt_interp then begin
-        let _ = Binterpreter.interpret iprog in
+        let _ = Binterpreter.interpret (arch_of_string !target_arch) iprog in
         exit 0
       end;
 
       if !opt_aliascheck then begin
         begin
-          match Compiler.aliascheck_program !opt_debug_aliasing prog with
+          match
+            Compiler.aliascheck_program
+              !opt_debug_aliasing
+              (arch_of_string !target_arch)
+              prog
+          with
           | Errors.OK _ -> printf "Alias checking succeeded\n"
           | Errors.Error msg ->
               raise @@ CompilerError (C2C.string_of_errmsg msg)
@@ -208,7 +223,9 @@ let () =
       end;
 
       if !opt_print_bbnf then begin
-        let bbnf = BarocqBNFgen.norm_program prog in
+        let bbnf =
+          BarocqBNFgen.norm_program (arch_of_string !target_arch) prog
+        in
         begin
           match bbnf with
           | Errors.OK prog -> PrintBarocqBNF.print_program stdout prog
@@ -219,7 +236,9 @@ let () =
       end;
 
       if !opt_print_imp1 then begin
-        let imp1 = Compiler.compile_to_imp1 prog in
+        let imp1 =
+          Compiler.compile_to_imp1 (arch_of_string !target_arch) prog
+        in
         begin
           match imp1 with
           | Errors.OK prog -> PrintImp1.print_program stdout prog
@@ -230,11 +249,15 @@ let () =
       end;
 
       if !opt_gen_alias_call_state_of <> "" then begin
-        let imp1 = Compiler.compile_to_imp1 prog in
+        let imp1 =
+          Compiler.compile_to_imp1 (arch_of_string !target_arch) prog
+        in
         begin
           match imp1 with
           | Errors.OK prog -> begin
-              match Imp1.Typing.typecheck_program prog with
+              match
+                Imp1.Typing.typecheck_program (arch_of_string !target_arch) prog
+              with
               | Errors.OK prog -> begin
                   let fid = !opt_gen_alias_call_state_of in
                   match Aliasing_impl.get_fun_descr prog fid with
@@ -274,11 +297,15 @@ let () =
       end;
 
       if !opt_gen_alias_return_state_of <> "" then begin
-        let imp1 = Compiler.compile_to_imp1 prog in
+        let imp1 =
+          Compiler.compile_to_imp1 (arch_of_string !target_arch) prog
+        in
         begin
           match imp1 with
           | Errors.OK prog -> begin
-              match Imp1.Typing.typecheck_program prog with
+              match
+                Imp1.Typing.typecheck_program (arch_of_string !target_arch) prog
+              with
               | Errors.OK prog -> begin
                   let fid = !opt_gen_alias_return_state_of in
                   match Aliasing_impl.get_fun_descr prog fid with
@@ -333,9 +360,13 @@ let () =
         Corresgen.deepfile := rawname ^ "_Deep";
         let proofs_output = get_full_filename !c_output "_Corres.v" in
         let oc = open_out proofs_output in
-        match BarocqShallowgen.monadify_norm_program prog with
+        match
+          BarocqShallowgen.monadify_norm_program
+            (arch_of_string !target_arch)
+            prog
+        with
         | Errors.OK prog ->
-            Corresgen.print_program oc prog;
+            Corresgen.print_program (arch_of_string !target_arch) oc prog;
             printf "Correspondence theorems generated at %s\n" proofs_output;
             close_out oc
         | Errors.Error msg ->
@@ -350,7 +381,11 @@ let () =
       if !opt_gen_shallow then begin
         let shallow_output = get_full_filename !c_output "_Shallow.v" in
         let oc = open_out shallow_output in
-        match BarocqShallowgen.monadify_norm_program prog with
+        match
+          BarocqShallowgen.monadify_norm_program
+            (arch_of_string !target_arch)
+            prog
+        with
         | Errors.OK prog ->
             Shallowgen.print_program oc prog;
             printf "Shallow-embedding generated at %s\n" shallow_output;
@@ -372,7 +407,9 @@ let () =
         close_out oc
       end;
 
-      match Compiler.compile !opt_debug_aliasing prog with
+      match
+        Compiler.compile !opt_debug_aliasing (arch_of_string !target_arch) prog
+      with
       | Errors.OK prog ->
           Camlcoq.use_canonical_atoms := true;
           let ids = ClightCegen.program_idents prog in
@@ -407,5 +444,7 @@ let () =
         eprintf "Unexpected error: %s\nPlease, make a bug report.\n" msg
     | Aliasing_impl.UnsupportedFeature msg ->
         eprintf "Compilation error: %s\n" msg
+    | UnknownTargetArch ->
+        eprintf "Error: the target architecture must be \"ptr32\" or \"ptr64\""
   end;
   exit 1

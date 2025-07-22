@@ -124,6 +124,6 @@ Definition create_deep_access_globdef (def: BarocqTyped.globdef) : Barocq.globde
 Definition create_deep_access_program (prog: BarocqTyped.program) : Barocq.program :=
   List.map create_deep_access_globdef prog.
 
-Definition transf_program (prog: Barocq.program) : res Barocq.program :=
-  let* prog := Barocq.Typing.typecheck_program prog in
+Definition transf_program (arch: Target.archi) (prog: Barocq.program) : res Barocq.program :=
+  let* prog := Barocq.Typing.typecheck_program arch prog in
   ret (create_deep_access_program prog).

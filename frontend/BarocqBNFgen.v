@@ -238,8 +238,8 @@ Fixpoint norm_program_rec (prog: Barocq.program) : res (list BarocqBNF.globdef *
       end
   end.
 
-Definition norm_program (prog: Barocq.program) : res BarocqBNF.program :=
-  let* prog := BarocqTransf.transf_program prog in
+Definition norm_program (arch: Target.archi) (prog: Barocq.program) : res BarocqBNF.program :=
+  let* prog := BarocqTransf.transf_program arch prog in
   let* (defs, types) := norm_program_rec prog in
   eret {|
     Syntax.prog_defs := defs;
