@@ -57,7 +57,15 @@ let opt_gen_alias_return_state_of = ref ""
 
 let opt_debug_aliasing = ref false
 
-let target_arch = ref (if Archi.ptr64 then "ptr64" else "ptr32")
+let target_arch = ref (if Archi.ptr64 then Target.Ptr64 else Target.Ptr32)
+
+let set_target_arch (s : string) : unit =
+  let arch =
+    if s = "ptr32" then Target.Ptr32
+    else if s = "ptr64" then Target.Ptr64
+    else raise @@ UnknownTargetArch
+  in
+  target_arch := arch
 
 let file_types_impl = ref ""
 
@@ -117,7 +125,7 @@ let options =
       Arg.Set_string opt_gen_alias_return_state_of,
       "<fun_name>\tGenerate the aliasing return state of <fun_name>" );
     ( "-target-arch",
-      Arg.Set_string target_arch,
+      Arg.String set_target_arch,
       "\t\t\t\tSet the target architecture for which the generated C will be \
        compiled (ptr32 or ptr64)" );
   ]
@@ -142,11 +150,6 @@ let clean_filename (file : string) : string =
 let gen_rocq_prefix () : string =
   if !rocq_output_prefix <> "a" then !rocq_output_prefix
   else get_raw_filename !c_output
-
-let arch_of_string (s : string) : Target.archi =
-  if s = "ptr32" then Target.Ptr32
-  else if s = "ptr64" then Target.Ptr64
-  else raise @@ UnknownTargetArch
 
 let rec record_idents (ids : string list) : unit =
   match ids with
@@ -214,6 +217,8 @@ let () =
         exit 0
       end;
 
+      SurfaceTyping.set_arr_index_btyp !target_arch;
+
       let iprog = SurfaceTyping.typecheck_iprogram s_iprog in
 
       let prog = Barocq.iprog_to_prog iprog in
@@ -224,17 +229,14 @@ let () =
       end;
 
       if !opt_interp then begin
-        let _ = Binterpreter.interpret (arch_of_string !target_arch) iprog in
+        let _ = Binterpreter.interpret !target_arch iprog in
         exit 0
       end;
 
       if !opt_aliascheck then begin
         begin
           match
-            Compiler.aliascheck_program
-              !opt_debug_aliasing
-              (arch_of_string !target_arch)
-              prog
+            Compiler.aliascheck_program !opt_debug_aliasing !target_arch prog
           with
           | Errors.OK _ -> printf "Alias checking succeeded\n"
           | Errors.Error msg ->
@@ -244,9 +246,7 @@ let () =
       end;
 
       if !opt_print_bbnf then begin
-        let bbnf =
-          BarocqBNFgen.norm_program (arch_of_string !target_arch) prog
-        in
+        let bbnf = BarocqBNFgen.norm_program !target_arch prog in
         begin
           match bbnf with
           | Errors.OK prog -> PrintBarocqBNF.print_program stdout prog
@@ -257,9 +257,7 @@ let () =
       end;
 
       if !opt_print_imp1 then begin
-        let imp1 =
-          Compiler.compile_to_imp1 (arch_of_string !target_arch) prog
-        in
+        let imp1 = Compiler.compile_to_imp1 !target_arch prog in
         begin
           match imp1 with
           | Errors.OK prog -> PrintImp1.print_program stdout prog
@@ -270,15 +268,11 @@ let () =
       end;
 
       if !opt_gen_alias_call_state_of <> "" then begin
-        let imp1 =
-          Compiler.compile_to_imp1 (arch_of_string !target_arch) prog
-        in
+        let imp1 = Compiler.compile_to_imp1 !target_arch prog in
         begin
           match imp1 with
           | Errors.OK prog -> begin
-              match
-                Imp1.Typing.typecheck_program (arch_of_string !target_arch) prog
-              with
+              match Imp1.Typing.typecheck_program !target_arch prog with
               | Errors.OK prog -> begin
                   let fid = !opt_gen_alias_call_state_of in
                   match Aliasing_impl.get_fun_descr prog fid with
@@ -320,15 +314,11 @@ let () =
       end;
 
       if !opt_gen_alias_return_state_of <> "" then begin
-        let imp1 =
-          Compiler.compile_to_imp1 (arch_of_string !target_arch) prog
-        in
+        let imp1 = Compiler.compile_to_imp1 !target_arch prog in
         begin
           match imp1 with
           | Errors.OK prog -> begin
-              match
-                Imp1.Typing.typecheck_program (arch_of_string !target_arch) prog
-              with
+              match Imp1.Typing.typecheck_program !target_arch prog with
               | Errors.OK prog -> begin
                   let fid = !opt_gen_alias_return_state_of in
                   match Aliasing_impl.get_fun_descr prog fid with
@@ -380,13 +370,9 @@ let () =
         Corresgen.deepfile := rawname ^ "_Deep";
         let corres_output = get_full_filename rawname "_Corres.v" in
         let oc = open_out corres_output in
-        match
-          BarocqShallowgen.monadify_norm_program
-            (arch_of_string !target_arch)
-            prog
-        with
+        match BarocqShallowgen.monadify_norm_program !target_arch prog with
         | Errors.OK prog ->
-            Corresgen.print_program (arch_of_string !target_arch) oc prog;
+            Corresgen.print_program !target_arch oc prog;
             printf
               "Correspondence theorems generated at %s\n"
               (clean_filename corres_output);
@@ -404,11 +390,7 @@ let () =
         let rawname = gen_rocq_prefix () in
         let shallow_output = get_full_filename rawname "_Shallow.v" in
         let oc = open_out shallow_output in
-        match
-          BarocqShallowgen.monadify_norm_program
-            (arch_of_string !target_arch)
-            prog
-        with
+        match BarocqShallowgen.monadify_norm_program !target_arch prog with
         | Errors.OK prog ->
             Shallowgen.print_program oc prog;
             printf
@@ -441,12 +423,7 @@ let () =
       in
 
       if gen_c then
-        match
-          Compiler.compile
-            !opt_debug_aliasing
-            (arch_of_string !target_arch)
-            prog
-        with
+        match Compiler.compile !opt_debug_aliasing !target_arch prog with
         | Errors.OK prog ->
             Camlcoq.use_canonical_atoms := true;
             let ids = ClightCegen.program_idents prog in

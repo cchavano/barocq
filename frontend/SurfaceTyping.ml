@@ -846,8 +846,14 @@ let rec transl_btyp (ty : btyp) : Types.btyp =
       let tret' = transl_btyp tret in
       Types.BFun (tparams', tret')
 
-let arr_index_btyp : btyp =
-  if Archi.ptr64 then BInt64 Types.Unsigned else BInt32 Types.Unsigned
+let arr_index_btyp : btyp ref =
+  ref (if Archi.ptr64 then BInt64 Types.Unsigned else BInt32 Types.Unsigned)
+
+let set_arr_index_btyp (arch : Target.archi) : unit =
+  arr_index_btyp :=
+    match arch with
+    | Target.Ptr32 -> BInt32 Types.Unsigned
+    | Target.Ptr64 -> BInt64 Types.Unsigned
 
 let check_expected_typ (texp : expected_typ) (ty : btyp) (r : 'a) : 'a =
   match texp with
@@ -927,7 +933,7 @@ let rec typecheck_raw_expr (imports : ident list) (gte : gtenv) (gx : gcontext)
           gx
           lx
           e2
-          (Expect_typ arr_index_btyp)
+          (Expect_typ !arr_index_btyp)
       in
       begin
         match t1 with
@@ -945,7 +951,7 @@ let rec typecheck_raw_expr (imports : ident list) (gte : gtenv) (gx : gcontext)
           gx
           lx
           e2
-          (Expect_typ arr_index_btyp)
+          (Expect_typ !arr_index_btyp)
       in
       begin
         match t1 with
