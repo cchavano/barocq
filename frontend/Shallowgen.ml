@@ -79,7 +79,7 @@ let binary_op_to_rocq (ty : mtyp) (op : binary_op) : string =
           | BopDiv | BopMod -> "U32"
           | _ -> "Int"
         in
-        (modl, "s")
+        (modl, "u")
     | MInt64 Signed ->
         let modl =
           match op with
@@ -93,7 +93,7 @@ let binary_op_to_rocq (ty : mtyp) (op : binary_op) : string =
           | BopDiv | BopMod -> "U64"
           | _ -> "Int64"
         in
-        (modl, "s")
+        (modl, "u")
     | _ -> ("", "")
   in
   let intop (o : string) =
