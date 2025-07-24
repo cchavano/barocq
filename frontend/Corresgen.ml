@@ -160,40 +160,97 @@ let gen_abs_types_impl_env (types : type_def list) : string =
     | [] -> "PMap.init (unit : Type)"
     | _ -> env_build env_list (lassoc types))
 
-module RecordConv = struct
-  (* Rocq to Barocq *)
-
-  let rec conv_mtyp_str_RtoB (ty : mtyp) : string =
+module Brecordtypes = struct
+  let rec is_simpl_mtyp (ty : mtyp) : bool =
     match ty with
-    | MRecord rid -> sprintf "conv_%s_RtoB" (ident_to_string rid)
+    | MBool | MInt32 _ | MInt64 _ | MAbs _ -> true
+    | MRes ty' -> is_simpl_mtyp ty'
+    | _ -> false
+
+  let rec mtyp_to_string (ty : mtyp) : string =
+    match ty with
+    | MBool -> "bool"
+    | MInt32 _ -> "int"
+    | MInt64 _ -> "int64"
+    | MArray ta -> sprintf "array %s" (opt_parens ta)
+    | MRecord t -> sprintf "record %s" (ident_to_string t)
+    | MAbs t -> sprintf "%s.%s" !shallowfile (ident_to_string t)
+    | MFun (tparams, tret) -> (
+        match tparams with
+        | [] -> sprintf "unit -> %s" (opt_parens tret)
+        | _ ->
+            List.fold_right
+              (fun t acc -> sprintf "%s -> %s" (opt_parens t) acc)
+              tparams
+              (opt_parens tret))
+    | MRes ty' -> sprintf "res %s" (opt_parens ty')
+
+  and opt_parens (ty : mtyp) : string =
+    PrintCommon.opt_parens is_simpl_mtyp mtyp_to_string ty
+
+  let typedef_to_string (rd : record_def) : string =
+    sprintf
+      "Definition %s : list (ident * Type) := %s."
+      (ident_to_string rd.rd_name)
+      (list_to_string_bracket
+         (fun (fname, fty) ->
+           sprintf
+             "(%s, %s : Type)"
+             (Deepgen.ident_to_deep fname)
+             (opt_parens fty))
+         rd.rd_fields)
+
+  let print_typedefs (out : out_channel) (types : type_def list) : unit =
+    let records = get_record_defs types in
+    print_list
+      out
+      ~delim:("", "\n")
+      ~sep:"\n\n"
+      (fun td -> sprintf "%s%s" indent (typedef_to_string td))
+      records
+
+  let print (out : out_channel) (prog : program) : unit =
+    let types = prog.prog_types in
+    fprintf out "\n";
+    fprintf out "Module Brecordtypes.\n\n";
+    if types <> [] then begin
+      print_typedefs out prog.prog_types;
+      fprintf out "\n"
+    end;
+    fprintf out "End Brecordtypes.\n"
+end
+
+module RecordConv = struct
+  type direction =
+    | RtoB
+    | BtoR
+
+  let direction_to_string (d : direction) : string =
+    match d with
+    | RtoB -> "RtoB"
+    | BtoR -> "BtoR"
+
+  let rec conv_mtyp_str (d : direction) (ty : mtyp) : string =
+    match ty with
+    | MRecord rid ->
+        sprintf "conv_%s_%s" (ident_to_string rid) (direction_to_string d)
     | MArray ta ->
-        let r = conv_mtyp_str_RtoB ta in
+        let r = conv_mtyp_str d ta in
         if r = "" then ""
         else if String.starts_with ~prefix:"conv" r then
           sprintf "transl_array %s" r
         else sprintf "transl_array (%s)" r
     | _ -> ""
 
-  (* let conv_value_RtoB (fty : mtyp) (v : string) : string =
-    let tstr = conv_mtyp_str_RtoB fty in
-    if tstr = "" then v else sprintf "(%s %s)" tstr v
-
-  let conv_field_RtoB (rid : string) (fname : ident) (fty : mtyp) (arg : string)
-      : string =
-    sprintf
-      "Field %s %s"
-      (Deepgen.ident_to_deep fname)
-      (conv_value_RtoB
-         fty
-         (sprintf
-            "%s.(%s_%s)"
-            arg
-            (String.lowercase_ascii rid)
-            (ident_to_string fname))) *)
-
-  let conv_value_RtoB (fty : mtyp) (v : string) : string =
-    let tstr = conv_mtyp_str_RtoB fty in
+  let conv_value (d : direction) (fty : mtyp) (v : string) : string =
+    let tstr = conv_mtyp_str d fty in
     if tstr = "" then v else sprintf "%s %s" tstr v
+
+  let conv_value_opt_parens (d : direction) (fty : mtyp) (v : string) : string =
+    let v_conv = conv_value d fty v in
+    if v_conv = v then v else sprintf "(%s)" v_conv
+
+  (* Rocq to Barocq *)
 
   let conv_field_RtoB (rid : string) (fname : ident) (fty : mtyp) (arg : string)
       : string =
@@ -204,11 +261,10 @@ module RecordConv = struct
         (String.lowercase_ascii rid)
         (ident_to_string fname)
     in
-    let v =
-      let conv_v = conv_value_RtoB fty v in
-      if conv_v = v then v else sprintf "(%s)" conv_v
-    in
-    sprintf "Field %s %s" (Deepgen.ident_to_deep fname) v
+    sprintf
+      "Field %s %s"
+      (Deepgen.ident_to_deep fname)
+      (conv_value_opt_parens RtoB fty v)
 
   let conv_record_RtoB (rd : record_def) (arg : string) : string =
     List.fold_right
@@ -223,7 +279,7 @@ module RecordConv = struct
   let gen_conv_record_RtoB (rd : record_def) : string =
     let rid = ident_to_string rd.rd_name in
     sprintf
-      "Definition conv_%s_RtoB (s: %s.%s) : #Deeptypes.%s :=\n%s%s."
+      "Definition conv_%s_RtoB (s: %s.%s) : record Brecordtypes.%s :=\n%s%s."
       rid
       !shallowfile
       rid
@@ -233,54 +289,39 @@ module RecordConv = struct
 
   (* Barocq to Rocq *)
 
-  let rec conv_mtyp_str_BtoR (ty : mtyp) : string =
-    match ty with
-    | MRecord rid -> sprintf "conv_%s_BtoR" (ident_to_string rid)
-    | MArray ta ->
-        let r = conv_mtyp_str_BtoR ta in
-        if r = "" then ""
-        else if String.starts_with ~prefix:"conv" r then
-          sprintf "transl_array_err %s" r
-        else sprintf "transl_array_err (%s)" r
-    | _ -> ""
-
-  let conv_value_BtoR (fty : mtyp) (v : string) : string =
-    let tstr = conv_mtyp_str_BtoR fty in
-    if tstr = "" then v else sprintf "%s %s" tstr v
-
-  let gen_letin_conv_BtoR (indent : string) (v : string) (fty : mtyp) : string =
-    let c = conv_value_BtoR fty v in
-    if c = v then "" else sprintf "%slet* %s := %s in\n" indent v c
-
   let conv_record_BtoR (rd : record_def) : string =
-    let vars, fnames =
+    let match_case =
       List.fold_right
-        (fun (fname, fty) (acc_str, acc_fnames) ->
-          let fid = ident_to_string fname in
-          let acc_str : string =
-            sprintf
-              "%slet* %s := Brecord.proj s %s in\n%s%s"
-              indent
-              fid
-              (Deepgen.ident_to_deep fname)
-              (gen_letin_conv_BtoR indent fid fty)
-              acc_str
-          in
-          (acc_str, fid :: acc_fnames))
+        (fun (fname, fty) acc ->
+          sprintf "(Field _ %s, %s)" (ident_to_string fname) acc)
         rd.rd_fields
-        ("", [])
+        "tt"
+    in
+    let mk_record =
+      sprintf
+        "mk_%s %s"
+        (ident_to_string rd.rd_name)
+        (list_to_string
+           ~delim:("", "")
+           ~sep:" "
+           (fun (fname, fty) ->
+             let v = ident_to_string fname in
+             conv_value_opt_parens BtoR fty v)
+           rd.rd_fields)
     in
     sprintf
-      "%s%sret (mk_%s %s)"
-      vars
+      "%smatch s with\n%s| %s =>\n%s%s\n%send"
       indent
-      (ident_to_string rd.rd_name)
-      (list_to_string ~delim:("", "") ~sep:" " (fun x -> x) fnames)
+      indent
+      match_case
+      (make_indent 3)
+      mk_record
+      indent
 
   let gen_conv_record_BtoR (rd : record_def) : string =
     let rid = ident_to_string rd.rd_name in
     sprintf
-      "Definition conv_%s_BtoR (s: #Deeptypes.%s) : res %s.%s :=\n%s."
+      "Definition conv_%s_BtoR (s: record Brecordtypes.%s) : %s.%s :=\n%s."
       rid
       rid
       !shallowfile
@@ -313,101 +354,104 @@ module RecordConv = struct
       print_list out ~delim:("", "\n") ~sep:"\n\n" gen_conv_record_BtoR records
     end
 
-  (* Correctness theorems from Rocq to Barocq *)
+  (* Correctness theorems *)
 
   let gen_RtoB_conv_correctness_thm (rd : record_def) : string =
     let rid = ident_to_string rd.rd_name in
-    let forall = sprintf "forall (s: %s) (s': #Deeptypes.%s)," rid rid in
-    let conv_call = sprintf "conv_%s_RtoB s = s'" rid in
+    let forall =
+      sprintf "forall (r: %s) (b: record Brecordtypes.%s)," rid rid
+    in
+    let conv_call = sprintf "conv_%s_RtoB r = b" rid in
     let fields_conv =
       list_to_string
         ~delim:("", "")
         ~sep:" /\\\n"
         (fun (fname, fty) ->
-          let rval =
-            conv_value_RtoB
-              fty
-              (sprintf
-                 "s.(%s_%s)"
-                 (String.lowercase_ascii rid)
-                 (ident_to_string fname))
+          let rproj =
+            sprintf
+              "r.(%s_%s)"
+              (String.lowercase_ascii rid)
+              (ident_to_string fname)
           in
+          let rproj = conv_value_opt_parens RtoB fty rproj in
           sprintf
-            "%sBrecord.proj s' %s = OK (%s)"
+            "%s@Brecord.proj Brecordtypes.%s b %s = OK %s"
             indent
+            rid
             (Deepgen.ident_to_deep fname)
-            rval)
+            rproj)
         rd.rd_fields
     in
+    let proof = sprintf "Proof.\n%sintros. subst. repeat split.\nQed." indent in
     sprintf
-      "Lemma conv_%s_RtoB_correct :\n\
-       %s%s\n\
-       %s%s ->\n\
-       %s.\n\
-       Proof.\n\
-       %sintros. subst. repeat split.\n\
-       Qed."
+      "Lemma conv_%s_RtoB_correct :\n%s%s\n%s%s ->\n%s.\n%s"
       rid
       indent
       forall
       indent
       conv_call
       fields_conv
-      indent
+      proof
 
   let gen_BtoR_conv_correctness_thm (rd : record_def) : string =
     let rid = ident_to_string rd.rd_name in
-    let forall = sprintf "forall (s: #Deeptypes.%s) (s': %s)," rid rid in
-    let conv_call = sprintf "conv_%s_BtoR s = OK s'" rid in
-    let field_conv (fname : ident) (fty : mtyp) : string * int =
+    let forall =
+      sprintf "forall (b: record Brecordtypes.%s) (r: %s)," rid rid
+    in
+    let conv_call = sprintf "conv_%s_BtoR b = r" rid in
+    let field_conv (fname : ident) (fty : mtyp) : string =
       let fid = ident_to_string fname in
-      let rval = conv_value_BtoR fty fid in
+      let rval = conv_value BtoR fty fid in
       if rval = fid then
-        ( sprintf
-            "%sBrecord.proj s %s = OK s'.(%s_%s)"
-            indent
-            (Deepgen.ident_to_deep fname)
-            (String.lowercase_ascii rid)
-            fid,
-          1 )
+        sprintf
+          "%s@Brecord.proj Brecordtypes.%s b %s = OK r.(%s_%s)"
+          indent
+          rid
+          (Deepgen.ident_to_deep fname)
+          (String.lowercase_ascii rid)
+          fid
       else
-        ( sprintf
-            "%s(exists %s, Brecord.proj s %s = OK %s /\\ %s = OK s'.(%s_%s))"
-            indent
-            fid
-            (Deepgen.ident_to_deep fname)
-            fid
-            rval
-            (String.lowercase_ascii rid)
-            fid,
-          2 )
+        sprintf
+          "%s(exists %s, @Brecord.proj Brecordtypes.%s b %s = OK %s /\\ %s = \
+           r.(%s_%s))"
+          indent
+          fid
+          rid
+          (Deepgen.ident_to_deep fname)
+          fid
+          rval
+          (String.lowercase_ascii rid)
+          fid
     in
-    let rec fields_conv_rec (fields : (ident * mtyp) list) : string * int =
-      match fields with
-      | [] -> ("", 0)
-      | (fname, fty) :: [] -> field_conv fname fty
-      | (fname, fty) :: fields' ->
-          let conv_str, n = field_conv fname fty in
-          let conv_rest, n' = fields_conv_rec fields' in
-          (sprintf "%s /\\\n%s" conv_str conv_rest, n + n')
+    let fields_conv =
+      list_to_string
+        ~delim:("", "")
+        ~sep:" /\\\n"
+        (fun (fname, fty) -> field_conv fname fty)
+        rd.rd_fields
     in
-    let fields_conv, hret_num = fields_conv_rec rd.rd_fields in
+    let record_destruct =
+      List.fold_right
+        (fun (fname, fty) acc ->
+          sprintf "[[%s] %s]" (ident_to_string fname) acc)
+        rd.rd_fields
+        "[]"
+    in
     let proof =
       sprintf
-        "%sintros s s' Hconv. unfold conv_%s_BtoR in Hconv.\n\
-         %sunfold MonError.bind in Hconv. monadInv Hconv.\n\
-         %sinjection EQ%d as Hret. rewrite <- Hret.\n\
-         %srepeat split; eauto.\n\
-         Qed."
+        "Proof.\n\
+         %s(* intros b r Hconv. unfold conv_%s_BtoR in Hconv. compute in b.\n\
+         %sdestruct b as %s.\n\
+         %sdestruct Hconv. simpl. repeat esplit. *)\n\
+         Admitted."
         indent
         rid
         indent
-        indent
-        hret_num
+        record_destruct
         indent
     in
     sprintf
-      "Lemma conv_%s_BtoR_correct :\n%s%s\n%s%s ->\n%s.\nProof.\n%s"
+      "Lemma conv_%s_BtoR_correct :\n%s%s\n%s%s ->\n%s.\n%s"
       rid
       indent
       forall
@@ -435,7 +479,7 @@ end
 module FFI = struct
   let rec is_simpl_mtyp (ty : mtyp) : bool =
     match ty with
-    | MBool | MInt32 _ | MInt64 _ -> true
+    | MBool | MInt32 _ | MInt64 _ | MAbs _ -> true
     | MRes ty' -> is_simpl_mtyp ty'
     | _ -> false
 
@@ -445,7 +489,8 @@ module FFI = struct
     | MInt32 _ -> "int"
     | MInt64 _ -> "int64"
     | MArray ta -> sprintf "array %s" (opt_parens ta)
-    | MRecord t | MAbs t -> sprintf "#Deeptypes.%s" (ident_to_string t)
+    | MRecord t -> sprintf "record Brecordtypes.%s" (ident_to_string t)
+    | MAbs t -> ident_to_string t
     | MFun (tparams, tret) -> (
         match tparams with
         | [] -> sprintf "unit -> %s" (opt_parens tret)
@@ -464,17 +509,25 @@ module FFI = struct
       if n >= List.length tparams then ""
       else sprintf "a%d %s" n (gen_args (n + 1))
     in
-    let rec gen_conv_arguments (n : int) (tparams : mtyp list) : string =
-      match tparams with
-      | [] -> ""
-      | pty :: tparams' ->
-          sprintf
-            "%s%s"
-            (RecordConv.gen_letin_conv_BtoR
-               (make_indent 3)
-               (sprintf "a%d" n)
-               pty)
-            (gen_conv_arguments (n + 1) tparams')
+    let conv_args : string =
+      snd
+        (List.fold_left
+           (fun (ctr, str) ty ->
+             let arg = sprintf "a%d" ctr in
+             let conv_arg = RecordConv.conv_value RecordConv.BtoR ty arg in
+             if conv_arg = arg then (ctr + 1, str)
+             else
+               let str' =
+                 sprintf
+                   "%s%slet %s := %s in\n"
+                   str
+                   (make_indent 3)
+                   arg
+                   (RecordConv.conv_value RecordConv.BtoR ty arg)
+               in
+               (ctr + 1, str'))
+           (0, "")
+           tparams)
     in
     let gen_call () : string =
       sprintf
@@ -487,15 +540,15 @@ module FFI = struct
     let gen_return () : string =
       let tret = BarocqShallowgen.Monadification.unwrap_mtyp tret in
       sprintf
-        "%sret (%s)."
+        "%sret %s."
         (make_indent 3)
-        (RecordConv.conv_value_RtoB tret "r")
+        (RecordConv.conv_value_opt_parens RecordConv.RtoB tret "r")
     in
     sprintf
       "%sfun %s=>\n%s%s%s"
       (make_indent 2)
       (gen_args 0)
-      (gen_conv_arguments 0 tparams)
+      conv_args
       (gen_call ())
       (gen_return ())
 
@@ -526,7 +579,10 @@ module FFI = struct
               cid
               (mtyp_to_string t)
               (make_indent 2)
-              (RecordConv.conv_value_RtoB t (sprintf "%s.%s" !shallowfile cid))
+              (RecordConv.conv_value
+                 RecordConv.RtoB
+                 t
+                 (sprintf "%s.%s" !shallowfile cid))
         | _ -> "")
       defs;
     fprintf out "End FFI.\n"
@@ -582,7 +638,8 @@ let gen_const_corres (cid : ident) (ty : mtyp) : string =
       "eval_def %s = OK (VAL Deeptypes.typof_%s %s)"
       (Deepgen.ident_to_deep cid)
       (ident_to_string cid)
-      (RecordConv.conv_value_RtoB
+      (RecordConv.conv_value
+         RecordConv.RtoB
          ty
          (sprintf "%s.%s" !shallowfile (ident_to_string cid)))
   in
@@ -602,17 +659,19 @@ let gen_deep_call_args (args : (ident * mtyp) list) : string =
         ~sep:" "
         (fun (aid, aty) ->
           let aid = ident_to_string aid in
-          let conv_aid = RecordConv.conv_value_RtoB aty aid in
-          if conv_aid = aid then aid else sprintf "(%s)" conv_aid)
+          RecordConv.conv_value_opt_parens RecordConv.RtoB aty aid)
         args
 
 let gen_shallow_call_ret (call : string) (ty : mtyp) : string =
   match ty with
   | MRes tr ->
-      let conv_v = RecordConv.conv_value_RtoB tr "r" in
+      let conv_v = RecordConv.conv_value RecordConv.RtoB tr "r" in
       if conv_v = "r" then call
       else sprintf "let* r := %s in\n%s OK (%s)" call indent conv_v
-  | _ -> sprintf "OK (%s)" (RecordConv.conv_value_RtoB ty (sprintf "(%s)" call))
+  | _ ->
+      sprintf
+        "OK (%s)"
+        (RecordConv.conv_value RecordConv.RtoB ty (sprintf "(%s)" call))
 
 let gen_function_corres (fid : ident) (params : (ident * mtyp) list)
     (tret : mtyp) : string =
@@ -707,6 +766,7 @@ let print_program (arch : Target.archi) (out : out_channel) (prog : program) :
   let defs = prog.prog_defs in
   fprintf out "%s" (imports ());
   Deeptypes.print out prog;
+  Brecordtypes.print out prog;
   fprintf out "\n";
   fprintf out "(** * Abstract types implementation *)\n\n";
   fprintf out "%s" (gen_abs_types_impl_env types);

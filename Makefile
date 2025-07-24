@@ -112,6 +112,7 @@ uninstall-dev:
 	rm -rf $(INSTALL_DEV_DIR)
 
 install-dev:
+	@echo INSTALL Rocq files in $(INSTALL_DEV_DIR)
 	@for d in $(VDIRS); do \
 		set -e; \
 		install -d $(INSTALL_DEV_DIR)/$$d; \

@@ -36,3 +36,15 @@ Fixpoint update {fields: list (key * Type)} (rc: record fields) (k: key) (v: typ
       * apply (ret (Field x a, r')).
       * apply (Error e).
 Defined.
+
+Ltac destruct_record r :=
+  match type of r with
+  | (record _)%type =>
+      simpl in r;
+      destruct_record r 
+  | (field _ _ * _)%type =>
+      let f := fresh "f0" in (
+      destruct r as [[f] r];
+      destruct_record r)
+  | unit => destruct r
+  end.
