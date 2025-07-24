@@ -368,17 +368,26 @@ let () =
         Corresgen.coqlib := rawname;
         Corresgen.shallowfile := rawname ^ "_Shallow";
         Corresgen.deepfile := rawname ^ "_Deep";
-        let corres_output = get_full_filename rawname "_Corres.v" in
-        let oc = open_out corres_output in
+        let full_filename = get_full_filename rawname in
+        let prelude_output = full_filename "_CorresPrelude.v" in
+        let corres_output = full_filename "_Corres.v" in
+        let oc_prelude = open_out prelude_output in
+        let oc_corres = open_out corres_output in
         match BarocqShallowgen.monadify_norm_program !target_arch prog with
         | Errors.OK prog ->
-            Corresgen.print_program !target_arch oc prog;
+            Corresgen.print_prelude oc_prelude prog;
+            Corresgen.print_corres !target_arch oc_corres prog;
+            printf
+              "Correspondence theorems prelude generated at %s\n"
+              (clean_filename prelude_output);
             printf
               "Correspondence theorems generated at %s\n"
               (clean_filename corres_output);
-            close_out oc
+            close_out oc_prelude;
+            close_out oc_corres
         | Errors.Error msg ->
-            close_out oc;
+            close_out oc_prelude;
+            close_out oc_corres;
             raise
             @@ UnexpectedError
                  (sprintf
@@ -394,7 +403,7 @@ let () =
         | Errors.OK prog ->
             Shallowgen.print_program oc prog;
             printf
-              "Shallow-embedding generated at %s\n"
+              "Shallow embedding generated at %s\n"
               (clean_filename shallow_output);
             close_out oc
         | Errors.Error msg ->
@@ -411,7 +420,7 @@ let () =
         let deep_output = get_full_filename rawname "_Deep.v" in
         let oc = open_out deep_output in
         Deepgen.print_program oc prog;
-        printf "Deep-embedding generated at %s\n" (clean_filename deep_output);
+        printf "Deep embedding generated at %s\n" (clean_filename deep_output);
         close_out oc
       end;
 

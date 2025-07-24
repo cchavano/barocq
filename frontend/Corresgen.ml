@@ -739,12 +739,11 @@ let print_defs_corres (out : out_channel) (defs : globdef list) : unit =
           gen_function_corres fid params tret)
     defs
 
-let imports () : string =
+let prelude_imports () : string =
   sprintf
     "From Coq Require Import BinPosDef String List.\n\
      From compcert Require Import Integers Maps Clightdefs.\n\
-     From BarocqComp Require Import Target Monads Error Barray Brecord Types \
-     Barocq.\n\
+     From BarocqComp Require Import Error Barray Brecord Types Barocq.\n\
      From %s Require Import %s %s.\n\n\
      Import ClightNotations.\n\
      Import ListNotations.\n\n\
@@ -754,17 +753,27 @@ let imports () : string =
     !shallowfile
     !deepfile
 
-let print_program (arch : Target.archi) (out : out_channel) (prog : program) :
-    unit =
-  let arch_str =
-    match arch with
-    | Target.Ptr32 -> "Ptr32"
-    | Target.Ptr64 -> "Ptr64"
-  in
+let imports () : string =
+  sprintf
+    "From Coq Require Import BinPosDef String List.\n\
+     From compcert Require Import Integers Maps Clightdefs.\n\
+     From BarocqComp Require Import Target Monads Error Barray Brecord Types \
+     Barocq.\n\
+     From %s Require Import %s %s %s_CorresPrelude.\n\n\
+     Import ClightNotations.\n\
+     Import ListNotations.\n\n\
+     Open Scope string_scope.\n\
+     Open Scope clight_scope.\n"
+    !coqlib
+    !shallowfile
+    !deepfile
+    !coqlib
+
+let print_prelude (out : out_channel) (prog : program) : unit =
   let types = prog.prog_types in
   let records = get_record_defs types in
   let defs = prog.prog_defs in
-  fprintf out "%s" (imports ());
+  fprintf out "%s" (prelude_imports ());
   Deeptypes.print out prog;
   Brecordtypes.print out prog;
   fprintf out "\n";
@@ -796,7 +805,17 @@ let print_program (arch : Target.archi) (out : out_channel) (prog : program) :
   fprintf out "\n";
   fprintf out "Definition VAL (t: typ) (v: #t) := Val abs_types_impl t v.\n";
   fprintf out "\n";
-  fprintf out "%s" (gen_abs_defs_impl_env defs);
+  fprintf out "%s" (gen_abs_defs_impl_env defs)
+
+let print_corres (arch : Target.archi) (out : out_channel) (prog : program) :
+    unit =
+  let arch_str =
+    match arch with
+    | Target.Ptr32 -> "Ptr32"
+    | Target.Ptr64 -> "Ptr64"
+  in
+  let defs = prog.prog_defs in
+  fprintf out "%s" (imports ());
   fprintf out "\n";
   fprintf out "(** * Program correspondence theorems *)\n\n";
   fprintf
