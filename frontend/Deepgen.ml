@@ -161,7 +161,7 @@ let rec expr_to_deep (prefix : string) (e : expr) : string =
 
 and access_to_deep (ac : access) : string =
   match ac with
-  | AcRecordField f -> sprintf "AcRecordField %s" (ident_to_string f)
+  | AcRecordField f -> sprintf "AcRecordField %s" (ident_to_deep f)
   | AcArrayIndex e -> sprintf "AcArrayIndex (%s)" (expr_to_deep "" e)
 
 let params_to_deep (params : (ident * btyp) list) : string =

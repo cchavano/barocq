@@ -419,6 +419,11 @@ let () =
         let rawname = gen_rocq_prefix () in
         let deep_output = get_full_filename rawname "_Deep.v" in
         let oc = open_out deep_output in
+        let prog =
+          match BarocqTransf.transf_program !target_arch prog with
+          | Errors.OK prog -> prog
+          | _ -> assert false
+        in
         Deepgen.print_program oc prog;
         printf "Deep embedding generated at %s\n" (clean_filename deep_output);
         close_out oc
