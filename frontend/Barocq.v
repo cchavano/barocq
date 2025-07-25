@@ -951,13 +951,13 @@ Section DENOT.
             eval_def_rec te' ge prog' x
         | DefConst y l ty =>
             let* vv := eval_literal te l in
-            if Ident.eq_dec x y then ret vv
-            else
               let '(Val tv v) := vv in
               let* ty' := btyp_to_typ te ty in
               if typ_eq_dec tv ty' then
-                let* ge' := genv_update ge y vv in
-                eval_def_rec te ge' prog' x
+                if Ident.eq_dec x y then ret vv
+                else
+                  let* ge' := genv_update ge y vv in
+                  eval_def_rec te ge' prog' x
               else fail
         | DefFun y f =>
             let* fv := build_fun_value te ge (fn_params f) (fn_return f) (fn_body f) in
