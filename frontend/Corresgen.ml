@@ -1,7 +1,7 @@
 open Printf
 open Syntax
 open BarocqShallow.Monadic
-open PrintCommon
+open PrintUtils
 
 let coqlib : string ref = ref ""
 
@@ -47,7 +47,7 @@ module Deeptypes = struct
     | MRes tr -> mtyp_to_typ_string tr
 
   and opt_parens (ty : mtyp) : string =
-    PrintCommon.opt_parens is_simpl_mtyp mtyp_to_typ_string ty
+    PrintUtils.opt_parens is_simpl_mtyp mtyp_to_typ_string ty
 
   let typedef_to_string (td : type_def) : string =
     match td with
@@ -141,11 +141,11 @@ let gen_abs_types_impl_env (types : type_def list) : string =
     let indent2 = make_indent 2 in
     sprintf
       "List.fold_left\n\
-       %s(fun ge '(d, s) => PMap.set d s ge)\n\
+       %s(fun ge '(d, s) => SMap.set d s ge)\n\
        %s[\n\
        %s\n\
        %s]\n\
-       %s(PMap.init (unit : Type))"
+       %s(SMap.init (unit : Type))"
       indent2
       indent2
       (env_list (make_indent 3) l)
@@ -154,10 +154,10 @@ let gen_abs_types_impl_env (types : type_def list) : string =
   in
   let l = lassoc types in
   sprintf
-    "Definition abs_types_impl : PMap.t Type :=\n%s%s.\n"
+    "Definition abs_types_impl : SMap.t Type :=\n%s%s.\n"
     indent
     (match l with
-    | [] -> "PMap.init (unit : Type)"
+    | [] -> "SMap.init (unit : Type)"
     | _ -> env_build env_list (lassoc types))
 
 module Brecordtypes = struct
@@ -186,7 +186,7 @@ module Brecordtypes = struct
     | MRes ty' -> sprintf "res %s" (opt_parens ty')
 
   and opt_parens (ty : mtyp) : string =
-    PrintCommon.opt_parens is_simpl_mtyp mtyp_to_string ty
+    PrintUtils.opt_parens is_simpl_mtyp mtyp_to_string ty
 
   let typedef_to_string (rd : record_def) : string =
     sprintf
@@ -502,7 +502,7 @@ module FFI = struct
     | MRes ty' -> sprintf "res %s" (opt_parens ty')
 
   and opt_parens (ty : mtyp) : string =
-    PrintCommon.opt_parens is_simpl_mtyp mtyp_to_string ty
+    PrintUtils.opt_parens is_simpl_mtyp mtyp_to_string ty
 
   let gen_fun_body (fid : ident) (tparams : mtyp list) (tret : mtyp) : string =
     let rec gen_args (n : int) : string =
@@ -613,11 +613,11 @@ let gen_abs_defs_impl_env (defs : globdef list) : string =
     let indent2 = make_indent 2 in
     sprintf
       "List.fold_left\n\
-       %s(fun ge '(d, s) => PTree.set d s ge)\n\
+       %s(fun ge '(d, s) => STree.set d s ge)\n\
        %s[\n\
        %s\n\
        %s]\n\
-       %sPTree.Empty"
+       %sSTree.empty"
       indent2
       indent2
       (genv_list (make_indent 3) l)
@@ -629,7 +629,7 @@ let gen_abs_defs_impl_env (defs : globdef list) : string =
     "Definition abs_defs_impl : genv abs_types_impl :=\n%s%s.\n"
     indent
     (match l with
-    | [] -> "PTree.Empty"
+    | [] -> "STree.empty"
     | _ -> genv_build genv_list l)
 
 let gen_const_corres (cid : ident) (ty : mtyp) : string =
@@ -741,29 +741,24 @@ let print_defs_corres (out : out_channel) (defs : globdef list) : unit =
 
 let prelude_imports () : string =
   sprintf
-    "From Coq Require Import BinPosDef String List.\n\
-     From compcert Require Import Integers Maps Clightdefs.\n\
-     From BarocqComp Require Import Error Barray Brecord Types Barocq.\n\
+    "From Coq Require Import String List.\n\
+     From compcert Require Import Integers.\n\
+     From BarocqComp Require Import Error Maps2 Barray Brecord Types Barocq.\n\
      From %s Require Import %s %s.\n\n\
-     Import ClightNotations.\n\
      Import ListNotations.\n\n\
-     Open Scope string_scope.\n\
-     Open Scope clight_scope.\n"
+     Open Scope string_scope.\n"
     !coqlib
     !shallowfile
     !deepfile
 
 let imports () : string =
   sprintf
-    "From Coq Require Import BinPosDef String List.\n\
-     From compcert Require Import Integers Maps Clightdefs.\n\
+    "From Coq Require Import String.\n\
+     From compcert Require Import Integers.\n\
      From BarocqComp Require Import Target Monads Error Barray Brecord Types \
      Barocq.\n\
      From %s Require Import %s %s %s_CorresPrelude.\n\n\
-     Import ClightNotations.\n\
-     Import ListNotations.\n\n\
-     Open Scope string_scope.\n\
-     Open Scope clight_scope.\n"
+     Open Scope string_scope.\n"
     !coqlib
     !shallowfile
     !deepfile

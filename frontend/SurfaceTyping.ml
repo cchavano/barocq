@@ -134,7 +134,7 @@ let msg_from_failure (cause : error_cause) : string =
   | Missing_record_fields mfields ->
       sprintf
         "the following record fields are missing: %s"
-        (PrintCommon.list_to_string
+        (PrintUtils.list_to_string
            ~delim:("", "")
            ~sep:", "
            (fun x -> x)
@@ -824,10 +824,10 @@ let transl_var_name (imports : ident list) (gx : gcontext) (lx : lcontext)
         sprintf "%s_%s" prefix x.content
     | IdPrefixed (mname, x) -> Printf.sprintf "%s_%s" mname.content x.content
   in
-  PrintCommon.ident_of_string x'
+  PrintUtils.ident_of_string x'
 
 let transl_field_name (f : ident) : Syntax.ident =
-  PrintCommon.ident_of_string f.content
+  PrintUtils.ident_of_string f.content
 
 let rec transl_btyp (ty : btyp) : Types.btyp =
   match ty with
@@ -836,10 +836,10 @@ let rec transl_btyp (ty : btyp) : Types.btyp =
   | BInt64 s -> Types.BInt64 s
   | BArray ta -> Types.BArray (transl_btyp ta)
   | BRecord (mname, rid) ->
-      let rid' = PrintCommon.ident_of_string (sprintf "%s_%s" mname rid) in
+      let rid' = PrintUtils.ident_of_string (sprintf "%s_%s" mname rid) in
       Types.BRecord rid'
   | BAbs (mname, cid) ->
-      let cid' = PrintCommon.ident_of_string (sprintf "%s_%s" mname cid) in
+      let cid' = PrintUtils.ident_of_string (sprintf "%s_%s" mname cid) in
       Types.BAbs cid'
   | BFun (tparams, tret) ->
       let tparams' = List.map transl_btyp tparams in
@@ -1061,7 +1061,7 @@ and typecheck_let_in (imports : ident list) (gte : gtenv) (gx : gcontext)
       let e', t = typecheck_expr imports gte gx lx e in
       (e', t)
   | (xi, ei) :: le' ->
-      let xi' = PrintCommon.ident_of_string ("u_" ^ xi.content) in
+      let xi' = PrintUtils.ident_of_string ("u_" ^ xi.content) in
       let ei', ti = typecheck_expr imports gte gx lx ei in
       let lx' = lcontext_update lx xi ti in
       let er, tr = typecheck_let_in imports gte gx lx' le' e in
@@ -1228,7 +1228,7 @@ let typecheck_function (imports : ident list) (gte : gtenv) (gx : gcontext)
       let bparams =
         List.map
           (fun (pid, ptyp) ->
-            let pid' = PrintCommon.ident_of_string ("p_" ^ pid) in
+            let pid' = PrintUtils.ident_of_string ("p_" ^ pid) in
             let ptyp' = transl_btyp ptyp in
             (pid', ptyp'))
           params
@@ -1243,7 +1243,7 @@ let typecheck_function (imports : ident list) (gte : gtenv) (gx : gcontext)
       (bf, ty)
 
 let transl_globdef_name (mname : string) (x : ident) : Syntax.ident =
-  PrintCommon.ident_of_string (sprintf "%s_%s" mname x.content)
+  PrintUtils.ident_of_string (sprintf "%s_%s" mname x.content)
 
 let typecheck_abs_function (x : ident) (tparams : (param_attr * btyp) list)
     (tret : btyp) : btyp =
@@ -1297,7 +1297,7 @@ let typecheck_globdef (imports : ident list) (gte : gtenv) (ce : cenv)
           let bfields =
             List.map
               (fun (fname, ftyp) ->
-                let fname' = PrintCommon.ident_of_string fname in
+                let fname' = PrintUtils.ident_of_string fname in
                 let ftyp' = transl_btyp ftyp in
                 (fname', ftyp'))
               fields'

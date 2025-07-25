@@ -1,5 +1,5 @@
 From Coq Require Import List String.
-From BarocqComp Require Import Error MapList Utils Types Syntax Barray.
+From BarocqComp Require Import Error Maps2 Utils Types Syntax Barray.
 Import ListNotations.
 Import Syntax.Typed.
 
@@ -7,29 +7,30 @@ Import Syntax.Typed.
 
 (** ** Record name to concrete record fields *)
 
-Definition renv : Type := ptree (list (ident * btyp)).
+Definition renv : Type := STree.t (SMapList.t btyp).
 
-Definition renv_get (re: renv) (x: ident) : res (list (ident * btyp)) :=
-  err_of_opt (tget re x).
+Definition renv_get (re: renv) (x: ident) : res (SMapList.t btyp) :=
+  err_of_opt (STree.get x re).
 
-Definition renv_update (re: renv) (x: ident) (fields: list (ident * btyp)) : res renv :=
+Definition renv_update (re: renv) (x: ident) (fields: SMapList.t btyp) : res renv :=
   match renv_get re x with
   | OK _ => fail
-  | Error _ => ret (tset re x fields)
+  | Error _ => ret (STree.set x fields re)
   end.
  
 (** ** Record name to plain record fields *)
 
-Definition tenv : Type := ptree (list (ident * typ)).
+Definition tenv : Type := STree.t (SMapList.t typ).
 
-Definition tenv_get (te: tenv) (x: ident) : res (list (ident * typ)) := err_of_opt (tget te x).
+Definition tenv_get (te: tenv) (x: ident) : res (SMapList.t typ) :=
+  err_of_opt (STree.get x te).
 
 (** ** Conversion of concrete types to plain types *)
 
-Definition tenv_update (te: tenv) (x: ident) (fields: list (ident * typ)) : res tenv :=
+Definition tenv_update (te: tenv) (x: ident) (fields: SMapList.t typ) : res tenv :=
   match tenv_get te x with
   | OK _ => fail
-  | Error _ => ret (tset te x fields)
+  | Error _ => ret (STree.set x fields te)
   end.
 
 Fixpoint btyp_to_typ (te: tenv) (ty: btyp) : res typ :=
@@ -83,12 +84,12 @@ Definition typof_comp (c: comp) : btyp :=
   | CpCall _ _ ty => ty
   end.
 
-Definition gcontext : Type := ptree btyp.
+Definition gcontext : Type := STree.t btyp.
 
-Definition lcontext : Type := ptree btyp.
+Definition lcontext : Type := STree.t btyp.
 
 Definition gcontext_get (gx: gcontext) (x: ident) : res btyp :=
-  match tget gx x with
+  match STree.get x gx with
   | Some t => ret t
   | None => failwith "Typing.gcontext_get: unknown identifier"
   end.
@@ -96,11 +97,11 @@ Definition gcontext_get (gx: gcontext) (x: ident) : res btyp :=
 Definition gcontext_update (gx: gcontext) (x: ident) (ty: btyp) : res gcontext :=
   match gcontext_get gx x with
   | OK _ => failwith "Typing.gcontext_update: global symbol already defined"
-  | Error _ => ret (tset gx x ty)
+  | Error _ => ret (STree.set x ty gx)
   end.
 
 Definition lcontext_get (lx: lcontext) (x: ident) : res btyp :=
-  match tget lx x with
+  match STree.get x lx with
   | Some t => ret t
   | None => failwith "Typing.lcontext_get: unknown identifier"
   end.
@@ -108,10 +109,10 @@ Definition lcontext_get (lx: lcontext) (x: ident) : res btyp :=
 Definition lcontext_update (lx: lcontext) (x: ident) (ty: btyp) : res lcontext :=
   match lcontext_get lx x with
   | OK t =>
-      if btyp_eq_dec ty t then ret (tset lx x ty)
+      if btyp_eq_dec ty t then ret (STree.set x ty lx)
       else
         failwith "Typing.lcontext_update: variable shadowing with a different type"
-  | Error _ => ret (tset lx x ty)
+  | Error _ => ret (STree.set x ty lx)
   end.
 
 Definition typof_var (gx: gcontext) (lx: lcontext) (x: ident) : res btyp :=
@@ -275,7 +276,7 @@ Fixpoint typecheck_array_lit (a: array literal) : res btyp :=
       else failwith "Typing.typecheck_array_lit: type mismatch"
   end.
 
-Fixpoint typecheck_struct_lit (l1: list (ident * literal)) (l2: list (ident * btyp)) : bool :=
+Fixpoint typecheck_struct_lit (l1: SMapList.t literal) (l2: SMapList.t btyp) : bool :=
   match l1, l2 with
   | nil, nil => true
   | (x1, l1) :: l1', (x2, tx2) :: l2' =>
@@ -296,7 +297,7 @@ Fixpoint typecheck_literal (re: renv) (l: Syntax.literal) : res literal :=
       let* t := typecheck_array_lit a' in
       ret (LArray a' (BArray t))
   | Syntax.LRecord rc x =>
-      let* rc' := map_k_err (typecheck_literal re) rc in
+      let* rc' := SMapList.map_err (typecheck_literal re) rc in
       let* t := renv_get re x in
       if typecheck_struct_lit rc' t then ret (LRecord rc' (BRecord x))
       else failwith "Typing.typecheck_literal: struct type mismatch"

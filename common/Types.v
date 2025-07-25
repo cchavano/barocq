@@ -1,6 +1,6 @@
 From Coq Require Import List.
 From compcert Require Import Integers Maps.
-From BarocqComp Require Import Target Error Barray Brecord Ident MapList.
+From BarocqComp Require Import Target Error Barray Brecord Ident Maps2.
 
 Definition ident := Ident.t.
 
@@ -80,11 +80,11 @@ Definition mk_fun_btyp {A: Type} (params: list (A * btyp)) (tret: btyp) : btyp :
 
 (** * Type of a struct field *)
 
-Definition typof_field (k: ident) (fields: list (ident * typ)) : res typ :=
-  find_k_err Ident.eq_dec k fields.
+Definition typof_field (k: ident) (fields: SMapList.t typ) : res typ :=
+  SMapList.find_err k fields.
 
-Definition btypof_field (k: ident) (fields: list (ident * btyp)) : res btyp :=
-  find_k_err Ident.eq_dec k fields.
+Definition btypof_field (k: ident) (fields: SMapList.t btyp) : res btyp :=
+  SMapList.find_err k fields.
 
 (* Type for array indexes *)
 
@@ -106,10 +106,10 @@ Section EVALTYP.
 
   Variable eval_typ : typ -> Type.
 
-  Definition eval_fields_typ (fields: list (ident * typ)) : list (ident * Type) :=
-    map_k eval_typ fields.
+  Definition eval_fields_typ (fields: SMapList.t typ) : SMapList.t Type :=
+    SMapList.map eval_typ fields.
 
-  Definition eval_recordtyp (fields: list (ident * typ)) : Type :=
+  Definition eval_recordtyp (fields: SMapList.t typ) : Type :=
     record (eval_fields_typ fields).
 
   Definition eval_funtyp (tparams: list typ) (tret: typ) : Type :=
@@ -117,7 +117,7 @@ Section EVALTYP.
 
 End EVALTYP.
 
-Fixpoint eval_typ (am: PMap.t Type) (t: typ) : Type :=
+Fixpoint eval_typ (am: SMap.t Type) (t: typ) : Type :=
   match t with
   | TBool => bool
   | TInt32 _ => int
@@ -129,12 +129,12 @@ Fixpoint eval_typ (am: PMap.t Type) (t: typ) : Type :=
       | nil => unit -> res (eval_typ am tret)
       | _ => eval_funtyp (eval_typ am) tparams tret
       end
-  | TAbs t => PMap.get t am 
+  | TAbs ta => SMap.get ta am 
   end.
 
 (** ** Type cast w.r.t. type equality *)
 
-Definition typ_cast {t1 t2: typ} (am: PMap.t Type) (Heq: t1 = t2) (x: eval_typ am t1) : eval_typ am t2.
+Definition typ_cast {t1 t2: typ} (am: SMap.t Type) (Heq: t1 = t2) (x: eval_typ am t1) : eval_typ am t2.
 Proof.
-  subst. exact x.
+  subst t1. exact x.
 Defined.

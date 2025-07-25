@@ -2,9 +2,9 @@ open Printf
 open Types
 open Syntax
 open Barocq
-open PrintCommon
+open PrintUtils
 
-let ident_to_deep (id : ident) : string = sprintf "$\"%s\"" (ident_to_string id)
+let ident_to_deep (id : ident) : string = sprintf "\"%s\"" (ident_to_string id)
 
 let int_to_deep (i : Integers.Int.int) (s : signedness) : string =
   let si =
@@ -84,7 +84,7 @@ let rec btyp_to_deep (ty : btyp) : string =
         (opt_parens tret)
 
 and opt_parens (ty : btyp) : string =
-  PrintCommon.opt_parens is_simpl_btyp btyp_to_deep ty
+  PrintUtils.opt_parens is_simpl_btyp btyp_to_deep ty
 
 let rec expr_to_deep (prefix : string) (e : expr) : string =
   let prefix' = prefix ^ indent in
@@ -285,12 +285,10 @@ let prim_types : string =
 
 let imports : string =
   "From Coq Require Import String List BinIntDef.\n\
-   From compcert Require Import Integers Ctypes Clightdefs.\n\
+   From compcert Require Import Integers Ctypes.\n\
    From BarocqComp Require Import Types Syntax Barocq.\n\
-   Import ClightNotations.\n\
    Import ListNotations.\n\n\
-   Open Scope string_scope.\n\
-   Open Scope clight_scope.\n"
+   Open Scope string_scope.\n"
 
 let print_program (out : out_channel) (prog : program) : unit =
   fprintf out "%s" imports;

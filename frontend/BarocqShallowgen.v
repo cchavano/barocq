@@ -1,6 +1,6 @@
 From Coq Require Import List String.
 From compcert Require Import Maps.
-From BarocqComp Require Import Target Monads Error MapList Types Utils Syntax Barray Barocq BarocqTransf BarocqShallow.
+From BarocqComp Require Import Target Monads Error Maps2 Types Utils Syntax Barray Barocq BarocqTransf BarocqShallow.
 Import ListNotations.
 Import MonCounterErr.
 
@@ -48,7 +48,7 @@ Module Normalization.
   Definition fresh_var : crmon ident := Utils.fresh_var_err "b".
 
   Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BNF.expr :=
-    let fix norm_expr_aux (e: Barocq.expr) : crmon (list (ident * BNF.expr) * atom) :=
+    let fix norm_expr_aux (e: Barocq.expr) : crmon (SMapList.t BNF.expr * atom) :=
       match e with
       | ETrue => ret (nil, ATrue)
       | EFalse => ret (nil, AFalse)
@@ -85,14 +85,14 @@ Module Normalization.
           ret ((x, be) :: nil, AVar x)
       end
     in
-    let fix mk_norm (le: list (ident * BNF.expr)) (e: expr) : BNF.expr :=
+    let fix mk_norm (le: SMapList.t BNF.expr) (e: expr) : BNF.expr :=
       match le with
       | nil => e
       | (x, be) :: le' =>
           ELetIn x be (mk_norm le' e)
       end
     in
-    let fix norm_exprlist_rec (e: Barocq.expr) (la: list atom) (le: list Barocq.expr) : crmon (list (ident * BNF.expr) * BNF.expr) :=
+    let fix norm_exprlist_rec (e: Barocq.expr) (la: list atom) (le: list Barocq.expr) : crmon (SMapList.t BNF.expr * BNF.expr) :=
       match le with
       | nil =>
           let* er := lift_err (spread_atomlist e (rev' la)) in
@@ -259,23 +259,23 @@ Module Monadification.
     - apply Ident.eq_dec.
   Defined.
 
-  Definition renv : Type := ptree (list (ident * mtyp)).
+  Definition renv : Type := STree.t (SMapList.t mtyp).
 
-  Definition renv_get (re: renv) (x: ident) : res (list (ident * mtyp)) :=
-    err_of_opt (tget re x).
+  Definition renv_get (re: renv) (x: ident) : res (SMapList.t mtyp) :=
+    err_of_opt (STree.get x re).
 
-  Definition renv_update (re: renv) (x: ident) (fields: list (ident * mtyp)) : res renv :=
+  Definition renv_update (re: renv) (x: ident) (fields: SMapList.t mtyp) : res renv :=
     match renv_get re x with
     | OK _ => MonError.fail
-    | Error _ => eret (tset re x fields)
+    | Error _ => eret (STree.set x fields re)
     end.
 
-  Definition gcontext : Type := ptree mtyp.
+  Definition gcontext : Type := STree.t mtyp.
 
-  Definition lcontext : Type := ptree mtyp.
+  Definition lcontext : Type := STree.t mtyp.
 
   Definition gcontext_get (gx: gcontext) (x: ident) : res mtyp :=
-    match tget gx x with
+    match STree.get x gx with
     | Some t => eret t
     | None => MonError.fail
     end.
@@ -283,11 +283,11 @@ Module Monadification.
   Definition gcontext_update (gx: gcontext) (x: ident) (ty: mtyp) : res gcontext :=
     match gcontext_get gx x with
     | OK _ => MonError.fail
-    | Error _ => eret (tset gx x ty)
+    | Error _ => eret (STree.set x ty gx)
     end.
 
   Definition lcontext_get (lx: lcontext) (x: ident) : res mtyp :=
-    match tget lx x with
+    match STree.get x lx with
     | Some t => eret t
     | None => MonError.fail
     end.
@@ -295,10 +295,10 @@ Module Monadification.
   Definition lcontext_update (lx: lcontext) (x: ident) (ty: mtyp) : res lcontext :=
     match lcontext_get lx x with
     | OK t =>
-        if mtyp_eq_dec ty t then eret (tset lx x ty)
+        if mtyp_eq_dec ty t then eret (STree.set x ty lx)
         else
           MonError.fail
-    | Error _ => eret (tset lx x ty)
+    | Error _ => eret (STree.set x ty lx)
     end.
 
   Open Scope state_err_monad_scope.
@@ -459,8 +459,8 @@ Module Monadification.
     | _ => MonError.fail
     end.
 
-  Definition mtypof_field (k: ident) (fields: list (ident * mtyp)) : res mtyp :=
-    find_k_err Ident.eq_dec k fields.
+  Definition mtypof_field (k: ident) (fields: SMapList.t mtyp) : res mtyp :=
+    SMapList.find_err k fields.
 
   Definition typecheck_record_proj (re: renv) (ty: mtyp) (x: ident) : res mtyp :=
     match ty with
@@ -690,12 +690,12 @@ Module Monadification.
     monadify_expr_rec re gx lx e false.
 
   Definition monadify_function (re: renv) (gx: gcontext) (f: BNF.function) : res function :=
-    let params := map_k monadify_btyp (Syntax.fn_params f) in
+    let params := SMapList.map monadify_btyp (Syntax.fn_params f) in
     let* lx :=
       fold_left_err
         (fun acc '(x, tx) => lcontext_update acc x tx)
         params
-        (eret tempty)
+        (eret STree.empty)
     in
     let* body := monadify_expr re gx lx (Syntax.fn_body f) in
     eret {|
@@ -723,7 +723,7 @@ Module Monadification.
         else MonError.fail
     end.
 
-  Fixpoint typecheck_struct_lit (l1: list (ident * literal)) (l2: list (ident * mtyp)) : bool :=
+  Fixpoint typecheck_struct_lit (l1: SMapList.t literal) (l2: SMapList.t mtyp) : bool :=
     match l1, l2 with
     | nil, nil => true
     | (x1, l1) :: l1', (x2, tx2) :: l2' =>
@@ -744,7 +744,7 @@ Module Monadification.
         let* t := typecheck_array_lit a' in
         eret (LArray a' (MArray t))
     | Syntax.LRecord rc rid =>
-        let* rc' := map_k_err (typecheck_literal re) rc in
+        let* rc' := SMapList.map_err (typecheck_literal re) rc in
         let* t := renv_get re rid in
         if typecheck_struct_lit rc' t then
           eret (LRecord rc' (MRecord rid))
@@ -789,7 +789,7 @@ Module Monadification.
     end.
 
   Definition monadify_globdefs (re: renv) (defs: list BNF.globdef) : res (list globdef) :=
-    monadify_globdefs_rec re tempty defs.
+    monadify_globdefs_rec re STree.empty defs.
 
   Definition monadify_program (prog: BNF.program) : res program :=
     let types :=
@@ -797,7 +797,7 @@ Module Monadification.
         (fun td =>
           match td with
           | Syntax.TdRecord rc =>
-              let fields := MapList.map_k monadify_btyp (Syntax.rd_fields rc) in
+              let fields := SMapList.map monadify_btyp (Syntax.rd_fields rc) in
               TdRecord {| rd_name := Syntax.rd_name rc; rd_fields := fields |}
           | Syntax.TdAbstract t tk => TdAbstract t tk
           end)
@@ -812,7 +812,7 @@ Module Monadification.
           | TdAbstract _ _ => eret acc
           end)
         types
-        (eret tempty)
+        (eret STree.empty)
     in
     let* defs := monadify_globdefs re (BarocqShallow.BNF.prog_defs prog) in
     eret {|

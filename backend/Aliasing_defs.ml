@@ -1,7 +1,6 @@
-open BinPosDef
 open Syntax
 open Types
-open PrintCommon
+open PrintUtils
 
 type path = ident list
 
@@ -126,8 +125,8 @@ end
 
 type path_tree = PathTree.t
 
-(** An abstract location is an identifer. *)
-type absloc = ident
+(** An abstract location is an integer. *)
+type absloc = int
 
 let comparison_to_int (c : Datatypes.comparison) : int =
   match c with
@@ -138,28 +137,30 @@ let comparison_to_int (c : Datatypes.comparison) : int =
 module Ident1 = struct
   type t = ident
 
-  let compare (x : t) (y : t) : int = comparison_to_int (Pos.compare x y)
+  let compare (x : t) (y : t) : int = comparison_to_int (Ident.compare x y)
 end
 
-module IdentPair = struct
-  type t = ident * ident
+module LIPair = struct
+  type t = absloc * ident
 
   let compare ((x1, y1) : t) ((x2, y2) : t) : int =
-    match Pos.compare x1 x2 with
-    | Datatypes.Eq -> comparison_to_int (Pos.compare y1 y2)
-    | _ as c -> comparison_to_int c
+    match Int.compare x1 x2 with
+    | 0 -> comparison_to_int (Ident.compare y1 y2)
+    | _ as c -> c
 end
 
 module IdentMap = Map.Make (Ident1)
-module IdentPairMap = Map.Make (IdentPair)
 module IdentSet = Set.Make (Ident1)
+module LocSet = Set.Make (Int)
+module LocMap = Map.Make (Int)
+module LIPairMap = Map.Make (LIPair)
 
 module AbsDom = struct
   (** Abstract domain for the alias analysis. The two possible values are
       - A valid abstract state containing the alias information OR
       - Top *)
 
-  type pointsto_set = IdentSet.t
+  type pointsto_set = LocSet.t
 
   type var_set = IdentSet.t
 
@@ -171,7 +172,7 @@ module AbsDom = struct
   (** Reverse abstract environment. Bindings in a map of type [rev_absenv] are
       of the form l -> \{x1, ..., xn\}. It means that the abstract location l
       may be pointed by the variables \{x1, ..., xn\}. *)
-  type rev_absenv = var_set IdentMap.t
+  type rev_absenv = var_set LocMap.t
 
   (** Abstract memory. Bindings in a map of type [absmem] are of the form (l, f)
       -> \{l1, ..., ln\}. Following the path [f] from l leads to locations \{l1,
@@ -181,7 +182,7 @@ module AbsDom = struct
       "[]" pointing to the reprensetation of the array elements (if they are
       non-primitve) is going out l (i.e. all array elements are condensed into
       one abastract element). *)
-  type absmem = pointsto_set IdentPairMap.t
+  type absmem = pointsto_set LIPairMap.t
 
   (** Reverse abstract memory. Bindings in a map of type [rev_absmem] are of the
       form l -> \{(f1, \{l1_1, ..., l1_n\}), ..., (fm, \{lm_1, ..., lm_n\})\}.
@@ -190,7 +191,7 @@ module AbsDom = struct
       array index fi of location li_j. This representation is better to traverse
       all the graph from a given location than a map with bindings of types (f,
       l) -> \{l1, ..., ln\}. *)
-  type rev_absmem = (ident * pointsto_set) list IdentMap.t
+  type rev_absmem = (ident * pointsto_set) list LocMap.t
 
   (** Invalid paths environment. It binds each variables to a set of invalid
       paths. *)
@@ -213,8 +214,8 @@ module AbsDom = struct
     st_res : pointsto_set;
     st_inv : path_map;
     st_inv_res : path_tree option;
-    st_arr_locked : Typed.atom IdentMap.t;
-    st_next_loc : ident;
+    st_arr_locked : Typed.atom LocMap.t;
+    st_next_loc : int;
   }
 
   type err_info = {
@@ -238,17 +239,15 @@ module AbsDom = struct
 
   let env_empty : absenv = IdentMap.empty
 
-  let mem_empty : absmem = IdentPairMap.empty
-
-  let set_empty : IdentSet.t = IdentSet.empty
+  let mem_empty : absmem = LIPairMap.empty
 
   (** [env_reverse_single x ls rev] reverses the binding [x] -> [ls] into the
       reverse environment [rev]. *)
   let env_reverse_single (x : ident) (ls : pointsto_set) (rev : rev_absenv) :
       rev_absenv =
-    IdentSet.fold
+    LocSet.fold
       (fun l accS ->
-        IdentMap.update
+        LocMap.update
           l
           (fun vars ->
             match vars with
@@ -260,40 +259,40 @@ module AbsDom = struct
 
   (** [env_reverse ev] reverses the abstract environment [ev]. *)
   let env_reverse (ev : absenv) : rev_absenv =
-    IdentMap.fold env_reverse_single ev IdentMap.empty
+    IdentMap.fold env_reverse_single ev LocMap.empty
 
   (** [add_loc_from_id lip f l] adds the location [l] coming from path [[f]] in
       the reverse memory value [lip]. *)
   let rec add_loc_from_id (lip : (ident * pointsto_set) list) (f : ident)
       (l : absloc) : (ident * pointsto_set) list =
     match lip with
-    | [] -> [(f, IdentSet.singleton l)]
+    | [] -> [(f, LocSet.singleton l)]
     | (fi, ls) :: lip' ->
-        if fi = f then (fi, IdentSet.add l ls) :: lip'
+        if fi = f then (fi, LocSet.add l ls) :: lip'
         else (fi, ls) :: add_loc_from_id lip' f l
 
   (** [mem_reverse_single (l, f) ls] reverses the binding [(l, f)] -> [ls] into
       the reverse memory [rm]. *)
   let mem_reverse_single ((l, f) : absloc * ident) (ls : pointsto_set)
       (rm : rev_absmem) : rev_absmem =
-    IdentSet.fold
+    LocSet.fold
       (fun li accS ->
-        IdentMap.update
+        LocMap.update
           li
           (fun lr ->
             match lr with
             | Some lr -> Some (add_loc_from_id lr f l)
-            | None -> Some [(f, IdentSet.singleton l)])
+            | None -> Some [(f, LocSet.singleton l)])
           accS)
       ls
       rm
 
   (** [mem_reverse m] reverses the abstract memory [m]. *)
   let mem_reverse (m : absmem) : rev_absmem =
-    IdentPairMap.fold
+    LIPairMap.fold
       (fun (l, f) ls accM -> mem_reverse_single (l, f) ls accM)
       m
-      IdentMap.empty
+      LocMap.empty
 
   (** [env_add st x locs] adds the binding [x] -> [locs] in the state [st] and
       reflects this change in the reverse environment. *)
@@ -303,7 +302,7 @@ module AbsDom = struct
        in the var set associated with l1, ..., ln in st.st_rev_env. *)
     (* As st.st_rev_env should be the reverse graph of st.st_env,
        removing x in the var set mapped for a li not belonging to {l1, ..., ln} does nothing. *)
-    let rev = IdentMap.map (fun l -> IdentSet.remove x l) st.st_rev_env in
+    let rev = LocMap.map (fun l -> IdentSet.remove x l) st.st_rev_env in
     (* Adds the new reverse bindings *)
     (* If x -> {m1, ..., mn} is the new binding added in st.st_env,
        then adds x to all vi such that mi -> vi belongs to rev, for mi in {m1, ..., mn}. *)
@@ -313,14 +312,14 @@ module AbsDom = struct
   (** [mem_weak_update st (l, f) locs] adds the locations [locs] into the set of
       locations already pointed by [(l, f)] in [st], and reflects the change in
       the reverse memory. *)
-  let mem_weak_update (st : absstate) ((l, f) : ident * ident)
+  let mem_weak_update (st : absstate) ((l, f) : absloc * ident)
       (locs : pointsto_set) : absstate =
     let m =
-      IdentPairMap.update
+      LIPairMap.update
         (l, f)
         (fun f_locs ->
           match f_locs with
-          | Some f_locs -> Some (IdentSet.union f_locs locs)
+          | Some f_locs -> Some (LocSet.union f_locs locs)
           | None -> Some locs)
         st.st_mem
     in
@@ -328,30 +327,30 @@ module AbsDom = struct
       st with
       st_mem = m;
       st_rev_mem = mem_reverse m;
-      st_next_loc = Pos.add BinNums.Coq_xH (Pos.max st.st_next_loc l);
+      st_next_loc = 1 + max st.st_next_loc l;
     }
 
   (** [mem_get m l f] returns the points-to set associated with [(l, f)] in [m].
       Returns an empty set if [(l, f)] is not a key of [m]. *)
 
   let mem_get (m : absmem) (l : absloc) (f : ident) : pointsto_set =
-    match IdentPairMap.find_opt (l, f) m with
+    match LIPairMap.find_opt (l, f) m with
     | Some l_f -> l_f
-    | None -> set_empty
+    | None -> LocSet.empty
 
   (** [env_unions e1 e2] computes the union of the environments [e1] and [e2].
   *)
   let env_union (e1 : absenv) (e2 : absenv) : absenv =
-    IdentMap.union (fun _ x y -> Some (IdentSet.union x y)) e1 e2
+    IdentMap.union (fun _ x y -> Some (LocSet.union x y)) e1 e2
 
   (** [rev_env_unions e1 e2] computes the union of the reverse environments
       [re1] and [re2]. *)
   let rev_env_union (re1 : rev_absenv) (re2 : rev_absenv) : rev_absenv =
-    IdentMap.union (fun _ x y -> Some (IdentSet.union x y)) re1 re2
+    LocMap.union (fun _ x y -> Some (IdentSet.union x y)) re1 re2
 
   (** [mem_union m1 m2] computes the union of the memories [m1] and [m2]. *)
   let mem_union (m1 : absmem) (m2 : absmem) : absmem =
-    IdentPairMap.union (fun _ x y -> Some (IdentSet.union x y)) m1 m2
+    LIPairMap.union (fun _ x y -> Some (LocSet.union x y)) m1 m2
 
   (** [mem_union m1 m2] computes the union of the reverse memories [rm1] and
       [rm2]. *)
@@ -363,12 +362,12 @@ module AbsDom = struct
       | (f1, locs1) :: l1' -> begin
           match List.assoc_opt f1 l2 with
           | Some locs2 ->
-              let locs' = IdentSet.union locs1 locs2 in
+              let locs' = LocSet.union locs1 locs2 in
               (f1, locs') :: union_rev_mem_val l1' (List.remove_assoc f1 l2)
           | None -> (f1, locs1) :: union_rev_mem_val l1' l2
         end
     in
-    IdentMap.union (fun _ lx ly -> Some (union_rev_mem_val lx ly)) rm1 rm2
+    LocMap.union (fun _ lx ly -> Some (union_rev_mem_val lx ly)) rm1 rm2
 
   (** [inv_add st x t] binds the variabled [x] to the invalid paths [t] in [st].
   *)
@@ -383,11 +382,11 @@ module AbsDom = struct
   (** [arr_locked_union at1 at2] computes the union of the accessed array
       indexes. The union fails if the same array in [at1] and [at2] are locked
       with different indexes. *)
-  let arr_locked_union (at1 : Typed.atom IdentMap.t)
-      (at2 : Typed.atom IdentMap.t) : Typed.atom IdentMap.t option =
+  let arr_locked_union (at1 : Typed.atom LocMap.t) (at2 : Typed.atom LocMap.t) :
+      Typed.atom LocMap.t option =
     try
       Some
-        (IdentMap.union
+        (LocMap.union
            (fun _ i1 i2 -> if i1 <> i2 then failwith "" else Some i1)
            at1
            at2)
@@ -395,7 +394,7 @@ module AbsDom = struct
 
   let make_state (ev : absenv) (m : absmem) (rev : rev_absenv) (rm : rev_absmem)
       (r : pointsto_set) (iv : path_map) (ivr : path_tree option)
-      (al : Typed.atom IdentMap.t) (nl : ident) : absstate =
+      (al : Typed.atom LocMap.t) (nl : absloc) : absstate =
     {
       st_env = ev;
       st_mem = m;
@@ -414,11 +413,11 @@ module AbsDom = struct
       st_mem = m;
       st_rev_env = env_reverse ev;
       st_rev_mem = mem_reverse m;
-      st_res = set_empty;
+      st_res = LocSet.empty;
       st_inv = IdentMap.empty;
       st_inv_res = None;
-      st_arr_locked = IdentMap.empty;
-      st_next_loc = BinNums.Coq_xH;
+      st_arr_locked = LocMap.empty;
+      st_next_loc = 1;
     }
 
   (** [union d1 d2] computes the union of the two abstract domains [d1] and
@@ -429,7 +428,7 @@ module AbsDom = struct
       let m = mem_union st1.st_mem st2.st_mem in
       let rev = rev_env_union st1.st_rev_env st2.st_rev_env in
       let rm = rev_mem_union st1.st_rev_mem st2.st_rev_mem in
-      let res = IdentSet.union st1.st_res st2.st_res in
+      let res = LocSet.union st1.st_res st2.st_res in
       let inv = inv_union st1.st_inv st2.st_inv in
       let inv_res =
         match (st1.st_inv_res, st2.st_inv_res) with
@@ -438,9 +437,7 @@ module AbsDom = struct
         | None, Some t2 -> Some t2
         | None, None -> None
       in
-      let next_loc =
-        Pos.add BinNums.Coq_xH (Pos.max st1.st_next_loc st2.st_next_loc)
-      in
+      let next_loc = 1 + Int.max st1.st_next_loc st2.st_next_loc in
       let al_union = arr_locked_union st1.st_arr_locked st2.st_arr_locked in
       match al_union with
       | Some al -> AbsState (make_state ev m rev rm res inv inv_res al next_loc)

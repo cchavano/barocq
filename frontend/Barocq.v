@@ -1,6 +1,6 @@
 From Coq Require Import List String ListDec PArith Bool.
 From compcert Require Import Integers Maps Ctypes.
-From BarocqComp Require Import Error MapList Utils Intop Barray Brecord Types Typing Syntax.
+From BarocqComp Require Import Error Maps2 Utils Intop Barray Brecord Types Typing Syntax.
 Import ListNotations.
 
 (** * Abstract syntax *)
@@ -105,7 +105,7 @@ Module Typed.
   (** ** Global definitions *)
 
   Inductive globdef : Type :=
-    | DefType : ident -> list (ident * btyp) -> globdef
+    | DefType : ident -> SMapList.t btyp -> globdef
     | DefConst : ident -> literal -> btyp -> globdef
     | DefFun : ident -> function -> globdef
     | DeclType : ident -> struct_or_union -> globdef
@@ -242,7 +242,7 @@ Module Typing.
       fold_left_err
         (fun acc '(x, tx) => lcontext_update acc x tx)
         (fn_params f)
-        (ret tempty)
+        (ret STree.empty)
     in
     let* body := typecheck_expr re gx lx (fn_body f) in
     if btyp_eq_dec (typof_expr body) (fn_return f) then
@@ -292,7 +292,7 @@ Module Typing.
     end.
 
   Definition typecheck_program (prog: Barocq.program) : res BarocqTyped.program :=
-    typecheck_globdefs tempty tempty prog.
+    typecheck_globdefs STree.empty STree.empty prog.
 
   End ARCHI.
 
@@ -317,23 +317,24 @@ Section DENOT.
    | AcvalRecordField : ident -> access_value
    | AcvalArrayIndex : value -> access_value.
 
-  Definition genv := ptree value.
+  Definition genv := STree.t value.
 
-  Definition lenv := ptree value.
+  Definition lenv := STree.t value.
 
-  Definition genv_get (ge: genv) (x: ident) : res value := err_of_opt (tget ge x).
+  Definition genv_get (ge: genv) (x: ident) : res value :=
+    err_of_opt (STree.get x ge).
 
   Definition genv_update (ge: genv) (x: ident) (v: value) : res genv :=
     match genv_get ge x with
     | OK _ => fail
-    | Error _ => ret (tset ge x v)
+    | Error _ => ret (STree.set x v ge)
     end.
 
   Definition lenv_get (le: lenv) (x: ident) : res value :=
-    err_of_opt (tget le x).
+    err_of_opt (STree.get x le).
 
   Definition lenv_update (le: lenv) (x: ident) (v: value) : lenv :=
-    tset le x v.
+    STree.set x v le.
 
   Definition eval_var (ge: genv) (le: lenv) (x: ident) : res value :=
     match (lenv_get le x) with
@@ -632,7 +633,7 @@ Section DENOT.
         end
     end.
 
-  Fixpoint eval_record_lit_rec (lv: list (ident * value)) (fields: list (ident * typ)) : res (eval_recordtyp eval_typ fields).
+  Fixpoint eval_record_lit_rec (lv: SMapList.t value) (fields: SMapList.t typ) : res (eval_recordtyp eval_typ fields).
     destruct lv as [|[x [tv v]] lv'] eqn:Elv; destruct fields as [| [y t] fields'] eqn:Efields.
     - apply (ret tt).
     - apply fail.
@@ -647,7 +648,7 @@ Section DENOT.
       + apply fail.
   Defined.
 
-  Definition eval_record_lit (n: ident) (lv: list (ident * value)) (fields: list (ident * typ)) : res value.
+  Definition eval_record_lit (n: ident) (lv: SMapList.t value) (fields: SMapList.t typ) : res value.
     destruct lv as [|x lv'].
     - apply fail.
     - destruct (eval_record_lit_rec (x :: lv') fields) as [r |].
@@ -701,21 +702,20 @@ Section DENOT.
   Defined.
 
   Lemma typof_field_is_type :
-    forall (fields: list (ident * typ)) k t,
+    forall (fields: SMapList.t typ) k t,
     typof_field k fields = OK t ->
     eval_typ t = type_of_field k (eval_fields_typ eval_typ fields).
   Proof.
     induction fields as [| (x, t) fields']; intros.
     - simpl in H. discriminate.
-    - unfold typof_field in *. unfold find_k_err in *.
-      unfold type_of_field in *. unfold find_k in *.
-      simpl. simpl in H. unfold Ident.eq_dec in H.
-      unfold key_eq_dec. destruct (Pos.eq_dec x k).
+    - unfold typof_field in *. unfold SMapList.find_err in *.
+      unfold type_of_field in *. unfold SMapList.find in *.
+      simpl. destruct (SMapList.key_eq x k).
       + inversion H. reflexivity.
       + apply (IHfields' k t0 H). 
   Defined.
 
-  Definition eval_record_proj_aux (fields: list (ident * typ)) (rc: eval_recordtyp eval_typ fields) (k: ident) : res value.
+  Definition eval_record_proj_aux (fields: SMapList.t typ) (rc: eval_recordtyp eval_typ fields) (k: ident) : res value.
     simpl in rc. destruct (proj rc k) as [v |].
     - destruct (typof_field k fields) as [t |] eqn:Etyp.
       + rewrite <- (typof_field_is_type fields k t Etyp) in v.
@@ -730,7 +730,7 @@ Section DENOT.
     | _ => fail
     end.
 
-  Definition eval_record_update_aux (n: ident) (fields: list (ident * typ)) (rc: eval_typ (TRecord n fields)) (k: ident) (v: value) : res value.
+  Definition eval_record_update_aux (n: ident) (fields: SMapList.t typ) (rc: eval_typ (TRecord n fields)) (k: ident) (v: value) : res value.
     simpl in rc. destruct v as [tv v]. destruct (typof_field k fields) as [t |] eqn:Etyp.
     - destruct (typ_eq_dec tv t) as [Eqt |_].
       + apply (typof_field_is_type fields k t) in Etyp.
@@ -869,12 +869,12 @@ Section DENOT.
         let* av := mmap (eval_literal te) a in
         eval_array_lit av
     | LRecord rc x =>
-        let* rcv := map_k_err (eval_literal te) rc in
+        let* rcv := SMapList.map_err (eval_literal te) rc in
         let* fields := tenv_get te x in
         eval_record_lit x rcv fields
     end.
 
-  Fixpoint build_funval_rec_aux (te: tenv) (ge: genv) (le: lenv) (params: list (ident * typ)) (tret: typ) (e: expr) : eval_funtyp eval_typ (map (fun x => snd x) params) tret.
+  Fixpoint build_funval_rec_aux (te: tenv) (ge: genv) (le: lenv) (params: SMapList.t typ) (tret: typ) (e: expr) : eval_funtyp eval_typ (map (fun x => snd x) params) tret.
     destruct params as [| (x, tx) params'].
     - simpl. destruct (eval_expr te ge le e) as [[tv v]|].
       + destruct (typ_eq_dec tv tret).
@@ -886,25 +886,25 @@ Section DENOT.
 
   Definition build_funval_rec := Eval cbv delta [build_funval_rec_aux] zeta beta in build_funval_rec_aux.
 
-  Definition build_funval (te: tenv) (ge: genv) (params: list (ident * typ)) (tret: typ) (e: expr) : eval_typ (TFun (map (fun x => snd x) params) tret).
+  Definition build_funval (te: tenv) (ge: genv) (params: SMapList.t typ) (tret: typ) (e: expr) : eval_typ (TFun (map (fun x => snd x) params) tret).
     destruct params as [| p params'].
-    - simpl. destruct (eval_expr te ge tempty e) as [[tv v] |].
+    - simpl. destruct (eval_expr te ge STree.empty e) as [[tv v] |].
       + destruct (typ_eq_dec tv tret).
         -- simpl. apply (fun (_: unit) => ret (typ_cast abs_typ_impl e0 v)).
         -- apply (fun (_: unit) => fail).
       + apply (fun (_: unit) => (Error e0)).
-    - apply (build_funval_rec te ge tempty (p :: params') tret e).
+    - apply (build_funval_rec te ge STree.empty (p :: params') tret e).
   Defined.
 
-  Definition build_fun_value (te: tenv) (ge: genv) (params: list (ident * btyp)) (tret: btyp) (e: expr) : res value :=
-    if nodup_k Ident.eq_dec params then
+  Definition build_fun_value (te: tenv) (ge: genv) (params: SMapList.t btyp) (tret: btyp) (e: expr) : res value :=
+    if SMapList.nodup params then
       let* tret' := btyp_to_typ te tret in
-      let* params' := map_k_err (btyp_to_typ te) params in
+      let* params' := SMapList.map_err (btyp_to_typ te) params in
       ret (Val (TFun (map (fun x => snd x) params') tret') (build_funval te ge params' tret' e))
     else fail.
 
-  Definition fields_btyp_to_typ (te: tenv) (fields: list (ident * btyp)) : res (list (ident * typ)) :=
-    map_k_err (btyp_to_typ te) fields.
+  Definition fields_btyp_to_typ (te: tenv) (fields: SMapList.t btyp) : res (SMapList.t typ) :=
+    SMapList.map_err (btyp_to_typ te) fields.
 
   Fixpoint interpret_rec (te: tenv) (ge: genv) (cmds: list Barocq.command) : res (list value) :=
     match cmds with
@@ -931,14 +931,14 @@ Section DENOT.
         | CmdDef (DeclConst _ _)
         | CmdDef (DeclFun _ _ _) => failwith "the program contains abstract definitions"
         | CmdExpr e =>
-            let* v := eval_expr te ge tempty e in
+            let* v := eval_expr te ge STree.empty e in
             let* l := interpret_rec te ge xprog' in
             ret (v :: l)
         end
     end.
 
   Definition interpret (iprog: iprogram) : res (list value) :=
-    interpret_rec tempty tempty iprog.
+    interpret_rec STree.empty STree.empty iprog.
 
   Fixpoint eval_def_rec (te: tenv) (ge: genv) (prog: Barocq.program) (x: ident) : res value :=
     match prog with
@@ -980,6 +980,6 @@ Section DENOT.
     end.
 
   Definition eval_def (impl: genv) (prog: program) (x: ident) : res value :=
-    eval_def_rec tempty impl prog x.
+    eval_def_rec STree.empty impl prog x.
 
 End DENOT.

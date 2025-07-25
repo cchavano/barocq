@@ -1,7 +1,7 @@
 open Printf
 open Types
 open Barocq
-open PrintCommon
+open PrintUtils
 open PrintTypes
 
 exception Error of string

@@ -80,7 +80,7 @@ let print (lexbuf : Lexing.lexbuf) : unit =
     | _ as tok -> tok :: collect lexbuf
   in
   let token_list = collect lexbuf in
-  PrintCommon.print_list
+  PrintUtils.print_list
     stdout
     ~delim:("", "")
     ~sep:"\n"

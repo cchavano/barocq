@@ -1,6 +1,6 @@
 From Coq Require Import ZArith String List FMapPositive MSetPositive.
 From compcert Require Import AST Ctypes Clight ClightCe Clightdefs Cop Maps Integers.
-From BarocqComp Require Import Error MapList Utils Types Syntax.
+From BarocqComp Require Import Error Maps2 Utils Types Syntax.
 Import ClightNotations.
 Import Syntax.Typed.
 From BarocqComp Require Import Imp2.
@@ -20,12 +20,12 @@ Section TRANSL.
     | BInt64 Signed => tlong
     | BInt64 Unsigned => tulong
     | BArray ta => tptr (transl_btyp ta)
-    | BRecord t => tptr (Tstruct t noattr)
+    | BRecord t => tptr (Tstruct (Ident.to_pos t) noattr)
     | BFun tparams tret =>
         let tparams' := List.map transl_btyp tparams in
         let tret' := transl_btyp tret in
         tptr (Tfunction tparams' tret' cc_default)
-    | BAbs t => tptr (PMap.get t abs_types_impl)
+    | BAbs t => tptr (PMap.get (Ident.to_pos t) abs_types_impl)
     end.
 
   Definition transl_btyp_to_xtype (ty: btyp) : AST.xtype :=
@@ -42,7 +42,7 @@ Section TRANSL.
   Definition transl_btyp_lit (ty: btyp) (n: Z) : Ctypes.type :=
     match ty with
     | BArray ta => Tarray (transl_btyp ta) n noattr
-    | BRecord t => Tstruct t noattr
+    | BRecord t => Tstruct (Ident.to_pos t) noattr
     | _ => transl_btyp ty
     end.
 
@@ -52,7 +52,7 @@ Section TRANSL.
     | LbFalse => Init_int32 Int.zero
     | LbInt32 i => Init_int32 i
     | LbInt64 i => Init_int64 i
-    | LbVar x => Init_addrof x Ptrofs.zero
+    | LbVar x => Init_addrof (Ident.to_pos x) Ptrofs.zero
     end.
 
   Definition transl_literal (l: Imp2.literal) : list AST.init_data :=
@@ -101,8 +101,8 @@ Section TRANSL.
     | AInt32 i _ => ret (Econst_int i tint)
     | AInt64 i _ => ret (Econst_long i tlong)
     | AVar x ty =>
-        if smem globs x then ret (Evar x (transl_btyp ty))
-        else ret (Etempvar x (transl_btyp ty))
+        if smem globs (Ident.to_pos x) then ret (Evar (Ident.to_pos x) (transl_btyp ty))
+        else ret (Etempvar (Ident.to_pos x) (transl_btyp ty))
     | ACast a ty =>
         let* e := transl_atom globs a in
         ret (Ecast e (transl_btyp ty))
@@ -136,7 +136,7 @@ Section TRANSL.
             let* e := transl_atom globs a in
             let tderef := deref_pointer (typeof e) in
             let tfield := transl_btyp ty in
-            ret (Efield (Ederef e tderef) f tfield)
+            ret (Efield (Ederef e tderef) (Ident.to_pos f) tfield)
         | AcArrayIndex ai ty =>
             let* e := transl_atom globs a in
             let* ei := transl_atom globs ai in
@@ -150,7 +150,7 @@ Section TRANSL.
           let* er := transl_deep_access globs a acs' in
           let tderef := deref_pointer (typeof er) in
           let tfield := transl_btyp ty in
-          ret (Efield (Ederef er tderef) f tfield)    
+          ret (Efield (Ederef er tderef) (Ident.to_pos f) tfield)    
         | AcArrayIndex ai ty =>
             let* er := transl_deep_access globs a acs' in
             let* ei := transl_atom globs ai in
@@ -173,7 +173,7 @@ Section TRANSL.
         let* e := transl_atom globs a in
         let tderef := deref_pointer (typeof e) in
         let tfield := transl_btyp ty in
-        ret (Efield (Ederef e tderef) f tfield)
+        ret (Efield (Ederef e tderef) (Ident.to_pos f) tfield)
     | EDeepAccess a acs _ => transl_deep_access globs a (List.rev' acs)
     end.
 
@@ -191,7 +191,7 @@ Section TRANSL.
         let* e2 := transl_atom globs a2 in
         let tderef := deref_pointer (typeof e1) in
         let tfield := typeof e2 in
-        ret (e1, Sassign (Efield (Ederef e1 tderef) f tfield) e2)
+        ret (e1, Sassign (Efield (Ederef e1 tderef) (Ident.to_pos f) tfield) e2)
     end.
 
   Fixpoint transl_cond_atom (globs: pset) (a: atom) : res ClightCe.cexpr :=
@@ -222,15 +222,15 @@ Section TRANSL.
     | StSkip => ret Sskip
     | StSetExpr x e =>
         let* e' := transl_expr globs e in
-        ret (Sset x e')
+        ret (Sset (Ident.to_pos x) e')
     | StSetEcomp x ec =>
         let* (e, s) := transl_ecomp globs ec in
-        let sset := Sset x e in
+        let sset := Sset (Ident.to_pos x) e in
         ret (Ssequence s sset)
     | StCall x a args =>
         let* e := transl_atom globs a in
         let* args' := mmap (transl_atom globs) args in
-        ret (Scall (Some x) e args')
+        ret (Scall (Some (Ident.to_pos x)) e args')
     | StIfThenElse a s1 s2 =>
         let* e := transl_cond_atom globs a in
         let* s1' := transl_statement globs s1 in
@@ -247,8 +247,8 @@ Section TRANSL.
 
   Definition transl_function (globs: pset) (f: Imp2.function) : res ClightCe.function :=
     let ty := transl_btyp (fn_return f) in
-    let params := map_k transl_btyp (fn_params f) in
-    let temps := map_k transl_btyp (fn_vars f) in
+    let params := List.map (fun '(pid, pty) => (Ident.to_pos pid, transl_btyp pty)) (fn_params f) in
+    let temps := List.map (fun '(pid, pty) => (Ident.to_pos pid, transl_btyp pty)) (fn_vars f) in
     let* body := transl_statement globs (fn_body f) in
     ret {|
       ClightCe.fn_return := ty;
@@ -262,7 +262,7 @@ Section TRANSL.
   Definition transl_abs_function (f: ident) (tparams: list (param_attr * btyp)) (tret: btyp) : ClightCe.fundef :=
     let tparams := List.map snd tparams in
     let ext_func :=
-      EF_external (string_of_ident f)
+      EF_external f
         {|
           sig_args := List.map transl_btyp_to_xtype tparams;
           sig_res := transl_btyp_to_xtype tret;
@@ -296,23 +296,23 @@ Section TRANSL.
               | _, _ => t
               end
             in
-            let d := (x, Gvar {|
+            let d := (Ident.to_pos x, Gvar {|
               gvar_info := t;
               gvar_init := init;
               gvar_readonly := btyp_is_prim ty;
               gvar_volatile := false
             |}) in
-            let* r := transl_globdefs_rec defs' (sadd globs x) in
+            let* r := transl_globdefs_rec defs' (sadd globs (Ident.to_pos x)) in
             ret (d :: r)
         | DefFun x f =>
             let* f' := transl_function globs f in
-            let d := (x, (Gfun (Internal f'))) in
-            let* r := transl_globdefs_rec defs' (sadd globs x) in
+            let d := ((Ident.to_pos x), (Gfun (Internal f'))) in
+            let* r := transl_globdefs_rec defs' (sadd globs (Ident.to_pos x)) in
             ret (d :: r)
         | DeclConst x ty =>
             let t := transl_btyp ty in
-            let* r := transl_globdefs_rec defs' (sadd globs x) in
-            let d := (x, Gvar {|
+            let* r := transl_globdefs_rec defs' (sadd globs (Ident.to_pos x)) in
+            let d := ((Ident.to_pos x), Gvar {|
               gvar_info := t;
               gvar_init := nil;
               gvar_readonly := false;
@@ -321,8 +321,8 @@ Section TRANSL.
             in
             ret (d :: r)
         | DeclFun x tparams tret =>
-            let* r := transl_globdefs_rec defs' (sadd globs x) in
-            let d := (x, Gfun (transl_abs_function x tparams tret)) in
+            let* r := transl_globdefs_rec defs' (sadd globs (Ident.to_pos x)) in
+            let d := ((Ident.to_pos x), Gfun (transl_abs_function x tparams tret)) in
             ret (d :: r)
       end
     end.
@@ -330,17 +330,17 @@ Section TRANSL.
   Definition transl_globdefs (defs: list Imp2.globdef) : res (list cglobdef) :=
     transl_globdefs_rec defs sempty.
     
-  Fixpoint transl_struct_fields (fields: list (ident * btyp)) : Ctypes.members :=
+  Fixpoint transl_record_fields (fields: SMapList.t btyp) : Ctypes.members :=
     match fields with
     | nil => nil
     | (x, tx) :: fields' =>
         let tx' := transl_btyp tx in
-        let r := transl_struct_fields fields' in
-        (Member_plain x tx') :: r
+        let r := transl_record_fields fields' in
+        (Member_plain (Ident.to_pos x) tx') :: r
     end.
 
-  Definition transl_struct_btyp (x: ident) (fields: list (ident * btyp)) : Ctypes.composite_definition :=
-    Composite x Struct (transl_struct_fields fields) noattr.
+  Definition transl_struct_btyp (x: ident) (fields: SMapList.t btyp) : Ctypes.composite_definition :=
+    Composite (Ident.to_pos x) Struct (transl_record_fields fields) noattr.
 
   Definition transl_prog_types (types: list type_def) : list Ctypes.composite_definition :=
     List.map
@@ -359,7 +359,7 @@ Section TRANSL.
         end
     end.
 
-  Definition _main : ident := $"main".
+  Definition _main : AST.ident := $"main".
 
   Close Scope string_scope.
 
@@ -373,11 +373,11 @@ Fixpoint mk_abs_types_impl (types: list type_def) : PMap.t Ctypes.type :=
       | TdAbstract tid tk =>
           let ct :=
             match tk with
-            | Struct => Tstruct tid noattr
-            | Union => Tunion tid noattr
+            | Struct => Tstruct (Ident.to_pos tid) noattr
+            | Union => Tunion (Ident.to_pos tid) noattr
             end
           in
-          PMap.set tid ct (mk_abs_types_impl types')
+          PMap.set (Ident.to_pos tid) ct (mk_abs_types_impl types')
       | _ => mk_abs_types_impl types'
       end
   end.
@@ -388,7 +388,7 @@ Definition transl_program (prog: Imp2.program) : res ClightCe.program :=
   let abs_types_impl := mk_abs_types_impl types in
   let ts := transl_prog_types abs_types_impl types in
   let* cdefs := transl_globdefs abs_types_impl defs in
-  let public := public_idents defs in
+  let public := List.map Ident.to_pos (public_idents defs) in
   let main := _main in
   match Ctypes.make_program ts cdefs public main with
   | OK prog => OK prog
@@ -460,7 +460,7 @@ Section IDENTS.
   Definition composite_idents (cd: Ctypes.composite_definition) : pset :=
     match cd with Composite x _ m _ => sadd (members_idents m) x end.
 
-  Definition program_idents (prog: ClightCe.program) : list ident :=
+  Definition program_idents (prog: ClightCe.program) : list AST.ident :=
     let ids :=
       List.fold_left
         (fun ids def => sunion (globdef_idents def) ids)

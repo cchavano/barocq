@@ -1,6 +1,6 @@
 From Coq Require Import List String.
-From compcert Require Import Integers Maps.
-From BarocqComp Require Import Error Utils Syntax Types Typing Barray.
+From compcert Require Import Integers.
+From BarocqComp Require Import Error Maps2 Utils Syntax Types Typing Barray.
 
 (** * Abstract syntax *)
 
@@ -228,7 +228,7 @@ Module Typing.
 
   (* Should be checked if the context contains the same set of set variables. ?*)
   Definition merge_context (lx1 lx2: lcontext) : res lcontext :=
-    PTree.fold
+    STree.fold
       (fun acc k v =>
         let* acc := acc in
         lcontext_update acc k v)
@@ -269,7 +269,7 @@ Module Typing.
       fold_left_err
         (fun acc '(x, tx) => lcontext_update acc x tx)
         (fn_params f)
-        (ret tempty)
+        (ret STree.empty)
     in
     let* (body, _) := typecheck_statement re gx lx (fn_return f) (fn_body f) in
     ret {|
@@ -308,7 +308,7 @@ Module Typing.
     end.
 
   Definition typecheck_globdefs (re: renv) (defs: list Imp1.globdef) : res (list Imp1Typed.globdef) :=
-    typecheck_globdefs_rec re tempty defs.
+    typecheck_globdefs_rec re STree.empty defs.
 
   Definition typecheck_program (prog: Imp1.program) : res Imp1Typed.program :=
     let* re :=
@@ -319,7 +319,7 @@ Module Typing.
           | TdAbstract _ _ => ret acc
           end)
         (prog_types prog)
-        (eret tempty)
+        (eret STree.empty)
     in
     let* defs := typecheck_globdefs re (prog_defs prog) in
     ret {|

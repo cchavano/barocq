@@ -1,6 +1,6 @@
 open Printf
 open BarocqBNF
-open PrintCommon
+open PrintUtils
 open PrintSyntax
 
 let rec expr_to_string_pref (prefix : string) (e : expr) : string =
@@ -59,8 +59,7 @@ let rec expr_to_string_pref (prefix : string) (e : expr) : string =
   in
   prefix ^ str
 
-let expr_to_string (e : expr) : string =
-  expr_to_string_pref PrintCommon.indent e
+let expr_to_string (e : expr) : string = expr_to_string_pref PrintUtils.indent e
 
 let function_to_string (f : BarocqBNF.coq_function) : string =
   PrintSyntax.function_to_string expr_to_string f

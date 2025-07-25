@@ -1,6 +1,6 @@
 From Coq Require Import PArith String List.
 From compcert Require Import Clightdefs Integers.
-From BarocqComp Require Import Error Monads Utils Syntax Types Typing Barocq BarocqTransf BarocqBNF.
+From BarocqComp Require Import Error Monads Maps2 Utils Syntax Types Typing Barocq BarocqTransf BarocqBNF.
 Import ListNotations.
 Import MonCounterErr.
 
@@ -72,7 +72,7 @@ Open Scope state_err_monad_scope.
 Definition fresh_var : crmon ident := Utils.fresh_var_err "b".
 
 Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
-  let fix norm_expr_aux (ifc: bool) (e: Barocq.expr) : crmon (list (ident * BarocqBNF.expr) * atom) :=
+  let fix norm_expr_aux (ifc: bool) (e: Barocq.expr) : crmon ((SMapList.t BarocqBNF.expr) * atom) :=
     match e with
     | ETrue => ret (nil, ATrue)
     | EFalse => ret (nil, AFalse)
@@ -113,7 +113,7 @@ Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
         ret ((x, be) :: nil, AVar x)
     end
   in
-  let fix mk_norm (le: list (ident * BarocqBNF.expr)) (e: expr) : BarocqBNF.expr :=
+  let fix mk_norm (le: SMapList.t BarocqBNF.expr) (e: expr) : BarocqBNF.expr :=
     match le with
     | nil => e
     | (x, be) :: le' =>
@@ -121,7 +121,7 @@ Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
         ELetIn x be (mk_norm le' e)
     end
   in
-  let fix norm_exprlist_rec (e: Barocq.expr) (la: list atom) (le: list Barocq.expr) : crmon (list (ident * BarocqBNF.expr) * BarocqBNF.expr) :=
+  let fix norm_exprlist_rec (e: Barocq.expr) (la: list atom) (le: list Barocq.expr) : crmon ((SMapList.t BarocqBNF.expr) * BarocqBNF.expr) :=
     match le with
     | nil =>
         let* er := lift_err (spread_atomlist e (rev' la)) in
@@ -137,7 +137,7 @@ Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
     ret (mk_norm lx er)
   in
   let fix norm_access_list_rec (a: atom) (acs: list Barocq.access) (acs_norm: list Syntax.access)
-    : crmon (list (ident * BarocqBNF.expr) * BarocqBNF.expr) :=
+    : crmon ((SMapList.t BarocqBNF.expr) * BarocqBNF.expr) :=
     match acs with
     | nil => 
         ret (nil, EDeepAccess a (rev acs_norm))

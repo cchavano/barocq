@@ -1,7 +1,7 @@
 open Printf
 open Types
 open PrintTypes
-open PrintCommon
+open PrintUtils
 open Syntax
 
 let rec literal_to_string (l : literal) : string =
@@ -73,7 +73,7 @@ let rec atom_to_string (a : atom) : string =
         (opt_parens a2)
 
 and opt_parens (a : atom) : string =
-  PrintCommon.opt_parens is_simpl_atom atom_to_string a
+  PrintUtils.opt_parens is_simpl_atom atom_to_string a
 
 let access_to_string (ac : access) : string =
   match ac with

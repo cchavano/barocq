@@ -1,6 +1,6 @@
 From Coq Require Import List String.
 From compcert Require Import Maps.
-From BarocqComp Require Import Monads MapList Utils Barray Syntax Types Typing Imp1.
+From BarocqComp Require Import Monads Maps2 Utils Barray Syntax Types Typing Imp1.
 Import ListNotations.
 Import Syntax.Typed.
 Import Imp1Typed.
@@ -30,12 +30,12 @@ Fixpoint transl_statement (s: Imp1Typed.statement) : Imp2.statement :=
   | Imp1Typed.StReturn a => StReturn a
   end.
 
-Fixpoint all_vars (s: Imp1Typed.statement) : list (ident * btyp) :=
+Fixpoint all_vars (s: Imp1Typed.statement) : SMapList.t btyp :=
   match s with
   | Imp1Typed.StReturn _ => nil
   | Imp1Typed.StSet x c => (x, typof_comp c) :: nil
   | Imp1Typed.StIfThenElse _ s1 s2
-  | Imp1Typed.StSequence s1 s2 => merge_k Ident.eq_dec (all_vars s1) (all_vars s2)
+  | Imp1Typed.StSequence s1 s2 => SMapList.merge (all_vars s1) (all_vars s2)
   end.
 
 Definition transl_function (f: Imp1Typed.function) : Imp2.function :=
@@ -50,9 +50,9 @@ Local Open Scope state_monad_scope.
 
 Section LITTRANSL.
 
-  Variable transl_literal : Imp1Typed.literal -> list (ident * Imp2.literal) -> cmon (Imp2.literal_base * list (ident * Imp2.literal)).
+  Variable transl_literal : Imp1Typed.literal -> SMapList.t Imp2.literal -> cmon (Imp2.literal_base * (SMapList.t Imp2.literal)).
 
-  Fixpoint transl_array_lit (a: array Imp1Typed.literal) (defs: list (ident * Imp2.literal)) : cmon (array Imp2.literal_base * list (ident * Imp2.literal)) :=
+  Fixpoint transl_array_lit (a: array Imp1Typed.literal) (defs: SMapList.t Imp2.literal) : cmon (array Imp2.literal_base * SMapList.t Imp2.literal) :=
     match a with
     | nil => ret (nil, defs)
     | lx :: a' =>
@@ -61,12 +61,12 @@ Section LITTRANSL.
         ret (lx' :: r, defs2)
     end.
 
-  Fixpoint transl_struct_lit (st: list (ident * Imp1Typed.literal)) (defs: list (ident * Imp2.literal)) : cmon (list (ident * Imp2.literal_base) * list (ident * Imp2.literal)) :=
-    match st with
+  Fixpoint transl_struct_lit (rc: SMapList.t Imp1Typed.literal) (defs: SMapList.t Imp2.literal) : cmon ((SMapList.t Imp2.literal_base) * SMapList.t Imp2.literal) :=
+    match rc with
     | nil => ret (nil, defs)
-    | (i, lx) :: st' =>
+    | (i, lx) :: rc' =>
         let* (lx', defs1) := transl_literal lx defs in
-        let* (r, defs2) := transl_struct_lit st' defs1 in
+        let* (r, defs2) := transl_struct_lit rc' defs1 in
         ret ((i, lx') :: r, defs2)
     end.
 
@@ -74,7 +74,7 @@ End LITTRANSL.
 
 Definition fresh_var : cmon ident := Utils.fresh_var "g".
 
-Fixpoint transl_literal_rec (l: Imp1Typed.literal) (defs: list (ident * Imp2.literal)) : cmon (Imp2.literal_base * list (ident * Imp2.literal)) :=
+Fixpoint transl_literal_rec (l: Imp1Typed.literal) (defs: SMapList.t Imp2.literal) : cmon (Imp2.literal_base * SMapList.t Imp2.literal) :=
   match l with
   | Syntax.Typed.LTrue ty => ret (LbTrue, defs)
   | Syntax.Typed.LFalse ty => ret (LbFalse, defs)
@@ -90,7 +90,7 @@ Fixpoint transl_literal_rec (l: Imp1Typed.literal) (defs: list (ident * Imp2.lit
       ret (LbVar x, (x, LRecord st' ty) :: defs)
   end.
 
-Definition transl_literal (l: Imp1Typed.literal) : cmon (Imp2.literal * list (ident * Imp2.literal)) :=
+Definition transl_literal (l: Imp1Typed.literal) : cmon (Imp2.literal * SMapList.t Imp2.literal) :=
   let* (l', defs) :=
     match l with
     | Syntax.Typed.LArray a ty =>

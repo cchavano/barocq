@@ -151,7 +151,7 @@ End StateCounter.
 
 Module MonCounter.
 
-  Include MonState (StateCounter).
+  Include MonState(StateCounter).
 
   Definition incr {A: Type} (a: A) : M A :=
     fun (s: StateCounter.t) =>
@@ -163,7 +163,7 @@ End MonCounter.
 
 Module MonCounterErr.
 
-  Include MonStateErr (StateCounter).
+  Include MonStateErr(StateCounter).
 
   Definition incr {A: Type} (a: A) : M A :=
     fun (s: StateCounter.t) =>

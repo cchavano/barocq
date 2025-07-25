@@ -1,5 +1,4 @@
 open Printf
-open BinPosDef
 open Types
 open Syntax
 open Syntax.Typed
@@ -9,7 +8,7 @@ open Imp1Typed
 open Aliasing_defs
 open Aliasing_defs.PathTree
 open Aliasing_defs.AbsDom
-open PrintCommon
+open PrintUtils
 
 let top (msg : string) = Top (mk_err_info msg)
 
@@ -24,8 +23,7 @@ let debug_info (b : bool) (s : string) : unit = if b then eprintf "%s" s else ()
 let ( let* ) = AbsDom.dbind
 
 (** [absloc_to_string l] converts an abstract location to a string. *)
-let absloc_to_string (l : absloc) : string =
-  ident_to_string (Ident.concat (ident_of_string "l") (Ident.of_str_pos l))
+let absloc_to_string (l : absloc) : string = sprintf "l%d" l
 
 (** [path_map_to_string paths] transforms a map of invalid paths into a string.
 *)
@@ -51,7 +49,7 @@ let is_prim (ty : btyp) : bool =
 let rec inv_paths_to_loc_rec (rev : rev_absenv) (rm : rev_absmem)
     (curr : absloc) (p : path) (paths : path_map) : path_map =
   let paths' =
-    match IdentMap.find_opt curr rev with
+    match LocMap.find_opt curr rev with
     | Some vars ->
         IdentSet.fold
           (fun v accS ->
@@ -66,11 +64,11 @@ let rec inv_paths_to_loc_rec (rev : rev_absenv) (rm : rev_absmem)
           paths
     | None -> paths
   in
-  match IdentMap.find_opt curr rm with
+  match LocMap.find_opt curr rm with
   | Some adjs ->
       List.fold_left
         (fun accL (f, lf) ->
-          IdentSet.fold
+          LocSet.fold
             (fun n accS -> inv_paths_to_loc_rec rev rm n (f :: p) accS)
             lf
             accL)
@@ -116,31 +114,30 @@ let rec invalid_paths_of_atom (inv : path_map) (a : atom) : path_tree option =
 
 (** [dfs_mem m root] computes a DSF algorithm on the memory m and returns the
     visited nodes. *)
-let rec dfs_mem (m : absmem) (root : absloc) (visited : IdentSet.t) : IdentSet.t
-    =
-  if IdentSet.mem root visited then visited
+let rec dfs_mem (m : absmem) (root : absloc) (visited : LocSet.t) : LocSet.t =
+  if LocSet.mem root visited then visited
   else
     let visited' =
-      IdentPairMap.fold
+      LIPairMap.fold
         (fun (l, f) locs accV ->
           if l = root then
-            IdentSet.fold (fun loc accV1 -> dfs_mem m loc accV1) locs accV
+            LocSet.fold (fun loc accV1 -> dfs_mem m loc accV1) locs accV
           else accV)
         m
         visited
     in
-    IdentSet.add root visited'
+    LocSet.add root visited'
 
 (** [invalidate_mem_from_locs st roots] invalidate all the paths leading to the
     memory part in [st] reachable from the locations [roots]. *)
-let invalidate_mem_from_locs (st : absstate) (roots : IdentSet.t) : path_map =
+let invalidate_mem_from_locs (st : absstate) (roots : LocSet.t) : path_map =
   let all_locs =
-    IdentSet.fold
-      (fun l acc -> IdentSet.union (dfs_mem st.st_mem l set_empty) acc)
+    LocSet.fold
+      (fun l acc -> LocSet.union (dfs_mem st.st_mem l LocSet.empty) acc)
       roots
-      IdentSet.empty
+      LocSet.empty
   in
-  IdentSet.fold
+  LocSet.fold
     (fun l acc -> inv_union (inv_paths_to_loc st l) acc)
     all_locs
     IdentMap.empty
@@ -170,17 +167,17 @@ let exec_set_atom (x : ident) (a : atom) (st : absstate) : absstate =
 (** [vars_aliased_to_loc rev loc] returns the variable set that may point to
     [loc]. If no variable points to [loc], it returns an empty set. *)
 let vars_aliased_to_loc (rev : rev_absenv) (loc : absloc) : var_set =
-  match IdentMap.find_opt loc rev with
+  match LocMap.find_opt loc rev with
   | Some vars -> vars
-  | None -> set_empty
+  | None -> IdentSet.empty
 
 (** [vars_aliased_to_locs rev locs] returns the variable set that may point to
     at least one location belonging to [locs]. *)
 let vars_aliased_to_locs (rev : rev_absenv) (locs : pointsto_set) : var_set =
-  IdentSet.fold
+  LocSet.fold
     (fun li acc -> IdentSet.union (vars_aliased_to_loc rev li) acc)
     locs
-    set_empty
+    IdentSet.empty
 
 (** [exec_set_record_proj x a f ty st] computes the transfer function for the
     statement [set x := a.f] on [st]. [ty] is the type of the field [f] in the
@@ -195,10 +192,10 @@ let exec_set_record_proj (x : ident) (a : atom) (f : ident) (ty : btyp)
         else
           let ly = IdentMap.find y st.st_env in
           let ly_f =
-            IdentSet.fold
-              (fun l acc -> IdentSet.union acc (AbsDom.mem_get st.st_mem l f))
+            LocSet.fold
+              (fun l acc -> LocSet.union acc (AbsDom.mem_get st.st_mem l f))
               ly
-              set_empty
+              LocSet.empty
           in
           (* If a.f is not primitive, makes x point to all locations pointed by a.f. *)
           let st' = env_add st x ly_f in
@@ -224,7 +221,7 @@ let exec_set_record_update (re : renv) (x : ident) (a : atom) (f : ident)
       let ly = IdentMap.find y st.st_env in
       (* All paths leading to all locations pointed by y, suffixed by f, are now invalid. *)
       let inv' =
-        IdentSet.fold
+        LocSet.fold
           (fun l acc ->
             let l_inv = inv_paths_to_loc_suffixed st l [f] in
             inv_union l_inv acc)
@@ -276,7 +273,7 @@ let exec_set_record_update (re : renv) (x : ident) (a : atom) (f : ident)
             else
               (* If v is not primitive, we update the memory. *)
               let lv = IdentMap.find v st.st_env in
-              IdentSet.fold (fun l acc -> mem_weak_update acc (l, f) lv) ly st
+              LocSet.fold (fun l acc -> mem_weak_update acc (l, f) lv) ly st
         | _ -> st
       in
       (* x points to all locations pointed by y. *)
@@ -299,9 +296,7 @@ let exec_set_array_get (x : ident) (a : atom) (i : atom) (st : absstate) :
       let ly = IdentMap.find y st.st_env in
       (* All locations in ly should be free. *)
       let all_free =
-        IdentSet.for_all
-          (fun l -> IdentMap.find_opt l st.st_arr_locked = None)
-          ly
+        LocSet.for_all (fun l -> LocMap.find_opt l st.st_arr_locked = None) ly
       in
       if all_free then
         let yi_inv = invalid_paths_with_prefix st.st_inv y [_CONTENT] in
@@ -310,18 +305,18 @@ let exec_set_array_get (x : ident) (a : atom) (i : atom) (st : absstate) :
           else
             let ly = IdentMap.find y st.st_env in
             let ly_i =
-              IdentSet.fold
+              LocSet.fold
                 (fun l acc ->
-                  IdentSet.union acc (AbsDom.mem_get st.st_mem l _CONTENT))
+                  LocSet.union acc (AbsDom.mem_get st.st_mem l _CONTENT))
                 ly
-                set_empty
+                LocSet.empty
             in
             (* If y[i] is not primitive, makes x point to all locations pointed by y[i]. *)
             let st' = env_add st x ly_i in
             (* Updates the locked arrays environment. *)
             let al =
-              IdentSet.fold
-                (fun li acc -> IdentMap.add li i acc)
+              LocSet.fold
+                (fun li acc -> LocMap.add li i acc)
                 ly
                 st.st_arr_locked
             in
@@ -348,7 +343,7 @@ let exec_set_array_set (x : ident) (a : atom) (i : atom) (v : atom)
       let ly = IdentMap.find y st.st_env in
       (* All paths leading to all locations pointed by y, suffixed by [], are now invalid. *)
       let inv' =
-        IdentSet.fold
+        LocSet.fold
           (fun l acc ->
             let l_inv = inv_paths_to_loc_suffixed st l [_CONTENT] in
             inv_union l_inv acc)
@@ -380,17 +375,15 @@ let exec_set_array_set (x : ident) (a : atom) (i : atom) (v : atom)
       (* We check that all locations pointed by y (i.e. ly) are locked with the same array index i,
          or that they are all free. *)
       let all_locked_same_index =
-        IdentSet.for_all
+        LocSet.for_all
           (fun li ->
-            match IdentMap.find_opt li st.st_arr_locked with
+            match LocMap.find_opt li st.st_arr_locked with
             | Some i' -> i = i'
             | None -> false)
           ly
       in
       let all_free =
-        IdentSet.for_all
-          (fun li -> IdentMap.find_opt li st.st_arr_locked = None)
-          ly
+        LocSet.for_all (fun li -> LocMap.find_opt li st.st_arr_locked = None) ly
       in
       if all_locked_same_index || all_free then
         let st' =
@@ -400,7 +393,7 @@ let exec_set_array_set (x : ident) (a : atom) (i : atom) (v : atom)
               else
                 let lv = IdentMap.find v st.st_env in
                 (* Update the locations pointed by x[]. *)
-                IdentSet.fold
+                LocSet.fold
                   (fun l acc -> mem_weak_update acc (l, _CONTENT) lv)
                   ly
                   st
@@ -427,10 +420,7 @@ let exec_set_array_set (x : ident) (a : atom) (i : atom) (v : atom)
         in
         (* We now unlock the locations pointed by y. *)
         let al =
-          IdentSet.fold
-            (fun li acc -> IdentMap.remove li acc)
-            ly
-            st.st_arr_locked
+          LocSet.fold (fun li acc -> LocMap.remove li acc) ly st.st_arr_locked
         in
         AbsState { st' with st_inv = inv'; st_arr_locked = al }
       else
@@ -463,7 +453,7 @@ let exec_set_deep_access (x : ident) (a : atom) (acs : access list) (ty : btyp)
     abstract location in [st]. *)
 let pointsto_unique (st : absstate) (x : ident) : bool =
   match IdentMap.find_opt x st.st_env with
-  | Some locs -> IdentSet.cardinal locs = 1
+  | Some locs -> LocSet.cardinal locs = 1
   | None -> true
 
 (** [vars_of_atom a] returns the set of variables contained in [a]. *)
@@ -473,7 +463,7 @@ let rec vars_of_atom (a : atom) : IdentSet.t =
   | AUnaryOp (_, a1, _) -> vars_of_atom a1
   | ABinaryOp (_, a1, a2, _) ->
       IdentSet.union (vars_of_atom a1) (vars_of_atom a2)
-  | _ -> set_empty
+  | _ -> IdentSet.empty
 
 (** [args_points_unique st args] checks wether each function argument belonging
     to [args] points to only one abstract location in [st]. *)
@@ -485,49 +475,49 @@ let args_pointsto_unique (st : absstate) (args : atom list) : bool =
 (** [is_tree_loc_aux m curr visited] checks that the memory region reachable
     from the location [curr] is a tree, given the already visited locations
     [visited]. *)
-let rec is_tree_loc_aux (m : absmem) (curr : absloc) (visited : IdentSet.t) :
-    bool * IdentSet.t =
-  if IdentSet.mem curr visited then (false, visited)
+let rec is_tree_loc_aux (m : absmem) (curr : absloc) (visited : LocSet.t) :
+    bool * LocSet.t =
+  if LocSet.mem curr visited then (false, visited)
   else
     let adjacents =
-      IdentPairMap.fold
+      LIPairMap.fold
         (fun (l, f) locs acc ->
-          if l = curr then List.append (IdentSet.elements locs) acc else acc)
+          if l = curr then List.append (LocSet.elements locs) acc else acc)
         m
         []
     in
     let b, visited' = is_forest_locs_aux m visited adjacents in
-    (b, IdentSet.add curr visited')
+    (b, LocSet.add curr visited')
 
 (** [is_forest_locs_aux m (b, vis) locs] checks that the memory region reachable
     from the location [locs] is a multi-rooted tree, given that the
     alread-explored memory region composed of the locations [vis] is itself a
     tree or not (according to [b]). *)
-and is_forest_locs_aux (m : absmem) (visited : IdentSet.t) (locs : absloc list)
-    : bool * IdentSet.t =
+and is_forest_locs_aux (m : absmem) (visited : LocSet.t) (locs : absloc list) :
+    bool * LocSet.t =
   match locs with
   | [] -> (true, visited)
   | l :: locs' ->
       let b, visited' = is_tree_loc_aux m l visited in
-      let visu = IdentSet.union visited visited' in
+      let visu = LocSet.union visited visited' in
       if b then is_forest_locs_aux m visu locs' else (false, visu)
 
 (** [is_tree_loc m curr visited] checks wether the memory layout of [m] is a
     tree starting from [root] and given the already visited nodes [visited]. *)
-let is_tree_loc (m : absmem) (root : absloc) (visited : IdentSet.t) : bool =
+let is_tree_loc (m : absmem) (root : absloc) (visited : LocSet.t) : bool =
   fst (is_tree_loc_aux m root visited)
 
 (** [is_forest_locs m locs] checks wether the memory layout of [m] is a forest
     starting from the locations [roots]. *)
-let is_forest_locs (m : absmem) (roots : ident list) : bool =
-  fst (is_forest_locs_aux m set_empty roots)
+let is_forest_locs (m : absmem) (roots : absloc list) : bool =
+  fst (is_forest_locs_aux m LocSet.empty roots)
 
 (** [is_tree_var st x] checks wether the memory layout in [st] is a tree
     starting from the variable [x]. *)
-let is_tree_var (st : absstate) (x : ident) : bool =
+(* let is_tree_var (st : absstate) (x : ident) : bool =
   match IdentMap.find_opt x st.st_env with
-  | Some locs -> is_forest_locs st.st_mem (IdentSet.elements locs)
-  | None -> false
+  | Some locs -> is_forest_locs st.st_mem (LocSet.elements locs)
+  | None -> false *)
 
 (** [wf_args st args] checks that all arguments [args] are well-formed at
     function call, i.e. that each non-primitive arguments point to trees and
@@ -535,9 +525,15 @@ let is_tree_var (st : absstate) (x : ident) : bool =
 let wf_args (st : absstate) (args : atom list) : bool =
   let arg_roots =
     List.fold_left
-      (fun acc (a : atom) ->
+      (fun (acc : absloc list) (a : atom) ->
         if btyp_is_prim (typof_atom a) then acc
-        else List.append (IdentSet.elements (vars_of_atom a)) acc)
+        else
+          let vars = vars_of_atom a in
+          IdentSet.fold
+            (fun v locs ->
+              List.append (LocSet.elements (IdentMap.find v st.st_env)) locs)
+            vars
+            acc)
       []
       args
   in
@@ -548,14 +544,14 @@ let wf_args (st : absstate) (args : atom list) : bool =
 let rec follow_path_from_loc (m : absmem) (p : path) (root : absloc) :
     pointsto_set =
   match p with
-  | [] -> IdentSet.singleton root
+  | [] -> LocSet.singleton root
   | f :: [] -> mem_get m root f
   | f :: p' ->
       let adjacents = mem_get m root f in
-      IdentSet.fold
-        (fun l acc -> IdentSet.union (follow_path_from_loc m p' l) acc)
+      LocSet.fold
+        (fun l acc -> LocSet.union (follow_path_from_loc m p' l) acc)
         adjacents
-        set_empty
+        LocSet.empty
 
 (** [follow_path_from_var ev m v p] returns the set of locations reachable from
     [v] via [p] in the memory [m] and environment [ev]. *)
@@ -563,11 +559,11 @@ let follow_path_from_var (ev : absenv) (m : absmem) (v : ident) (p : path) :
     pointsto_set =
   match IdentMap.find_opt v ev with
   | Some locs ->
-      IdentSet.fold
-        (fun l acc -> IdentSet.union (follow_path_from_loc m p l) acc)
+      LocSet.fold
+        (fun l acc -> LocSet.union (follow_path_from_loc m p l) acc)
         locs
-        set_empty
-  | None -> set_empty
+        LocSet.empty
+  | None -> LocSet.empty
 
 (** [args_bjection params args] computes the bijection map from from parameters
     to arguments. It binds each parameter x to its corresponding argument y if y
@@ -591,18 +587,18 @@ let rec args_bijection (params : ident list) (args : atom list) :
     edges that should go out [loc1] and [loc2]. [bij] is an accumulator storing
     the bijection computed until now. *)
 let rec mem_bijection (re : renv) (edges : (ident * btyp) list) (loc1 : absloc)
-    (loc2 : absloc) (m1 : absmem) (m2 : absmem) (bij : ident IdentMap.t) :
-    ident IdentMap.t =
+    (loc2 : absloc) (m1 : absmem) (m2 : absmem) (bij : absloc LocMap.t) :
+    absloc LocMap.t =
   match edges with
   | [] -> bij
   | (eid, etyp) :: edges' ->
       if is_prim etyp then mem_bijection re edges' loc1 loc2 m1 m2 bij
       else
-        let l1 = IdentPairMap.find (loc1, eid) m1 in
-        let l2 = IdentPairMap.find (loc2, eid) m2 in
-        if IdentSet.cardinal l1 = 1 && IdentSet.cardinal l2 = 1 then
-          let lv1 = IdentSet.choose l1 in
-          let lv2 = IdentSet.choose l2 in
+        let l1 = LIPairMap.find (loc1, eid) m1 in
+        let l2 = LIPairMap.find (loc2, eid) m2 in
+        if LocSet.cardinal l1 = 1 && LocSet.cardinal l2 = 1 then
+          let lv1 = LocSet.choose l1 in
+          let lv2 = LocSet.choose l2 in
           let edges_e =
             match etyp with
             | BRecord rid -> begin
@@ -615,7 +611,7 @@ let rec mem_bijection (re : renv) (edges : (ident * btyp) list) (loc1 : absloc)
             | _ -> assert false
           in
           let bij' =
-            mem_bijection re edges_e lv1 lv2 m1 m2 (IdentMap.add lv1 lv2 bij)
+            mem_bijection re edges_e lv1 lv2 m1 m2 (LocMap.add lv1 lv2 bij)
           in
           mem_bijection re edges' loc1 loc2 m1 m2 bij'
         else assert false
@@ -625,12 +621,12 @@ let rec mem_bijection (re : renv) (edges : (ident * btyp) list) (loc1 : absloc)
     [st1] and [v2] of [st2]. [re] is the record type environment. [ty] is the
     type of the variables. *)
 let locs_bijection (re : renv) (v1 : ident) (v2 : ident) (ty : btyp)
-    (st1 : absstate) (st2 : absstate) : ident IdentMap.t =
+    (st1 : absstate) (st2 : absstate) : absloc LocMap.t =
   let l1 = IdentMap.find v1 st1.st_env in
   let l2 = IdentMap.find v2 st2.st_env in
-  if IdentSet.cardinal l1 = 1 && IdentSet.cardinal l2 = 1 then
-    let lv1 = IdentSet.choose l1 in
-    let lv2 = IdentSet.choose l2 in
+  if LocSet.cardinal l1 = 1 && LocSet.cardinal l2 = 1 then
+    let lv1 = LocSet.choose l1 in
+    let lv2 = LocSet.choose l2 in
     let edges =
       match ty with
       | BRecord rid -> begin
@@ -649,7 +645,7 @@ let locs_bijection (re : renv) (v1 : ident) (v2 : ident) (ty : btyp)
       lv2
       st1.st_mem
       st2.st_mem
-      (IdentMap.add lv1 lv2 IdentMap.empty)
+      (LocMap.add lv1 lv2 LocMap.empty)
   else assert false
 
 (** [funcall_bijection re args params stcallee stcaller] computes the bijection
@@ -659,7 +655,7 @@ let locs_bijection (re : renv) (v1 : ident) (v2 : ident) (ty : btyp)
     location in [stcaller]. [re] is the record type environment. *)
 let funcall_bijection (show_debug : bool) (re : renv)
     (params : (ident * btyp) list) (args : atom list) (stcallee : absstate)
-    (stcaller : absstate) : ident IdentMap.t * ident IdentMap.t =
+    (stcaller : absstate) : ident IdentMap.t * absloc LocMap.t =
   let vars_bij = args_bijection (List.map fst params) args in
   debug_info show_debug
   @@ sprintf
@@ -671,11 +667,11 @@ let funcall_bijection (show_debug : bool) (re : renv)
   let locs_bij =
     List.fold_left
       (fun acc (v, ty) ->
-        IdentMap.union
+        LocMap.union
           (fun _ l1 l2 -> if l1 <> l2 then assert false else Some l1)
           (locs_bijection re v (IdentMap.find v vars_bij) ty stcallee stcaller)
           acc)
-      IdentMap.empty
+      LocMap.empty
       (List.fold_right
          (fun (id, ty) acc -> if is_prim ty then acc else (id, ty) :: acc)
          params
@@ -695,13 +691,13 @@ let funcall_bijection (show_debug : bool) (re : renv)
        (list_to_string_braces
           (fun (l1, l2) ->
             sprintf "%s -> %s" (absloc_to_string l1) (absloc_to_string l2))
-          (IdentMap.to_seq locs_bij |> List.of_seq));
+          (LocMap.to_seq locs_bij |> List.of_seq));
   (vars_bij, locs_bij)
 
 (** [apply_ident_bijection bij] return the bijection of [x] stored in [bij]. If
     it does not exist, it returns [x] itself. *)
-let apply_ident_bijection (bij : ident IdentMap.t) (x : ident) : ident =
-  match IdentMap.find_opt x bij with
+let apply_bijection (bij : 'a -> 'a option) (x : 'a) : 'a =
+  match bij x with
   | Some x' -> x'
   | None -> x
 
@@ -709,60 +705,65 @@ let apply_ident_bijection (bij : ident IdentMap.t) (x : ident) : ident =
     location of [st] by its corresponding value given in the bijections
     [vars_bij] and [locs_bij]. *)
 let apply_state_bijection (vars_bij : ident IdentMap.t)
-    (locs_bij : ident IdentMap.t) (next_loc : ident) (st : absstate) : absstate
-    =
+    (locs_bij : absloc LocMap.t) (next_loc : int) (st : absstate) : absstate =
+  let apply_var_bijection =
+    apply_bijection (fun v -> IdentMap.find_opt v vars_bij)
+  in
+  let apply_loc_bijection =
+    apply_bijection (fun l -> LocMap.find_opt l locs_bij)
+  in
   let ev =
     IdentMap.fold
       (fun v ls acc ->
-        let v' = apply_ident_bijection vars_bij v in
-        let ls' = IdentSet.map (apply_ident_bijection locs_bij) ls in
+        let v' = apply_var_bijection v in
+        let ls' = LocSet.map apply_loc_bijection ls in
         IdentMap.add v' ls' acc)
       st.st_env
       IdentMap.empty
   in
   let rev = env_reverse ev in
   let m =
-    IdentPairMap.fold
+    LIPairMap.fold
       (fun (l, f) ls acc ->
-        let l' = apply_ident_bijection locs_bij l in
-        let ls' = IdentSet.map (apply_ident_bijection locs_bij) ls in
-        IdentPairMap.add (l', f) ls' acc)
+        let l' = apply_loc_bijection l in
+        let ls' = LocSet.map apply_loc_bijection ls in
+        LIPairMap.add (l', f) ls' acc)
       st.st_mem
-      IdentPairMap.empty
+      LIPairMap.empty
   in
   let rm = mem_reverse m in
-  let res = IdentSet.map (apply_ident_bijection locs_bij) st.st_res in
+  let res = LocSet.map apply_loc_bijection st.st_res in
   let inv =
     IdentMap.fold
       (fun v t acc ->
-        let v' = apply_ident_bijection vars_bij v in
+        let v' = apply_var_bijection v in
         IdentMap.add v' t acc)
       st.st_inv
       IdentMap.empty
   in
   let inv_res = st.st_inv_res in
-  make_state ev m rev rm res inv inv_res IdentMap.empty next_loc
+  make_state ev m rev rm res inv inv_res LocMap.empty next_loc
 
 (** [proj_mem m root pmem visited] extracts the sub-memory of [m] reachable from
     [root]. [pmem] is the accumulator for the resulting memory and [visited] is
     the one for all visited locations. *)
 let rec proj_mem (m : absmem) (root : absloc) (pmem : absmem)
-    (visited : IdentSet.t) : absmem * IdentSet.t =
-  if IdentSet.mem root visited then (pmem, visited)
+    (visited : LocSet.t) : absmem * LocSet.t =
+  if LocSet.mem root visited then (pmem, visited)
   else
     let pmem', visited' =
-      IdentPairMap.fold
+      LIPairMap.fold
         (fun (l, f) locs (accM, accV) ->
           if l = root then
-            IdentSet.fold
+            LocSet.fold
               (fun loc (accM1, accV1) ->
                 let accM1' =
-                  IdentPairMap.update
+                  LIPairMap.update
                     (l, f)
                     (fun li ->
                       match li with
-                      | Some li -> Some (IdentSet.add loc li)
-                      | None -> Some (IdentSet.singleton loc))
+                      | Some li -> Some (LocSet.add loc li)
+                      | None -> Some (LocSet.singleton loc))
                     accM1
                 in
                 proj_mem m loc accM1' accV1)
@@ -772,7 +773,7 @@ let rec proj_mem (m : absmem) (root : absloc) (pmem : absmem)
         m
         (pmem, visited)
     in
-    (pmem', IdentSet.add root visited')
+    (pmem', LocSet.add root visited')
 
 (** [proj_state_aux st vars locs] builds the projection of [st] on the variables
     [vars] and the abstract locations [locs]. *)
@@ -788,31 +789,34 @@ let proj_state_aux (st : absstate) (vars : var_set) (locs : pointsto_set) :
      the variables. *)
   let roots =
     let roots_of_vars =
-      IdentMap.fold (fun _ locs roots -> IdentSet.union locs roots) ev set_empty
+      IdentMap.fold
+        (fun _ locs roots -> LocSet.union locs roots)
+        ev
+        LocSet.empty
     in
-    IdentSet.union locs roots_of_vars
+    LocSet.union locs roots_of_vars
   in
   let m, visited =
-    IdentSet.fold
+    LocSet.fold
       (fun root (m, visited) -> proj_mem st.st_mem root m visited)
       roots
-      (IdentPairMap.empty, set_empty)
+      (LIPairMap.empty, LocSet.empty)
   in
   let rm = mem_reverse m in
   (* The locked arrays environment is projected on all locations contained
      in the projection of the memory. *)
   let arr_locked =
-    IdentMap.filter (fun k _ -> IdentSet.mem k visited) st.st_arr_locked
+    LocMap.filter (fun k _ -> LocSet.mem k visited) st.st_arr_locked
   in
   (* The set of returned locations is projected on all locations contained
      in the projection of the memory. *)
-  let res = IdentSet.filter (fun r -> IdentSet.mem r visited) st.st_res in
+  let res = LocSet.filter (fun r -> LocSet.mem r visited) st.st_res in
   let next_loc = st.st_next_loc in
   make_state ev m rev rm res iv iv_res arr_locked next_loc
 
 (** [proj_state st vars] builds the projection of [st] on the variables [vars].
 *)
-let proj_state st vars = proj_state_aux st vars set_empty
+let proj_state st vars = proj_state_aux st vars LocSet.empty
 
 (** [build_call_state st args] build the state for a function call with
     arguments [args] from [st]. *)
@@ -820,11 +824,11 @@ let build_call_state (st : absstate) (args : atom list) : absstate =
   let vars =
     List.fold_left
       (fun acc a -> IdentSet.union (vars_of_atom a) acc)
-      set_empty
+      IdentSet.empty
       args
   in
   let stcall = proj_state st vars in
-  { stcall with st_res = set_empty }
+  { stcall with st_res = LocSet.empty }
 
 (** [returnstate_inv_paths st_init inv] computes the new invalid paths that are
     due to the invalidation of the arguments of a function call. [st_init] is
@@ -838,13 +842,13 @@ let returnstate_inv_paths (st_init : absstate) (inv : path_map) : path_map =
       (fun var pl accF ->
         List.fold_left
           (fun accL p ->
-            IdentSet.union
+            LocSet.union
               (follow_path_from_var st_init.st_env st_init.st_mem var p)
               accL)
           accF
           pl)
       inv_flat
-      set_empty
+      LocSet.empty
   in
   invalidate_mem_from_locs st_init roots
 
@@ -874,7 +878,7 @@ let exec_set_call (show_debug : bool) (re : renv) (x : ident) (a : atom)
       let args_validity =
         List.for_all (Aliasing_check.check_atom (AbsState stcall)) args
       in
-      let no_locked_arrays = IdentMap.is_empty stcall.st_arr_locked in
+      let no_locked_arrays = LocMap.is_empty stcall.st_arr_locked in
       let errmsg cause =
         sprintf "when calling function %s: %s" (ident_to_string y) cause
       in
@@ -917,7 +921,7 @@ let exec_set_call (show_debug : bool) (re : renv) (x : ident) (a : atom)
             - The next fresh location is the one of the initial state. *)
         let st' = if is_prim ty then st else env_add st x stret.st_res in
         let m_ret =
-          IdentPairMap.merge
+          LIPairMap.merge
             (fun _ ls1 ls2 ->
               match (ls1, ls2) with
               | Some ls1, _ -> Some ls1
@@ -959,32 +963,32 @@ let exec_set_call (show_debug : bool) (re : renv) (x : ident) (a : atom)
     (sub-)element of an array, i.e. exploring the reverse memory [rm] from [loc]
     implies taking an edge labelled "\[*\]". *)
 let rec is_loc_array_subelem (rm : rev_absmem) (loc : absloc)
-    (visited : IdentSet.t) : bool * IdentSet.t =
-  if IdentSet.mem loc visited then (false, visited)
+    (visited : LocSet.t) : bool * LocSet.t =
+  if LocSet.mem loc visited then (false, visited)
   else
-    match IdentMap.find_opt loc rm with
+    match LocMap.find_opt loc rm with
     | Some adjacents ->
         let is_subelem, visited' =
           are_adjs_array_subelem rm visited loc adjacents
         in
-        (is_subelem, IdentSet.add loc visited)
-    | None -> (false, IdentSet.add loc visited)
+        (is_subelem, LocSet.add loc visited)
+    | None -> (false, LocSet.add loc visited)
 
-and are_adjs_array_subelem (rm : rev_absmem) (visited : IdentSet.t)
-    (root : absloc) (adjs : (ident * pointsto_set) list) =
+and are_adjs_array_subelem (rm : rev_absmem) (visited : LocSet.t)
+    (root : absloc) (adjs : (ident * pointsto_set) list) : bool * LocSet.t =
   match adjs with
   | [] -> (false, visited)
   | (f, locs) :: adjs' ->
-      if f = _CONTENT then (true, IdentSet.add root visited)
+      if f = _CONTENT then (true, LocSet.add root visited)
       else
         let is_subelem, visited' =
-          are_locs_array_subelem rm visited (IdentSet.elements locs)
+          are_locs_array_subelem rm visited (LocSet.elements locs)
         in
         if is_subelem then (true, visited')
         else are_adjs_array_subelem rm visited' root adjs'
 
-and are_locs_array_subelem (rm : rev_absmem) (visited : IdentSet.t)
-    (locs : absloc list) : bool * IdentSet.t =
+and are_locs_array_subelem (rm : rev_absmem) (visited : LocSet.t)
+    (locs : absloc list) : bool * LocSet.t =
   match locs with
   | [] -> (false, visited)
   | l :: locs' ->
@@ -1001,7 +1005,7 @@ let exec_return (a : atom) (st : absstate) : absstate =
     | AVar (v, ty) ->
         if is_prim ty then st
         else
-          let res = IdentSet.union st.st_res (IdentMap.find v st.st_env) in
+          let res = LocSet.union st.st_res (IdentMap.find v st.st_env) in
           { st with st_res = res }
     | _ -> st
   in
@@ -1016,7 +1020,7 @@ let exec_return (a : atom) (st : absstate) : absstate =
 
 let locked_arrays_to_string (st : absstate) : string =
   let arr_locked_var =
-    IdentMap.fold
+    LocMap.fold
       (fun l a accM ->
         let vars = vars_aliased_to_loc st.st_rev_env l in
         IdentSet.fold (fun v accS -> IdentMap.add v a accS) vars accM)
@@ -1078,10 +1082,10 @@ let rec absexec (show_debug : bool) (re : renv) (fe : fenv) (d : absdom)
         let d' =
           let* st = d in
           let all_vars_in_array_get =
-            IdentMap.fold
+            LocMap.fold
               (fun _ a acc -> IdentSet.union (vars_of_atom a) acc)
               st.st_arr_locked
-              set_empty
+              IdentSet.empty
           in
           if IdentSet.mem x all_vars_in_array_get then
             top
@@ -1149,10 +1153,10 @@ let rec absexec (show_debug : bool) (re : renv) (fe : fenv) (d : absdom)
             fst
               (are_locs_array_subelem
                  st'.st_rev_mem
-                 set_empty
-                 (IdentSet.elements st'.st_res))
+                 LocSet.empty
+                 (LocSet.elements st'.st_res))
           then top "returning a (sub-)element of an array is forbidden"
-          else if not (is_forest_locs st'.st_mem (IdentSet.elements st.st_res))
+          else if not (is_forest_locs st'.st_mem (LocSet.elements st.st_res))
           then top "ill-formed return value"
           else AbsState st'
         in
@@ -1167,7 +1171,7 @@ let rec absexec (show_debug : bool) (re : renv) (fe : fenv) (d : absdom)
   in
   (s', d_out)
 
-let fresh_loc (l : absloc) : absloc = Pos.add BinNums.Coq_xH l
+let fresh_loc (l : absloc) : absloc = 1 + l
 
 (** [add_memory_object_aux re st ty] adds a new memory object reflecting type
     [ty] in [st] and attached it to root [root]. [re] is the record type
@@ -1191,7 +1195,7 @@ let add_memory_object_aux (re : renv) (st : absstate) (root : absloc)
     else
       let lid = fresh_loc () in
       let m = gen_val_mem_layout m lid ta in
-      IdentPairMap.add (root, _CONTENT) (IdentSet.singleton lid) m
+      LIPairMap.add (root, _CONTENT) (LocSet.singleton lid) m
   and gen_record_mem_layout (m : absmem) (root : absloc) (rid : ident) : absmem
       =
     match renv_get re rid with
@@ -1202,7 +1206,7 @@ let add_memory_object_aux (re : renv) (st : absstate) (root : absloc)
             else
               let lid = fresh_loc () in
               let m = gen_val_mem_layout acc lid fty in
-              IdentPairMap.add (root, fname) (IdentSet.singleton lid) m)
+              LIPairMap.add (root, fname) (LocSet.singleton lid) m)
           m
           fields
     | Errors.Error _ -> assert false
@@ -1211,8 +1215,8 @@ let add_memory_object_aux (re : renv) (st : absstate) (root : absloc)
   let rm = mem_reverse m in
   { st with st_mem = m; st_rev_mem = rm; st_next_loc = !next_loc }
 
-let add_memory_object (re : renv) (st : absstate) (ty : btyp) : ident * absstate
-    =
+let add_memory_object (re : renv) (st : absstate) (ty : btyp) :
+    absloc * absstate =
   let root = st.st_next_loc in
   let st = { st with st_next_loc = fresh_loc st.st_next_loc } in
   (root, add_memory_object_aux re st root ty)
@@ -1225,8 +1229,8 @@ let gen_valid_call_state (re : renv) (params : (ident * btyp) list) : absstate =
       if is_prim pty then st
       else
         let root, st' = add_memory_object re st pty in
-        env_add st' pid (IdentSet.singleton root))
-    (make_state2 IdentMap.empty IdentPairMap.empty)
+        env_add st' pid (LocSet.singleton root))
+    (make_state2 IdentMap.empty LIPairMap.empty)
     params
 
 (** [is_param v params] checks wether the variable [v] is contained in the
@@ -1241,12 +1245,12 @@ let build_return_state (st : absstate) (params : (ident * btyp) list) : absstate
   let streturn =
     proj_state_aux st (IdentSet.of_list (List.map fst params)) st.st_res
   in
-  { streturn with st_arr_locked = IdentMap.empty }
+  { streturn with st_arr_locked = LocMap.empty }
 
 (** [wf_return_val st] checks that the return value in [st] is well-formed, i.e.
     it has a tree structure. *)
 let wf_return_val (st : absstate) : bool =
-  is_forest_locs st.st_mem (IdentSet.elements st.st_res)
+  is_forest_locs st.st_mem (LocSet.elements st.st_res)
 
 (** [wf_params st params] check that the parameters [params] of the function are
     well-formed in [st], i.e. each parameter points to a tree and there is no
@@ -1258,7 +1262,7 @@ let wf_params (st : absstate) (params : (ident * btyp) list) : bool =
         if is_prim pty then roots
         else
           let pid_roots = IdentMap.find pid st.st_env in
-          List.append (IdentSet.elements pid_roots) roots)
+          List.append (LocSet.elements pid_roots) roots)
       []
       params
   in
@@ -1307,8 +1311,8 @@ let gen_fun_descr_and_ast (show_debug : bool) (re : renv) (fe : fenv)
     record definition [l]. *)
 let renv_from_record_defs (l : record_def list) : renv =
   List.fold_left
-    (fun acc st -> Utils.tset acc st.rd_name st.rd_fields)
-    Maps.PTree.empty
+    (fun acc st -> Maps2.STree.set st.rd_name st.rd_fields acc)
+    Maps2.STree.empty
     l
 
 (** [gen_asbfun_descr re fe tparams tret] generates the function descriptor for
@@ -1331,7 +1335,7 @@ let gen_absfun_descr (re : renv) (fe : fenv)
   assert (params_pointsto_unique callstate (List.map fst params));
   let returnstate =
     let root =
-      if is_prim tret then IdentSet.empty
+      if is_prim tret then LocSet.empty
       else
         let wparam, _ = List.assoc AttrWrite params1 in
         IdentMap.find wparam callstate.st_env
@@ -1467,7 +1471,7 @@ module DotExport = struct
       ~delim:("", "")
       ~sep:""
       (fun (k, lp) ->
-        let lp' = IdentSet.elements lp in
+        let lp' = LocSet.elements lp in
         sprintf
           "%s%s -> %s;\n"
           indent
@@ -1476,13 +1480,13 @@ module DotExport = struct
       lev
 
   let print_mem (out : out_channel) (m : absmem) : unit =
-    let lm = List.of_seq (IdentPairMap.to_seq m) in
+    let lm = List.of_seq (LIPairMap.to_seq m) in
     print_list
       out
       ~delim:("", "")
       ~sep:""
       (fun ((l, f), lp) ->
-        let lp' = IdentSet.elements lp in
+        let lp' = LocSet.elements lp in
         sprintf
           "%s%s -> %s [label=\"%s\"];\n"
           indent
@@ -1492,12 +1496,12 @@ module DotExport = struct
       lm
 
   let print_rev_env (out : out_channel) (rev : rev_absenv) : unit =
-    let lrev = List.of_seq (IdentMap.to_seq rev) in
+    let lrev = List.of_seq (LocMap.to_seq rev) in
     let vars =
       IdentSet.elements
         (List.fold_left
            (fun acc s -> IdentSet.union acc s)
-           set_empty
+           IdentSet.empty
            (snd (List.split lrev)))
     in
     print_list
@@ -1524,8 +1528,8 @@ module DotExport = struct
       lrev
 
   let print_rev_mem (out : out_channel) (rm : rev_absmem) : unit =
-    let lrm = List.of_seq (IdentMap.to_seq rm) in
-    let print_one ((l, vl) : absloc * (ident * var_set) list) : unit =
+    let lrm = List.of_seq (LocMap.to_seq rm) in
+    let print_one ((l, vl) : absloc * (ident * LocSet.t) list) : unit =
       print_list
         out
         ~delim:("", "")
@@ -1539,14 +1543,14 @@ module DotExport = struct
                ~delim:("{", "}")
                ~sep:" "
                absloc_to_string
-               (IdentSet.elements vs))
+               (LocSet.elements vs))
             (ident_to_string f))
         vl
     in
     List.iter print_one lrm
 
   let print_res (out : out_channel) (locs : pointsto_set) : unit =
-    if IdentSet.is_empty locs then ()
+    if LocSet.is_empty locs then ()
     else begin
       fprintf out "%s\"res\" [shape=rect; color=red; margin=0.1];\n" indent;
       fprintf
@@ -1557,7 +1561,7 @@ module DotExport = struct
            ~delim:("{", "}")
            ~sep:" "
            absloc_to_string
-           (IdentSet.elements locs))
+           (LocSet.elements locs))
     end
 
   let print_state (out : out_channel) (d : absdom) : unit =

@@ -1,6 +1,6 @@
 open Printf
 open Types
-open PrintCommon
+open PrintUtils
 
 let recordtyp_to_string (f : 'typ -> string) (fields : (ident * 'typ) list) :
     string =
@@ -36,7 +36,7 @@ let rec typ_to_string (ty : typ) : string =
   | TAbs t -> ident_to_string t
   | TFun (tparams, tret) -> funtyp_to_string typ_to_string tparams tret
 
-and opt_parens (ty : typ) = PrintCommon.opt_parens is_simpl_typ typ_to_string ty
+and opt_parens (ty : typ) = PrintUtils.opt_parens is_simpl_typ typ_to_string ty
 
 let rec btyp_to_string (ty : btyp) : string =
   match ty with

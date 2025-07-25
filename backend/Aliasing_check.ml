@@ -21,11 +21,11 @@ let msg_from_failure (cause : error_cause) : string =
   | Invalid_path (v, p) ->
       Printf.sprintf
         "path %s%s is not valid"
-        (PrintCommon.ident_to_string v)
+        (PrintUtils.ident_to_string v)
         (path_to_string p)
   | Invalid_deep_access (a, acs) ->
       let acs_str =
-        PrintCommon.list_to_string
+        PrintUtils.list_to_string
           ~delim:("", "")
           ~sep:""
           (fun ac ->
@@ -40,7 +40,7 @@ let msg_from_failure (cause : error_cause) : string =
   | Invalid_param_at_return p ->
       Printf.sprintf
         "parameter %s may have been modified but is not returned"
-        (PrintCommon.ident_to_string p)
+        (PrintUtils.ident_to_string p)
 
 let error ?(stmt : statement option = None) (cause : error_cause) =
   raise (Invalid_program (cause, stmt))
@@ -114,9 +114,9 @@ let rec check_params_on_return_rec (st : AbsDom.absstate)
       let plocs =
         match IdentMap.find_opt p st.AbsDom.st_env with
         | Some locs -> locs
-        | None -> IdentSet.empty
+        | None -> LocSet.empty
       in
-      if Types.btyp_is_prim ty || IdentSet.equal st.AbsDom.st_res plocs then
+      if Types.btyp_is_prim ty || LocSet.equal st.AbsDom.st_res plocs then
         check_params_on_return_rec st params'
       else if AbsDom.is_valid_path (AbsDom.AbsState st) p [] then
         check_params_on_return_rec st params'
@@ -165,7 +165,7 @@ let check_globdef (def : globdef) : Imp1.Typed.globdef =
   match def with
   | DefConst (x, l, ty) -> DefConst (x, l, ty)
   | DefFun (x, f) ->
-      curr_fun_name := PrintCommon.ident_to_string x;
+      curr_fun_name := PrintUtils.ident_to_string x;
       DefFun (x, check_function f)
   | DeclConst (x, ty) -> DeclConst (x, ty)
   | DeclFun (f, tparams, tret) -> DeclFun (f, tparams, tret)

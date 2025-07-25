@@ -12,7 +12,7 @@ Definition transl_user_ident (i: Ident.t) : Ident.t :=
 
 Open Scope state_monad_scope.
 
-Definition fresh_var (prefix: string) : cmon ident :=
+Definition fresh_var (prefix: string) : cmon Ident.t :=
   let* ctr := MonCounter.get in
   let var := Ident.prefix_with prefix (Ident.of_str_nat ctr) in
   MonCounter.incr var.
@@ -21,7 +21,7 @@ Close Scope state_monad_scope.
 
 Open Scope state_err_monad_scope.
 
-Definition fresh_var_err (prefix: string) : crmon ident :=
+Definition fresh_var_err (prefix: string) : crmon Ident.t :=
   let* ctr := MonCounterErr.get in
   let var := Ident.prefix_with prefix (Ident.of_str_nat ctr) in
   MonCounterErr.incr var.
@@ -46,17 +46,7 @@ Definition list_is_empty {A: Type} (l: list A) : bool :=
   | nil => true
   | _ => false
   end.
-
-(** * Trees *)
-
-Notation ptree := PTree.t.
-
-Definition tget {A: Type} (t: ptree A) (p: positive) : option A := PTree.get p t.
-
-Definition tset {A: Type} (t: ptree A) (p: positive) (x: A) : ptree A := PTree.set p x t.
-
-Notation tempty := PTree.Empty.
-
+  
 (** * Sets *)
 
 Notation pset := PositiveSet.t.

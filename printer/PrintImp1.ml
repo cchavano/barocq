@@ -1,6 +1,6 @@
 open Printf
 open Imp1
-open PrintCommon
+open PrintUtils
 open PrintSyntax
 
 let rec statement_to_string_pref (prefix : string) (s : Imp1.statement) : string
@@ -25,7 +25,7 @@ let rec statement_to_string_pref (prefix : string) (s : Imp1.statement) : string
   | StReturn a -> sprintf "%sret %s;" prefix (atom_to_string a)
 
 let statement_to_string (s : Imp1.statement) : string =
-  statement_to_string_pref PrintCommon.indent s
+  statement_to_string_pref PrintUtils.indent s
 
 let function_to_string (f : Imp1.coq_function) : string =
   PrintSyntax.function_to_string statement_to_string f

@@ -436,7 +436,12 @@ let () =
         | Errors.OK prog ->
             Camlcoq.use_canonical_atoms := true;
             let ids = ClightCegen.program_idents prog in
-            record_idents (List.map PrintCommon.ident_to_string ids);
+            record_idents
+              (List.map
+                 (fun id ->
+                   Camlcoq.camlstring_of_coqstring
+                     (Ctypesdefs.string_of_ident id))
+                 ids);
             let cfile = get_full_filename !c_output ".c" in
             PrintClightCe.destination := Some cfile;
             (* Program printing *)

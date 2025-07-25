@@ -1,7 +1,7 @@
 -include Makefile.config
 
 COMMON=\
-	Monads.v Error.v Utils.v Barray.v Brecord.v MapList.v\
+	Monads.v Error.v Utils.v Barray.v Brecord.v Maps2.v\
 	Types.v Syntax.v Typing.v Intop.v Ident.v Target.v
 
 FRONTEND=\

@@ -1,5 +1,5 @@
 open Printf
-open PrintCommon
+open PrintUtils
 open Types
 open Syntax
 open BarocqShallow.Monadic
@@ -206,7 +206,7 @@ let rec atom_to_rocq (a : atom) : string =
         (list_to_string ~delim:("", "") ~sep:" " ident_to_string args)
 
 and opt_parens (a : atom) : string =
-  PrintCommon.opt_parens is_simpl_atom atom_to_rocq a
+  PrintUtils.opt_parens is_simpl_atom atom_to_rocq a
 
 let rec expr_to_rocq_rec (prefix : string) (e : expr) : string =
   let prefix' = prefix ^ indent in
@@ -290,7 +290,7 @@ let rec expr_to_rocq_rec (prefix : string) (e : expr) : string =
   in
   prefix ^ str
 
-let expr_to_rocq (e : expr) : string = expr_to_rocq_rec PrintCommon.indent e
+let expr_to_rocq (e : expr) : string = expr_to_rocq_rec PrintUtils.indent e
 
 let rec is_simpl_mtyp (ty : mtyp) : bool =
   match ty with
@@ -317,7 +317,7 @@ let rec mtyp_to_rocq (ty : mtyp) : string =
   | MRes ty' -> sprintf "res %s" (opt_parens ty')
 
 and opt_parens (ty : mtyp) : string =
-  PrintCommon.opt_parens is_simpl_mtyp mtyp_to_rocq ty
+  PrintUtils.opt_parens is_simpl_mtyp mtyp_to_rocq ty
 
 let param_to_rocq (param : ident * mtyp) : string =
   sprintf "(%s: %s)" (ident_to_string (fst param)) (mtyp_to_rocq (snd param))
@@ -363,7 +363,7 @@ and record_lit_to_rocq (rid : string) (rc : (ident * literal) list) : string =
   list_to_string ~delim:("{| ", " |}") ~sep:"; " (field_lit_to_rocq rid) rc
 
 and opt_parens (l : literal) : string =
-  PrintCommon.opt_parens is_simpl_lit literal_to_rocq l
+  PrintUtils.opt_parens is_simpl_lit literal_to_rocq l
 
 let field_typ_to_rocq (rid : string) ((fname, ftyp) : ident * mtyp) : string =
   sprintf
@@ -420,7 +420,7 @@ let gen_record_eta_update (sd : record_def) : string =
     rid
     (String.make 2 ' ')
     rid
-    (PrintCommon.list_to_string ~delim:("", "") ~sep:"; " (fun x -> x) fnames)
+    (PrintUtils.list_to_string ~delim:("", "") ~sep:"; " (fun x -> x) fnames)
 
 let imports : string =
   "From Coq Require Import Bool List BinIntDef.\n\
