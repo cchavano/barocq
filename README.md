@@ -58,7 +58,7 @@ Without any additionnal option, a C file will be created at `path/to/a.c`.
 To generate the shallow and deep embeddings, as well as the correspondence theorems, use:
 
 ```bash
-barocq -gen-corres path/to/file.br
+barocq -gen-corres-all path/to/file.br
 ```
 
 Other compiler flags and options are described with `barocq -help`.
