@@ -650,7 +650,7 @@ let gen_const_corres (cid : ident) (ty : mtyp) : string =
     thm
     indent
 
-let gen_deep_call_args (args : (ident * mtyp) list) : string =
+let fun_corres_deep_call_args (args : (ident * mtyp) list) : string =
   match args with
   | [] -> "tt"
   | _ ->
@@ -662,43 +662,48 @@ let gen_deep_call_args (args : (ident * mtyp) list) : string =
           RecordConv.conv_value_opt_parens RecordConv.RtoB aty aid)
         args
 
-let gen_shallow_call_ret (call : string) (ty : mtyp) : string =
+let fun_corres_shallow_call_ret (indent : string) (call : string) (ty : mtyp) :
+    string =
   match ty with
   | MRes tr ->
       let conv_v = RecordConv.conv_value RecordConv.RtoB tr "r" in
-      if conv_v = "r" then call
-      else sprintf "let* r := %s in\n%s OK (%s)" call indent conv_v
+      if conv_v = "r" then sprintf "%s%s" indent call
+      else sprintf "%slet* r := %s in\n%sOK (%s)" indent call indent conv_v
   | _ ->
       sprintf
-        "OK (%s)"
+        "%sOK (%s)"
+        indent
         (RecordConv.conv_value RecordConv.RtoB ty (sprintf "(%s)" call))
 
-let gen_function_corres (fid : ident) (params : (ident * mtyp) list)
-    (tret : mtyp) : string =
-  let forall =
+let fun_corres_forall (params : (ident * mtyp) list) : string =
+  match params with
+  | [] -> ""
+  | _ -> sprintf "forall %s," (Shallowgen.param_list_to_rocq params)
+
+let fun_corres_shallow_call (indent : string) (fid : ident)
+    (params : (ident * mtyp) list) (tret : mtyp) : string =
+  let args =
     match params with
-    | [] -> ""
-    | _ -> sprintf "forall %s," (Shallowgen.param_list_to_rocq params)
+    | [] -> "tt"
+    | _ ->
+        list_to_string
+          ~delim:("", "")
+          ~sep:" "
+          ident_to_string
+          (List.map fst params)
   in
-  let deep_fun_id = Deepgen.ident_to_deep fid in
-  let shallow_fun_id = ident_to_string fid in
-  let deep_call =
-    sprintf "%s_val %s" shallow_fun_id (gen_deep_call_args params)
+  let call = sprintf "%s.%s %s" !shallowfile (ident_to_string fid) args in
+  fun_corres_shallow_call_ret indent call tret
+
+let gen_fun_corres (fid : ident) (params : (ident * mtyp) list) (tret : mtyp) :
+    string =
+  let forall = fun_corres_forall params in
+  let fid_deep = Deepgen.ident_to_deep fid in
+  let fid_shallow = ident_to_string fid in
+  let call_deep =
+    sprintf "%s_val %s" fid_shallow (fun_corres_deep_call_args params)
   in
-  let shallow_call =
-    let args =
-      match params with
-      | [] -> "tt"
-      | _ ->
-          list_to_string
-            ~delim:("", "")
-            ~sep:" "
-            ident_to_string
-            (List.map fst params)
-    in
-    let call = sprintf "%s.%s %s" !shallowfile shallow_fun_id args in
-    gen_shallow_call_ret call tret
-  in
+  let call_shallow = fun_corres_shallow_call indent fid params tret in
   sprintf
     "Theorem fun_%s_corres :\n\
      %sexists %s_val,\n\
@@ -707,19 +712,23 @@ let gen_function_corres (fid : ident) (params : (ident * mtyp) list)
      %s %s =\n\
      %s %s).\n\
      Admitted."
-    shallow_fun_id
+    fid_shallow
     indent
-    shallow_fun_id
+    fid_shallow
     indent
-    deep_fun_id
-    shallow_fun_id
-    shallow_fun_id
+    fid_deep
+    fid_shallow
+    fid_shallow
     indent
     forall
     indent
-    deep_call
+    call_deep
     indent
-    shallow_call
+    call_shallow
+
+let params_of_absfun (tparams : (param_attr * mtyp) list) : (ident * mtyp) list
+    =
+  List.mapi (fun i (_, fty) -> (ident_of_string (sprintf "a%d" i), fty)) tparams
 
 let print_defs_corres (out : out_channel) (defs : globdef list) : unit =
   print_list
@@ -729,15 +738,102 @@ let print_defs_corres (out : out_channel) (defs : globdef list) : unit =
     (fun (d : BarocqShallow.Monadic.globdef) ->
       match d with
       | DefConst (cid, _, ty) | DeclConst (cid, ty) -> gen_const_corres cid ty
-      | DefFun (fid, f) -> gen_function_corres fid f.fn_params f.fn_return
+      | DefFun (fid, f) -> gen_fun_corres fid f.fn_params f.fn_return
       | DeclFun (fid, tparams, tret) ->
-          let params =
-            List.mapi
-              (fun i (_, fty) -> (ident_of_string (sprintf "a%d" i), fty))
-              tparams
-          in
-          gen_function_corres fid params tret)
+          let params = params_of_absfun tparams in
+          gen_fun_corres fid params tret)
     defs
+
+let print_properties_env (out : out_channel) (defs : globdef list) : unit =
+  let indent3 = make_indent 3 in
+  let indent4 = make_indent 4 in
+  let gen_const_property (cid : ident) : string =
+    let cid_str = ident_to_string cid in
+    sprintf
+      "(%s,\n\
+       %sfun (t: typ) (v: #t) =>\n\
+       %smatch typ_eq_dec t Deeptypes.typof_%s with\n\
+       %s| left EQ => cast EQ v = %s.%s\n\
+       %s| _ => False\n\
+       %send)"
+      (Deepgen.ident_to_deep cid)
+      indent3
+      indent4
+      cid_str
+      indent4
+      !shallowfile
+      cid_str
+      indent4
+      indent4
+  in
+  let gen_fun_property (fid : ident) (params : (ident * mtyp) list)
+      (tret : mtyp) : string =
+    let fid_deep = Deepgen.ident_to_deep fid in
+    let fid_shallow = ident_to_string fid in
+    let forall = fun_corres_forall params in
+    let call_deep =
+      sprintf "(cast EQ v) %s" (fun_corres_deep_call_args params)
+    in
+    let call_shallow =
+      fun_corres_shallow_call (make_indent 6) fid params tret
+    in
+    sprintf
+      "(%s,\n\
+       %sfun (t: typ) (v: #t) =>\n\
+       %smatch typ_eq_dec t Deeptypes.typof_%s with\n\
+       %s| left EQ =>\n\
+       %s%s\n\
+       %s%s =\n\
+       %s\n\
+       %s| _ => False\n\
+       %send)"
+      fid_deep
+      indent3
+      indent4
+      fid_shallow
+      indent4
+      (make_indent 6)
+      forall
+      (make_indent 6)
+      call_deep
+      call_shallow
+      indent4
+      indent4
+  in
+  let gen_def_property (d : globdef) : string =
+    match d with
+    | DefConst (cid, _, _) | DeclConst (cid, _) -> gen_const_property cid
+    | DefFun (fid, f) -> gen_fun_property fid f.fn_params f.fn_return
+    | DeclFun (fid, tparams, tret) ->
+        let params = params_of_absfun tparams in
+        gen_fun_property fid params tret
+  in
+  let propt =
+    "Definition propt : Type := string * (forall t : typ, # t -> Prop)."
+  in
+  let cast =
+    "Definition cast {t1 t2: typ} := @Types.typ_cast t1 t2 abs_types_impl."
+  in
+  let has_property =
+    sprintf
+      "Definition has_property (ge : genv abs_types_impl) (p : propt) :=\n\
+       %sexists t (v: #t), genv_get abs_types_impl ge (fst p) = OK (VAL t v) \
+       /\\ (snd p) t v."
+      indent
+  in
+  fprintf out "%s\n" propt;
+  fprintf out "\n";
+  fprintf out "%s\n" cast;
+  fprintf out "\n";
+  fprintf out "Definition all_prop : list propt :=\n";
+  print_list
+    out
+    ~delim:(sprintf "%s[\n%s" indent (make_indent 2), sprintf "\n%s].\n" indent)
+    ~sep:(sprintf ";\n%s" (make_indent 2))
+    gen_def_property
+    defs;
+  fprintf out "\n";
+  fprintf out "%s\n" has_property
 
 let prelude_imports () : string =
   sprintf
@@ -800,7 +896,13 @@ let print_prelude (out : out_channel) (prog : program) : unit =
   fprintf out "\n";
   fprintf out "Definition VAL (t: typ) (v: #t) := Val abs_types_impl t v.\n";
   fprintf out "\n";
-  fprintf out "%s" (gen_abs_defs_impl_env defs)
+  fprintf out "%s" (gen_abs_defs_impl_env defs);
+  if defs <> [] then begin
+    fprintf out "\n";
+    fprintf out "(** Properties environment *)\n";
+    fprintf out "\n";
+    print_properties_env out defs
+  end
 
 let print_corres (arch : Target.archi) (out : out_channel) (prog : program) :
     unit =
@@ -815,7 +917,7 @@ let print_corres (arch : Target.archi) (out : out_channel) (prog : program) :
   fprintf out "(** * Program correspondence theorems *)\n\n";
   fprintf
     out
-    "Definition eval_def := Barocq.eval_def %s abs_types_impl abs_defs_impl \
+    "Definition eval_def := Barocq.eval_def2 %s abs_types_impl abs_defs_impl \
      %s.prog.\n"
     arch_str
     !deepfile;
