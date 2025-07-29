@@ -715,6 +715,24 @@ Section DENOT.
       + apply (IHfields' k t0 H). 
   Defined.
 
+  Definition proj_field {k:key} {T:Type} (fd:field k T) : T :=
+    match fd with
+    | Field _ x => x
+    end.
+
+  Fixpoint eval_record_proj_aux (fields: SMapList.t typ) (rc: eval_recordtyp eval_typ fields) (k: ident) : res value.
+  Proof.
+    unfold eval_recordtyp in rc.
+    destruct fields.
+    - exact fail.
+    - simpl in rc.
+      destruct p.
+      destruct (SMapList.key_eq k0 k).
+      apply (OK (Val  _ (proj_field (fst rc)))).
+      apply (eval_record_proj_aux _ (snd rc) k).
+  Defined.
+
+(*
   Definition eval_record_proj_aux (fields: SMapList.t typ) (rc: eval_recordtyp eval_typ fields) (k: ident) : res value.
     simpl in rc. destruct (proj rc k) as [v |].
     - destruct (typof_field k fields) as [t |] eqn:Etyp.
@@ -722,7 +740,7 @@ Section DENOT.
         apply (ret (Val t v)).
       + apply fail.
     - apply fail.
-  Defined.
+  Defined. *)
 
   Definition eval_record_proj (v: value) (k: ident) : res value :=
     match v with
@@ -730,6 +748,43 @@ Section DENOT.
     | _ => fail
     end.
 
+
+  Definition typeof_value  (v : value ) :=
+    match v with
+    | Val t _ => t
+    end.
+
+  Definition typof_field_dec (k:ident) (fields: SMapList.t typ) : res {t : typ| typof_field k fields = OK t}.
+  Proof.
+    destruct (typof_field k fields) as [t |] eqn:Etyp.
+    apply OK. exists t. reflexivity.
+    apply fail.
+  Defined.
+
+  Definition cast_typof_field (k:ident) (fields:SMapList.t typ) (tv:typ) (v: eval_typ tv) :
+    res (type_of_field k (eval_fields_typ eval_typ fields)).
+  Proof.
+    destruct (typof_field_dec k fields) as [(t & Etyp) |].
+    - destruct (typ_eq_dec tv t) as [Eqt |_].
+      apply (typof_field_is_type fields k t) in Etyp.
+      rewrite Eqt  in v. rewrite Etyp in v. exact (OK v).
+      apply fail.
+    - apply fail.
+  Defined.
+
+
+  Definition eval_record_update_aux (n: ident) (fields: SMapList.t typ) (rc: eval_typ (TRecord n fields)) (k: ident) (v: value) : res value.
+    simpl in rc. destruct v as [tv v].
+    apply cast_typof_field with (k:=k) (fields := fields) in v.
+    destruct v as [v | _].
+    - destruct (update rc k v) as [rc' |].
+      +  apply (ret (Val (TRecord n fields) rc')).
+      +  apply fail.
+    - apply fail.
+  Defined.
+
+
+(*
   Definition eval_record_update_aux (n: ident) (fields: SMapList.t typ) (rc: eval_typ (TRecord n fields)) (k: ident) (v: value) : res value.
     simpl in rc. destruct v as [tv v]. destruct (typof_field k fields) as [t |] eqn:Etyp.
     - destruct (typ_eq_dec tv t) as [Eqt |_].
@@ -741,6 +796,8 @@ Section DENOT.
       + apply fail.
     - apply fail.
   Defined.
+*)
+
 
   Definition eval_record_update (v1: value) (k: ident) (v2: value) : res value :=
     match v1 with
@@ -764,7 +821,11 @@ Section DENOT.
     
   Definition eval_ifthenelse (v1 v2 v3: value) : res value :=
     match v1 with
-    | Val TBool b => ret (if b then v2 else v3)
+    | Val TBool b =>
+        if typ_eq_dec (typeof_value v2) (typeof_value v3)
+        then
+          ret (if b then v2 else v3)
+        else fail
     | _ => fail
     end.
 
@@ -780,22 +841,27 @@ Section DENOT.
       + apply fail.
   Defined.
 
-  Definition eval_app (v: value) (args: list value) : res value.
-    destruct v as [t vt]. destruct t as [ | | | | fields | tparams tret | t].
-    - apply fail.
-    - apply fail.
-    - apply fail.
-    - apply fail.
-    - apply fail.
-    - destruct tparams as [|t tparams'] eqn:Etparams; destruct args as [|a args'] eqn:Eargs.
-      + simpl in vt. specialize (vt tt). destruct vt.
-        -- apply (ret (Val tret e)).
-        -- apply (Error e).
-      + apply fail.
-      + apply fail.
-      + simpl in vt. apply (eval_app_rec (t :: tparams') tret vt (a :: args')).
-    - apply fail. 
-  Defined.
+  Definition eval_app (v: value) (args: list value) : res value :=
+    match v with
+    | Val t v0 =>
+        match t as t1 return (eval_typ t1 -> res value) with
+        | TFun tparams tret =>
+            match tparams as tparams' return (eval_typ (TFun tparams' tret) -> res value) with
+          | [] =>
+              fun vt1 : eval_typ (TFun [] tret) =>
+              match args with
+              | [] =>
+                  match vt1 tt with
+                  | OK e => eret (Val tret e)
+                  | Error e => Error e
+                  end
+              | v1 :: l0 => fail
+              end
+          | x  => fun f  => eval_app_rec x tret f args
+          end
+     | _ => fun _ => fail
+     end  v0
+    end.
 
   Fixpoint eval_expr (te: tenv) (ge: genv) (le: lenv) (e: expr) : res value :=
     match e with
@@ -837,16 +903,15 @@ Section DENOT.
         eval_access_list v1 vacs
     | EApp v args =>
         let* f := eval_expr te ge le v in
-        let* vargs := mmap (eval_expr te le ge) args
+        let* vargs := mmap (eval_expr te ge le) args
         in eval_app f vargs
     | EIfThenElse e1 e2 e3 =>
         let* v1 := eval_expr te ge le e1 in
         let* v2 := eval_expr te ge le e2 in
         let* v3 := eval_expr te ge le e3 in
-        eval_ifthenelse v1 v2 v2
+        eval_ifthenelse v1 v2 v3
     | ELetIn x e1 e2 =>
         let* v1 := eval_expr te ge le e1 in
-        let '(Val tv v) := v1 in
         let le' := lenv_update le x v1 in
         eval_expr te ge le' e2
     end
