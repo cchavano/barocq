@@ -10,7 +10,7 @@ type cident =
   | IdPrefixed of ident * ident
 
 (** Surface types. At parsing, a type identifier cannot yet be distinguished
-    between a struct type, an alias or an abstract type. *)
+    between a record type, an alias or an abstract type. *)
 type styp =
   | SBool
   | SInt32 of Types.signedness

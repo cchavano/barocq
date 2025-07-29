@@ -78,7 +78,7 @@ Defined.
 Definition mk_fun_btyp {A: Type} (params: list (A * btyp)) (tret: btyp) : btyp :=
   BFun (List.map snd params) tret.
 
-(** * Type of a struct field *)
+(** * Type of a record field *)
 
 Definition typof_field (k: ident) (fields: SMapList.t typ) : res typ :=
   SMapList.find_err k fields.

@@ -61,12 +61,12 @@ Section LITTRANSL.
         ret (lx' :: r, defs2)
     end.
 
-  Fixpoint transl_struct_lit (rc: SMapList.t Imp1Typed.literal) (defs: SMapList.t Imp2.literal) : cmon ((SMapList.t Imp2.literal_base) * SMapList.t Imp2.literal) :=
+  Fixpoint transl_record_lit (rc: SMapList.t Imp1Typed.literal) (defs: SMapList.t Imp2.literal) : cmon ((SMapList.t Imp2.literal_base) * SMapList.t Imp2.literal) :=
     match rc with
     | nil => ret (nil, defs)
     | (i, lx) :: rc' =>
         let* (lx', defs1) := transl_literal lx defs in
-        let* (r, defs2) := transl_struct_lit rc' defs1 in
+        let* (r, defs2) := transl_record_lit rc' defs1 in
         ret ((i, lx') :: r, defs2)
     end.
 
@@ -85,7 +85,7 @@ Fixpoint transl_literal_rec (l: Imp1Typed.literal) (defs: SMapList.t Imp2.litera
       let* x := fresh_var in
       ret (LbVar x, (x, LArray a' ty) :: defs)
   | Syntax.Typed.LRecord st ty =>
-      let* (st', defs) := transl_struct_lit transl_literal_rec st defs in
+      let* (st', defs) := transl_record_lit transl_literal_rec st defs in
       let* x := fresh_var in
       ret (LbVar x, (x, LRecord st' ty) :: defs)
   end.

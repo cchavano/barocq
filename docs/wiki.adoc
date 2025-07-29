@@ -527,7 +527,7 @@ defn schedule(ks: state) : state =
     ks
 ----
 
-The kernel state is composed of the current process id, the array of processes, the deadline of the current process and the machine state. A process is represented as a struct containing its identifier, its set of saved registers and the number of times it has been scheduled.
+The kernel state is composed of the current process id, the array of processes, the deadline of the current process and the machine state. A process is represented as a record containing its identifier, its set of saved registers and the number of times it has been scheduled.
 
 Two constants describe the kernel configuration: the number of processes `NB_PROCS`, and the quantum value for a round-robin scheduling `QUANTUM`.
 
@@ -558,7 +558,7 @@ As mentionned in the preamble, all array and record modifications are compiled i
 
 NOTE: The points-to analysis is performed on an intermediate representation called `Imp1`. The error messages are thus related to the `Imp1` syntax. Precisely pinpointing the origin of the problem in the source code is a tedious task that has not yet been done. To make the debugging of Barocq code easier, you can display the `Imp1` representation with the `-print-imp1` option of the compiler.
 
-The first thing to have in mind when you write Barocq code is that you are kind of writing an imperative program with a functional syntax. Thus, in the compiled code, assignments to non-primitive values actually create aliases, and modifying an array or a struct updates the memory in-place. To make a functional program compatible with those behaviors, it is strongly recommended to adopt an _affine_ programming style (a bit like Rust for those familiar with the language). This means that you should only use a non-primitive value at most once. More precisely, we adopt the following guideline: "everytime you make a modification to an object, never try to use the old version of it". This is what we do in the example above. To help following this good practice, we use variable shadowing every time we modify a variable, so that we are sure that we will only use the last reference to it. +
+The first thing to have in mind when you write Barocq code is that you are kind of writing an imperative program with a functional syntax. Thus, in the compiled code, assignments to non-primitive values actually create aliases, and modifying an array or a record updates the memory in-place. To make a functional program compatible with those behaviors, it is strongly recommended to adopt an _affine_ programming style (a bit like Rust for those familiar with the language). This means that you should only use a non-primitive value at most once. More precisely, we adopt the following guideline: "everytime you make a modification to an object, never try to use the old version of it". This is what we do in the example above. To help following this good practice, we use variable shadowing every time we modify a variable, so that we are sure that we will only use the last reference to it. +
 
 The second thing to know concerns arrays. Usually, arrays are accessed with indices whose values are not statically known. Barocq enforces a restrictive policy to make sure the programmer doesn't access an array with different indices at the same time. In short, you can only access one element at a time, and you cannot feed the parameters of a function with arguments containing arrays on which you already have a reference on a element.
 

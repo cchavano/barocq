@@ -179,7 +179,7 @@
 					]
 				},
 				{
-					"comment": "struct type definition",
+					"comment": "record type definition",
 					"begin": "\\b(type)\\s+(\\w+)\\s+(=)\\s*{",
 					"end": "}",
 					"beginCaptures": {
@@ -257,7 +257,7 @@
                     }
                 },
 				{
-					"comment": "struct field or function parameter",
+					"comment": "record field or function parameter",
 					"match": "(\\w+)\\s*:",
 					"capture":{
 						"1": { "name": "entity.name.variable.barocq" }

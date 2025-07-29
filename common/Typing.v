@@ -210,22 +210,22 @@ Definition typecheck_record_proj (re: renv) (ty: btyp) (x: ident) : res btyp :=
   match ty with
   | BRecord t =>
       let/catch fields := renv_get re t
-        /> "Typing.typecheck_record_proj: unknown struct type"
+        /> "Typing.typecheck_record_proj: unknown record type"
       in
       btypof_field x fields
-  | _ => failwith "Typing.typecheck_record_proj: struct type expected"
+  | _ => failwith "Typing.typecheck_record_proj: record type expected"
   end.
 
 Definition typecheck_record_update (re: renv) (ty1 ty2: btyp) (x: ident) : res btyp :=
   match ty1 with
   | BRecord t =>
       let/catch fields := renv_get re t
-        /> "Typing.typecheck_record_proj: unknown struct type"
+        /> "Typing.typecheck_record_proj: unknown record type"
       in
       let* tx := btypof_field x fields in
       if btyp_eq_dec tx ty2 then ret ty1
       else failwith "Typing.typecheck_record_update: type mismatch"
-  | _ => failwith "Typing.typecheck_record_update: struct type expected"
+  | _ => failwith "Typing.typecheck_record_update: record type expected"
   end.
 
   Inductive access_btyp : Type :=
@@ -300,5 +300,5 @@ Fixpoint typecheck_literal (re: renv) (l: Syntax.literal) : res literal :=
       let* rc' := SMapList.map_err (typecheck_literal re) rc in
       let* t := renv_get re x in
       if typecheck_struct_lit rc' t then ret (LRecord rc' (BRecord x))
-      else failwith "Typing.typecheck_literal: struct type mismatch"
+      else failwith "Typing.typecheck_literal: record type mismatch"
   end.

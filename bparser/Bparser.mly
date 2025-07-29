@@ -87,7 +87,7 @@ command:
 
 globdef:
   | TYPE id = ident BIND ty = styp { DefAlias (id, ty) }
-  | TYPE id = ident BIND fields = struct_fields { DefType (id, fields) }
+  | TYPE id = ident BIND fields = record_fields { DefType (id, fields) }
   | TYPE id = ident OF kind = abs_type_kind { DeclType (id, kind) }
   | DEFN x = ident COLON ty = styp BIND c = const { DefConst (x, c, ty) }
   | DEFN x = ident params = delimited(LPAREN, separated_list(COMMA, param), RPAREN)
@@ -186,7 +186,7 @@ const_field:
   | OP_LE { BopLe }
   | OP_GE { BopGe }
 
-struct_fields:
+record_fields:
   | fields = delimited(LBRACE, nonempty_list(typ_field), RBRACE) { fields }
 
 typ_field:
