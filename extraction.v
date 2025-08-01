@@ -34,6 +34,7 @@ Separate Extraction
   BinPosDef.Pos.leb
   BinInt.Z.succ
   BinPosDef.Pos.compare
+  Archi
   Integers.Ptrofs.signed
   Floats.Float.of_bits
   Floats.Float.to_bits
@@ -43,7 +44,6 @@ Separate Extraction
   Floats.Float.from_parsed
   Machregs.mreg
   Machregs.register_by_name
-  Archi.win64
   AST.builtin_arg
   AST.builtin_res
   Memdata.size_chunk

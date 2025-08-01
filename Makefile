@@ -23,7 +23,7 @@ VSOURCE=\
 
 VBUILD=$(addprefix $(BUILD_DIR)/, $(VSOURCE))
 
-EXTRDEP=$(BUILD_DIR)/bcomp/extractionMachdep.v
+EXTRDEP=$(BUILD_DIR)/extractionMachdep.v
 
 COQINCLUDES=$(foreach d, $(VDIRS), -R $(BUILD_DIR)/$(d) BarocqComp.$(d))
 COQC=coqc $(COQINCLUDES)
@@ -50,7 +50,7 @@ compcert.ini:
 
 $(EXTRDEP): | builddir
 	@echo RETRIEVE extractionMachdep.v
-	@cp $(COMPCERT_DIR)/$(ARCH)/extractionMachdep.v $(BUILD_DIR)/bcomp
+	@cp $(COMPCERT_DIR)/$(ARCH)/extractionMachdep.v $(BUILD_DIR)
 	@sed -i 's\Require\From compcert Require\g' $(EXTRDEP)
 
 extrdep: $(EXTRDEP)
