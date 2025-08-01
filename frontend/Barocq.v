@@ -971,7 +971,7 @@ Section DENOT.
   Definition fields_btyp_to_typ (te: tenv) (fields: SMapList.t btyp) : res (SMapList.t typ) :=
     SMapList.map_err (btyp_to_typ te) fields.
 
-  Definition eval_def_type (te: tenv) (ge: genv) (x: ident) (fields: list (ident * btyp)) : res tenv :=
+  Definition eval_def_type (te: tenv)  (x: ident) (fields: list (ident * btyp)) : res tenv :=
     let* fields' := fields_btyp_to_typ te fields in
     tenv_update te x fields'.
 
@@ -986,6 +986,19 @@ Section DENOT.
     let* fv := build_fun_value te ge (fn_params f) (fn_return f) (fn_body f) in
     genv_update ge x fv.
 
+  Definition eval_decl_const (te: tenv) (ge : genv) (x:ident) (bt:btyp) :=
+    let* ty :=  Typing.btyp_to_typ te bt  in
+    let* v  := genv_get ge x in
+    if typ_eq_dec ty (typeof_value v) then eret tt else fail.
+
+
+  Definition eval_decl_fun (te:tenv) (ge : genv) (x:Syntax.ident) (params : list (Syntax.param_attr * btyp)) (tret:btyp) :=
+    let* tparam := mmap (Typing.btyp_to_typ te) (List.map snd params) in
+    let* tret   := Typing.btyp_to_typ te tret in
+    let* v := genv_get ge x in
+    if (typ_eq_dec (TFun tparam tret) (typeof_value v)) then eret tt else fail.
+
+
   (** Interpreter *)
 
   Fixpoint interpret_rec (te: tenv) (ge: genv) (cmds: list Barocq.command) : res (list value) :=
@@ -994,7 +1007,7 @@ Section DENOT.
     | c :: xprog' =>
         match c with
         | CmdDef (DefType x fields) =>
-            let* te' := eval_def_type te ge x fields in
+            let* te' := eval_def_type te x fields in
             interpret_rec te' ge xprog'
         | CmdDef (DefConst x l ty) =>
             let* ge' := eval_def_const te ge x l ty in
@@ -1023,7 +1036,7 @@ Section DENOT.
     | d :: prog' =>
         match d with
         | DefType y fields =>
-            let* te' := eval_def_type te ge x fields in
+            let* te' := eval_def_type te  x fields in
             eval_def_rec te' ge prog' y
         | DefConst y l ty =>
             let* ge' := eval_def_const te ge y l ty in
@@ -1052,13 +1065,14 @@ Section DENOT.
 
   (** Evaluation of a whole program *)
 
-  Fixpoint eval_prog_rec (te: tenv) (ge: genv) (prog: program) : res genv :=
+
+  Fixpoint eval_prog_rec (te: tenv) (ge: genv) (prog: program) : res (tenv * genv) :=
     match prog with
-    | nil => ret ge
+    | nil => ret (te,ge)
     | d :: prog' =>
         match d with
         | DefType a fields =>
-            let* te' := eval_def_type te ge a fields in
+            let* te' := eval_def_type te  a fields in
             eval_prog_rec te' ge prog'
         | DefConst x l ty =>
             let* ge' := eval_def_const te ge x l ty in
@@ -1067,19 +1081,21 @@ Section DENOT.
             let* ge' := eval_def_fun te ge x f in
             eval_prog_rec te ge' prog'
         | DeclType _ _ => eval_prog_rec te ge prog'
-        | DeclConst y _
-        | DeclFun y _ _ =>
+        | DeclConst y bt => let* _ := eval_decl_const te ge y bt in
+                            eval_prog_rec te ge prog'
+        | DeclFun y params tret =>
+            let* _ := eval_decl_fun te ge y params tret in
             eval_prog_rec te ge prog'
         end
     end.
 
-  Definition eval_prog (impl: genv) (prog: program) : res genv :=
+  Definition eval_prog (impl: genv) (prog: program) : res (tenv* genv) :=
     eval_prog_rec STree.empty impl prog.
 
   (** Redefinition of eval_def by computing the whole global environment first *)
 
   Definition eval_def2 (impl: genv) (prog: program) (x: ident) : res value :=
-    let* ge := eval_prog impl prog in
+    let* (_,ge) := eval_prog impl prog in
     genv_get ge x.
 
 End DENOT.
