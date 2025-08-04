@@ -1,5 +1,5 @@
 From Coq Require Import List String ListDec PArith Bool.
-From compcert Require Import Integers Maps Ctypes.
+From compcert Require Import Coqlib Integers Maps Ctypes.
 From BarocqComp Require Import Error Maps2 Utils Intop Barray Brecord Types Typing Syntax.
 Import ListNotations.
 
@@ -819,12 +819,18 @@ Section DENOT.
         end
     end.
     
-  Definition eval_ifthenelse (v1 v2 v3: value) : res value :=
+  Definition res_eq_typ (v1 v2 : res value) : bool :=
+    match v1 , v2 with
+    | Error _ , _ | _ , Error _ => true
+    | OK v1 , OK v2 => proj_sumbool (typ_eq_dec (typeof_value v1) (typeof_value v2))
+    end.
+
+
+  Definition eval_ifthenelse (v1:value) (v2 v3: res value) : res value :=
     match v1 with
     | Val TBool b =>
-        if typ_eq_dec (typeof_value v2) (typeof_value v3)
-        then
-          ret (if b then v2 else v3)
+        if res_eq_typ v2 v3
+        then if b then v2 else v3
         else fail
     | _ => fail
     end.
@@ -907,8 +913,8 @@ Section DENOT.
         in eval_app f vargs
     | EIfThenElse e1 e2 e3 =>
         let* v1 := eval_expr te ge le e1 in
-        let* v2 := eval_expr te ge le e2 in
-        let* v3 := eval_expr te ge le e3 in
+        let v2 := eval_expr te ge le e2 in
+        let v3 := eval_expr te ge le e3 in
         eval_ifthenelse v1 v2 v3
     | ELetIn x e1 e2 =>
         let* v1 := eval_expr te ge le e1 in
