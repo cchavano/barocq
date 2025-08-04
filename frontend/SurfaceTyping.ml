@@ -1496,6 +1496,43 @@ let typecheck_imodul (gte : gtenv) (ce : cenv) (gx : gcontext) (imd : imodul) :
       let bprog = List.rev cmds in
       (bprog, gte', ce', gx')
 
+type gdef_kind =
+  KType | KDecl | KDef
+
+let kind_of_gdef gd =
+  match gd with
+  | Barocq.DefType _   | Barocq.DeclType _  -> KType
+  | Barocq.DeclConst _ | Barocq.DeclFun _ -> KDecl
+  | Barocq.DefConst _ | Barocq.DefFun  _  -> KDef
+  
+let kind_of_command c1 =
+  match c1 with
+  | Barocq.CmdExpr _ -> None
+  | Barocq.CmdDef d  -> Some (kind_of_gdef d)
+
+(** [sort_iprogam] puts type declaration and definition first,
+    declaration of function followed by definition of function *)
+let sort_iprogam p =
+
+  let cmp_gdef gd1  gd2 =
+    match kind_of_command gd1 , kind_of_command gd2 with
+    | None  , None -> 0
+    | Some _ , None -> -1
+    |  None  , Some _ -> 1
+    | Some gd1 , Some gd2 ->
+      match gd1 , gd2 with
+      | KType   , KType -> 0
+      | KType   ,   _   -> -1
+      |   _     , KType -> 1
+      | KDecl   , KDecl -> 0
+      | KDecl   , KDef  -> -1
+      | KDef    , KDecl -> 1
+      | KDef    , KDef  -> 0
+  in
+  List.stable_sort cmp_gdef p
+   
+
+
 let typecheck_iprogram (iprog : iprogram) : Barocq.iprogram =
   let biprog, _, _, _ =
     List.fold_left
@@ -1506,4 +1543,4 @@ let typecheck_iprogram (iprog : iprogram) : Barocq.iprogram =
       ([], gtenv_empty, cenv_empty, gcontext_empty)
       iprog
   in
-  biprog
+  sort_iprogam biprog
