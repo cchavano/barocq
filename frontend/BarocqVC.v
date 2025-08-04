@@ -333,6 +333,34 @@ Definition get_prop (s:ident) (props : list propt) :=
   end.
 
 
+Fixpoint vars_of_expr (vars : STree.t unit) (e:expr)  : STree.t unit :=
+  match e with
+  | ETrue | EFalse |EInt32 _ _ | EInt64 _ _ => vars
+  | EVar id => STree.set id tt vars
+  | ECast e _ => vars_of_expr vars e
+  | EUnaryOp _ e => vars_of_expr vars e
+  | EBinaryOp _ e1 e2 | EArrayGet e1 e2 => vars_of_expr (vars_of_expr vars e1) e2
+  | EArraySet e1 e2 e3 => vars_of_expr (vars_of_expr (vars_of_expr vars e1) e2) e3
+  | ERecordProj e _ => vars_of_expr vars e
+  | ERecordUpdate e1 _ e2 => vars_of_expr (vars_of_expr vars e1) e2
+  | EDeepAccess e acc => vars_of_expr (List.fold_left vars_of_access acc vars) e
+  | EApp e l   => List.fold_left vars_of_expr l (vars_of_expr vars e)
+  | EIfThenElse e1 e2 e3 => vars_of_expr (vars_of_expr (vars_of_expr vars e1) e2) e3
+  | ELetIn x e1 e2 => (* Ignore scopes - should remove x from e2 *)
+      vars_of_expr (vars_of_expr vars e1) e2
+  end
+  with vars_of_access (vars: STree.t unit) (acc:access) : STree.t unit :=
+         match acc with
+         | AcRecordField _ => vars
+         | AcArrayIndex e => vars_of_expr vars e
+         end.
+
+Definition has_var (s:string) (vars:STree.t unit) :=
+  match STree.get s vars with
+  | None => false
+  | Some _ => true
+  end.
+
 
 Definition generate_def_fun_obligation (arch:archi) (te:Typing.tenv)  (params : SMapList.t btyp) (tret : btyp) (e : expr) (checked : list propt)
   (prop : (forall (t:typ), # t -> Prop)) : res Prop :=
@@ -340,8 +368,10 @@ Definition generate_def_fun_obligation (arch:archi) (te:Typing.tenv)  (params : 
   then
     let* tret' := Typing.btyp_to_typ te tret in
     let* params' := SMapList.map_err (Typing.btyp_to_typ te) params in
+    let vars     := vars_of_expr STree.empty e in
+    let needed_checked := List.filter (fun '(k,_) => has_var k vars) checked in
     let o := forall ge,
-        Forall (has_property ge) checked ->
+        Forall (has_property ge) needed_checked ->
         let v := (build_funval arch abs_typ_impl te ge params' tret' e) in
         prop _ v in
     eret o
@@ -607,6 +637,23 @@ Proof.
     congruence.
 Qed.
 
+Lemma eqb_leb : forall x y,
+    (x =? y) = (x <=? y) && (y <=? x).
+Proof.
+  intros.
+  generalize (leb_antisym x y).
+  generalize (String.eqb_spec x y).
+  intros. inv H.
+  +
+    destruct (leb_total y y).
+    rewrite H; reflexivity.
+    rewrite H; reflexivity.
+  + destruct (x <=?y) eqn:LEX; try reflexivity.
+    destruct (y <=?x) eqn:LEY; try reflexivity.
+    intuition congruence.
+Qed.
+
+  
 
 Lemma nodup_eq : forall (V: Type) (l:SMapList.t V) ,
     MergeSort.nodup String.leb String.eqb (map fst l) = true ->
@@ -615,17 +662,7 @@ Proof.
   intros. apply SMapList_NoDup.
   apply MergeSort.nodup_NoDup in H; auto.
   - apply leb_total.
-  - intros.
-    generalize (leb_antisym x y).
-    intros.
-    generalize (String.eqb_spec x y).
-    intros. inv H1.
-    + destruct (y <=? y) eqn:LES; auto.
-      destruct (leb_total y y).
-      congruence. congruence.
-    + destruct (x <=?y) eqn:LEX; try reflexivity.
-      destruct (y <=?x) eqn:LEY; try reflexivity.
-      intuition congruence.
+  - intros.  apply eqb_leb.
   - apply String.leb_antisym.
   - unfold RelationClasses.Transitive.
     intros.
@@ -668,6 +705,12 @@ Proof.
   simpl. eexists.
   split.  reflexivity.
   apply has_property_set; auto.
+  apply HAS.
+  rewrite Forall_forall.
+  intros.
+  rewrite filter_In in H.
+  destruct H.
+  rewrite Forall_forall in ALL. auto.
 Qed.
 
 Lemma generate_decl_const_obligation_sound :
