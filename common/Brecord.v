@@ -12,7 +12,7 @@ Definition type_of_field (k: key) (fields: SMapList.t Type) : Type :=
   SMapList.find k fields unit.
 
 Definition record (fields: SMapList.t Type) : Type :=
-  fold_right (fun '(k, t) acc => prod (field k t) acc) unit fields.
+  fold_right (fun kt acc => prod (field (fst kt) (snd kt)) acc) unit fields.
 
 Fixpoint proj {fields: SMapList.t Type} (rc: record fields) (k: key) {struct fields} : res (type_of_field k fields).
   destruct fields as [| [x tx] fields'].

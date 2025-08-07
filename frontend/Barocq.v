@@ -828,24 +828,35 @@ Section DENOT.
 
   Definition eval_ifthenelse (v1:value) (v2 v3: res value) : res value :=
     match v1 with
-    | Val TBool b =>
-        if res_eq_typ v2 v3
-        then if b then v2 else v3
-        else fail
+    | Val TBool b => if b then v2 else v3
     | _ => fail
     end.
 
-  Fixpoint eval_app_rec (tparams: list typ) (tret: typ) (f: eval_funtyp eval_typ tparams tret) (args: list value) : res value.
-    destruct tparams as [| t tparams']; destruct args as [| [tv v] args'].
-    - simpl in f. destruct f as [v |].
-      + apply (ret (Val tret v)).
-      + apply (Error e).
-    - apply fail.
-    - apply fail.
-    - simpl in f. destruct (typ_eq_dec tv t) as [Heqtv | _].
-      + apply (eval_app_rec tparams' tret (f (typ_cast abs_typ_impl Heqtv v)) args').
-      + apply fail.
-  Defined.
+  Fixpoint eval_app_rec (tparams: list typ) (tret: typ) (f: eval_funtyp eval_typ tparams tret) (args: list value) : res value :=
+  match tparams as l return (eval_funtyp eval_typ l tret -> res value) with
+  | [] =>
+      fun f0 : eval_funtyp eval_typ [] tret =>
+      match args with
+      | [] => let* v := f0 in eret (Val tret v)
+      | v :: l => match v with
+                  | Val _ _ => fun _ : list value => fail
+                  end l
+      end
+  | t :: l =>
+      fun f0 : eval_funtyp eval_typ (t :: l) tret =>
+      match args with
+      | [] => fail
+      | v :: l0 =>
+          match v with
+          | Val t0 v0 =>
+              fun args' : list value =>
+              match typ_eq_dec t0 t with
+              | left e => eval_app_rec l tret (f0 (typ_cast abs_typ_impl e v0)) args'
+              | right _ => fail
+              end
+          end l0
+      end
+  end f.
 
   Definition eval_app (v: value) (args: list value) : res value :=
     match v with
@@ -945,25 +956,36 @@ Section DENOT.
         eval_record_lit x rcv fields
     end.
 
+  Definition cast_typ_M (tret:typ) (v: value) : M (eval_typ tret) :=
+    match v with
+      | Val tv v =>
+          match typ_eq_dec tv tret with
+          | left e =>  (ret (typ_cast abs_typ_impl e v))
+          |  _     => fail
+          end
+    end.
+
   Fixpoint build_funval_rec_aux (te: tenv) (ge: genv) (le: lenv) (params: SMapList.t typ) (tret: typ) (e: expr) : eval_funtyp eval_typ (map (fun x => snd x) params) tret.
     destruct params as [| (x, tx) params'].
-    - simpl. destruct (eval_expr te ge le e) as [[tv v]|].
-      + destruct (typ_eq_dec tv tret).
-        * apply (ret (typ_cast abs_typ_impl e0 v)).
-        * apply fail.
-      + apply (Error e0).
+    - simpl.
+      eapply bind.
+      apply (eval_expr te ge le e).
+      intro v.
+      apply (cast_typ_M tret v).
     - simpl. apply (fun (y: eval_typ tx) => build_funval_rec_aux te ge (lenv_update le x (Val tx y)) params' tret e).
   Defined.
 
   Definition build_funval_rec := Eval cbv delta [build_funval_rec_aux] zeta beta in build_funval_rec_aux.
 
+
   Definition build_funval (te: tenv) (ge: genv) (params: SMapList.t typ) (tret: typ) (e: expr) : eval_typ (TFun (map (fun x => snd x) params) tret).
     destruct params as [| p params'].
-    - simpl. destruct (eval_expr te ge STree.empty e) as [[tv v] |].
-      + destruct (typ_eq_dec tv tret).
-        -- simpl. apply (fun (_: unit) => ret (typ_cast abs_typ_impl e0 v)).
-        -- apply (fun (_: unit) => fail).
-      + apply (fun (_: unit) => (Error e0)).
+    - simpl.
+      intro.
+      eapply bind.
+      apply (eval_expr te ge STree.empty e).
+      intro v.
+      apply (cast_typ_M tret v).
     - apply (build_funval_rec te ge STree.empty (p :: params') tret e).
   Defined.
 
