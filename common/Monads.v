@@ -42,6 +42,8 @@ Module MonError <: MONAD.
 
   Notation eret := ret.
 
+  Notation efail := fail.
+
   Notation "'let*' X := A 'in' B" := (MonError.bind A (fun X => B))
     (at level 200, X name, A at level 100, B at level 200)
     : error_monad_scope.

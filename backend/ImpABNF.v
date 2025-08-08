@@ -1,4 +1,4 @@
-From BarocqComp Require Import Syntax.
+From BarocqComp Require Import Benum Syntax.
 
 (** * Asbtract syntax *)
 
@@ -15,14 +15,16 @@ Definition atom : Type := Syntax.atom.
 Inductive statement : Type :=
   | StSequence : statement -> statement -> statement
   | StSet : ident -> comp -> statement
-  | StIfThenElse : atom -> statement  -> statement -> statement.
+  | StIfThenElse : atom -> statement  -> statement -> statement
+  | StSwitch : atom -> list (pattern * statement) -> statement.
 
 (** ** Tail computations *)
 
 Inductive tailcomp : Type :=
   | TcBegin : statement -> tailcomp -> tailcomp
   | TcComp : comp -> tailcomp
-  | TcIfThenElse : atom -> tailcomp -> tailcomp -> tailcomp.
+  | TcIfThenElse : atom -> tailcomp -> tailcomp -> tailcomp
+  | TcSwitch : atom -> list (pattern * tailcomp) -> tailcomp.
 
 (** ** Functions *)
 

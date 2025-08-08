@@ -1,5 +1,5 @@
 From Coq Require Import List String.
-From BarocqComp Require Import Error Utils Types Syntax Barocq.
+From BarocqComp Require Import Error Utils Types  Maps2 Syntax Barocq.
 
 (** * Barocq to Barocq transformations *)
 
@@ -29,6 +29,7 @@ Fixpoint create_deep_access_expr (e: BarocqTyped.expr) : Barocq.expr :=
     | BarocqTyped.EFalse _ => (Barocq.EFalse, acs)
     | BarocqTyped.EInt32 i (BInt32 s) => (Barocq.EInt32 i s, acs)
     | BarocqTyped.EInt64 i (BInt64 s) => (Barocq.EInt64 i s, acs)
+    | BarocqTyped.EConstr x _ => (Barocq.EConstr x, acs)
     | BarocqTyped.EVar x _ => (Barocq.EVar x, acs)
     | BarocqTyped.EArrayGet e1 e2 ty =>
         let e2' := create_deep_access_expr e2 in
@@ -89,6 +90,10 @@ Fixpoint create_deep_access_expr (e: BarocqTyped.expr) : Barocq.expr :=
         let e2' := create_deep_access_expr e2 in
         let e3' := create_deep_access_expr e3 in
         (Barocq.EIfThenElse e1' e2' e3', acs)
+    | BarocqTyped.EMatch e1 cases _ =>
+        let e1' := create_deep_access_expr e1 in
+        let cases' := MapList.map create_deep_access_expr cases in
+        (Barocq.EMatch e1' cases', acs)
     | BarocqTyped.ELetIn x e1 e2 _ =>
         let e1' := create_deep_access_expr e1 in
         let e2' := create_deep_access_expr e2 in

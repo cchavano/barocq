@@ -17,7 +17,7 @@ let int_to_deep (i : Integers.Int.int) (s : signedness) : string =
   in
   sprintf "Int.repr %s%%Z" si
 
-let int64_to_deep (i : Integers.Int64.int) (s : signedness) : string =
+let tint64o_deep (i : Integers.Int64.int) (s : signedness) : string =
   let si =
     match s with
     | Signed -> i64_to_string i
@@ -69,13 +69,14 @@ let is_simpl_btyp (ty : btyp) : bool =
 
 let rec btyp_to_deep (ty : btyp) : string =
   match ty with
-  | BBool -> "bool_t"
-  | BInt32 Signed -> "int32_t"
-  | BInt32 Unsigned -> "uint32_t"
-  | BInt64 Signed -> "int64_t"
-  | BInt64 Unsigned -> "uint64_t"
+  | BBool -> "tbool"
+  | BInt32 Signed -> "tint32"
+  | BInt32 Unsigned -> "tuint32"
+  | BInt64 Signed -> "tint64"
+  | BInt64 Unsigned -> "tuint64"
   | BArray ta -> sprintf "BArray %s" (opt_parens ta)
-  | BRecord ts -> sprintf "BRecord %s" (ident_to_deep ts)
+  | BEnum te -> sprintf "BEnum %s" (ident_to_deep te)
+  | BRecord tr -> sprintf "BRecord %s" (ident_to_deep tr)
   | BAbs t -> sprintf "BAbs %s" (ident_to_deep t)
   | BFun (tparams, tret) ->
       sprintf
@@ -94,7 +95,8 @@ let rec expr_to_deep (prefix : string) (e : expr) : string =
   | EInt32 (i, s) ->
       sprintf "EInt32 (%s) %s" (int_to_deep i s) (signedness_to_deep s)
   | EInt64 (i, s) ->
-      sprintf "EInt64 (%s) %s" (int64_to_deep i s) (signedness_to_deep s)
+      sprintf "EInt64 (%s) %s" (tint64o_deep i s) (signedness_to_deep s)
+  | EConstr x -> sprintf "EConstr %s" (ident_to_deep x)
   | EVar x -> sprintf "EVar %s" (ident_to_deep x)
   | ECast (e1, ty) ->
       sprintf "ECast (%s) (%s)" (expr_to_deep prefix e1) (btyp_to_deep ty)
@@ -140,9 +142,15 @@ let rec expr_to_deep (prefix : string) (e : expr) : string =
         (expr_to_deep prefix' e2)
         prefix'
         (expr_to_deep prefix' e3)
+  | EMatch (e1, cases) ->
+      sprintf
+        "EMatch (%s) [\n%s\n%s]"
+        (expr_to_deep "" e1)
+        (list_to_string ~sep:";\n" (match_case_to_string prefix') cases)
+        prefix
   | ELetIn (x, e1, e2) -> begin
       match e1 with
-      | EIfThenElse _ ->
+      | EIfThenElse _ | EMatch _ ->
           sprintf
             "ELetIn %s\n%s(%s)\n%s(%s)"
             (ident_to_deep x)
@@ -158,6 +166,16 @@ let rec expr_to_deep (prefix : string) (e : expr) : string =
             prefix'
             (expr_to_deep prefix' e2)
     end
+
+and match_case_to_string (prefix : string) ((p, ep) : Benum.pattern * expr) :
+    string =
+  let prefix' = prefix ^ indent in
+  let case =
+    match p with
+    | Benum.PIdent i -> sprintf "PIdent %s" (ident_to_deep i)
+    | Benum.PWildcard -> sprintf "PWildcard"
+  in
+  sprintf "%s(%s,\n%s%s)" prefix case prefix' (expr_to_deep prefix' ep)
 
 and access_to_deep (ac : access) : string =
   match ac with
@@ -181,16 +199,6 @@ let function_to_deep (f : coq_function) : string =
     prefix
     (expr_to_deep prefix f.fn_body)
 
-let fields_to_deep (fields : (ident * btyp) list) : string =
-  sprintf
-    "[\n%s\n]"
-    (list_to_string
-       ~delim:("", "")
-       ~sep:";\n"
-       (fun (id, ty) ->
-         sprintf "%s(%s, %s)" indent (ident_to_deep id) (btyp_to_deep ty))
-       fields)
-
 let rec literal_to_deep (l : literal) : string =
   match l with
   | LTrue -> "LTrue"
@@ -198,7 +206,7 @@ let rec literal_to_deep (l : literal) : string =
   | LInt32 (i, s) ->
       sprintf "LInt32 (%s) %s" (int_to_deep i s) (signedness_to_deep s)
   | LInt64 (i, s) ->
-      sprintf "LInt64 (%s) %s" (int64_to_deep i s) (signedness_to_deep s)
+      sprintf "LInt64 (%s) %s" (tint64o_deep i s) (signedness_to_deep s)
   | LArray la -> sprintf "LArray %s" (list_to_string_bracket literal_to_deep la)
   | LRecord (ls, id) ->
       sprintf "LRecord %s %s" (fields_lit_to_deep ls) (ident_to_deep id)
@@ -208,14 +216,38 @@ and fields_lit_to_deep (fields : (ident * literal) list) : string =
     (fun (id, li) -> sprintf "(%s, %s)" (ident_to_deep id) (literal_to_deep li))
     fields
 
+let fields_to_deep (fields : (ident * btyp) list) : string =
+  list_to_string
+    ~sep:";\n"
+    (fun (id, ty) ->
+      sprintf "%s(%s, %s)" (make_indent 2) (ident_to_deep id) (btyp_to_deep ty))
+    fields
+
+let elems_to_deep (elems : ident list) : string =
+  list_to_string
+    ~sep:";\n"
+    (fun e -> sprintf "%s%s" (make_indent 2) (ident_to_deep e))
+    elems
+
 let globdef_to_coqdef (def : globdef) : string =
+  let typ_format = sprintf "Definition %s : %s :=\n%s%s." in
   let def_format = sprintf "Definition %s : %s := %s." in
   match def with
-  | DefType (id, fields) ->
-      def_format
-        (sprintf "record_%s" (ident_to_string id))
-        "list (ident * btyp)"
-        (fields_to_deep fields)
+  | DefType (id, adt) -> begin
+      match adt with
+      | Adt_enum elems ->
+          typ_format
+            (sprintf "enum_%s" (ident_to_string id))
+            "adt_definition btyp"
+            indent
+            (sprintf "Adt_enum [\n%s\n%s]" (elems_to_deep elems) indent)
+      | Adt_record fields ->
+          typ_format
+            (sprintf "record_%s" (ident_to_string id))
+            "adt_definition btyp"
+            indent
+            (sprintf "Adt_record [\n%s\n%s]" (fields_to_deep fields) indent)
+    end
   | DefConst (id, l, _) ->
       def_format
         (sprintf "const_%s" (ident_to_string id))
@@ -247,8 +279,13 @@ let param_attr_to_deep (attr : param_attr) : string =
 
 let globdef_to_deep (def : globdef) : string =
   match def with
-  | DefType (id, fields) ->
-      sprintf "DefType %s record_%s" (ident_to_deep id) (ident_to_string id)
+  | DefType (id, adt) ->
+      let kind =
+        match adt with
+        | Adt_enum _ -> "enum"
+        | Adt_record _ -> "record"
+      in
+      sprintf "DefType %s %s_%s" (ident_to_deep id) kind (ident_to_string id)
   | DefConst (id, l, ty) ->
       sprintf
         "DefConst %s const_%s (%s)"
@@ -260,8 +297,8 @@ let globdef_to_deep (def : globdef) : string =
   | DeclType (id, tk) ->
       let st_or_un =
         match tk with
-        | Ctypes.Struct -> "Struct"
-        | Ctypes.Union -> "Union"
+        | SU_struct -> "SU_struct"
+        | SU_union -> "SU_union"
       in
       sprintf "DeclType %s %s" (ident_to_deep id) st_or_un
   | DeclConst (id, ty) ->
@@ -277,16 +314,16 @@ let globdef_to_deep (def : globdef) : string =
         (btyp_to_deep tret)
 
 let prim_types : string =
-  "Definition bool_t := BBool.\n\n\
-   Definition int32_t := BInt32 Signed.\n\n\
-   Definition uint32_t := BInt32 Unsigned.\n\n\
-   Definition int64_t := BInt64 Signed.\n\n\
-   Definition uint64_t := BInt64 Unsigned.\n"
+  "Definition tbool := BBool.\n\n\
+   Definition tint32 := BInt32 Signed.\n\n\
+   Definition tuint32 := BInt32 Unsigned.\n\n\
+   Definition tint64 := BInt64 Signed.\n\n\
+   Definition tuint64 := BInt64 Unsigned.\n"
 
 let imports : string =
   "From Coq Require Import String List BinIntDef.\n\
-   From compcert Require Import Integers Ctypes.\n\
-   From BarocqComp Require Import Types Syntax Barocq.\n\
+   From compcert Require Import Integers.\n\
+   From BarocqComp Require Import Ident Types Syntax Benum Barocq.\n\
    Import ListNotations.\n\n\
    Open Scope string_scope.\n"
 

@@ -3,7 +3,7 @@
 
 From Coq Require Import String List.
 From compcert Require Import Integers Maps.
-From BarocqComp Require Import Target Monads Error Barray Brecord Types Barocq Maps2 MergeSort.
+From BarocqComp Require Import Target Ident Monads Error Barray Brecord Types Barocq Maps2 MergeSort.
 From compcert Require Import Coqlib.
 Open Scope string_scope.
 
@@ -223,15 +223,15 @@ Section S.
     - simpl; intros. inv EVAL. apply env_preserve_defs_refl.
     - simpl; intros.
       destruct a.
-      + destruct (eval_def_type te tid fields); try discriminate.
+      + destruct (eval_def_type te tid adt); try discriminate.
         simpl in EVAL.
         eapply IHprog in EVAL;eauto.
-      + destruct (eval_def_const abs_typ_impl te  ge x l ty) eqn:EQN; try discriminate.
+      + destruct (eval_def_const abs_typ_impl te ge x l ty) eqn:EQN; try discriminate.
         simpl in EVAL.
         eapply IHprog in EVAL;eauto.
         eapply eval_decl_const_preserve_defs in EQN; eauto.
         eapply env_preserve_defs_trans; eauto.
-    +  destruct (eval_def_fun arch abs_typ_impl te  ge x f) eqn:EQN; try discriminate.
+    +  destruct (eval_def_fun arch abs_typ_impl te ge x f) eqn:EQN; try discriminate.
        simpl in EVAL.
        eapply IHprog in EVAL;eauto.
        eapply eval_def_fun_preserve_defs in EQN;eauto.
@@ -335,7 +335,7 @@ Definition get_prop (s:ident) (props : list propt) :=
 
 Fixpoint vars_of_expr (vars : STree.t unit) (e:expr)  : STree.t unit :=
   match e with
-  | ETrue | EFalse |EInt32 _ _ | EInt64 _ _ => vars
+  | ETrue | EFalse |EInt32 _ _ | EInt64 _ _ | EConstr _ => vars
   | EVar id => STree.set id tt vars
   | ECast e _ => vars_of_expr vars e
   | EUnaryOp _ e => vars_of_expr vars e
@@ -346,6 +346,8 @@ Fixpoint vars_of_expr (vars : STree.t unit) (e:expr)  : STree.t unit :=
   | EDeepAccess e acc => vars_of_expr (List.fold_left vars_of_access acc vars) e
   | EApp e l   => List.fold_left vars_of_expr l (vars_of_expr vars e)
   | EIfThenElse e1 e2 e3 => vars_of_expr (vars_of_expr (vars_of_expr vars e1) e2) e3
+  | EMatch e1 cases =>
+      MapList.fold_left (fun vars _ ep => vars_of_expr vars ep) cases (vars_of_expr vars e1)
   | ELetIn x e1 e2 => (* Ignore scopes - should remove x from e2 *)
       vars_of_expr (vars_of_expr vars e1) e2
   end
@@ -362,12 +364,12 @@ Definition has_var (s:string) (vars:STree.t unit) :=
   end.
 
 
-Definition generate_def_fun_obligation (arch:archi) (te:Typing.tenv)  (params : SMapList.t btyp) (tret : btyp) (e : expr) (checked : list propt)
+Definition generate_def_fun_obligation (arch:archi) (te:Typing.tenv)  (params : smaplist btyp) (tret : btyp) (e : expr) (checked : list propt)
   (prop : (forall (t:typ), # t -> Prop)) : res Prop :=
   if MergeSort.nodup String.leb String.eqb (List.map fst params)
   then
     let* tret' := Typing.btyp_to_typ te tret in
-    let* params' := SMapList.map_err (Typing.btyp_to_typ te) params in
+    let* params' := MapList.map_err (Typing.btyp_to_typ te) params in
     let vars     := vars_of_expr STree.empty e in
     let needed_checked := List.filter (fun '(k,_) => has_var k vars) checked in
     let o := forall ge,
@@ -393,17 +395,19 @@ Definition generate_decl_fun_obligation (te: Typing.tenv) (checked:list propt) (
   let P := forall ge, Forall (has_property ge) checked -> has_property ge (x, fun ty' v => ty' = TFun tparam tret') in
   eret P.
 
-Definition tenv_update_opt (te: Typing.tenv) (x: Syntax.ident) (fields : SMapList.t typ) :=
+(* Definition tenv_update_opt (te: Typing.tenv) (x: Syntax.ident) (fields : smaplist typ) :=
   let id := StringIndexed.index x in
-  match PTree.get id te with
+  match PTree.get id te.(tenv_defs) with
   | None => eret (PTree.set id fields te)
   | Some _ => fail
-  end.
+  end. *)
 
-Definition obligation_def_type (te: Typing.tenv) (x:Syntax.ident) (fields : SMapList.t btyp) : res Typing.tenv :=
+(* Definition obligation_def_type (te: Typing.tenv) (x:Syntax.ident) (fields : SMapList.t btyp) : res Typing.tenv :=
   let* fields' := fields_btyp_to_typ te fields in
-  tenv_update_opt te x fields'.
+  tenv_update_opt te x fields'. *)
 
+Definition obligation_def_type (te: Typing.tenv) (x: ident) (adt: adt_definition btyp) : res Typing.tenv :=
+  eval_def_type te x adt.
 
 Fixpoint generate_obligations (arch:archi)  (te:Typing.tenv)
   (checked : list propt) (vc : list Prop) (p:program) (props : list propt) : res (list Prop) :=
@@ -414,7 +418,9 @@ Fixpoint generate_obligations (arch:archi)  (te:Typing.tenv)
              end
     | a :: prog' =>
         match a with
-        | DefType a fields  => let* te' := obligation_def_type te a fields in generate_obligations arch  te' checked vc prog' props
+        | DefType a adt =>
+            let* te' := obligation_def_type te a adt in
+            generate_obligations arch  te' checked vc prog' props
         | DefConst x l ty    =>
             let* (p,props') := get_prop x props in
             let*  o  := generate_const_obligation te x l ty p in
@@ -558,16 +564,16 @@ Proof.
   eapply H0; eauto.
 Qed.
 
-Lemma SMapList_NoDup : forall (V: Type) (l: SMapList.t V),
+Lemma SMapList_NoDup : forall (V: Type) (l: smaplist V),
     NoDup (map fst l)  ->
-    SMapList.nodup l = true.
+    MapList.nodup string_dec l = true.
 Proof.
   induction l; simpl;auto.
   destruct a.
   simpl.
   intros.
   inv H.
-  destruct (SMapList.mem k l) eqn:MEM; auto.
+  destruct (MapList.mem string_dec s l) eqn:MEM; auto.
   exfalso.
   {
     apply H2.
@@ -575,7 +581,7 @@ Proof.
     induction l ; simpl; auto.
     discriminate.
     simpl in MEM. destruct a.
-    destruct (SMapList.key_eq k0 k); simpl; try congruence.
+    destruct (string_dec s0 s); simpl; try congruence.
     tauto.
     tauto.
   }
@@ -655,9 +661,9 @@ Qed.
 
   
 
-Lemma nodup_eq : forall (V: Type) (l:SMapList.t V) ,
+Lemma nodup_eq : forall (V: Type) (l: smaplist V) ,
     MergeSort.nodup String.leb String.eqb (map fst l) = true ->
-    SMapList.nodup l = true.
+    MapList.nodup string_dec l = true.
 Proof.
   intros. apply SMapList_NoDup.
   apply MergeSort.nodup_NoDup in H; auto.
@@ -689,15 +695,15 @@ Proof.
   unfold build_fun_value.
   intros.
   destruct (@MergeSort.nodup string String.leb String.eqb
-          (@map (prod SMapList.key btyp) SMapList.key
-             (@fst SMapList.key btyp)
+          (@map (prod string btyp) string
+             (@fst string btyp)
              (@Syntax.fn_params expr f))
 ) eqn:DUP; try discriminate.
-  apply nodup_eq in DUP. rewrite DUP.
+  apply nodup_eq in DUP. unfold Ident.eq_dec. rewrite DUP.
   destruct (Typing.btyp_to_typ te (Syntax.fn_return f)); try discriminate.
   simpl in GEN.
   simpl.
-  destruct (SMapList.map_err (Typing.btyp_to_typ te) (Syntax.fn_params f)); try discriminate.
+  destruct (@MapList.map_err string btyp typ (Typing.btyp_to_typ te) (Syntax.fn_params f)); try discriminate.
   simpl in GEN; simpl.
   inv GEN.
   unfold genv_update.
@@ -847,10 +853,10 @@ Proof.
   unfold eval_def_fun.
   intros.
   unfold build_fun_value in EVAL.
-  destruct (SMapList.nodup (Syntax.fn_params f)); try discriminate.
+  destruct (MapList.nodup Ident.eq_dec (Syntax.fn_params f)); try discriminate.
   destruct (Typing.btyp_to_typ te (Syntax.fn_return f)); try discriminate.
   simpl in EVAL.
-  destruct (SMapList.map_err (Typing.btyp_to_typ te) (Syntax.fn_params f)); try discriminate.
+  destruct (@MapList.map_err string btyp typ (Typing.btyp_to_typ te) (Syntax.fn_params f)); try discriminate.
   simpl in EVAL.
   unfold wf_env in *.
   intros.
@@ -999,7 +1005,7 @@ Proof.
   discriminate.
   - simpl.
     destruct a; intros.
-    + destruct (obligation_def_type te tid fields); try discriminate.
+    + destruct (obligation_def_type te tid adt); try discriminate.
       simpl in GEN.
       eapply IHprog; eauto.
     +       destruct (get_prop x props) eqn:GP; try discriminate.
@@ -1036,11 +1042,12 @@ Qed.
 Lemma obligation_def_type_eq : forall te tid fields ,
     obligation_def_type te tid fields = eval_def_type te tid fields.
 Proof.
-  unfold obligation_def_type,eval_def_type.
+  reflexivity.
+  (* unfold obligation_def_type,eval_def_type.
   intros. destruct (fields_btyp_to_typ te fields); try reflexivity.
   simpl. unfold tenv_update_opt, Typing.tenv_update.
   unfold Typing.tenv_get. unfold STree.get.
-  destruct (te ! (StringIndexed.index tid)); simpl; auto.
+  destruct (te ! (StringIndexed.index tid)); simpl; auto. *)
 Qed.
 
 
@@ -1066,7 +1073,7 @@ Proof.
     destruct a.
     + intros.
       rewrite obligation_def_type_eq in GEN.
-      destruct (eval_def_type te tid fields); try discriminate.
+      destruct (eval_def_type te tid adt); try discriminate.
       simpl in *.
       eapply IHprog in GEN ; eauto.
       inv ND ; auto.

@@ -39,24 +39,16 @@ Arguments STree.empty {A}.
 
 (** ** Maps as associtation lists *)
 
-Module Type DEC_TYPE.
-  Parameter t: Type.
-  Parameter eq: forall (x y: t), {x = y} + {x <> y}.
-End DEC_TYPE.
+Module MapList.
 
-Set Implicit Arguments.
+  Section KEY.
 
-Module MapList(X: DEC_TYPE).
-  
-  Definition key := X.t.
+  Variable key : Type.
+  Variable V : Type.
 
-  Definition key_eq := X.eq.
+  Variable key_eq : forall (x y: key), {x = y} + {x <> y}.
 
-  Definition t (V: Type) : Type := list (key * V).
-
-  Section VALUE.
-
-  Variable V: Type.
+  Definition t (A: Type) : Type := list (key * A).
 
   Fixpoint add (k: key) (v: V) (l: t V) : t V :=
     match l with
@@ -82,10 +74,10 @@ Module MapList(X: DEC_TYPE).
         else find_err k l'
     end.
 
-  Definition map {A: Type} (f: V -> A) (l: t V) : t A :=
+  Definition map (A: Type) (f: V -> A) (l: t V) : t A :=
     map (fun '(x, v) => (x, f v)) l.
 
-  Definition map_err {A: Type} (f: V -> res A) (l: t V) : res (t A) :=
+  Definition map_err (A: Type) (f: V -> res A) (l: t V) : res (t A) :=
     mmap (fun '(x, v) => let* a := f v in ret (x, a)) l.
 
   Fixpoint mem (k: key) (l: t V) : bool :=
@@ -112,13 +104,24 @@ Module MapList(X: DEC_TYPE).
         else (k1, v1) :: merge l1' l2
     end.
 
-  Definition fold_left {A: Type} (f: A -> key -> V -> A) (l: t V) (acc: A) : A :=
+  Definition fold_left (A: Type) (f: A -> key -> V -> A) (l: t V) (acc: A) : A :=
     List.fold_left (fun a '(k, v) => f a k v) l acc.
 
   Definition empty : t V := nil.
 
-  End VALUE.
+  End KEY.
+
+  Arguments add {key V}.
+  Arguments find {key V}.
+  Arguments find_err {key V}.
+  Arguments map {key V A}.
+  Arguments map_err {key V A}.
+  Arguments mem {key V}.
+  Arguments nodup {key V}.
+  Arguments merge {key V}.
+  Arguments fold_left {key V A}.
+  Arguments empty {key V}.
 
 End MapList.
 
-Module SMapList := MapList(StringIndexed).
+Definition smaplist (A: Type) := MapList.t string A.

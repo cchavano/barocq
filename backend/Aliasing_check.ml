@@ -26,8 +26,6 @@ let msg_from_failure (cause : error_cause) : string =
   | Invalid_deep_access (a, acs) ->
       let acs_str =
         PrintUtils.list_to_string
-          ~delim:("", "")
-          ~sep:""
           (fun ac ->
             PrintSyntax.Typed.untype_access ac |> PrintSyntax.access_to_string)
           acs
@@ -51,7 +49,7 @@ let update_error_stmt (cause : error_cause) (s1 : statement option)
   | Some _ -> error cause ~stmt:s1
   | None -> begin
       match s2 with
-      | StIfThenElse _ | StSequence _ -> error cause
+      | StIfThenElse _ | StSwitch _ | StSequence _ -> error cause
       | _ -> error cause ~stmt:(Some s2)
     end
 
@@ -142,6 +140,11 @@ let check_statement (params : (ident * Types.btyp) list) (s : statement) :
             let s1' = check_rec s1 in
             let s2' = check_rec s2 in
             Imp1.Typed.StIfThenElse (a, s1', s2')
+          else error (Invalid_atom a)
+      | StSwitch (a, cases, d_in, _) ->
+          if check_atom d_in a then
+            let cases' = Maps2.MapList.map check_rec cases in
+            Imp1.Typed.StSwitch (a, cases')
           else error (Invalid_atom a)
       | StSequence (s1, s2) ->
           let s1' = check_rec s1 in

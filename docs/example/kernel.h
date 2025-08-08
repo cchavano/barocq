@@ -20,9 +20,9 @@ struct Kernel_state {
   struct Machine_state *mc;
 };
 
-extern unsigned long long const Kernel_NB_PROCS;
+extern unsigned long long const Kernel_nb_procs;
 
-extern unsigned long long const Kernel_QUANTUM;
+extern unsigned long long const Kernel_quantum;
 
 extern unsigned long long Machine_read_time(struct Machine_state *);
 extern struct Machine_state *Machine_write_timecmp(struct Machine_state *, unsigned long long);

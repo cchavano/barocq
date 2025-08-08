@@ -1,11 +1,12 @@
 -include Makefile.config
 
 COMMON=\
-	Monads.v Error.v Utils.v Barray.v Brecord.v Maps2.v\
+	Monads.v Error.v Utils.v Barray.v Brecord.v Benum.v Maps2.v\
 	Types.v Syntax.v Typing.v Intop.v Ident.v Target.v MergeSort.v
 
 FRONTEND=\
-	Barocq.v BarocqTransf.v BarocqBNF.v BarocqBNFgen.v BarocqShallow.v BarocqShallowgen.v BarocqVC.v
+	Barocq.v BarocqTransf.v BarocqBNF.v BarocqBNFgen.v\
+	BarocqShallow.v BarocqShallowgen.v BarocqVC.v
 
 BACKEND=\
 	ImpBNF.v ImpBNFgen.v ImpABNF.v ImpABNFgen.v\

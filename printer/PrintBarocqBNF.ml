@@ -41,9 +41,15 @@ let rec expr_to_string_pref (prefix : string) (e : expr) : string =
           (expr_to_string_pref prefix' e1)
           prefix
           (expr_to_string_pref prefix' e2)
-    | ELetIn (x, e1, e2) -> (
+    | EMatch (a, cases) ->
+        sprintf
+          "match %s with\n%s\n%send"
+          (atom_to_string a)
+          (list_to_string ~sep:"\n" (match_case_to_string prefix) cases)
+          prefix
+    | ELetIn (x, e1, e2) -> begin
         match e1 with
-        | ELetIn _ | EIfThenElse _ ->
+        | ELetIn _ | EIfThenElse _ | EMatch _ ->
             sprintf
               "let %s =\n%s\n%sin\n%s"
               (ident_to_string x)
@@ -55,9 +61,23 @@ let rec expr_to_string_pref (prefix : string) (e : expr) : string =
               "let %s = %s in\n%s"
               (ident_to_string x)
               (expr_to_string_pref "" e1)
-              (expr_to_string_pref prefix e2))
+              (expr_to_string_pref prefix e2)
+      end
   in
   prefix ^ str
+
+and match_case_to_string (prefix : string) ((p, ep) : Benum.pattern * expr) :
+    string =
+  let case =
+    match p with
+    | Benum.PIdent i -> ident_to_string i
+    | Benum.PWildcard -> "_"
+  in
+  sprintf
+    "%s| %s =>\n%s"
+    prefix
+    case
+    (expr_to_string_pref (prefix ^ make_indent 2) ep)
 
 let expr_to_string (e : expr) : string = expr_to_string_pref PrintUtils.indent e
 

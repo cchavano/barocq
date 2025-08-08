@@ -1,6 +1,6 @@
 From Coq Require Import ZArith String List FMapPositive MSetPositive.
 From compcert Require Import AST Ctypes Clight ClightCe Clightdefs Cop Maps Integers.
-From BarocqComp Require Import Error Maps2 Utils Types Syntax.
+From BarocqComp Require Import Ident Benum Error Maps2 Utils Types Syntax.
 Import ClightNotations.
 Import Syntax.Typed.
 From BarocqComp Require Import Imp2.
@@ -21,6 +21,7 @@ Section TRANSL.
     | BInt64 Unsigned => tulong
     | BArray ta => tptr (transl_btyp ta)
     | BRecord t => tptr (Tstruct (Ident.to_pos t) noattr)
+    | BEnum te => Tenum (Ident.to_pos te) noattr
     | BFun tparams tret =>
         let tparams' := List.map transl_btyp tparams in
         let tret' := transl_btyp tret in
@@ -33,6 +34,7 @@ Section TRANSL.
     | BBool => Xbool
     | BInt32 _ => Xint
     | BInt64 _ => Xlong
+    | BEnum _ => Xint
     | BArray _
     | BRecord _
     | BFun _ _ 
@@ -100,6 +102,7 @@ Section TRANSL.
     | AFalse _ => ret (Econst_int Int.zero tbool)
     | AInt32 i _ => ret (Econst_int i tint)
     | AInt64 i _ => ret (Econst_long i tlong)
+    | AConstr x ty => ret (Eenumlit (Ident.to_pos x) (transl_btyp ty))
     | AVar x ty =>
         if smem globs (Ident.to_pos x) then ret (Evar (Ident.to_pos x) (transl_btyp ty))
         else ret (Etempvar (Ident.to_pos x) (transl_btyp ty))
@@ -218,6 +221,28 @@ Section TRANSL.
     end.
 
   Fixpoint transl_statement (globs: pset) (s: Imp2.statement) : res ClightCe.statement :=
+    let fix transl_switch_cases (globs: pset) (ei: AST.ident) (cases: list (pattern * Imp2.statement)) : res ClightCe.labeled_statements :=
+      match cases with
+      | nil => fail
+      | (p, sp) :: nil =>
+          let* sp' := transl_statement globs sp in
+          match p with
+          | PIdent i =>
+              ret (LScons (Some (SwitchE (Ident.to_pos i) ei)) (Ssequence sp' Sbreak)
+                    (LScons None (Sreturn (Some (Econst_int Int.zero tint))) LSnil))
+          | PWildcard =>
+              ret (LScons None sp' LSnil)
+          end
+      | (p, sp) :: ((_ :: _) as cases') =>
+          match p with
+          | PIdent i =>
+              let* sc' := transl_statement globs sp in
+              let* ccases := transl_switch_cases globs ei cases' in
+              ret (LScons (Some (SwitchE (Ident.to_pos i) ei)) (Ssequence sc' Sbreak) ccases)
+          | PWildcard => fail (* Ill-typed program *)
+          end
+      end
+    in
     match s with
     | StSkip => ret Sskip
     | StSetExpr x e =>
@@ -236,6 +261,14 @@ Section TRANSL.
         let* s1' := transl_statement globs s1 in
         let* s2' := transl_statement globs s2 in
         ret (Sifthenelse e s1' s2')
+    | StSwitch a cases =>
+        let* e := transl_atom globs a in
+        match typeof e with
+        | Tenum ei _ =>
+            let* cases' := transl_switch_cases globs ei cases in
+            ret (Sswitch e cases')
+        | _ => fail
+        end
     | StSequence s1 s2 =>
         let* s1' := transl_statement globs s1 in
         let* s2' := transl_statement globs s2 in
@@ -327,10 +360,13 @@ Section TRANSL.
       end
     end.
 
+  Definition transl_enum_btyp (x: ident) (elems: list ident) : Ctypes.composite_definition :=
+    Composite (Ident.to_pos x) Enum (List.map (fun e => Member_plain (Ident.to_pos e) tint) elems) noattr.
+
   Definition transl_globdefs (defs: list Imp2.globdef) : res (list cglobdef) :=
     transl_globdefs_rec defs sempty.
     
-  Fixpoint transl_record_fields (fields: SMapList.t btyp) : Ctypes.members :=
+  Fixpoint transl_record_fields (fields: smaplist btyp) : Ctypes.members :=
     match fields with
     | nil => nil
     | (x, tx) :: fields' =>
@@ -339,13 +375,20 @@ Section TRANSL.
         (Member_plain (Ident.to_pos x) tx') :: r
     end.
 
-  Definition transl_struct_btyp (x: ident) (fields: SMapList.t btyp) : Ctypes.composite_definition :=
+  Definition transl_record_btyp (x: ident) (fields: smaplist btyp) : Ctypes.composite_definition :=
     Composite (Ident.to_pos x) Struct (transl_record_fields fields) noattr.
 
-  Definition transl_prog_types (types: list type_def) : list Ctypes.composite_definition :=
-    List.map
-      (fun sd => transl_struct_btyp (rd_name sd) (rd_fields sd))
-      (Syntax.get_record_defs types).
+  Fixpoint transl_prog_types (types: list type_def) : list Ctypes.composite_definition :=
+    match types with
+    | nil => nil
+    | td :: types' =>
+      let cdr := transl_prog_types types' in
+      match td with
+      | TdEnum ed => (transl_enum_btyp (ed_name ed) (ed_elems ed)) :: cdr
+      | TdRecord rd => (transl_record_btyp (rd_name rd) (rd_fields rd)) :: cdr
+      | _ => cdr
+      end
+    end.
 
   Fixpoint public_idents (defs: list Imp2.globdef) : list ident :=
     match defs with
@@ -373,8 +416,8 @@ Fixpoint mk_abs_types_impl (types: list type_def) : PMap.t Ctypes.type :=
       | TdAbstract tid tk =>
           let ct :=
             match tk with
-            | Struct => Tstruct (Ident.to_pos tid) noattr
-            | Union => Tunion (Ident.to_pos tid) noattr
+            | SU_struct => Tstruct (Ident.to_pos tid) noattr
+            | SU_union => Tunion (Ident.to_pos tid) noattr
             end
           in
           PMap.set (Ident.to_pos tid) ct (mk_abs_types_impl types')

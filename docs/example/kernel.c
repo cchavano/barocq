@@ -20,9 +20,9 @@ extern struct Machine_state *Machine_write_timecmp(struct Machine_state *, unsig
 struct Kernel_state *Kernel_sync(struct Kernel_state *);
 struct Kernel_state *Kernel_incr_proc_nb_sched(struct Kernel_state *, unsigned long long);
 struct Kernel_state *Kernel_schedule(struct Kernel_state *);
-unsigned long long const Kernel_NB_PROCS = 5LL;
+unsigned long long const Kernel_nb_procs = 5LL;
 
-unsigned long long const Kernel_QUANTUM = 100LL;
+unsigned long long const Kernel_quantum = 100LL;
 
 struct Kernel_state *Kernel_sync(struct Kernel_state *$p_ks)
 {
@@ -73,9 +73,9 @@ struct Kernel_state *Kernel_schedule(struct Kernel_state *$p_ks)
   $b2 = (*$p_ks).deadline;
   if ($b0 > $b2) {
     $b3 = (*$p_ks).curr_pid;
-    $u_next_pid = ($b3 + 1LL) % Kernel_NB_PROCS;
+    $u_next_pid = ($b3 + 1LL) % Kernel_nb_procs;
     $b4 = (*$p_ks).deadline;
-    $u_next_deadline = $b4 + Kernel_QUANTUM;
+    $u_next_deadline = $b4 + Kernel_quantum;
     (*$p_ks).curr_pid = $u_next_pid;
     $b5 = $p_ks;
     (*$b5).deadline = $u_next_deadline;

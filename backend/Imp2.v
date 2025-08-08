@@ -1,6 +1,6 @@
 From Coq Require Import List.
 From compcert Require Import Integers Maps.
-From BarocqComp Require Import Types Syntax.
+From BarocqComp Require Import Benum Types Syntax.
 
 (** * Abstract syntax *)
 
@@ -46,6 +46,7 @@ Inductive statement : Type :=
   | StSetEcomp : ident -> ecomp -> statement
   | StCall : ident -> atom -> list atom -> statement
   | StIfThenElse : atom -> statement -> statement -> statement
+  | StSwitch : atom -> list (pattern * statement) -> statement
   | StSequence : statement -> statement -> statement
   | StReturn : atom -> statement.
 

@@ -25,17 +25,25 @@ Fixpoint transl_statement (s: Imp1Typed.statement) : Imp2.statement :=
   | Imp1Typed.StSet x (CpCall a args _) => StCall x a args
   | Imp1Typed.StIfThenElse a s1 s2 =>
       StIfThenElse a (transl_statement s1) (transl_statement s2)
+  | Imp1Typed.StSwitch a cases =>
+      let cases' := MapList.map transl_statement cases in
+      StSwitch a cases'
   | Imp1Typed.StSequence s1 s2 =>
       StSequence (transl_statement s1) (transl_statement s2)
   | Imp1Typed.StReturn a => StReturn a
   end.
 
-Fixpoint all_vars (s: Imp1Typed.statement) : SMapList.t btyp :=
+Fixpoint all_vars (s: Imp1Typed.statement) : smaplist btyp :=
   match s with
-  | Imp1Typed.StReturn _ => nil
-  | Imp1Typed.StSet x c => (x, typof_comp c) :: nil
+  | Imp1Typed.StReturn _ => MapList.empty
+  | Imp1Typed.StSet x c => MapList.add Ident.eq_dec x (typof_comp c) MapList.empty
   | Imp1Typed.StIfThenElse _ s1 s2
-  | Imp1Typed.StSequence s1 s2 => SMapList.merge (all_vars s1) (all_vars s2)
+  | Imp1Typed.StSequence s1 s2 => MapList.merge Ident.eq_dec (all_vars s1) (all_vars s2)
+  | Imp1Typed.StSwitch _ cases =>
+      MapList.fold_left
+        (fun acc _ si => MapList.merge Ident.eq_dec (all_vars si) acc)
+        cases
+        MapList.empty
   end.
 
 Definition transl_function (f: Imp1Typed.function) : Imp2.function :=
@@ -50,9 +58,9 @@ Local Open Scope state_monad_scope.
 
 Section LITTRANSL.
 
-  Variable transl_literal : Imp1Typed.literal -> SMapList.t Imp2.literal -> cmon (Imp2.literal_base * (SMapList.t Imp2.literal)).
+  Variable transl_literal : Imp1Typed.literal -> smaplist Imp2.literal -> cmon (Imp2.literal_base * (smaplist Imp2.literal)).
 
-  Fixpoint transl_array_lit (a: array Imp1Typed.literal) (defs: SMapList.t Imp2.literal) : cmon (array Imp2.literal_base * SMapList.t Imp2.literal) :=
+  Fixpoint transl_array_lit (a: array Imp1Typed.literal) (defs: smaplist Imp2.literal) : cmon (array Imp2.literal_base * smaplist Imp2.literal) :=
     match a with
     | nil => ret (nil, defs)
     | lx :: a' =>
@@ -61,7 +69,7 @@ Section LITTRANSL.
         ret (lx' :: r, defs2)
     end.
 
-  Fixpoint transl_record_lit (rc: SMapList.t Imp1Typed.literal) (defs: SMapList.t Imp2.literal) : cmon ((SMapList.t Imp2.literal_base) * SMapList.t Imp2.literal) :=
+  Fixpoint transl_record_lit (rc: smaplist Imp1Typed.literal) (defs: smaplist Imp2.literal) : cmon ((smaplist Imp2.literal_base) * smaplist Imp2.literal) :=
     match rc with
     | nil => ret (nil, defs)
     | (i, lx) :: rc' =>
@@ -74,7 +82,7 @@ End LITTRANSL.
 
 Definition fresh_var : cmon ident := Utils.fresh_var "g".
 
-Fixpoint transl_literal_rec (l: Imp1Typed.literal) (defs: SMapList.t Imp2.literal) : cmon (Imp2.literal_base * SMapList.t Imp2.literal) :=
+Fixpoint transl_literal_rec (l: Imp1Typed.literal) (defs: smaplist Imp2.literal) : cmon (Imp2.literal_base * smaplist Imp2.literal) :=
   match l with
   | Syntax.Typed.LTrue ty => ret (LbTrue, defs)
   | Syntax.Typed.LFalse ty => ret (LbFalse, defs)
@@ -84,13 +92,13 @@ Fixpoint transl_literal_rec (l: Imp1Typed.literal) (defs: SMapList.t Imp2.litera
       let* (a', defs) := transl_array_lit transl_literal_rec a defs in
       let* x := fresh_var in
       ret (LbVar x, (x, LArray a' ty) :: defs)
-  | Syntax.Typed.LRecord st ty =>
-      let* (st', defs) := transl_record_lit transl_literal_rec st defs in
+  | Syntax.Typed.LRecord rc ty =>
+      let* (rc', defs) := transl_record_lit transl_literal_rec rc defs in
       let* x := fresh_var in
-      ret (LbVar x, (x, LRecord st' ty) :: defs)
+      ret (LbVar x, (x, LRecord rc' ty) :: defs)
   end.
 
-Definition transl_literal (l: Imp1Typed.literal) : cmon (Imp2.literal * SMapList.t Imp2.literal) :=
+Definition transl_literal (l: Imp1Typed.literal) : cmon (Imp2.literal * smaplist Imp2.literal) :=
   let* (l', defs) :=
     match l with
     | Syntax.Typed.LArray a ty =>
@@ -119,7 +127,7 @@ Fixpoint transl_globdefs_rec (defs: list Imp1Typed.globdef) : cmon (list Imp2.gl
           ret (DefFun x (transl_function f) :: dr)
       | DefConst x l ty =>
           let* (l', d1) := transl_literal l in
-          let defs1 := map (fun '(x, lx) => DefConst x lx (typof_literal lx)) d1 in
+          let defs1 := List.map (fun '(x, lx) => DefConst x lx (typof_literal lx)) d1 in
           let* dr := transl_globdefs_rec defs' in
           ret (defs1 ++ ((DefConst x l' ty) :: dr))
       | DeclConst x ty =>

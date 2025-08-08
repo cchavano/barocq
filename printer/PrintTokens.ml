@@ -1,4 +1,5 @@
 open Printf
+open Lexing
 open Bparser
 
 let token_to_string (tok : Bparser.token) : string =
@@ -19,9 +20,12 @@ let token_to_string (tok : Bparser.token) : string =
   | RBRACKET -> "RBRACKET"
   | LBRACKETBAR -> "LBRACKETBAR"
   | RBRACKETBAR -> "RBRACKETBAR"
-  | ARROW -> "ARROW"
-  | ARROW_INV -> "ARROW_INV"
+  | RDARROW -> "RDARROW"
+  | RARROW -> "RARROW"
+  | LARROW -> "LARROW"
   | BIND -> "BIND"
+  | PIPE -> "PIPE"
+  | UNDERSCORE -> "UNDERSCORE"
   | OP_PLUS -> "OP_PLUS"
   | OP_MINUS -> "OP_MINUS"
   | OP_MUL -> "OP_MUL"
@@ -57,6 +61,8 @@ let token_to_string (tok : Bparser.token) : string =
   | DECL -> "DECL"
   | LET -> "LET"
   | AND -> "AND"
+  | MATCH -> "MATCH"
+  | END -> "END"
   | WITH -> "WITH"
   | IN -> "IN"
   | IF -> "IF"
@@ -80,10 +86,8 @@ let print (lexbuf : Lexing.lexbuf) : unit =
     | _ as tok -> tok :: collect lexbuf
   in
   let token_list = collect lexbuf in
-  PrintUtils.print_list
-    stdout
-    ~delim:("", "")
-    ~sep:"\n"
-    token_to_string
-    token_list;
-  printf "\n"
+  let file = lexbuf.lex_curr_p.pos_fname in
+  printf "Start of file \"%s\" ========\n" file;
+  PrintUtils.print_list stdout ~sep:"\n" token_to_string token_list;
+  printf "\n";
+  printf "End of file \"%s\" ========\n" file

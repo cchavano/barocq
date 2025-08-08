@@ -13,6 +13,7 @@ type btyp =
   | BInt32 of Types.signedness
   | BInt64 of Types.signedness
   | BArray of btyp
+  | BEnum of string * string
   | BRecord of string * string
   | BAbs of string * string
   | BFun of btyp list * btyp
@@ -21,7 +22,9 @@ type expected_typ =
   | Expect_typ of btyp
   | Expect_int
   | Expect_int_or_bool
+  | Expect_int_or_bool_or_enum
   | Expect_array
+  | Expect_enum
   | Expect_record
   | Expect_function
 
@@ -35,23 +38,27 @@ type error_cause =
   | Forbidden_cast of btyp * btyp
   | Undefined_ident of string
   | Undefined_type of string
+  | Undefined_enum_elem of string * btyp
   | Unknown_field of string * string
   | Module_not_found of string
   | Wrong_argument_number of int * int
   | Variable_shadowing_diff_type of string * btyp
   | Already_defined_type of string
   | Already_defined_glob of string
-  | Duplicated_record_field of string * string
-  | Duplicated_param of string * string
-  | Duplicated_module of string
+  | Duplicate_record_field of string * string
+  | Duplicate_param of string * string
+  | Duplicate_module of string
   | Missing_record_fields of string list
   | Missing_param_write of string * btyp
   | Too_many_param_write of string
   | Mismatch_type_param_write of string * btyp * btyp
+  | Const_var_enum_unsupported
   | Const_var_not_prim of string
   | Const_var_abstract of string
   | Invalid_operand of string * string
   | Use_of_non_prim_glob
+  | Redundant_pattern of string
+  | Non_exhaustive_pattern_matching of string
 
 exception Error of error_cause * unit Location.t option
 
@@ -62,16 +69,16 @@ let rec btyp_to_string (ty : btyp) : string =
   | BInt32 Types.Unsigned -> "u32"
   | BInt64 Types.Signed -> "i64"
   | BInt64 Types.Unsigned -> "u64"
-  | BArray (BArray t) -> sprintf "array (%s)" (btyp_to_string t)
-  | BArray t -> sprintf "array %s" (btyp_to_string t)
-  | BRecord (mname, cid) | BAbs (mname, cid) ->
-      if mname = !curr_mname then cid else sprintf "%s::%s" mname cid
+  | BArray (BArray ta) -> sprintf "array (%s)" (btyp_to_string ta)
+  | BArray ta -> sprintf "array %s" (btyp_to_string ta)
+  | BEnum (mname, tid) | BRecord (mname, tid) | BAbs (mname, tid) ->
+      if mname = !curr_mname then tid else sprintf "%s::%s" mname tid
   | BFun (tparams, tret) ->
       PrintTypes.funtyp_to_string btyp_to_string tparams tret
 
 let btyp_is_prim (ty : btyp) : bool =
   match ty with
-  | BBool | BInt32 _ | BInt64 _ -> true
+  | BBool | BInt32 _ | BInt64 _ | BEnum _ -> true
   | _ -> false
 
 let msg_from_failure (cause : error_cause) : string =
@@ -94,7 +101,10 @@ let msg_from_failure (cause : error_cause) : string =
         | Expect_int -> sprintf "but an integer expression was expected"
         | Expect_int_or_bool ->
             sprintf "but a boolean or integer expression was expected"
+        | Expect_int_or_bool_or_enum ->
+            sprintf "but a boolean, integer or enum expression was expected"
         | Expect_array -> sprintf "but an array was expected"
+        | Expect_enum -> sprintf "but an enum was expected"
         | Expect_record -> sprintf "but a record was expected"
         | Expect_function -> sprintf "but a function was expected"
       in
@@ -117,11 +127,11 @@ let msg_from_failure (cause : error_cause) : string =
         (btyp_to_string ty)
   | Already_defined_type tid -> sprintf "type %s is already defined" tid
   | Already_defined_glob gid ->
-      sprintf "global identifier %s cannot be redefined" gid
+      sprintf "global identifier %s is already used" gid
   | Undefined_type tid -> sprintf "type %s is not defined" tid
-  | Duplicated_record_field (fname, rid) ->
-      sprintf "field %s is duplicated in record type %s" fname rid
-  | Duplicated_param (p, f) ->
+  | Duplicate_record_field (fname, rid) ->
+      sprintf "field %s is a duplicated in record type %s" fname rid
+  | Duplicate_param (p, f) ->
       sprintf "parameter %s is duplicated in the definition of function %s" p f
   | Forbidden_cast (t1, t2) ->
       sprintf
@@ -129,16 +139,12 @@ let msg_from_failure (cause : error_cause) : string =
         (btyp_to_string t1)
         (btyp_to_string t2)
   | Module_not_found mname -> sprintf "module %s not found" mname
-  | Duplicated_module mname ->
+  | Duplicate_module mname ->
       sprintf "a module with name %s already exists" mname
   | Missing_record_fields mfields ->
       sprintf
         "the following record fields are missing: %s"
-        (PrintUtils.list_to_string
-           ~delim:("", "")
-           ~sep:", "
-           (fun x -> x)
-           mfields)
+        (PrintUtils.list_to_string ~sep:", " (fun x -> x) mfields)
   | Too_many_param_write id ->
       sprintf
         "abstract function %s must only contain one @write-annotated parameter"
@@ -156,6 +162,8 @@ let msg_from_failure (cause : error_cause) : string =
         fid
         (btyp_to_string tw)
         (btyp_to_string tret)
+  | Const_var_enum_unsupported ->
+      "using an enum constructor in a constant definition is not yet supported"
   | Const_var_not_prim id ->
       sprintf
         "%s is not primitive, it cannot be used in a constant definition"
@@ -165,6 +173,17 @@ let msg_from_failure (cause : error_cause) : string =
   | Invalid_operand (op, ty) -> sprintf "invalid left operand for %s %s" op ty
   | Use_of_non_prim_glob ->
       "the use of non-primitive global constants is forbidden"
+  | Redundant_pattern p -> sprintf "pattern %s is redundant" p
+  | Non_exhaustive_pattern_matching u ->
+      sprintf
+        "this pattern-matching is not exhaustive. Example: pattern %s is not \
+         matched"
+        u
+  | Undefined_enum_elem (e, t) ->
+      sprintf
+        "there is no enum constructor of type %s named %s"
+        (btyp_to_string t)
+        e
 
 let error ?(loc : 'a Location.t option = None) (c : error_cause) =
   let loc =
@@ -183,20 +202,19 @@ let update_error_loc (cause : error_cause) (loc1 : unit Location.t option)
 module IdentMap = Map.Make (String)
 module IdentSet = Set.Make (String)
 
-type renv = (string * btyp) list IdentMap.t
+type type_def =
+  | TdEnum of string list
+  | TdRecord of (string * btyp) list
+  | TdAbstract of string
+  | TdAlias of btyp
 
 type tenv = {
-  tenv_aliases : btyp IdentMap.t;
-  tenv_records : renv;
-  tenv_abstracts : IdentSet.t;
+  tenv_defs : type_def IdentMap.t;
+  tenv_constr_types : string IdentMap.t;
 }
 
 let tenv_empty =
-  {
-    tenv_aliases = IdentMap.empty;
-    tenv_records = IdentMap.empty;
-    tenv_abstracts = IdentSet.empty;
-  }
+  { tenv_defs = IdentMap.empty; tenv_constr_types = IdentMap.empty }
 
 type gtenv = {
   gtenv_local : tenv;
@@ -212,23 +230,50 @@ let compose_loc_idents (mname : ident) (id : ident) : ident =
   let v = compose_idents mname.content id.content in
   Location.make mname.startpos id.endpos v
 
-let tenv_get (mname : string) (te : tenv) (tid : ident) : btyp option =
-  match IdentMap.find_opt tid.content te.tenv_aliases with
-  | Some ty -> Some ty
-  | None -> begin
-      match IdentMap.find_opt tid.content te.tenv_records with
-      | Some _ -> Some (BRecord (mname, tid.content))
-      | None -> begin
-          match IdentSet.find_opt tid.content te.tenv_abstracts with
-          | Some _ -> Some (BAbs (mname, tid.content))
-          | None -> None
-        end
-    end
+let loc_of_cident (cid : cident) : unit Location.t =
+  match cid with
+  | IdSimple id -> Location.make id.startpos id.endpos ()
+  | IdPrefixed (mname, id) -> Location.make mname.startpos id.endpos ()
 
-let gtenv_get (imports : ident list) (gte : gtenv) (cid : cident) : btyp =
+let tenv_get_def (mname : string) (te : tenv) (tid : ident) : btyp option =
+  let tid = tid.content in
+  match IdentMap.find_opt tid te.tenv_defs with
+  | Some td ->
+      let ty =
+        match td with
+        | TdEnum _ -> BEnum (mname, tid)
+        | TdRecord _ -> BRecord (mname, tid)
+        | TdAbstract _ -> BAbs (mname, tid)
+        | TdAlias ty -> ty
+      in
+      Some ty
+  | None -> None
+
+let tenv_get_constr_typ (mname : string) (te : tenv) (cname : ident) :
+    btyp option =
+  match IdentMap.find_opt cname.content te.tenv_constr_types with
+  | Some eid -> Some (BEnum (mname, eid))
+  | _ -> None
+
+let tenv_update_defs (te : tenv) (tid : ident) (td : type_def) : tenv =
+  let tid_str = tid.content in
+  match IdentMap.find_opt tid_str te.tenv_defs with
+  | Some _ -> error (Already_defined_type tid_str) ~loc:(Some tid)
+  | None -> { te with tenv_defs = IdentMap.add tid_str td te.tenv_defs }
+
+let tenv_update_constr_types (te : tenv) (cname : ident) (eid : string) : tenv =
+  match IdentMap.find_opt cname.content te.tenv_constr_types with
+  | Some _ -> error (Already_defined_glob cname.content) ~loc:(Some cname)
+  | None ->
+      {
+        te with
+        tenv_constr_types = IdentMap.add cname.content eid te.tenv_constr_types;
+      }
+
+let gtenv_get_def (imports : ident list) (gte : gtenv) (cid : cident) : btyp =
   let gtenv_get_prefixed (mname : ident) (tid : ident) : btyp option =
     match IdentMap.find_opt mname.content gte.gtenv_extern with
-    | Some te -> tenv_get mname.content te tid
+    | Some te -> tenv_get_def mname.content te tid
     | None -> error (Module_not_found mname.content) ~loc:(Some mname)
   in
   let rec gtenv_get_imports (imports : ident list) (tid : ident) : btyp =
@@ -242,7 +287,7 @@ let gtenv_get (imports : ident list) (gte : gtenv) (cid : cident) : btyp =
   in
   match cid with
   | IdSimple tid -> begin
-      match tenv_get !curr_mname gte.gtenv_local tid with
+      match tenv_get_def !curr_mname gte.gtenv_local tid with
       | Some ty -> ty
       | None -> gtenv_get_imports imports tid
     end
@@ -254,66 +299,65 @@ let gtenv_get (imports : ident list) (gte : gtenv) (cid : cident) : btyp =
           error (Undefined_type tid'.content) ~loc:(Some tid')
     end
 
-let gtenv_get_fields (imports : ident list) (gte : gtenv) (cid : cident) :
-    (string * btyp) list =
-  let ty = gtenv_get imports gte cid in
-  match ty with
-  | BRecord (mname, rid) ->
-      let re, rid' =
-        if mname = !curr_mname then (gte.gtenv_local.tenv_records, rid)
-        else
-          match IdentMap.find_opt mname gte.gtenv_extern with
-          | Some te -> (te.tenv_records, compose_idents mname rid)
-          | None -> assert false (* Ill-typed environment *)
-      in
-      begin
-        match IdentMap.find_opt rid re with
-        | Some fields -> fields
-        | _ -> assert false (* Ill-typed environment *)
+let gtenv_get_constr_typ (imports : ident list) (gte : gtenv) (cid : cident) :
+    btyp =
+  let gtenv_get_prefixed (mname : ident) (cname : ident) : btyp option =
+    match IdentMap.find_opt mname.content gte.gtenv_extern with
+    | Some te -> tenv_get_constr_typ mname.content te cname
+    | None -> error (Module_not_found mname.content) ~loc:(Some mname)
+  in
+  let rec gtenv_get_imports (imports : ident list) (cname : ident) : btyp =
+    match imports with
+    | [] -> error (Undefined_ident cname.content) ~loc:(Some cname)
+    | m1 :: imports' -> begin
+        match gtenv_get_prefixed m1 cname with
+        | Some ty -> ty
+        | None -> gtenv_get_imports imports' cname
       end
-  | _ -> error (Type_mismatch (Expect_record, Current_typ ty))
-
-let is_local_type_defined (te : tenv) (tid : string) : bool =
-  match IdentMap.find_opt tid te.tenv_aliases with
-  | Some _ -> true
-  | None -> begin
-      match IdentMap.find_opt tid te.tenv_records with
-      | Some _ -> true
-      | None -> false
+  in
+  match cid with
+  | IdSimple cname -> begin
+      match tenv_get_constr_typ !curr_mname gte.gtenv_local cname with
+      | Some ty -> ty
+      | None -> gtenv_get_imports imports cname
+    end
+  | IdPrefixed (mname, cname) -> begin
+      match gtenv_get_prefixed mname cname with
+      | Some ty -> ty
+      | None ->
+          let tid' = compose_loc_idents mname cname in
+          error (Undefined_ident tid'.content) ~loc:(Some tid')
     end
 
-let tenv_update_aliases (te : tenv) (alias : ident) (ty : btyp) : tenv =
-  if is_local_type_defined te alias.content then
-    error (Already_defined_type alias.content) ~loc:(Some alias)
-  else { te with tenv_aliases = IdentMap.add alias.content ty te.tenv_aliases }
-
-let tenv_update_records (te : tenv) (rid : ident)
-    (fields : (string * btyp) list) : tenv =
-  if is_local_type_defined te rid.content then
-    error (Already_defined_type rid.content) ~loc:(Some rid)
-  else
-    { te with tenv_records = IdentMap.add rid.content fields te.tenv_records }
-
-let tenv_update_abstracts (te : tenv) (tid : ident) : tenv =
-  if is_local_type_defined te tid.content then
-    error (Already_defined_type tid.content) ~loc:(Some tid)
-  else { te with tenv_abstracts = IdentSet.add tid.content te.tenv_abstracts }
-
-let gtenv_update_local_aliases (gte : gtenv) (alias : ident) (ty : btyp) : gtenv
-    =
-  { gte with gtenv_local = tenv_update_aliases gte.gtenv_local alias ty }
+let gtenv_update_local_enums (gte : gtenv) (eid : ident) (elems : string list) :
+    gtenv =
+  { gte with gtenv_local = tenv_update_defs gte.gtenv_local eid (TdEnum elems) }
 
 let gtenv_update_local_records (gte : gtenv) (rid : ident)
     (fields : (string * btyp) list) : gtenv =
-  { gte with gtenv_local = tenv_update_records gte.gtenv_local rid fields }
+  {
+    gte with
+    gtenv_local = tenv_update_defs gte.gtenv_local rid (TdRecord fields);
+  }
 
 let gtenv_update_local_abstracts (gte : gtenv) (tid : ident) : gtenv =
-  { gte with gtenv_local = tenv_update_abstracts gte.gtenv_local tid }
+  {
+    gte with
+    gtenv_local = tenv_update_defs gte.gtenv_local tid (TdAbstract tid.content);
+  }
+
+let gtenv_update_local_aliases (gte : gtenv) (alias : ident) (ty : btyp) : gtenv
+    =
+  { gte with gtenv_local = tenv_update_defs gte.gtenv_local alias (TdAlias ty) }
 
 type gcontext = {
   gx_local : btyp IdentMap.t;
   gx_extern : btyp IdentMap.t IdentMap.t;
 }
+
+let gtenv_update_local_constr_types (gte : gtenv) (elem : ident) (eid : string)
+    : gtenv =
+  { gte with gtenv_local = tenv_update_constr_types gte.gtenv_local elem eid }
 
 let gcontext_empty = { gx_local = IdentMap.empty; gx_extern = IdentMap.empty }
 
@@ -331,7 +375,7 @@ let rec styp_to_btyp (imports : ident list) (gte : gtenv) (sty : styp) : btyp =
   | SInt32 s -> BInt32 s
   | SInt64 s -> BInt64 s
   | SArray sta -> BArray (styp_to_btyp imports gte sta)
-  | SIdent stid -> gtenv_get imports gte stid
+  | SIdent stid -> gtenv_get_def imports gte stid
   | SFun (stparams, stret) ->
       let tparams =
         List.map (fun (_, sty) -> styp_to_btyp imports gte sty) stparams
@@ -343,6 +387,7 @@ type cvalue =
   | VBool of bool
   | VInt32 of Int.int * Types.signedness
   | VInt64 of Int64.int * Types.signedness
+  | VEnum
   | VNotprim
   | VAbs
 
@@ -354,6 +399,7 @@ type cenv = {
 let cenv_get (imports : ident list) (ce : cenv) (cid : cident) : cvalue =
   let check_cval (id : ident) (v : cvalue) : cvalue =
     match v with
+    | VEnum -> error Const_var_enum_unsupported ~loc:(Some id)
     | VAbs -> error (Const_var_abstract id.content) ~loc:(Some id)
     | VNotprim -> error (Const_var_not_prim id.content) ~loc:(Some id)
     | _ -> v
@@ -706,10 +752,15 @@ let gcontext_get (imports : ident list) (gx : gcontext) (cid : cident) : btyp =
   | BArray _ | BRecord _ | BAbs _ -> error Use_of_non_prim_glob
   | _ -> ty
 
-let gcontext_update_local (gx : gcontext) (x : ident) (ty : btyp) : gcontext =
+let gcontext_update_local (gte : gtenv) (gx : gcontext) (x : ident) (ty : btyp)
+    : gcontext =
   match IdentMap.find_opt x.content gx.gx_local with
   | Some _ -> error (Already_defined_glob x.content) ~loc:(Some x)
-  | None -> { gx with gx_local = IdentMap.add x.content ty gx.gx_local }
+  | None -> begin
+      match IdentMap.find_opt x.content gte.gtenv_local.tenv_constr_types with
+      | Some _ -> error (Already_defined_glob x.content) ~loc:(Some x)
+      | None -> { gx with gx_local = IdentMap.add x.content ty gx.gx_local }
+    end
 
 let lcontext_update (lx : lcontext) (x : ident) (ty : btyp) : lcontext =
   match IdentMap.find_opt x.content lx with
@@ -722,6 +773,14 @@ let cident_to_string (cid : cident) : string =
   match cid with
   | IdSimple id -> id.content
   | IdPrefixed (mname, id) -> compose_idents mname.content id.content
+
+let pattern_to_string (p : pattern) : string =
+  match p with
+  | PIdent cid -> cident_to_string cid
+  | PWildcard _ -> "_"
+
+let typof_constr (imports : ident list) (gte : gtenv) (x : cident) : btyp =
+  gtenv_get_constr_typ imports gte x
 
 let typof_var (imports : ident list) (gx : gcontext) (lx : lcontext)
     (x : cident) : btyp =
@@ -754,6 +813,8 @@ let typecheck_binary_op (op : binary_op) (ty1 : btyp) (ty2 : btyp) : btyp =
       | BBool, BBool -> BBool
       | BInt32 s1, BInt32 s2 | BInt64 s1, BInt64 s2 ->
           if s1 = s2 then BBool else assert false
+      | BEnum (mname1, t1), BEnum (mname2, t2) ->
+          if mname1 = mname2 && t1 = t2 then BBool else assert false
       | _, _ -> assert false
     end
   | BopLt | BopLe | BopGt | BopGe -> begin
@@ -773,6 +834,11 @@ let typecheck_cast (from_ty : btyp) (to_ty : btyp) : btyp =
   match from_ty with
   | BBool | BInt32 _ | BInt64 _ -> begin
       match to_ty with
+      | BBool | BInt32 _ | BInt64 _ | BEnum _ -> to_ty
+      | _ -> error (Forbidden_cast (from_ty, to_ty))
+    end
+  | BEnum _ -> begin
+      match to_ty with
       | BBool | BInt32 _ | BInt64 _ -> to_ty
       | _ -> error (Forbidden_cast (from_ty, to_ty))
     end
@@ -780,34 +846,40 @@ let typecheck_cast (from_ty : btyp) (to_ty : btyp) : btyp =
 
 let typecheck_record_proj (gte : gtenv) (mname : string) (rid : string)
     (f : ident) : btyp =
-  let re, rid' =
-    if mname = !curr_mname then (gte.gtenv_local.tenv_records, rid)
+  let te, rid' =
+    if mname = !curr_mname then (gte.gtenv_local, rid)
     else
       match IdentMap.find_opt mname gte.gtenv_extern with
-      | Some te -> (te.tenv_records, compose_idents mname rid)
+      | Some te -> (te, compose_idents mname rid)
       | None -> assert false (* Ill-typed environment *)
   in
-  match IdentMap.find_opt rid re with
-  | Some fields -> begin
+  match IdentMap.find_opt rid te.tenv_defs with
+  | Some (TdRecord fields) -> begin
       match List.assoc_opt f.content fields with
       | Some tf -> tf
       | None -> error (Unknown_field (f.content, rid'))
     end
-  | None -> assert false (* Ill-typed environment *)
+  | _ -> assert false (* Ill-typed environment *)
 
-let transl_var_name (imports : ident list) (gx : gcontext) (lx : lcontext)
-    (x : cident) : Syntax.ident =
-  let rec mname_of_ident (imports : ident list) (id : ident) : string =
-    match imports with
-    | [] -> error (Undefined_ident id.content) ~loc:(Some id)
-    | m1 :: imports' ->
-        let m1_gx = IdentMap.find m1.content gx.gx_extern in
-        begin
-          match IdentMap.find_opt id.content m1_gx with
-          | Some _ -> m1.content
-          | None -> mname_of_ident imports' id
-        end
-  in
+let rec mname_of_ident (imports : ident list) (gte : gtenv) (gx : gcontext)
+    (id : ident) : string =
+  match imports with
+  | [] -> error (Undefined_ident id.content) ~loc:(Some id)
+  | m1 :: imports' ->
+      let m1_gx = IdentMap.find m1.content gx.gx_extern in
+      begin
+        match IdentMap.find_opt id.content m1_gx with
+        | Some _ -> m1.content
+        | None -> begin
+            let m1_te = IdentMap.find m1.content gte.gtenv_extern in
+            match IdentMap.find_opt id.content m1_te.tenv_constr_types with
+            | Some _ -> m1.content
+            | None -> mname_of_ident imports' gte gx id
+          end
+      end
+
+let transl_var_name (imports : ident list) (gte : gtenv) (gx : gcontext)
+    (lx : lcontext) (x : cident) : Syntax.ident =
   let x' =
     match x with
     | IdSimple x ->
@@ -818,13 +890,40 @@ let transl_var_name (imports : ident list) (gx : gcontext) (lx : lcontext)
           | None -> begin
               match IdentMap.find_opt x.content gx.gx_local with
               | Some _ -> !curr_mname
-              | None -> mname_of_ident imports x
+              | None -> mname_of_ident imports gte gx x
             end
         in
         sprintf "%s_%s" prefix x.content
     | IdPrefixed (mname, x) -> Printf.sprintf "%s_%s" mname.content x.content
   in
   PrintUtils.ident_of_string x'
+
+let transl_constr_name (imports : ident list) (gte : gtenv) (gx : gcontext)
+    (x : cident) : Syntax.ident =
+  let x' =
+    match x with
+    | IdSimple x ->
+        let prefix =
+          begin
+            match
+              IdentMap.find_opt x.content gte.gtenv_local.tenv_constr_types
+            with
+            | Some _ -> !curr_mname
+            | None -> mname_of_ident imports gte gx x
+          end
+        in
+        sprintf "%s_%s" prefix x.content
+    | IdPrefixed (mname, x) -> Printf.sprintf "%s_%s" mname.content x.content
+  in
+  PrintUtils.ident_of_string x'
+
+let transl_pattern (imports : ident list) (gte : gtenv) (gx : gcontext)
+    (lx : lcontext) (p : pattern) : Benum.pattern =
+  match p with
+  | PIdent cid ->
+      let id = transl_constr_name imports gte gx cid in
+      Benum.PIdent id
+  | PWildcard _ -> Benum.PWildcard
 
 let transl_field_name (f : ident) : Syntax.ident =
   PrintUtils.ident_of_string f.content
@@ -835,12 +934,15 @@ let rec transl_btyp (ty : btyp) : Types.btyp =
   | BInt32 s -> Types.BInt32 s
   | BInt64 s -> Types.BInt64 s
   | BArray ta -> Types.BArray (transl_btyp ta)
+  | BEnum (mname, eid) ->
+      let eid' = PrintUtils.ident_of_string (sprintf "%s_%s" mname eid) in
+      Types.BEnum eid'
   | BRecord (mname, rid) ->
       let rid' = PrintUtils.ident_of_string (sprintf "%s_%s" mname rid) in
       Types.BRecord rid'
-  | BAbs (mname, cid) ->
-      let cid' = PrintUtils.ident_of_string (sprintf "%s_%s" mname cid) in
-      Types.BAbs cid'
+  | BAbs (mname, tid) ->
+      let tid' = PrintUtils.ident_of_string (sprintf "%s_%s" mname tid) in
+      Types.BAbs tid'
   | BFun (tparams, tret) ->
       let tparams' = List.map transl_btyp tparams in
       let tret' = transl_btyp tret in
@@ -869,9 +971,19 @@ let check_expected_typ (texp : expected_typ) (ty : btyp) (r : 'a) : 'a =
       | BBool | BInt32 _ | BInt64 _ -> r
       | _ -> error (Type_mismatch (texp, Current_typ ty))
     end
+  | Expect_int_or_bool_or_enum -> begin
+      match ty with
+      | BBool | BInt32 _ | BInt64 _ | BEnum _ -> r
+      | _ -> error (Type_mismatch (texp, Current_typ ty))
+    end
   | Expect_array -> begin
       match ty with
       | BArray _ -> r
+      | _ -> error (Type_mismatch (texp, Current_typ ty))
+    end
+  | Expect_enum -> begin
+      match ty with
+      | BEnum _ -> r
       | _ -> error (Type_mismatch (texp, Current_typ ty))
     end
   | Expect_record -> begin
@@ -885,6 +997,45 @@ let check_expected_typ (texp : expected_typ) (ty : btyp) (r : 'a) : 'a =
       | _ -> error (Type_mismatch (texp, Current_typ ty))
     end
 
+let typecheck_pattern (imports : ident list) (gte : gtenv) (gx : gcontext)
+    (mname : string) (eid : string) (x : pattern) (elems : string list)
+    (unmatched : string list) : string list =
+  let xloc =
+    match x with
+    | PIdent cid -> loc_of_cident cid
+    | PWildcard loc -> loc
+  in
+  if unmatched = [] then
+    error (Redundant_pattern (pattern_to_string x)) ~loc:(Some xloc)
+  else
+    match x with
+    | PWildcard _ -> []
+    | PIdent x ->
+        let xstr =
+          match x with
+          | IdSimple id | IdPrefixed (_, id) -> id.content
+        in
+        let xstr_full = cident_to_string x in
+        (* We need to check that the pattern:
+         - has the correct enum type;
+         - corresponds to a constructor of that type;
+         - has not already been matched. *)
+        let tx =
+          try gtenv_get_constr_typ imports gte x
+          with Error (Undefined_ident _, loc) ->
+            error (Undefined_enum_elem (xstr_full, BEnum (mname, eid))) ~loc
+        in
+        if tx = BEnum (mname, eid) then
+          if List.mem xstr elems then
+            if List.mem xstr unmatched then
+              List0.remove String.equal xstr unmatched
+            else error (Redundant_pattern xstr_full) ~loc:(Some xloc)
+          else error (Undefined_enum_elem (xstr_full, BEnum (mname, eid)))
+        else
+          error
+            (Type_mismatch (Expect_typ (BEnum (mname, eid)), Current_typ tx))
+            ~loc:(Some xloc)
+
 let rec typecheck_raw_expr (imports : ident list) (gte : gtenv) (gx : gcontext)
     (lx : lcontext) (e : raw_expr) : Barocq.expr * btyp =
   match e with
@@ -892,9 +1043,13 @@ let rec typecheck_raw_expr (imports : ident list) (gte : gtenv) (gx : gcontext)
   | EFalse -> (Barocq.EFalse, BBool)
   | EInt32 (i, s) -> (Barocq.EInt32 (i, s), BInt32 s)
   | EInt64 (i, s) -> (Barocq.EInt64 (i, s), BInt64 s)
+  | EConstr x ->
+      let ty = typof_constr imports gte x in
+      let x' = transl_constr_name imports gte gx x in
+      (Barocq.EConstr x', ty)
   | EVar x ->
       let ty = typof_var imports gx lx x in
-      let x' = transl_var_name imports gx lx x in
+      let x' = transl_var_name imports gte gx lx x in
       (Barocq.EVar x', ty)
   | ECast (e1, sty) ->
       let ty = styp_to_btyp imports gte sty in
@@ -913,7 +1068,7 @@ let rec typecheck_raw_expr (imports : ident list) (gte : gtenv) (gx : gcontext)
       let texp =
         match op with
         | BopAndbool | BopOrbool | BopXorbool -> Expect_typ BBool
-        | BopEq | BopNeq -> Expect_int_or_bool
+        | BopEq | BopNeq -> Expect_int_or_bool_or_enum
         | _ -> Expect_int
       in
       let e1', t1 = typecheck_expr_expecting imports gte gx lx e1 texp in
@@ -995,6 +1150,15 @@ let rec typecheck_raw_expr (imports : ident list) (gte : gtenv) (gx : gcontext)
         typecheck_expr_expecting imports gte gx lx e3 (Expect_typ t2)
       in
       (Barocq.EIfThenElse (e1', e2', e3'), t2)
+  | EMatch (e1, cases) ->
+      let e1', t1 = typecheck_expr_expecting imports gte gx lx e1 Expect_enum in
+      begin
+        match t1 with
+        | BEnum (mname, eid) ->
+            let cases', t = typecheck_match imports gte gx lx mname eid cases in
+            (Barocq.EMatch (e1', cases'), t)
+        | _ -> assert false
+      end
   | ELetIn (le, e) -> begin
       match le with
       | [] -> assert false
@@ -1054,6 +1218,53 @@ and typecheck_app (imports : ident list) (gte : gtenv) (gx : gcontext)
   in
   aux tparams args
 
+and typecheck_match (imports : ident list) (gte : gtenv) (gx : gcontext)
+    (lx : lcontext) (mname : string) (eid : string)
+    (cases : (pattern * expr) list) : (Benum.pattern * Barocq.expr) list * btyp
+    =
+  let rec aux (elems : string list) (unmatched : string list)
+      (cases : (pattern * expr) list) (tr : btyp) :
+      (Benum.pattern * Barocq.expr) list =
+    match cases with
+    | [] ->
+        if unmatched <> [] then
+          let u = List.hd unmatched in
+          let u =
+            if mname != !curr_mname then sprintf "%s::%s" mname u else u
+          in
+          error (Non_exhaustive_pattern_matching u)
+        else []
+    | (x, ex) :: cases' ->
+        let unmatched' =
+          typecheck_pattern imports gte gx mname eid x elems unmatched
+        in
+        let ber = aux elems unmatched' cases' tr in
+        let bex, tx =
+          typecheck_expr_expecting imports gte gx lx ex (Expect_typ tr)
+        in
+        (transl_pattern imports gte gx lx x, bex) :: ber
+  in
+  let te =
+    if mname = !curr_mname then gte.gtenv_local
+    else
+      match IdentMap.find_opt mname gte.gtenv_extern with
+      | Some te -> te
+      | None -> assert false (* Ill-typed environment *)
+  in
+  match IdentMap.find_opt eid te.tenv_defs with
+  | Some (TdEnum elems) -> begin
+      match cases with
+      | [] -> assert false (* Ill-parsed program *)
+      | (x, ex) :: cases' ->
+          let unmatched =
+            typecheck_pattern imports gte gx mname eid x elems elems
+          in
+          let bex, tx = typecheck_expr imports gte gx lx ex in
+          let ber = aux elems unmatched cases' tx in
+          ((transl_pattern imports gte gx lx x, bex) :: ber, tx)
+    end
+  | _ -> assert false
+
 and typecheck_let_in (imports : ident list) (gte : gtenv) (gx : gcontext)
     (lx : lcontext) (le : (ident * expr) list) (e : expr) : Barocq.expr * btyp =
   match le with
@@ -1103,9 +1314,9 @@ let rec typecheck_const (imports : ident list) (gte : gtenv) (ce : cenv)
             else (gte.gtenv_local, rid)
           in
           let fields =
-            match IdentMap.find_opt rid te.tenv_records with
-            | Some fields -> fields
-            | None -> assert false (* Ill-typed environment *)
+            match IdentMap.find_opt rid te.tenv_defs with
+            | Some (TdRecord fields) -> fields
+            | _ -> assert false (* Ill-typed environment *)
           in
           (fields, rid')
         in
@@ -1206,7 +1417,7 @@ let find_duplicate_ident (l : ident list) : ident option =
 let typecheck_function (imports : ident list) (gte : gtenv) (gx : gcontext)
     (x : ident) (f : func) : Barocq.coq_function * btyp =
   match find_duplicate_ident (List.map fst f.fn_params) with
-  | Some p -> error (Duplicated_param (p.content, x.content)) ~loc:(Some p)
+  | Some p -> error (Duplicate_param (p.content, x.content)) ~loc:(Some p)
   | None ->
       let tret = styp_to_btyp imports gte f.fn_return in
       let params =
@@ -1273,18 +1484,41 @@ let typecheck_abs_function (x : ident) (tparams : (param_attr * btyp) list)
   let _ = check_write_param tparams tret None in
   BFun (List.map snd tparams, tret)
 
-let typecheck_globdef (imports : ident list) (gte : gtenv) (ce : cenv)
-    (gx : gcontext) (def : globdef) :
+let typecheck_type_def (imports : ident list) (gte : gtenv) (ce : cenv)
+    (gx : gcontext) (tid : ident) (td : SurfaceAST.type_def) :
     Barocq.globdef option * gtenv * cenv * gcontext =
-  match def with
-  | DefAlias (alias, sty) ->
-      let ty = styp_to_btyp imports gte sty in
-      (None, gtenv_update_local_aliases gte alias ty, ce, gx)
-  | DefType (rid, fields) -> begin
+  match td with
+  | SurfaceAST.TdEnum elems -> begin
+      match find_duplicate_ident elems with
+      | Some elem -> error (Already_defined_glob elem.content) ~loc:(Some elem)
+      | _ ->
+          let gte' =
+            gtenv_update_local_enums
+              gte
+              tid
+              (List.map (fun e -> e.content) elems)
+          in
+          (* Every enum constructor is added as a global symbol in the type environment *)
+          let gte' =
+            List.fold_left
+              (fun acc e -> gtenv_update_local_constr_types acc e tid.content)
+              gte'
+              elems
+          in
+          (* Every enum constructor is added in the constant environment
+             (using them in constant definitions is not supported though). *)
+          let ce' =
+            List.fold_left (fun acc e -> cenv_update_local acc e VEnum) ce elems
+          in
+          let bid = transl_globdef_name !curr_mname tid in
+          let belems = List.map (transl_globdef_name !curr_mname) elems in
+          (Some (Barocq.DefType (bid, Types.Adt_enum belems)), gte', ce', gx)
+    end
+  | SurfaceAST.TdRecord fields -> begin
       match find_duplicate_ident (List.map fst fields) with
       | Some fname ->
           error
-            (Duplicated_record_field (fname.content, rid.content))
+            (Duplicate_record_field (fname.content, tid.content))
             ~loc:(Some fname)
       | None ->
           let fields' =
@@ -1293,7 +1527,7 @@ let typecheck_globdef (imports : ident list) (gte : gtenv) (ce : cenv)
                 (fname.content, styp_to_btyp imports gte ftyp))
               fields
           in
-          let bsid = transl_globdef_name !curr_mname rid in
+          let bid = transl_globdef_name !curr_mname tid in
           let bfields =
             List.map
               (fun (fname, ftyp) ->
@@ -1302,13 +1536,22 @@ let typecheck_globdef (imports : ident list) (gte : gtenv) (ce : cenv)
                 (fname', ftyp'))
               fields'
           in
-          let gte' = gtenv_update_local_records gte rid fields' in
-          (Some (Barocq.DefType (bsid, bfields)), gte', ce, gx)
+          let gte' = gtenv_update_local_records gte tid fields' in
+          (Some (Barocq.DefType (bid, Types.Adt_record bfields)), gte', ce, gx)
     end
+  | SurfaceAST.TdAlias ty ->
+      let ty = styp_to_btyp imports gte ty in
+      (None, gtenv_update_local_aliases gte tid ty, ce, gx)
+
+let typecheck_globdef (imports : ident list) (gte : gtenv) (ce : cenv)
+    (gx : gcontext) (def : globdef) :
+    Barocq.globdef option * gtenv * cenv * gcontext =
+  match def with
+  | DefType (tid, td) -> typecheck_type_def imports gte ce gx tid td
   | DefConst (id, c, sty) ->
       let ty = styp_to_btyp imports gte sty in
       let l', _ = typecheck_const imports gte ce gx ty c in
-      let gx' = gcontext_update_local gx id ty in
+      let gx' = gcontext_update_local gte gx id ty in
       let bid = transl_globdef_name !curr_mname id in
       let bty = transl_btyp ty in
       let ce' =
@@ -1320,7 +1563,7 @@ let typecheck_globdef (imports : ident list) (gte : gtenv) (ce : cenv)
       (Some (Barocq.DefConst (bid, l', bty)), gte, ce', gx')
   | DefFun (id, f) ->
       let bf, ty = typecheck_function imports gte gx id f in
-      let gx' = gcontext_update_local gx id ty in
+      let gx' = gcontext_update_local gte gx id ty in
       let bid = transl_globdef_name !curr_mname id in
       (Some (Barocq.DefFun (bid, bf)), gte, ce, gx')
   | DeclType (tid, tk) ->
@@ -1329,7 +1572,7 @@ let typecheck_globdef (imports : ident list) (gte : gtenv) (ce : cenv)
       (Some (Barocq.DeclType (bid, tk)), gte', ce, gx)
   | DeclConst (id, sty) ->
       let ty = styp_to_btyp imports gte sty in
-      let gx' = gcontext_update_local gx id ty in
+      let gx' = gcontext_update_local gte gx id ty in
       let bid = transl_globdef_name !curr_mname id in
       let bty = transl_btyp ty in
       let ce' = cenv_update_local ce id VAbs in
@@ -1344,7 +1587,7 @@ let typecheck_globdef (imports : ident list) (gte : gtenv) (ce : cenv)
       in
       let tret' = styp_to_btyp imports gte tret in
       let ty = typecheck_abs_function id tparams' tret' in
-      let gx' = gcontext_update_local gx id ty in
+      let gx' = gcontext_update_local gte gx id ty in
       let bid = transl_globdef_name !curr_mname id in
       let btparams =
         List.map
@@ -1369,7 +1612,7 @@ let typecheck_modul (gte : gtenv) (ce : cenv) (gx : gcontext) (md : modul) :
     Barocq.program * gtenv * cenv * gcontext =
   let mname = md.md_name in
   match IdentMap.find_opt mname.content gx.gx_extern with
-  | Some _ -> error (Duplicated_module mname.content) ~loc:(Some mname)
+  | Some _ -> error (Duplicate_module mname.content) ~loc:(Some mname)
   | _ ->
       curr_mname := md.md_name.content;
       (* Initialization of gte and gtx *)
@@ -1448,7 +1691,7 @@ let typecheck_imodul (gte : gtenv) (ce : cenv) (gx : gcontext) (imd : imodul) :
     Barocq.iprogram * gtenv * cenv * gcontext =
   let mname = imd.imd_name in
   match IdentMap.find_opt mname.content gx.gx_extern with
-  | Some _ -> error (Duplicated_module mname.content) ~loc:(Some mname)
+  | Some _ -> error (Duplicate_module mname.content) ~loc:(Some mname)
   | _ ->
       curr_mname := imd.imd_name.content;
       (* Initialization of gte and gtx *)
@@ -1497,41 +1740,40 @@ let typecheck_imodul (gte : gtenv) (ce : cenv) (gx : gcontext) (imd : imodul) :
       (bprog, gte', ce', gx')
 
 type gdef_kind =
-  KType | KDecl | KDef
+  | KType
+  | KDecl
+  | KDef
 
 let kind_of_gdef gd =
   match gd with
-  | Barocq.DefType _   | Barocq.DeclType _  -> KType
+  | Barocq.DefType _ | Barocq.DeclType _ -> KType
   | Barocq.DeclConst _ | Barocq.DeclFun _ -> KDecl
-  | Barocq.DefConst _ | Barocq.DefFun  _  -> KDef
-  
+  | Barocq.DefConst _ | Barocq.DefFun _ -> KDef
+
 let kind_of_command c1 =
   match c1 with
   | Barocq.CmdExpr _ -> None
-  | Barocq.CmdDef d  -> Some (kind_of_gdef d)
+  | Barocq.CmdDef d -> Some (kind_of_gdef d)
 
-(** [sort_iprogam] puts type declaration and definition first,
-    declaration of function followed by definition of function *)
+(** [sort_iprogam] puts type declaration and definition first, declaration of
+    function followed by definition of function *)
 let sort_iprogam p =
-
-  let cmp_gdef gd1  gd2 =
-    match kind_of_command gd1 , kind_of_command gd2 with
-    | None  , None -> 0
-    | Some _ , None -> -1
-    |  None  , Some _ -> 1
-    | Some gd1 , Some gd2 ->
-      match gd1 , gd2 with
-      | KType   , KType -> 0
-      | KType   ,   _   -> -1
-      |   _     , KType -> 1
-      | KDecl   , KDecl -> 0
-      | KDecl   , KDef  -> -1
-      | KDef    , KDecl -> 1
-      | KDef    , KDef  -> 0
+  let cmp_gdef gd1 gd2 =
+    match (kind_of_command gd1, kind_of_command gd2) with
+    | None, None -> 0
+    | Some _, None -> -1
+    | None, Some _ -> 1
+    | Some gd1, Some gd2 -> (
+        match (gd1, gd2) with
+        | KType, KType -> 0
+        | KType, _ -> -1
+        | _, KType -> 1
+        | KDecl, KDecl -> 0
+        | KDecl, KDef -> -1
+        | KDef, KDecl -> 1
+        | KDef, KDef -> 0)
   in
   List.stable_sort cmp_gdef p
-   
-
 
 let typecheck_iprogram (iprog : iprogram) : Barocq.iprogram =
   let biprog, _, _, _ =

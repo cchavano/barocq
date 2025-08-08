@@ -32,6 +32,9 @@ Module I32.
   Definition of_u64 (x: int64) : int :=
     Int.repr (Int64.unsigned x).
 
+  Definition to_nat (x: int) : nat :=
+    Z.to_nat (Int.signed x).
+
 End I32.
 
 Module U32.

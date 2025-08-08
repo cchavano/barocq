@@ -10,8 +10,6 @@ let _CONTENT : ident = ident_of_string "[*]"
 
 let path_to_string (p : path) : string =
   list_to_string
-    ~delim:("", "")
-    ~sep:""
     (fun f ->
       let fstr = ident_to_string f in
       if f = _CONTENT then fstr else Printf.sprintf ".%s" fstr)

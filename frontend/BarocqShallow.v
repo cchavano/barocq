@@ -1,5 +1,5 @@
 From compcert Require Import Ctypes Integers.
-From BarocqComp Require Import Barray Utils Types Syntax.
+From BarocqComp Require Import Barray Benum Utils Types Syntax.
 
 Module BNF.
 
@@ -16,6 +16,7 @@ Module BNF.
     | AFalse : atom
     | AInt32 : int -> signedness -> atom
     | AInt64 : int64 -> signedness -> atom
+    | AConstr : ident -> atom
     | AVar : ident -> atom
     | ACast : atom -> btyp -> atom
     | AUnaryOp : unary_op -> atom -> atom
@@ -31,6 +32,7 @@ Module BNF.
     | EArraySet : atom -> atom -> atom -> expr
     | EApp : atom -> list atom -> expr
     | EIfThenElse : atom -> expr -> expr -> expr
+    | EMatch : atom -> list (pattern * expr) -> expr
     | ELetIn : ident -> expr -> expr -> expr.
 
   (** ** Functions *)
@@ -61,6 +63,7 @@ Module Monadic.
     | MInt32 : signedness -> mtyp
     | MInt64 : signedness -> mtyp
     | MArray : mtyp -> mtyp
+    | MEnum : ident -> mtyp
     | MRecord : ident -> mtyp
     | MFun : list mtyp -> mtyp -> mtyp
     | MAbs : ident -> mtyp
@@ -83,8 +86,9 @@ Module Monadic.
     | AFalse : mtyp -> atom
     | AInt32 : int -> mtyp -> atom
     | AInt64 : int64 -> mtyp -> atom
+    | AConstr : ident -> mtyp -> atom
     | AVar : ident -> mtyp -> atom
-    | ACast : atom -> mtyp -> atom
+    | ACast : atom -> mtyp -> mtyp -> atom
     | AUnaryOp : unary_op -> atom -> mtyp -> atom
     | ABinaryOp : binary_op -> atom -> atom -> mtyp ->  atom
     | ARecordProj : atom -> ident -> mtyp -> atom
@@ -101,6 +105,7 @@ Module Monadic.
     | EArraySet : atom -> atom -> atom -> mtyp -> expr
     | EApp : atom -> list atom -> mtyp -> expr
     | EIfThenElse : atom -> expr -> expr -> mtyp -> expr
+    | EMatch : atom -> list (pattern * expr) -> mtyp -> expr
     | ELetIn : ident -> expr -> expr -> mtyp -> expr
     | ELetMon : ident -> expr -> expr -> mtyp -> expr
     | ERet : expr -> mtyp -> expr.
@@ -123,12 +128,18 @@ Module Monadic.
 
   (** ** Programs *)
 
+  Record enum_def := mk_enum_def {
+    ed_name : ident;
+    ed_elems : list ident
+  }.
+
   Record record_def := mk_record_def {
     rd_name : ident;
     rd_fields : list (ident * mtyp)
   }.
 
   Inductive type_def : Type :=
+    | TdEnum : enum_def -> type_def
     | TdRecord : record_def -> type_def
     | TdAbstract : ident -> struct_or_union -> type_def. 
 
@@ -142,6 +153,16 @@ Module Monadic.
       (fun td acc =>
         match td with
         | TdRecord rd => cons rd acc
+        | _ => acc
+        end)
+      nil
+      types.
+
+  Definition get_enum_defs (types: list type_def) : list enum_def :=
+    List.fold_right
+      (fun td acc =>
+        match td with
+        | TdEnum ed => cons ed acc
         | _ => acc
         end)
       nil

@@ -1,5 +1,5 @@
 From Coq Require Import List.
-From BarocqComp Require Import Syntax BarocqBNF ImpBNF.
+From BarocqComp Require Import Syntax BarocqBNF ImpBNF Maps2.
 Import ListNotations.
 
 Fixpoint transl_expr (e: BarocqBNF.expr) : ImpBNF.tailcomp :=
@@ -15,6 +15,9 @@ Fixpoint transl_expr (e: BarocqBNF.expr) : ImpBNF.tailcomp :=
       TcBegin (StSetTailcomp x (transl_expr e1)) (transl_expr e2)
   | EIfThenElse a e1 e2 =>
       TcIfThenElse a (transl_expr e1) (transl_expr e2)
+  | EMatch a cases =>
+      let cases' := MapList.map transl_expr cases in
+      TcSwitch a cases'
   end.
 
 Definition transl_function (f: BarocqBNF.function) : ImpBNF.function :=

@@ -68,5 +68,7 @@ Separate Extraction
   Compiler.compile
   BarocqShallowgen.monadify_norm_program
   BarocqShallow.Monadic.get_record_defs
+  BarocqShallow.Monadic.get_enum_defs
   Imp1.Aliasing_AST.program
+  Syntax.get_record_defs
   Ident.

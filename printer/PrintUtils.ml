@@ -25,8 +25,8 @@ let i64_to_string (i : Integers.Int64.int) : string =
 let u64_to_string (i : Integers.Int64.int) : string =
   sprintf "%Lu" (camlint64_of_coqint i)
 
-let list_to_string ~(delim : string * string) ~(sep : string) (f : 'a -> string)
-    (l : 'a list) : string =
+let list_to_string ?(delim : string * string = ("", "")) ?(sep : string = "")
+    (f : 'a -> string) (l : 'a list) : string =
   let rec aux (l : 'a list) =
     match l with
     | [] -> sprintf "%s" (snd delim)
@@ -47,8 +47,8 @@ let list_to_string_braces (f : 'a -> string) (args : 'a list) : string =
 let list_to_string_paren (f : 'a -> string) (args : 'a list) : string =
   list_to_string ~delim:("(", ")") ~sep:", " f args
 
-let print_list (out : out_channel) ~(delim : string * string) ~(sep : string)
-    (f : 'a -> string) (l : 'a list) : unit =
+let print_list (out : out_channel) ?(delim : string * string = ("", ""))
+    ?(sep : string = "") (f : 'a -> string) (l : 'a list) : unit =
   let rec aux (l : 'a list) =
     match l with
     | [] -> fprintf out "%s" (snd delim)

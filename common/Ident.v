@@ -1,34 +1,34 @@
 From Coq Require Import PArith String DecimalString.
 From compcert Require Import Ctypesdefs.
 
-Definition t : Type := string.
+Definition ident : Type := string.
 
-Definition of_string (str: string) : t :=
+Definition of_string (str: string) : ident :=
   str.
 
-Definition to_string (i: t) : string :=
+Definition to_string (i: ident) : string :=
   i.
 
-Definition of_str_nat (n: nat) : t :=
+Definition of_str_nat (n: nat) : ident :=
   let s := NilEmpty.string_of_uint (Nat.to_uint n) in
   of_string s.
 
-Definition of_pos (p: positive) : t :=
+Definition of_pos (p: positive) : ident :=
   Ctypesdefs.string_of_ident p.
 
-Definition to_pos (i: t) : positive :=
+Definition to_pos (i: ident) : positive :=
   Ctypesdefs.ident_of_string i.
 
-Definition concat (i1 i2: t) : t :=
+Definition concat (i1 i2: ident) : ident :=
   let s1 := to_string i1 in
   let s2 := to_string i2 in
   of_string (String.append s1 s2).
 
-Definition prefix_with (str: string) (i: t) : t :=
+Definition prefix_with (str: string) (i: ident) : ident :=
   let s := to_string i in
   of_string (String.append str s).
 
-Definition compare (i1 i2: t) : comparison :=
+Definition compare (i1 i2: ident) : comparison :=
   String.compare i1 i2.
 
 Definition eq_dec := string_dec.

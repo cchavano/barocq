@@ -1,29 +1,32 @@
 From Coq Require Import List String ListDec PArith Bool.
 From compcert Require Import Coqlib Integers Maps Ctypes.
-From BarocqComp Require Import Error Maps2 Utils Intop Barray Brecord Types Typing Syntax.
+From BarocqComp Require Import Error Maps2 Utils Intop Barray Brecord Benum Types Typing Syntax.
 Import ListNotations.
+
 
 (** * Abstract syntax *)
 
 (** ** Expressions *)
 
 Inductive expr : Type :=
-  | ETrue : expr                                            (* true constant *)
-  | EFalse : expr                                           (* false constant *)
-  | EInt32 (i: int) (s: signedness) : expr                  (* 32-bit signed or unsigned integer *)
-  | EInt64 (i: int64) (s: signedness) : expr                (* 64-bit signed orunsigned integer *)    
-  | EVar (x: ident) : expr                                  (* variable *)
-  | ECast (e: expr) (ty: btyp)                              (* e as ty *)
-  | EUnaryOp (op: unary_op) (e: expr) : expr                (* op e *)
-  | EBinaryOp (op: binary_op) (e1 e2 : expr) : expr         (* e1 op e2 *)
-  | EArrayGet (a i: expr) : expr                            (* a[i] *)
-  | EArraySet (a i e: expr) : expr                          (* a[i] <- e *)
-  | ERecordProj (st: expr) (f: ident) : expr                (* st.f *)
-  | ERecordUpdate (st: expr) (f: ident) (e: expr) : expr    (* st.f <- e *)
-  | EDeepAccess (e: expr) (acs: list access) : expr         (* eX1X2....Xn where Xi = .fi or [ei] *)     
-  | EApp (e: expr) (args: list expr) : expr                 (* e(args) *)
-  | EIfThenElse (e1 e2 e3: expr) : expr                     (* if e1 then e2 else e3 *)
-  | ELetIn (x: ident) (e1 e2: expr) : expr                  (* let x = e1 in e2 *)
+  | ETrue : expr                                             (* true constant *)
+  | EFalse : expr                                            (* false constant *)
+  | EInt32 (i: int) (s: signedness) : expr                   (* 32-bit signed or unsigned integer *)
+  | EInt64 (i: int64) (s: signedness) : expr                 (* 64-bit signed orunsigned integer *)
+  | EConstr (x: ident) : expr                                (* enum constructor *)  
+  | EVar (x: ident) : expr                                   (* variable *)
+  | ECast (e: expr) (ty: btyp)                               (* e as ty *)
+  | EUnaryOp (op: unary_op) (e: expr) : expr                 (* op e *)
+  | EBinaryOp (op: binary_op) (e1 e2 : expr) : expr          (* e1 op e2 *)
+  | EArrayGet (a i: expr) : expr                             (* a[i] *)
+  | EArraySet (a i e: expr) : expr                           (* a[i] <- e *)
+  | ERecordProj (st: expr) (f: ident) : expr                 (* st.f *)
+  | ERecordUpdate (st: expr) (f: ident) (e: expr) : expr     (* st.f <- e *)
+  | EDeepAccess (e: expr) (acs: list access) : expr          (* eX1X2....Xn where Xi = .fi or [ei] *)
+  | EApp (e: expr) (args: list expr) : expr                  (* e(args) *)
+  | EIfThenElse (e1 e2 e3: expr) : expr                      (* if e1 then e2 else e3 *)
+  | EMatch (e: expr) (cases: list (pattern * expr)) : expr   (* match e with V1 -> e1 ... | Vn -> en end *)    
+  | ELetIn (x: ident) (e1 e2: expr) : expr                   (* let x = e1 in e2 *)
 
 with access : Type :=
   | AcRecordField : ident -> access
@@ -36,7 +39,7 @@ Definition function : Type := Syntax.function expr.
 (** ** Global definitions *)
 
 Inductive globdef : Type :=
-  | DefType (tid: ident) (fields: list (ident * btyp)) : globdef                    (* type tid = { x1: t1; ...; xn: tn; } *)
+  | DefType (tid: ident) (adt: adt_definition btyp) : globdef                       (* type tid = ... *)
   | DefConst (x: ident) (l: literal) (ty: btyp) : globdef                           (* defn x : ty = l *)
   | DefFun (x: ident) (f: function) : globdef                                       (* defn x (p1: t1, ..., pn: tn) : ty = e *)
   | DeclType (tid: ident) (tkind: struct_or_union) : globdef                        (* type tid of "tkind" *)
@@ -78,6 +81,7 @@ Module Typed.
     | EFalse : btyp -> expr
     | EInt32 : int -> btyp -> expr
     | EInt64 : int64 -> btyp -> expr
+    | EConstr : ident -> btyp -> expr
     | EVar : ident -> btyp -> expr
     | ECast : expr -> btyp -> expr
     | EUnaryOp : unary_op -> expr -> btyp -> expr
@@ -89,6 +93,7 @@ Module Typed.
     | EDeepAccess : expr -> list access -> btyp -> expr
     | EApp : expr -> list expr -> btyp -> expr
     | EIfThenElse : expr -> expr -> expr -> btyp -> expr
+    | EMatch : expr -> list (pattern * expr) -> btyp -> expr
     | ELetIn : ident -> expr -> expr -> btyp -> expr
 
   (* An access is associated with a type.
@@ -105,7 +110,7 @@ Module Typed.
   (** ** Global definitions *)
 
   Inductive globdef : Type :=
-    | DefType : ident -> SMapList.t btyp -> globdef
+    | DefType : ident -> adt_definition btyp -> globdef
     | DefConst : ident -> literal -> btyp -> globdef
     | DefFun : ident -> function -> globdef
     | DeclType : ident -> struct_or_union -> globdef
@@ -134,6 +139,7 @@ Module Typing.
     | EFalse ty
     | EInt32 _ ty
     | EInt64 _ ty
+    | EConstr _ ty
     | EVar _ ty
     | ECast _ ty
     | EUnaryOp _ _ ty
@@ -143,85 +149,89 @@ Module Typing.
     | ERecordProj _ _ ty
     | ERecordUpdate _ _ _ ty
     | EDeepAccess _ _ ty
+    | EMatch _ _ ty 
     | EApp _ _ ty
     | EIfThenElse _ _ _ ty
     | ELetIn _ _ _ ty => ty
     end.
 
-  Fixpoint typecheck_deep_access (typecheck_expr : renv -> gcontext -> lcontext -> Barocq.expr -> res BarocqTyped.expr)
-    (re: renv) (gx: gcontext) (lx: lcontext) (ty: btyp) (acs: list Barocq.access) : res (btyp * list Barocq.Typed.access) :=
+  Fixpoint typecheck_deep_access (typecheck_expr : benv -> gcontext -> lcontext -> Barocq.expr -> res BarocqTyped.expr)
+    (be: benv) (gx: gcontext) (lx: lcontext) (ty: btyp) (acs: list Barocq.access) : res (btyp * list Barocq.Typed.access) :=
     match acs with
     | nil => ret (ty, nil)
     | ac :: acs' =>
         match ac with
         | Barocq.AcRecordField f =>
-            let* ty' := typecheck_record_proj re ty f in
-            let* (r, lr) := typecheck_deep_access typecheck_expr re gx lx ty' acs' in
+            let* ty' := typecheck_record_proj be ty f in
+            let* (r, lr) := typecheck_deep_access typecheck_expr be gx lx ty' acs' in
             ret (r, (AcRecordField f ty') :: lr)
         | Barocq.AcArrayIndex ei =>
-            let* ei' := typecheck_expr re gx lx ei in
+            let* ei' := typecheck_expr be gx lx ei in
             let* ty' := typecheck_array_get arch ty (typof_expr ei') in
-            let* (r, lr) := typecheck_deep_access typecheck_expr re gx lx ty' acs' in
+            let* (r, lr) := typecheck_deep_access typecheck_expr be gx lx ty' acs' in
             ret (r, (AcArrayIndex ei' ty') :: lr)
         end
     end.
 
-  Fixpoint typecheck_expr (re: renv) (gx: gcontext) (lx: lcontext) (e: Barocq.expr) : res BarocqTyped.expr :=
+  Fixpoint typecheck_expr (be: benv) (gx: gcontext) (lx: lcontext) (e: Barocq.expr) : res BarocqTyped.expr :=
     match e with
     | Barocq.ETrue => ret (ETrue BBool)
     | Barocq.EFalse => ret (EFalse BBool)
     | Barocq.EInt32 i s => ret (EInt32 i (BInt32 s))
     | Barocq.EInt64 i s => ret (EInt64 i (BInt64 s))
+    | Barocq.EConstr x =>
+        let* t := typof_constr be x in
+        ret (EConstr x t)
     | Barocq.EVar x =>
         let* t := typof_var gx lx x in
         ret (EVar x t)
     | Barocq.ECast e1 ty =>
-        let* e1' := typecheck_expr re gx lx e1 in
+        let* e1' := typecheck_expr be gx lx e1 in
         let* t := typecheck_cast (typof_expr e1') ty in
         ret (ECast e1' t)
     | Barocq.EUnaryOp op e1 =>
-        let* e1' := typecheck_expr re gx lx e1 in
+        let* e1' := typecheck_expr be gx lx e1 in
         let* t := typecheck_unary_op op (typof_expr e1') in
         ret (EUnaryOp op e1' t)
     | Barocq.EBinaryOp op e1 e2 =>
-        let* e1' := typecheck_expr re gx lx e1 in
-        let* e2' := typecheck_expr re gx lx e2 in
+        let* e1' := typecheck_expr be gx lx e1 in
+        let* e2' := typecheck_expr be gx lx e2 in
         let* t := typecheck_binary_op op (typof_expr e1') (typof_expr e2') in
         ret (EBinaryOp op e1' e2' t)
     | Barocq.EArrayGet e1 e2 =>
-        let* e1' := typecheck_expr re gx lx e1 in
-        let* e2' := typecheck_expr re gx lx e2 in
+        let* e1' := typecheck_expr be gx lx e1 in
+        let* e2' := typecheck_expr be gx lx e2 in
         let* t := typecheck_array_get arch (typof_expr e1') (typof_expr e2') in
         ret (EArrayGet e1' e2' t)
     | Barocq.EArraySet e1 e2 e3 =>
-        let* e1' := typecheck_expr re gx lx e1 in
-        let* e2' := typecheck_expr re gx lx e2 in
-        let* e3' := typecheck_expr re gx lx e3 in
+        let* e1' := typecheck_expr be gx lx e1 in
+        let* e2' := typecheck_expr be gx lx e2 in
+        let* e3' := typecheck_expr be gx lx e3 in
         let* t := typecheck_array_set arch (typof_expr e1') (typof_expr e2') (typof_expr e3') in
         ret (EArraySet e1' e2' e3' t)
     | Barocq.ERecordProj e1 x =>
-        let* e1' := typecheck_expr re gx lx e1 in
-        let* t := typecheck_record_proj re (typof_expr e1') x in
+        let* e1' := typecheck_expr be gx lx e1 in
+        let* t := typecheck_record_proj be (typof_expr e1') x in
         ret (ERecordProj e1' x t)
     | Barocq.ERecordUpdate e1 x e2 =>
-        let* e1' := typecheck_expr re gx lx e1 in
-        let* e2' := typecheck_expr re gx lx e2 in
-        let* t := typecheck_record_update re (typof_expr e1') (typof_expr e2') x in
+        let* e1' := typecheck_expr be gx lx e1 in
+        let* e2' := typecheck_expr be gx lx e2 in
+        let* t := typecheck_record_update be (typof_expr e1') (typof_expr e2') x in
         ret (ERecordUpdate e1' x e2' t)
     | Barocq.EDeepAccess e1 acs =>
-        let* e1' := typecheck_expr re gx lx e1 in
-        let* (t, acs') := typecheck_deep_access typecheck_expr re gx lx (typof_expr e1') acs in
+        let* e1' := typecheck_expr be gx lx e1 in
+        let* (t, acs') := typecheck_deep_access typecheck_expr be gx lx (typof_expr e1') acs in
         ret (EDeepAccess e1' acs' t)
     | Barocq.EApp e1 args =>
-        let* e1' := typecheck_expr re gx lx e1 in
-        let* args' := mmap (typecheck_expr re gx lx) args in
-        let targs := map typof_expr args' in 
+        let* e1' := typecheck_expr be gx lx e1 in
+        let* args' := mmap (typecheck_expr be gx lx) args in
+        let targs := List.map typof_expr args' in 
         let* t := typecheck_call (typof_expr e1') targs in
         ret (EApp e1' args' t)
     | Barocq.EIfThenElse e1 e2 e3 =>
-        let* e1' := typecheck_expr re gx lx e1 in
-        let* e2' := typecheck_expr re gx lx e2 in
-        let* e3' := typecheck_expr re gx lx e3 in
+        let* e1' := typecheck_expr be gx lx e1 in
+        let* e2' := typecheck_expr be gx lx e2 in
+        let* e3' := typecheck_expr be gx lx e3 in
         let '(ty1, ty2, ty3) := (typof_expr e1', typof_expr e2', typof_expr e3') in
         match ty1 with
         | BBool =>
@@ -230,21 +240,27 @@ Module Typing.
             else fail
         | _ => fail
         end
+    | Barocq.EMatch e1 cases =>
+        let* e1' := typecheck_expr be gx lx e1 in
+        let* cases' := MapList.map_err (typecheck_expr be gx lx) cases in
+        let tcases' := MapList.map typof_expr cases' in
+        let* t := typecheck_match be (typof_expr e1') tcases' in
+        ret (EMatch e1' cases' t)
     | Barocq.ELetIn x e1 e2 =>
-        let* e1' := typecheck_expr re gx lx e1 in
+        let* e1' := typecheck_expr be gx lx e1 in
         let* lx' := lcontext_update lx x (typof_expr e1') in
-        let* e2' := typecheck_expr re gx lx' e2 in
+        let* e2' := typecheck_expr be gx lx' e2 in
         ret (ELetIn x e1' e2' (typof_expr e2'))
     end.
 
-  Definition typecheck_function (arch: Target.archi) (re: renv) (gx: gcontext) (f: Barocq.function) : res BarocqTyped.function :=
+  Definition typecheck_function (arch: Target.archi) (be: benv) (gx: gcontext) (f: Barocq.function) : res BarocqTyped.function :=
     let* lx :=
-      fold_left_err
+      list_fold_left_err
         (fun acc '(x, tx) => lcontext_update acc x tx)
         (fn_params f)
         (ret STree.empty)
     in
-    let* body := typecheck_expr re gx lx (fn_body f) in
+    let* body := typecheck_expr be gx lx (fn_body f) in
     if btyp_eq_dec (typof_expr body) (fn_return f) then
       ret {|
         fn_return := fn_return f;
@@ -253,46 +269,58 @@ Module Typing.
       |}
     else failwith "Barocq.Typing.typecheck_function: return type mismatch".
 
-  Fixpoint typecheck_globdefs (re: renv) (gx: gcontext) (defs: list Barocq.globdef) : res (list BarocqTyped.globdef) :=
+  Definition register_enum_elems (be: benv) (eid: ident) (elems: list ident) : res benv :=
+    list_fold_left_err
+      (fun acc e => benv_update_constr_types acc e eid)
+      elems
+      (ret be).
+
+  Fixpoint typecheck_globdefs (be: benv) (gx: gcontext) (defs: list Barocq.globdef) : res (list BarocqTyped.globdef) :=
     match defs with
     | nil => ret nil
     | d :: defs' =>
       match d with
-      | Barocq.DefType x fields =>
-          let* re' := renv_update re x fields in
-          let* rd := typecheck_globdefs re' gx defs' in
-          ret ((DefType x fields) :: rd)
+      | Barocq.DefType x adt =>
+          let* be' := benv_update_defs be x adt in
+          let* be' :=
+            match adt with
+            | Adt_enum elems => register_enum_elems be' x elems
+            | _ => ret be'
+            end
+          in
+          let* rd := typecheck_globdefs be' gx defs' in
+          ret ((DefType x adt) :: rd)
       | Barocq.DefConst x l ty =>
-          let* l' := typecheck_literal re l in
+          let* l' := typecheck_literal be l in
           if btyp_eq_dec ty (Typing.typof_literal l') then
             let* gx' := gcontext_update gx x ty in
-            let* rd := typecheck_globdefs re gx' defs' in
+            let* rd := typecheck_globdefs be gx' defs' in
             ret (DefConst x l ty :: rd)
           else
             failwith "Barocq.Typing.typecheck_globdef: type mismatch in constant definition"
       | Barocq.DefFun x f =>
-          let* f' := typecheck_function arch re gx f in
+          let* f' := typecheck_function arch be gx f in
           let tf := mk_fun_btyp (fn_params f') (fn_return f') in
           let* gx' := gcontext_update gx x tf in
-          let* rd := typecheck_globdefs re gx' defs' in
+          let* rd := typecheck_globdefs be gx' defs' in
           ret (DefFun x f' :: rd)
       | Barocq.DeclType t tk =>
-          let* rd := typecheck_globdefs re gx defs' in
+          let* rd := typecheck_globdefs be gx defs' in
           ret (DeclType t tk :: rd)
       | Barocq.DeclConst x ty =>
           let* gx' := gcontext_update gx x ty in
-          let* rd := typecheck_globdefs re gx' defs' in
+          let* rd := typecheck_globdefs be gx' defs' in
           ret (DeclConst x ty :: rd)
       | Barocq.DeclFun x tparams tret =>
           let tf := mk_fun_btyp tparams tret in
           let* gx' := gcontext_update gx x tf in
-          let* rd := typecheck_globdefs re gx' defs' in
+          let* rd := typecheck_globdefs be gx' defs' in
           ret (DeclFun x tparams tret :: rd)
       end
     end.
 
   Definition typecheck_program (prog: Barocq.program) : res BarocqTyped.program :=
-    typecheck_globdefs STree.empty STree.empty prog.
+    typecheck_globdefs benv_empty STree.empty prog.
 
   End ARCHI.
 
@@ -339,8 +367,14 @@ Section DENOT.
   Definition eval_var (ge: genv) (le: lenv) (x: ident) : res value :=
     match (lenv_get le x) with
     | OK v => ret v
-    | Error _ =>  genv_get ge x
+    | Error _ => genv_get ge x
     end.
+
+  Definition eval_constr (te: tenv) (x: ident) : res value :=
+    let* eid := tenv_get_constr_typ te x in
+    let* elems := tenv_get_edef te eid in
+    let* e := make_enum elems x in
+    ret (Val (TEnum eid elems) e).
 
   Definition eval_cast (v: value) (to: typ) : res value :=
     match v with
@@ -353,6 +387,9 @@ Section DENOT.
         | TInt64 s =>
             let iv := if s then I64.of_bool b else U64.of_bool b in
             ret (Val (TInt64 s) iv)
+        | TEnum eid elems =>
+            let* iv := Benum.of_i32 (I32.of_bool b) elems in
+            ret (Val (TEnum eid elems) iv)
         | _ => fail
         end
     | Val (TInt32 s) i =>
@@ -373,6 +410,15 @@ Section DENOT.
             | Unsigned, Signed => ret (Val (TInt64 s') (I64.of_u32 i))
             | Unsigned, Unsigned => ret (Val (TInt64 s') (U64.of_u32 i))
             end
+        | TEnum eid elems =>
+            let i :=
+              match s with
+              | Signed => i
+              | Unsigned => I32.of_u32 i
+              end
+            in
+            let* iv := Benum.of_i32 i elems in
+            ret (Val (TEnum eid elems) iv)
         | _ => fail
         end
     | Val (TInt64 s) i =>
@@ -393,6 +439,25 @@ Section DENOT.
             | Unsigned, Signed => ret (Val (TInt64 s') (I64.of_u64 i))
             | _, _ => ret (Val (TInt64 s') i)
             end
+        | TEnum eid elems =>
+            let i :=
+              match s with
+              | Signed => I32.of_i64 i
+              | Unsigned => I32.of_u64 i
+              end
+            in
+            let* iv := Benum.of_i32 i elems in
+            ret (Val (TEnum eid elems) iv)
+        | _ => fail
+        end
+    | Val (TEnum tid elems) e =>
+        let ei := Benum.to_i32 e in
+        match to with
+        | TBool => ret (Val TBool (I32.to_bool ei))
+        | TInt32 Signed => ret (Val (TInt32 Signed) ei)
+        | TInt32 Unsigned => ret (Val (TInt32 Unsigned) (U32.of_i32 ei))
+        | TInt64 Signed => ret (Val (TInt64 Signed) (I64.of_i32 ei))
+        | TInt64 Unsigned => ret (Val (TInt64 Unsigned) (U64.of_i32 ei))
         | _ => fail
         end
     | _ => fail
@@ -550,6 +615,14 @@ Section DENOT.
         | Val (TInt64 s1) i1, Val (TInt64 s2) i2 =>
             if signedness_eq_dec s1 s2 then ret (Val TBool (Int64.eq i1 i2))
             else fail
+        | Val ((TEnum n1 elems1) as t1) e1, Val ((TEnum n2 elems2) as t2) e2 =>
+            match typ_eq_dec t1 t2 with
+            | left Eqt =>
+                if enum_eq_dec (typ_cast abs_typ_impl Eqt e1) e2
+                then ret (Val TBool true)
+                else ret (Val TBool false)
+             | _ => fail
+             end
         | _, _ => fail
         end
     | BopNeq =>
@@ -564,6 +637,14 @@ Section DENOT.
             ret (Val TBool (Int64.cmp Cne i1 i2))
         | Val (TInt64 Unsigned) i1, Val (TInt64 Unsigned) i2 =>
             ret (Val TBool (Int64.cmpu Cne i1 i2))
+        | Val ((TEnum n1 elems1) as t1) e1, Val ((TEnum n2 elems2) as t2) e2 =>
+            match typ_eq_dec t1 t2 with
+            | left Eqt =>
+                if enum_eq_dec (typ_cast abs_typ_impl Eqt e1) e2
+                then ret (Val TBool false)
+                else ret (Val TBool true)
+             | _ => fail
+             end
         | _, _ => fail
         end
     | BopLt =>
@@ -633,7 +714,7 @@ Section DENOT.
         end
     end.
 
-  Fixpoint eval_record_lit_rec (lv: SMapList.t value) (fields: SMapList.t typ) : res (eval_recordtyp eval_typ fields).
+  Fixpoint eval_record_lit_rec (lv: smaplist value) (fields: smaplist typ) : res (eval_recordtyp eval_typ fields).
     destruct lv as [|[x [tv v]] lv'] eqn:Elv; destruct fields as [| [y t] fields'] eqn:Efields.
     - apply (ret tt).
     - apply fail.
@@ -648,7 +729,7 @@ Section DENOT.
       + apply fail.
   Defined.
 
-  Definition eval_record_lit (n: ident) (lv: SMapList.t value) (fields: SMapList.t typ) : res value.
+  Definition eval_record_lit (n: ident) (lv: smaplist value) (fields: smaplist typ) : res value.
     destruct lv as [|x lv'].
     - apply fail.
     - destruct (eval_record_lit_rec (x :: lv') fields) as [r |].
@@ -701,16 +782,18 @@ Section DENOT.
     all: apply fail.
   Defined.
 
+  Import MapList.
+
   Lemma typof_field_is_type :
-    forall (fields: SMapList.t typ) k t,
+    forall (fields: smaplist typ) k t,
     typof_field k fields = OK t ->
     eval_typ t = type_of_field k (eval_fields_typ eval_typ fields).
   Proof.
     induction fields as [| (x, t) fields']; intros.
     - simpl in H. discriminate.
-    - unfold typof_field in *. unfold SMapList.find_err in *.
-      unfold type_of_field in *. unfold SMapList.find in *.
-      simpl. destruct (SMapList.key_eq x k).
+    - unfold typof_field in *. unfold MapList.find_err in *.
+      unfold type_of_field in *. unfold MapList.find in *.
+      simpl. unfold key_eq. destruct (Ident.eq_dec x k).
       + inversion H. reflexivity.
       + apply (IHfields' k t0 H). 
   Defined.
@@ -720,20 +803,19 @@ Section DENOT.
     | Field _ x => x
     end.
 
-  Fixpoint eval_record_proj_aux (fields: SMapList.t typ) (rc: eval_recordtyp eval_typ fields) (k: ident) : res value.
+  Fixpoint eval_record_proj_aux (fields: smaplist typ) (rc: eval_recordtyp eval_typ fields) (k: ident) : res value.
   Proof.
     unfold eval_recordtyp in rc.
     destruct fields.
     - exact fail.
-    - simpl in rc.
-      destruct p.
-      destruct (SMapList.key_eq k0 k).
+    - simpl in rc. destruct p.
+      destruct (Ident.eq_dec k s).
       apply (OK (Val  _ (proj_field (fst rc)))).
       apply (eval_record_proj_aux _ (snd rc) k).
   Defined.
 
 (*
-  Definition eval_record_proj_aux (fields: SMapList.t typ) (rc: eval_recordtyp eval_typ fields) (k: ident) : res value.
+  Definition eval_record_proj_aux (fields: smaplist typ) (rc: eval_recordtyp eval_typ fields) (k: ident) : res value.
     simpl in rc. destruct (proj rc k) as [v |].
     - destruct (typof_field k fields) as [t |] eqn:Etyp.
       + rewrite <- (typof_field_is_type fields k t Etyp) in v.
@@ -754,14 +836,14 @@ Section DENOT.
     | Val t _ => t
     end.
 
-  Definition typof_field_dec (k:ident) (fields: SMapList.t typ) : res {t : typ| typof_field k fields = OK t}.
+  Definition typof_field_dec (k:ident) (fields: smaplist typ) : res {t : typ| typof_field k fields = OK t}.
   Proof.
     destruct (typof_field k fields) as [t |] eqn:Etyp.
     apply OK. exists t. reflexivity.
     apply fail.
   Defined.
 
-  Definition cast_typof_field (k:ident) (fields:SMapList.t typ) (tv:typ) (v: eval_typ tv) :
+  Definition cast_typof_field (k:ident) (fields:smaplist typ) (tv:typ) (v: eval_typ tv) :
     res (type_of_field k (eval_fields_typ eval_typ fields)).
   Proof.
     destruct (typof_field_dec k fields) as [(t & Etyp) |].
@@ -773,7 +855,7 @@ Section DENOT.
   Defined.
 
 
-  Definition eval_record_update_aux (n: ident) (fields: SMapList.t typ) (rc: eval_typ (TRecord n fields)) (k: ident) (v: value) : res value.
+  Definition eval_record_update_aux (n: ident) (fields: smaplist typ) (rc: eval_typ (TRecord n fields)) (k: ident) (v: value) : res value.
     simpl in rc. destruct v as [tv v].
     apply cast_typof_field with (k:=k) (fields := fields) in v.
     destruct v as [v | _].
@@ -783,9 +865,8 @@ Section DENOT.
     - apply fail.
   Defined.
 
-
 (*
-  Definition eval_record_update_aux (n: ident) (fields: SMapList.t typ) (rc: eval_typ (TRecord n fields)) (k: ident) (v: value) : res value.
+  Definition eval_record_update_aux (n: ident) (fields: smaplist typ) (rc: eval_typ (TRecord n fields)) (k: ident) (v: value) : res value.
     simpl in rc. destruct v as [tv v]. destruct (typof_field k fields) as [t |] eqn:Etyp.
     - destruct (typ_eq_dec tv t) as [Eqt |_].
       + apply (typof_field_is_type fields k t) in Etyp.
@@ -797,7 +878,6 @@ Section DENOT.
     - apply fail.
   Defined.
 *)
-
 
   Definition eval_record_update (v1: value) (k: ident) (v2: value) : res value :=
     match v1 with
@@ -825,12 +905,38 @@ Section DENOT.
     | OK v1 , OK v2 => proj_sumbool (typ_eq_dec (typeof_value v1) (typeof_value v2))
     end.
 
-
   Definition eval_ifthenelse (v1:value) (v2 v3: res value) : res value :=
     match v1 with
     | Val TBool b => if b then v2 else v3
     | _ => fail
     end.
+
+  (* Fixpoint typecheck_match_branches (elems: list ident) (v: enum elems) (cases: list (pattern * value)) (tr: option typ) : res typ :=
+    let check_val_typ (v: value) : res typ :=
+      let '(Val tv v) := v in
+      match tr with
+      | None => ret tv
+      | Some tr =>
+          if typ_eq_dec tr tv then ret tv
+          else fail
+      end
+    in
+    match cases with
+    | nil => fail
+    | (x, vx) :: nil =>
+        check_val_typ vx
+    | (x, vx) :: ((_ :: _) as cases') =>
+        let* t := check_val_typ vx in
+        typecheck_match_branches elems v cases' (Some t)
+    end. *)
+
+  Definition eval_match (v: value) (cases: list (pattern * value)) : res value :=
+    let '(Val tv v) := v in
+    (match tv as t0 return (eval_typ t0 -> res value) with
+    | TEnum _ elems => 
+        (fun v0 => match_with v0 cases)
+    | _ => (fun _ => fail)
+    end) v.
 
   Fixpoint eval_app_rec (tparams: list typ) (tret: typ) (f: eval_funtyp eval_typ tparams tret) (args: list value) : res value :=
   match tparams as l return (eval_funtyp eval_typ l tret -> res value) with
@@ -886,6 +992,7 @@ Section DENOT.
     | EFalse => ret (Val TBool false)
     | EInt32 i s => ret (Val (TInt32 s) i)
     | EInt64 i s => ret (Val (TInt64 s) i)
+    | EConstr x => eval_constr te x
     | EVar x => eval_var ge le x
     | ECast e1 ty =>
         let* ty' := btyp_to_typ te ty in
@@ -927,6 +1034,10 @@ Section DENOT.
         let v2 := eval_expr te ge le e2 in
         let v3 := eval_expr te ge le e3 in
         eval_ifthenelse v1 v2 v3
+    | EMatch e1 cases =>
+        let* v1 := eval_expr te ge le e1 in
+        let* vcases := MapList.map_err (eval_expr te ge le) cases in
+        eval_match v1 vcases
     | ELetIn x e1 e2 =>
         let* v1 := eval_expr te ge le e1 in
         let le' := lenv_update le x v1 in
@@ -951,8 +1062,8 @@ Section DENOT.
         let* av := mmap (eval_literal te) a in
         eval_array_lit av
     | LRecord rc x =>
-        let* rcv := SMapList.map_err (eval_literal te) rc in
-        let* fields := tenv_get te x in
+        let* rcv := MapList.map_err (eval_literal te) rc in
+        let* fields := tenv_get_rdef te x in
         eval_record_lit x rcv fields
     end.
 
@@ -965,7 +1076,7 @@ Section DENOT.
           end
     end.
 
-  Fixpoint build_funval_rec_aux (te: tenv) (ge: genv) (le: lenv) (params: SMapList.t typ) (tret: typ) (e: expr) : eval_funtyp eval_typ (map (fun x => snd x) params) tret.
+  Fixpoint build_funval_rec_aux (te: tenv) (ge: genv) (le: lenv) (params: smaplist typ) (tret: typ) (e: expr) : eval_funtyp eval_typ (List.map (fun x => snd x) params) tret.
     destruct params as [| (x, tx) params'].
     - simpl.
       eapply bind.
@@ -978,7 +1089,7 @@ Section DENOT.
   Definition build_funval_rec := Eval cbv delta [build_funval_rec_aux] zeta beta in build_funval_rec_aux.
 
 
-  Definition build_funval (te: tenv) (ge: genv) (params: SMapList.t typ) (tret: typ) (e: expr) : eval_typ (TFun (map (fun x => snd x) params) tret).
+  Definition build_funval (te: tenv) (ge: genv) (params: smaplist typ) (tret: typ) (e: expr) : eval_typ (TFun (List.map (fun x => snd x) params) tret).
     destruct params as [| p params'].
     - simpl.
       intro.
@@ -989,19 +1100,32 @@ Section DENOT.
     - apply (build_funval_rec te ge STree.empty (p :: params') tret e).
   Defined.
 
-  Definition build_fun_value (te: tenv) (ge: genv) (params: SMapList.t btyp) (tret: btyp) (e: expr) : res value :=
-    if SMapList.nodup params then
+  Definition build_fun_value (te: tenv) (ge: genv) (params: smaplist btyp) (tret: btyp) (e: expr) : res value :=
+    if MapList.nodup Ident.eq_dec params then
       let* tret' := btyp_to_typ te tret in
-      let* params' := SMapList.map_err (btyp_to_typ te) params in
-      ret (Val (TFun (map (fun x => snd x) params') tret') (build_funval te ge params' tret' e))
+      let* params' := MapList.map_err (btyp_to_typ te) params in
+      ret (Val (TFun (List.map (fun x => snd x) params') tret') (build_funval te ge params' tret' e))
     else fail.
 
-  Definition fields_btyp_to_typ (te: tenv) (fields: SMapList.t btyp) : res (SMapList.t typ) :=
-    SMapList.map_err (btyp_to_typ te) fields.
+  Definition fields_btyp_to_typ (te: tenv) (fields: smaplist btyp) : res (smaplist typ) :=
+    MapList.map_err (btyp_to_typ te) fields.
 
-  Definition eval_def_type (te: tenv)  (x: ident) (fields: list (ident * btyp)) : res tenv :=
-    let* fields' := fields_btyp_to_typ te fields in
-    tenv_update te x fields'.
+  Definition eval_def_type (te: tenv) (x: ident) (adt: adt_definition btyp) : res tenv :=
+    match adt with
+    | Adt_enum elems =>
+        let* te' := tenv_update_defs te x (Adt_enum elems) in
+        let* te' :=
+          list_fold_left_err
+            (fun acc id => tenv_update_constr_types acc id x)
+            elems
+            (ret te')
+        in
+        ret te'
+    | Adt_record fields =>
+        let* fields' := fields_btyp_to_typ te fields in
+        let* te' := tenv_update_defs te x (Adt_record fields') in
+        ret te'
+    end.
 
   Definition eval_def_const (te: tenv) (ge: genv) (x: ident) (l: literal) (ty: btyp) : res genv :=
     let* vv := eval_literal te l in
@@ -1019,7 +1143,6 @@ Section DENOT.
     let* v  := genv_get ge x in
     if typ_eq_dec ty (typeof_value v) then eret tt else fail.
 
-
   Definition eval_decl_fun (te:tenv) (ge : genv) (x:Syntax.ident) (params : list (Syntax.param_attr * btyp)) (tret:btyp) :=
     let* tparam := mmap (Typing.btyp_to_typ te) (List.map snd params) in
     let* tret   := Typing.btyp_to_typ te tret in
@@ -1034,8 +1157,8 @@ Section DENOT.
     | nil => ret nil
     | c :: xprog' =>
         match c with
-        | CmdDef (DefType x fields) =>
-            let* te' := eval_def_type te x fields in
+        | CmdDef (DefType x adt) =>
+            let* te' := eval_def_type te x adt in
             interpret_rec te' ge xprog'
         | CmdDef (DefConst x l ty) =>
             let* ge' := eval_def_const te ge x l ty in
@@ -1054,7 +1177,7 @@ Section DENOT.
     end.
 
   Definition interpret (iprog: iprogram) : res (list value) :=
-    interpret_rec STree.empty STree.empty iprog.
+    interpret_rec tenv_empty STree.empty iprog.
 
   (** Evaluation of a definition with dynamic environments *)
   
@@ -1063,8 +1186,8 @@ Section DENOT.
     | nil => fail
     | d :: prog' =>
         match d with
-        | DefType y fields =>
-            let* te' := eval_def_type te  x fields in
+        | DefType y adt =>
+            let* te' := eval_def_type te x adt in
             eval_def_rec te' ge prog' y
         | DefConst y l ty =>
             let* ge' := eval_def_const te ge y l ty in
@@ -1089,18 +1212,17 @@ Section DENOT.
     end.
 
   Definition eval_def (impl: genv) (prog: program) (x: ident) : res value :=
-    eval_def_rec STree.empty impl prog x.
+    eval_def_rec tenv_empty impl prog x.
 
   (** Evaluation of a whole program *)
-
 
   Fixpoint eval_prog_rec (te: tenv) (ge: genv) (prog: program) : res (tenv * genv) :=
     match prog with
     | nil => ret (te,ge)
     | d :: prog' =>
         match d with
-        | DefType a fields =>
-            let* te' := eval_def_type te  a fields in
+        | DefType a adt =>
+            let* te' := eval_def_type te a adt in
             eval_prog_rec te' ge prog'
         | DefConst x l ty =>
             let* ge' := eval_def_const te ge x l ty in
@@ -1118,7 +1240,7 @@ Section DENOT.
     end.
 
   Definition eval_prog (impl: genv) (prog: program) : res (tenv* genv) :=
-    eval_prog_rec STree.empty impl prog.
+    eval_prog_rec tenv_empty impl prog.
 
   (** Redefinition of eval_def by computing the whole global environment first *)
 

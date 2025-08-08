@@ -3,6 +3,7 @@
   open Syntax
   open Camlcoq
   open SurfaceAST
+  open Location
 
   let aliases = Hashtbl.create 10
 
@@ -10,6 +11,15 @@
   let valid_modul_ident mid =
     let re = Str.regexp {|^\([A-Z][a-zA-Z0-9_]*\)$|} in
     Str.string_match re mid 0
+
+  (* An enum constructor name must begin with an uppercase letter. *)
+  let valid_constr_ident eid =
+    valid_modul_ident eid
+
+  (* A global or local variable / function cannot begin with an uppercase letter. *)
+  let valid_var_ident vid =
+    let re = Str.regexp {|^\([_|a-z][a-zA-Z0-9_]*\)$|} in
+    Str.string_match re vid 0
 
   let () =
     List.iter
@@ -26,8 +36,10 @@
 %token LBRACKET RBRACKET
 %token LBRACKETBAR RBRACKETBAR
 %token LBRACE RBRACE
-%token ARROW
-%token ARROW_INV BIND
+%token RARROW
+%token RDARROW
+%token LARROW BIND
+%token PIPE UNDERSCORE
 %token OP_PLUS OP_MINUS OP_MUL OP_DIV OP_MOD
 %token OP_ANDINT OP_ORINT OP_XORINT OP_NOTINT
 %token OP_SHL OP_SHR
@@ -38,7 +50,7 @@
 %token COMPUTE
 %token DEFN DECL TYPE OF
 %token AT_READONLY AT_WRITE
-%token LET AND IN WITH
+%token LET AND IN MATCH WITH END
 %token IF THEN ELSE
 %token AS
 %token <string> LIT_STRING
@@ -47,10 +59,10 @@
 %token <string> IDENT
 %token EOF
 
-%nonassoc IN ELSE ARROW_INV
-%left OP_GT OP_GE OP_LT OP_LE OP_EQ OP_NEQ
+%nonassoc IN ELSE LARROW
 %left OP_ORBOOL OP_XORBOOL OP_ORINT OP_XORINT
 %left OP_ANDBOOL OP_ANDINT
+%left OP_GT OP_GE OP_LT OP_LE OP_EQ OP_NEQ
 %left OP_PLUS OP_MINUS
 %left OP_MUL OP_DIV OP_MOD
 %left OP_SHL OP_SHR
@@ -58,7 +70,7 @@
 %nonassoc OP_NOTBOOL OP_NOTINT
 %nonassoc LPAREN LBRACKET
 %nonassoc DOT
-// %right ARROW
+// %right RARROW
 %nonassoc WITH
 // %nonassoc TYP_ARRAY
 
@@ -86,54 +98,97 @@ command:
   | COMPUTE e = expr SEMISEMI? { CmdExpr e }
 
 globdef:
-  | TYPE id = ident BIND ty = styp { DefAlias (id, ty) }
-  | TYPE id = ident BIND fields = record_fields { DefType (id, fields) }
+  | TYPE id = ident BIND ty = styp { DefType (id, TdAlias ty) }
+  | TYPE id = ident BIND elems = nonempty_list(enum_constr) { DefType (id, TdEnum elems) }
+  | TYPE id = ident BIND fields = record_fields { DefType (id, TdRecord fields) }
   | TYPE id = ident OF kind = abs_type_kind { DeclType (id, kind) }
-  | DEFN x = ident COLON ty = styp BIND c = const { DefConst (x, c, ty) }
-  | DEFN x = ident params = delimited(LPAREN, separated_list(COMMA, param), RPAREN)
+  | DEFN x = var_ident COLON ty = styp BIND c = const { DefConst (x, c, ty) }
+  | DEFN x = var_ident params = delimited(LPAREN, separated_list(COMMA, param), RPAREN)
     COLON ty = styp BIND e = expr { DefFun (x, {fn_return = ty; fn_params = params; fn_body = e}) }
-  | DECL x = ident COLON ty = styp
+  | DECL x = var_ident COLON ty = styp
     {
       match ty with
       | SFun (tparams, tret) -> DeclFun (x, tparams, tret)
       | _ -> DeclConst (x, ty)
     }
 
+enum_constr:
+  | PIPE id = IDENT
+    {
+      if valid_constr_ident id then
+        Location.make $startpos $endpos id
+      else
+        raise Error
+    }
+
 abs_type_kind:
   | kind = LIT_STRING
     {
       match kind with
-      | "struct" -> Ctypes.Struct 
-      | "union" -> Ctypes.Union
+      | "struct" -> SU_struct
+      | "union" -> SU_union
       | _ -> raise Error
     }
 
 param:
-  | x = ident COLON ty = styp { (x, ty) }
+  | x = var_ident COLON ty = styp { (x, ty) }
 
 raw_expr:
   | TRUE { ETrue }
   | FALSE { EFalse }
   | i = LIT_INT32 { EInt32 (coqint_of_camlint (fst i), (snd i)) }
   | i = LIT_INT64 { EInt64 (coqint_of_camlint64 (fst i), (snd i)) }
-  | v = cident { EVar v }
+  | v = cident
+    {
+      match v with
+      | IdSimple id
+      | IdPrefixed (_, id) ->
+          let id = id.content in
+          if valid_var_ident id then EVar v
+          else if valid_constr_ident id then EConstr v
+          else raise Error
+    }
   | e = expr AS ty = styp { ECast (e, ty) }
   | e1 = expr LBRACKET e2 = expr RBRACKET { EArrayGet (e1, e2) }
-  | e1 = expr LBRACKET e2 = expr RBRACKET ARROW_INV e3 = expr { EArraySet (e1, e2, e3) }
-  | e1 = expr DOT key = ident { ERecordProj (e1, key) }
-  | e1 = expr DOT key = ident ARROW_INV e2 = expr { ERecordUpdate (e1, [(key, e2)]) }
+  | e1 = expr LBRACKET e2 = expr RBRACKET LARROW e3 = expr { EArraySet (e1, e2, e3) }
+  | e1 = expr DOT key = var_ident { ERecordProj (e1, key) }
+  | e1 = expr DOT key = var_ident LARROW e2 = expr { ERecordUpdate (e1, [(key, e2)]) }
   | e1 = expr WITH le = delimited(LBRACE, nonempty_list(field_update), RBRACE) { ERecordUpdate (e1, le) }
   | LET le = separated_nonempty_list(AND, binding) IN e = expr { ELetIn (le, e) }
   | IF e1 = expr THEN e2 = expr ELSE e3 = expr { EIfThenElse (e1, e2, e3) }
+  | MATCH e = expr WITH cases = nonempty_list(match_case) END { EMatch (e, cases) }
   | op = unary_op e = expr { EUnaryOp (op, e) }
   | e1 = expr op = binary_op e2 = expr { EBinaryOp (op, e1, e2) }
   | e = expr args = delimited(LPAREN, separated_list(COMMA, expr), RPAREN) { EApp (e, args) }
 
+match_case:
+  | PIPE cid = cident RDARROW e = expr
+    { 
+      match cid with
+      | IdSimple id
+      | IdPrefixed (_, id) ->
+          if valid_constr_ident id.content then (PIdent cid, e)
+          else raise Error
+    }
+  | PIPE und = underscore RDARROW e = expr { (und, e) }
+
+underscore:
+  | UNDERSCORE { PWildcard (Location.make $startpos $endpos ()) }
+
 binding:
-  | x = ident BIND e = expr { (x, e) }
+  | x = var_ident BIND e = expr { (x, e) }
+
+var_ident:
+  | id = IDENT
+    {
+      if valid_var_ident id then
+        Location.make $startpos $endpos id
+      else
+        raise Error
+    }
 
 field_update:
-  | x = ident ARROW_INV e = expr SEMICOLON { (x, e) }
+  | x = var_ident LARROW e = expr SEMICOLON { (x, e) }
 
 expr:
   | e = raw_expr { Location.make $startpos $endpos e }
@@ -145,8 +200,7 @@ raw_const:
   | i = LIT_INT32 { SurfaceAST.CInt32 (coqint_of_camlint (fst i), (snd i)) }
   | i = LIT_INT64 { SurfaceAST.CInt64 (coqint_of_camlint64 (fst i), (snd i)) }
   | a = delimited(LBRACKETBAR, separated_list(SEMICOLON, const), RBRACKETBAR) { SurfaceAST.CArray a }
-  | rc = delimited(LBRACE, nonempty_list(const_field), RBRACE)
-    { SurfaceAST.CRecord rc }
+  | rc = delimited(LBRACE, nonempty_list(const_field), RBRACE) { SurfaceAST.CRecord rc }
   | id = cident { SurfaceAST.CVar id }
   | op = unary_op c = const { SurfaceAST.CUnop (op, c) }
   | c1 = const op = binary_op c2 = const { SurfaceAST.CBinop (op, c1, c2) }
@@ -157,7 +211,7 @@ const:
   | c = delimited(LPAREN, const, RPAREN) { c }
 
 const_field:
-  | key = ident BIND l = const SEMICOLON { (key, l) }
+  | key = var_ident BIND l = const SEMICOLON { (key, l) }
 
 %inline unary_op:
   | OP_NOTBOOL { UopNotbool }
@@ -190,7 +244,7 @@ record_fields:
   | fields = delimited(LBRACE, nonempty_list(typ_field), RBRACE) { fields }
 
 typ_field:
-  | key = ident COLON ty = styp SEMICOLON { (key, ty) }
+  | key = var_ident COLON ty = styp SEMICOLON { (key, ty) }
 
 styp:
   | sty = styp_simpl { sty }
@@ -208,7 +262,7 @@ styp_simpl:
 
 styp_func:
   | tparams = delimited(LPAREN, separated_list(COMMA, styp_func_param), RPAREN)
-    ARROW tret = styp
+    RARROW tret = styp
     { SFun (tparams, tret) }
 
 styp_func_param:

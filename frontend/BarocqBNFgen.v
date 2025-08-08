@@ -1,42 +1,22 @@
 From Coq Require Import PArith String List.
 From compcert Require Import Clightdefs Integers.
-From BarocqComp Require Import Error Monads Maps2 Utils Syntax Types Typing Barocq BarocqTransf BarocqBNF.
+From BarocqComp Require Import Ident Error Monads Maps2 Utils Syntax Types Benum Typing Barocq BarocqTransf BarocqBNF.
 Import ListNotations.
 Import MonCounterErr.
 
 (** Normalization *)
 
-Fixpoint atom_of_expr (e: Barocq.expr) : res atom :=
-  match e with
-  | Barocq.ETrue => eret ATrue
-  | Barocq.EFalse => eret AFalse
-  | Barocq.EInt32 i s => eret (AInt32 i s)
-  | Barocq.EInt64 i s => eret (AInt64 i s)
-  | Barocq.EVar x => eret (AVar x)
-  | Barocq.ECast e1 ty =>
-      let* a1 := atom_of_expr e1 in
-      eret (ACast a1 ty)
-  | Barocq.EUnaryOp op e1 =>
-      let* a1 := atom_of_expr e1 in
-      eret (AUnaryOp op a1)
-  | Barocq.EBinaryOp op e1 e2 =>
-      let* a1 := atom_of_expr e1 in
-      let* a2 := atom_of_expr e2 in
-      eret (ABinaryOp op a1 a2)
-  | _ => MonError.fail
-  end.
-
-Definition spread_atomlist (e: Barocq.expr) (la: list atom) : res BarocqBNF.expr :=
+Definition bnfexpr_of_atomlist (e: Barocq.expr) (la: list atom) : res BarocqBNF.expr :=
   match e with
   | Barocq.ECast _ ty =>
-      let* a := nth_err la 0 in
+      let* a := list_nth_err la 0 in
       eret (EAtom (ACast a ty))
   | Barocq.EUnaryOp op _ =>
-      let* a := nth_err la 0 in
+      let* a := list_nth_err la 0 in
       eret (EAtom (AUnaryOp op a))
   | Barocq.EBinaryOp op _ _ =>
-      let* a1 := nth_err la 0 in
-      let* a2 := nth_err la 1 in
+      let* a1 := list_nth_err la 0 in
+      let* a2 := list_nth_err la 1 in
       match op with
       | BopAndbool =>
           eret (EIfThenElse a1 (EAtom a2) (EAtom AFalse))
@@ -45,26 +25,26 @@ Definition spread_atomlist (e: Barocq.expr) (la: list atom) : res BarocqBNF.expr
       | _ => eret (EAtom (ABinaryOp op a1 a2))
       end
   | Barocq.EArrayGet _ _ =>
-      let* a1 := nth_err la 0 in
-      let* a2 := nth_err la 1 in
+      let* a1 := list_nth_err la 0 in
+      let* a2 := list_nth_err la 1 in
       eret (EArrayGet a1 a2)
   | Barocq.EArraySet _ _ _ =>
-      let* a1 := nth_err la 0 in
-      let* a2 := nth_err la 1 in
-      let* a3 := nth_err la 2 in
+      let* a1 := list_nth_err la 0 in
+      let* a2 := list_nth_err la 1 in
+      let* a3 := list_nth_err la 2 in
       eret (EArraySet a1 a2 a3)
   | Barocq.ERecordProj _ x =>
-      let* a := nth_err la 0 in
+      let* a := list_nth_err la 0 in
       eret (ERecordProj a x)
   | Barocq.ERecordUpdate _ x _ =>
-      let* a1 := nth_err la 0 in
-      let* a2 := nth_err la 1 in
+      let* a1 := list_nth_err la 0 in
+      let* a2 := list_nth_err la 1 in
       eret (ERecordUpdate a1 x a2)
   | Barocq.EApp _ _ =>
-      let* a := nth_err la 0 in
+      let* a := list_nth_err la 0 in
       let args := tail la in
       eret (EApp a args)
-  | _ => MonError.fail
+  | _ => efail
   end.
 
 Open Scope state_err_monad_scope.
@@ -72,12 +52,13 @@ Open Scope state_err_monad_scope.
 Definition fresh_var : crmon ident := Utils.fresh_var_err "b".
 
 Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
-  let fix norm_expr_aux (ifc: bool) (e: Barocq.expr) : crmon ((SMapList.t BarocqBNF.expr) * atom) :=
+  let fix norm_expr_aux (ifc: bool) (e: Barocq.expr) : crmon ((smaplist BarocqBNF.expr) * atom) :=
     match e with
     | ETrue => ret (nil, ATrue)
     | EFalse => ret (nil, AFalse)
     | Barocq.EInt32 i s => ret (nil, AInt32 i s)
     | Barocq.EInt64 i s => ret (nil, AInt64 i s)
+    | Barocq.EConstr x => ret (nil, AConstr x)
     | Barocq.EVar x => ret (nil, AVar x)
     | Barocq.ECast e1 ty =>
         let* (li1, a1) := norm_expr_aux ifc e1 in
@@ -113,18 +94,17 @@ Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
         ret ((x, be) :: nil, AVar x)
     end
   in
-  let fix mk_norm (le: SMapList.t BarocqBNF.expr) (e: expr) : BarocqBNF.expr :=
+  let fix mk_norm (le: smaplist BarocqBNF.expr) (e: expr) : BarocqBNF.expr :=
     match le with
     | nil => e
     | (x, be) :: le' =>
-        (* let* ber := mk_norm le' e in *)
         ELetIn x be (mk_norm le' e)
     end
   in
-  let fix norm_exprlist_rec (e: Barocq.expr) (la: list atom) (le: list Barocq.expr) : crmon ((SMapList.t BarocqBNF.expr) * BarocqBNF.expr) :=
+  let fix norm_exprlist_rec (e: Barocq.expr) (la: list atom) (le: list Barocq.expr) : crmon ((smaplist BarocqBNF.expr) * BarocqBNF.expr) :=
     match le with
     | nil =>
-        let* er := lift_err (spread_atomlist e (rev' la)) in
+        let* er := lift_err (bnfexpr_of_atomlist e (rev' la)) in
         ret (nil, er)
     | e1 :: le' =>
         let* (lx, a1) := norm_expr_aux false e1 in
@@ -137,7 +117,7 @@ Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
     ret (mk_norm lx er)
   in
   let fix norm_access_list_rec (a: atom) (acs: list Barocq.access) (acs_norm: list Syntax.access)
-    : crmon ((SMapList.t BarocqBNF.expr) * BarocqBNF.expr) :=
+    : crmon ((smaplist BarocqBNF.expr) * BarocqBNF.expr) :=
     match acs with
     | nil => 
         ret (nil, EDeepAccess a (rev acs_norm))
@@ -157,6 +137,15 @@ Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
     let* (lacs, bacs) := norm_access_list_rec ba acs nil in
     ret (mk_norm (le ++ lacs) bacs)
   in
+  let fix norm_match_cases (cases: list (pattern * Barocq.expr)) : crmon (list (pattern * BarocqBNF.expr)) :=
+    match cases with
+    | nil => ret nil
+    | (c, e) :: cases' =>
+        let* ne := norm_expr_rec e in
+        let* ncases' := norm_match_cases cases' in
+        ret ((c, ne) :: ncases')
+    end
+  in
   match e with
   | Barocq.ETrue =>
       ret (EAtom ATrue)
@@ -166,6 +155,8 @@ Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
       ret (EAtom (AInt32 i s))
   | Barocq.EInt64 i s =>
       ret (EAtom (AInt64 i s))
+  | Barocq.EConstr x =>
+      ret (EAtom (AConstr x))
   | Barocq.EVar x =>
       ret (EAtom (AVar x))
   | Barocq.ECast e1 ty =>
@@ -191,6 +182,10 @@ Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
       let* ne2 := norm_expr_rec e2 in
       let* ne3 := norm_expr_rec e3 in
       ret (mk_norm le (EIfThenElse c ne2 ne3))
+  | Barocq.EMatch e1 cases =>
+      let* (le, a) := norm_expr_aux false e1 in
+      let* ncases := norm_match_cases cases in
+      ret (mk_norm le (EMatch a ncases))
   | Barocq.ELetIn x e1 e2 =>
       let* ne1 := norm_expr_rec e1 in
       let* ne2 := norm_expr_rec e2 in
@@ -216,9 +211,15 @@ Fixpoint norm_program_rec (prog: Barocq.program) : res (list BarocqBNF.globdef *
   | nil => eret (nil, nil)
   | d :: prog' =>
       match d with
-      | Barocq.DefType a fields =>
+      | Barocq.DefType x adt =>
           let* (ndefs, types) := norm_program_rec prog' in
-          eret (ndefs, TdRecord {| rd_name := a; rd_fields := fields |} :: types)
+          let td :=
+            match adt with
+            | Adt_enum elems => TdEnum {| ed_name := x; ed_elems := elems |}
+            | Adt_record fields => TdRecord {| rd_name := x; rd_fields := fields |}
+            end
+          in
+          eret (ndefs,  td :: types)
       | Barocq.DefConst x l ty =>
           let* (ndefs, types) := norm_program_rec prog' in
           eret (Syntax.DefConst x l ty :: ndefs, types)

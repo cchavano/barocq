@@ -1,5 +1,5 @@
 From Coq Require Import Bool List String.
-From BarocqComp Require Import Error Utils Monads Syntax ImpABNF Imp1.
+From BarocqComp Require Import Error Utils Monads Syntax ImpABNF Imp1 Maps2.
 Import MonCounter.
 
 Fixpoint transl_statement (s: ImpABNF.statement) : Imp1.statement :=
@@ -13,6 +13,9 @@ Fixpoint transl_statement (s: ImpABNF.statement) : Imp1.statement :=
       let s1' := transl_statement s1 in
       let s2' := transl_statement s2 in
       StIfThenElse a s1' s2'
+  | ImpABNF.StSwitch a cases =>
+      let cases' := MapList.map transl_statement cases in
+      StSwitch a cases'
   end.
 
 Local Open Scope state_monad_scope.
@@ -37,6 +40,17 @@ Fixpoint transl_tailcomp_rec (t: ImpABNF.tailcomp) : cmon Imp1.statement :=
       let* t1' := transl_tailcomp_rec t1 in
       let* t2' := transl_tailcomp_rec t2 in
       ret (StIfThenElse a t1' t2')
+  | TcSwitch a cases =>
+      let* cases' :=
+        List.fold_right
+          (fun '(ci, ti) acc =>
+            let* acc := acc in
+            let* si := transl_tailcomp_rec ti in
+            ret ((ci, si) :: acc))
+          (ret nil)
+          cases
+      in
+      ret (StSwitch a cases')
   end.
 
 Definition transl_tailcomp (t: ImpABNF.tailcomp) : Imp1.statement :=

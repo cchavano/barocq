@@ -1,4 +1,4 @@
-From BarocqComp Require Import Syntax.
+From BarocqComp Require Import Benum Syntax.
 
 (** * Abstract syntax *)
 
@@ -16,6 +16,7 @@ Inductive tailcomp : Type :=
   | TcBegin : statement -> tailcomp -> tailcomp
   | TcComp : comp -> tailcomp
   | TcIfThenElse : atom -> tailcomp -> tailcomp -> tailcomp
+  | TcSwitch : atom -> list (pattern * tailcomp) -> tailcomp
 
 (** ** Statements *)
 

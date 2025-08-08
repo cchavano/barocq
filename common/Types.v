@@ -1,8 +1,6 @@
-From Coq Require Import List.
+From Coq Require Import List MSetPositive.
 From compcert Require Import Integers Maps.
-From BarocqComp Require Import Target Error Barray Brecord Ident Maps2.
-
-Definition ident := Ident.t.
+From BarocqComp Require Import Target Error Barray Brecord Benum Ident Maps2 Utils.
 
 (** * Syntax of types *)
 
@@ -26,6 +24,7 @@ Inductive typ : Type :=
   | TInt32 : signedness -> typ
   | TInt64 : signedness -> typ
   | TArray : typ -> typ
+  | TEnum : ident -> list ident -> typ
   | TRecord : ident -> list (ident * typ) -> typ
   | TFun : list typ -> typ -> typ
   | TAbs : ident -> typ.
@@ -35,7 +34,9 @@ Proof.
   decide equality.
   - apply signedness_eq_dec.
   - apply signedness_eq_dec.
-  - decide equality. decide equality. apply Ident.eq_dec.
+  - apply list_eq_dec. apply Ident.eq_dec. 
+  - apply Ident.eq_dec.
+  - apply list_eq_dec. decide equality. apply Ident.eq_dec.
   - apply Ident.eq_dec.
   - apply list_eq_dec. apply typ_eq_dec.
   - apply Ident.eq_dec.
@@ -48,13 +49,14 @@ Inductive btyp : Type :=
   | BInt32 : signedness -> btyp
   | BInt64 : signedness -> btyp
   | BArray : btyp -> btyp
+  | BEnum : ident -> btyp
   | BRecord : ident -> btyp
   | BFun : list btyp -> btyp -> btyp
   | BAbs : ident -> btyp.
 
 Definition btyp_is_prim (ty: btyp) : bool :=
   match ty with
-  | BBool | BInt32 _ | BInt64 _ => true
+  | BBool | BInt32 _ | BInt64 _ | BEnum _ => true
   | _ => false
   end.
 
@@ -71,6 +73,7 @@ Proof.
   - apply signedness_eq_dec.
   - apply signedness_eq_dec.
   - apply Ident.eq_dec.
+  - apply Ident.eq_dec.
   - apply list_eq_dec. apply btyp_eq_dec.
   - apply Ident.eq_dec.
 Defined.
@@ -80,11 +83,11 @@ Definition mk_fun_btyp {A: Type} (params: list (A * btyp)) (tret: btyp) : btyp :
 
 (** * Type of a record field *)
 
-Definition typof_field (k: ident) (fields: SMapList.t typ) : res typ :=
-  SMapList.find_err k fields.
+Definition typof_field (k: ident) (fields: smaplist typ) : res typ :=
+  MapList.find_err Ident.eq_dec k fields.
 
-Definition btypof_field (k: ident) (fields: SMapList.t btyp) : res btyp :=
-  SMapList.find_err k fields.
+Definition btypof_field (k: ident) (fields: smaplist btyp) : res btyp :=
+  MapList.find_err Ident.eq_dec k fields.
 
 (* Type for array indexes *)
 
@@ -106,24 +109,25 @@ Section EVALTYP.
 
   Variable eval_typ : typ -> Type.
 
-  Definition eval_fields_typ (fields: SMapList.t typ) : SMapList.t Type :=
-    SMapList.map eval_typ fields.
+  Definition eval_fields_typ (fields: smaplist typ) : smaplist Type :=
+    MapList.map eval_typ fields.
 
-  Definition eval_recordtyp (fields: SMapList.t typ) : Type :=
+  Definition eval_recordtyp (fields: smaplist typ) : Type :=
     record (eval_fields_typ fields).
 
   Definition eval_funtyp (tparams: list typ) (tret: typ) : Type :=
-    fold_right (fun tx acc => (eval_typ tx) -> acc) (res (eval_typ tret)) tparams.
+    List.fold_right (fun tx acc => (eval_typ tx) -> acc) (res (eval_typ tret)) tparams.
 
 End EVALTYP.
 
-Fixpoint eval_typ (am: SMap.t Type) (t: typ) : Type :=
+Fixpoint eval_typ (am: PMap.t Type) (t: typ) : Type :=
   match t with
   | TBool => bool
   | TInt32 _ => int
   | TInt64 _ => int64
   | TArray ta => array (eval_typ am ta)
   | TRecord _ fields => eval_recordtyp (eval_typ am) fields
+  | TEnum _ elems => enum elems
   | TFun tparams tret =>
       match tparams with
       | nil => unit -> res (eval_typ am tret)
@@ -138,3 +142,12 @@ Definition typ_cast {t1 t2: typ} (am: SMap.t Type) (Heq: t1 = t2) (x: eval_typ a
 Proof.
   subst t1. exact x.
 Defined.
+
+(** * Algebraic Data Type definitions for Barocq and typing environments  *)
+
+Inductive adt_definition (A: Type) : Type :=
+  | Adt_enum (elems: list ident) : adt_definition A
+  | Adt_record (fields: list (ident * A)) : adt_definition A.
+
+Arguments Adt_enum {A}.
+Arguments Adt_record {A}.

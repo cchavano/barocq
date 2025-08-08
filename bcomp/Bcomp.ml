@@ -183,10 +183,8 @@ let print_token_stream (files : string list) : unit =
     let lexbuf = from_channel input in
     init_lexbuf file lexbuf;
     try
-      printf "Start of file \"%s\" ========\n" file;
       PrintTokens.print lexbuf;
-      close_in input;
-      printf "End of file \"%s\" ========\n" file
+      close_in input
     with
     | Blexer.Error msg -> raise (SyntaxError (lexbuf, msg))
     | Bparser.Error -> raise (SyntaxError (lexbuf, ""))

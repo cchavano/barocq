@@ -1,11 +1,7 @@
 From compcert Require Import Integers Ctypes.
-From BarocqComp Require Import Utils Barray Ident Types.
+From BarocqComp Require Import Utils Barray Ident Types Maps2.
 
-(** * Identfitiers *)
-
-Definition ident : Type := Ident.t.
-
-(* Definition ident : Type := Ident.Extended.t. *)
+Definition ident := Ident.ident.
 
 (** * Constant literals *)
 
@@ -55,6 +51,7 @@ Inductive atom : Type :=
   | AFalse : atom
   | AInt32 : int -> signedness -> atom
   | AInt64 : int64 -> signedness -> atom
+  | AConstr : ident -> atom
   | AVar : ident -> atom
   | ACast : atom -> btyp -> atom
   | AUnaryOp : unary_op -> atom -> atom
@@ -94,6 +91,7 @@ Module Typed.
     | AFalse : btyp -> atom
     | AInt32 : int -> btyp -> atom
     | AInt64 : int64 -> btyp -> atom
+    | AConstr : ident -> btyp -> atom
     | AVar : ident -> btyp -> atom
     | ACast : atom -> btyp -> atom
     | AUnaryOp : unary_op -> atom -> btyp -> atom
@@ -114,7 +112,9 @@ Module Typed.
 
 End Typed.
 
-(** * Functions *)
+(** * Syntax shared by some of the intermediate representations. *)
+
+(** ** Functions *)
 
 Record function (B: Type) : Type := mk_function {
   fn_return : btyp;
@@ -122,7 +122,7 @@ Record function (B: Type) : Type := mk_function {
   fn_body : B
 }.
 
-(** * Global definitions *)
+(** ** Global definitions *)
 
 Inductive param_attr :=
   | AttrReadonly
@@ -135,14 +135,24 @@ Inductive globdef (C F: Type) : Type :=
   | DeclConst : ident -> btyp -> globdef C F
   | DeclFun : ident -> list (param_attr * btyp) -> btyp -> globdef C F.
 
-(** * Programs *)
+(** ** Programs *)
+
+Record enum_def := mk_enum_def {
+  ed_name : ident;
+  ed_elems : list ident
+}.
 
 Record record_def := mk_record_def {
   rd_name : ident;
   rd_fields : list (ident * btyp)
 }.
 
+Inductive struct_or_union : Type :=
+  | SU_struct
+  | SU_union.
+
 Inductive type_def : Type :=
+  | TdEnum : enum_def -> type_def
   | TdRecord : record_def -> type_def
   | TdAbstract : ident -> struct_or_union -> type_def. 
 

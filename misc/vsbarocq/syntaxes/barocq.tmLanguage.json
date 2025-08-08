@@ -22,7 +22,7 @@
                 {
                     "comment": "other keyword",
 				    "name": "keyword.other.barocq",
-				    "match": "\\b(module|import|type|defn|decl|let|and|in|with|compute|as|of)\\b"
+				    "match": "\\b(module|import|type|defn|decl|let|and|in|match|with|end|compute|as|of)\\b"
                 }
             ]
 		},
@@ -31,7 +31,7 @@
                 {
                     "comment": "infix operator",
                     "name": "keyword.operator.barocq",
-                    "match": "<-|[.+\\-\\*/%\\^<>&\\|]"
+                    "match": "<-|[.+\\-\\*/%\\^<>&\\|]|lor"
                 },
                 {
                     "comment": "prefix operator",
@@ -43,7 +43,7 @@
                     "name": "keyword.operator.barocq",
                     "match": "="
                 },
-				{
+                {
 					"comment": "annotation",
 					"name": "storage.modifier.barocq",
 					"match": "(@\\w+)"
@@ -193,7 +193,7 @@
 					]
 				},
 				{
-					"comment": "type alias definition",
+					"comment": "type alias or enum type definition",
 					"begin": "\\b(type)\\s+(\\w+)\\s+(=)",
 					"end": "$",
 					"beginCaptures": {
@@ -243,7 +243,7 @@
             "patterns": [
                 {
                     "comment": "module name",
-                    "match": "(\\w+)(::)",
+                    "match": "\\b(\\w+)(::)",
                     "captures": {
                         "1": { "name": "entity.name.namespace.barocq" },
                         "2": { "name": "keyword.operator.barocq" }
@@ -251,19 +251,23 @@
                 },
 				{
                     "comment": "function call",
-                    "match": "(\\w+)\\s*\\((?=[^*])",
+                    "match": "\\b(\\w+)\\s*\\((?=[^*])",
                     "captures": {
                         "1": { "name": "entity.name.function.barocq" }
                     }
                 },
 				{
 					"comment": "record field or function parameter",
-					"match": "(\\w+)\\s*:",
-					"capture":{
+					"match": "\\b(\\w+)\\s*:",
+					"capture": {
 						"1": { "name": "entity.name.variable.barocq" }
 					}
-				}
-
+				},
+                {
+                    "comment": "patter-matching wildcard",
+                    "name": "constant.language.barocq",
+                    "match": "\\b_\\b"
+                }
 			]
 		},
 		"strings": {

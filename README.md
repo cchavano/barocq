@@ -5,7 +5,7 @@ Barocq is a restricted functional programming language with built-in records and
 # Overview
 
 The purpose of Barocq is to integrate C-like features into a functionnal language to easily write system code (e.g. microkernel). Barocq is compiled to Clight, an intermediate language of the [CompCert](https://github.com/AbsInt/CompCert) C compiler. Clight programs can be pretty-printed as compilable C files.
-A Barocq program can also be translated to a shallow and deep embedding in Coq/Rocq. Proofs of correspondence between the two embeddings are automatically generated.
+A Barocq program can also be translated to a shallow and deep embedding in Coq/Rocq.
 
 # Dependencies
 
@@ -29,7 +29,7 @@ coq             (version 8.20.1)
 Finally, install the modified version of CompCert:
 
 ```bash
-opam pin -y -b add https://gitlab.inria.fr/cchavano/compcert-ce.git
+opam pin -y -b add https://gitlab.inria.fr/cchavano/compcert-ce.git#enums
 ```
 
 The `-b` option tells opam to keep the build directory of CompCert, which is necessary to build the Barocq compiler.

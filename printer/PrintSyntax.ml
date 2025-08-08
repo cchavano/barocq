@@ -61,6 +61,7 @@ let rec atom_to_string (a : atom) : string =
   | AInt32 (i, Unsigned) -> u32_to_string i
   | AInt64 (i, Signed) -> i64_to_string i
   | AInt64 (i, Unsigned) -> u64_to_string i
+  | AConstr x -> ident_to_string x
   | AVar x -> ident_to_string x
   | ACast (a1, ty) ->
       sprintf "%s as %s" (opt_parens a1) (PrintTypes.btyp_to_string ty)
@@ -81,7 +82,7 @@ let access_to_string (ac : access) : string =
   | AcArrayIndex i -> sprintf "[%s]" (atom_to_string i)
 
 let access_list_to_string (acs : access list) : string =
-  list_to_string ~delim:("", "") ~sep:"" access_to_string acs
+  list_to_string access_to_string acs
 
 let comp_to_string (c : comp) : string =
   match c with
@@ -127,6 +128,7 @@ module Typed = struct
         | BInt64 Unsigned -> AInt64 (i, Unsigned)
         | _ -> assert false
       end
+    | Syntax.Typed.AConstr (x, _) -> AConstr x
     | Syntax.Typed.AVar (x, _) -> AVar x
     | Syntax.Typed.ACast (a1, ty) -> ACast (untype_atom a1, ty)
     | Syntax.Typed.AUnaryOp (op, a', _) -> AUnaryOp (op, untype_atom a')
@@ -196,16 +198,27 @@ let globdef_to_string (lit_to_string : 'a -> string)
         (btyp_to_string (mk_fun_btyp tparams tret))
         fsep
 
-let record_def_to_tring (sep : string) (st : record_def) : string =
+let enum_def_to_string (sep : string) (ed : enum_def) : string =
+  sprintf
+    "type %s =\n%s%s"
+    (ident_to_string ed.ed_name)
+    (list_to_string
+       ~sep:"\n"
+       (fun e -> sprintf "%s| %s" indent (ident_to_string e))
+       ed.ed_elems)
+    sep
+
+let record_def_to_tring (sep : string) (rd : record_def) : string =
   sprintf
     "type %s = %s%s"
-    (ident_to_string st.rd_name)
-    (recordtyp_to_string btyp_to_string st.rd_fields)
+    (ident_to_string rd.rd_name)
+    (recordtyp_to_string btyp_to_string rd.rd_fields)
     sep
 
 let type_def_to_string (sep : string) (td : type_def) : string =
   match td with
-  | TdRecord sd -> record_def_to_tring sep sd
+  | TdEnum ed -> enum_def_to_string sep ed
+  | TdRecord rd -> record_def_to_tring sep rd
   | TdAbstract (t, _) -> sprintf "type %s" (ident_to_string t)
 
 let print_program (out : out_channel) (tsep : string)

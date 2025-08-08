@@ -1,4 +1,4 @@
-From BarocqComp Require Import Syntax.
+From BarocqComp Require Import Syntax Benum.
 
 (** * Abstract syntax *)
 
@@ -21,6 +21,7 @@ Inductive expr : Type :=
   | EDeepAccess : atom -> list access -> expr
   | EApp : atom -> list atom -> expr
   | EIfThenElse : atom -> expr -> expr -> expr
+  | EMatch : atom -> list (pattern * expr) -> expr
   | ELetIn : ident -> expr -> expr -> expr.
 
 (** ** Functions *)

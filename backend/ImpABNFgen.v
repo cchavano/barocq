@@ -1,5 +1,5 @@
 From Coq Require Import List.
-From BarocqComp Require Import Error Syntax ImpBNF ImpABNF.
+From BarocqComp Require Import Error Syntax ImpBNF ImpABNF Maps2.
 Import ListNotations.
 
 Fixpoint tailcomp_depth (t: ImpBNF.tailcomp) : nat :=
@@ -8,8 +8,12 @@ Fixpoint tailcomp_depth (t: ImpBNF.tailcomp) : nat :=
       1 + (statement_depth s) + (tailcomp_depth t1)
   | ImpBNF.TcComp _ => 3
   | ImpBNF.TcIfThenElse _ t1 t2 =>
-      let m := max 1 (tailcomp_depth t1) in
-      let m := max m (tailcomp_depth t2) in
+      let m := Nat.max 1 (tailcomp_depth t1) in
+      let m := Nat.max m (tailcomp_depth t2) in
+      1 + m
+  | ImpBNF.TcSwitch _ cases =>
+      let cases_depths := List.map (fun c => tailcomp_depth (snd c)) cases in
+      let m := List.fold_left (fun m d => Nat.max m d) cases_depths 0 in
       1 + m
   end
 
@@ -32,6 +36,16 @@ Fixpoint norm_statement (fuel: nat) (s: ImpBNF.statement) : res ImpABNF.statemen
             let* s1 := norm_statement fuel' (ImpBNF.StSetTailcomp x t1) in
             let* s2 := norm_statement fuel' (ImpBNF.StSetTailcomp x t2) in
             ret (StIfThenElse a s1 s2)
+        | ImpBNF.TcSwitch a cases =>
+            let* cases' :=
+              Utils.list_fold_right_err
+                (fun '(ci, ti) acc =>
+                  let* si := norm_statement fuel' (ImpBNF.StSetTailcomp x ti) in
+                  ret ((ci, si) :: acc))
+                (ret nil)
+                cases
+            in
+            ret (StSwitch a cases')
         | ImpBNF.TcComp c => ret (StSet x c)
       end
   end.
@@ -46,6 +60,9 @@ Fixpoint norm_tailcomp (t: ImpBNF.tailcomp) : res ImpABNF.tailcomp :=
       let* t1' := norm_tailcomp t1 in
       let* t2' := norm_tailcomp t2 in
       ret (TcIfThenElse a t1' t2')
+  | ImpBNF.TcSwitch a cases =>
+      let* cases' := MapList.map_err norm_tailcomp cases in
+      ret (TcSwitch a cases')
   | ImpBNF.TcComp c => ret (TcComp c)
   end.
 

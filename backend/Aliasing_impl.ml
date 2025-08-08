@@ -10,6 +10,11 @@ open Aliasing_defs.PathTree
 open Aliasing_defs.AbsDom
 open PrintUtils
 
+type renv = (ident * btyp) list Maps2.STree.t
+
+let renv_get (re : renv) (x : ident) : (ident * btyp) list Errors.res =
+  Monads.MonError.err_of_opt (Maps2.STree.get x re)
+
 let top (msg : string) = Top (mk_err_info msg)
 
 exception UnsupportedFeature of string
@@ -36,7 +41,7 @@ let path_map_to_string (paths : path_map) : string =
     boolean or integer value). *)
 let is_prim (ty : btyp) : bool =
   match ty with
-  | BBool | BInt32 _ | BInt64 _ -> true
+  | BBool | BInt32 _ | BInt64 _ | BEnum _ -> true
   | BFun (_, _) -> raise unsupported
   | _ -> false
 
@@ -1138,6 +1143,29 @@ let rec absexec (show_debug : bool) (re : renv) (fe : fenv) (d : absdom)
              (PrintSyntax.Typed.atom_to_string a);
         print_dom_debug show_debug d_out "OUT" true;
         (Imp1.Aliasing_AST.StIfThenElse (a, s1', s2', d_in, d_out), d_out)
+    | StSwitch (a, cases) ->
+        print_dom_debug show_debug d_in "IN" false;
+        debug_info show_debug
+        @@ sprintf
+             ">> Entering switch \"switch %s\" ======================\n"
+             (PrintSyntax.Typed.atom_to_string a);
+        let cases_d = Maps2.MapList.map (absexec show_debug re fe d) cases in
+        let d_out =
+          match cases_d with
+          | [] -> assert false
+          | (_, (_, d1)) :: cases_d' ->
+              List.fold_left
+                (fun acc_d (_, (_, dp)) -> AbsDom.union dp acc_d)
+                d1
+                cases_d'
+        in
+        debug_info show_debug
+        @@ sprintf
+             ">> Exiting switch \"switch %s\", joint point ==========\n"
+             (PrintSyntax.Typed.atom_to_string a);
+        print_dom_debug show_debug d_out "OUT" true;
+        let cases' = Maps2.MapList.map fst cases_d in
+        (Imp1.Aliasing_AST.StSwitch (a, cases', d_in, d_out), d_out)
     | StSequence (s1, s2) ->
         let s1', d1 = absexec show_debug re fe d s1 in
         let s2', d2 = absexec show_debug re fe d1 s2 in
@@ -1186,7 +1214,7 @@ let add_memory_object_aux (re : renv) (st : absstate) (root : absloc)
   in
   let rec gen_val_mem_layout (m : absmem) (root : absloc) (ty : btyp) : absmem =
     match ty with
-    | BBool | BInt32 _ | BInt64 _ | BAbs _ -> m
+    | BBool | BInt32 _ | BInt64 _ | BEnum _ | BAbs _ -> m
     | BArray ta -> gen_array_mem_layout m root ta
     | BRecord ts -> gen_record_mem_layout m root ts
     | _ -> raise unsupported
@@ -1458,8 +1486,6 @@ module DotExport = struct
     let lev = List.of_seq (IdentMap.to_seq ev) in
     print_list
       out
-      ~delim:("", "")
-      ~sep:""
       (fun x ->
         sprintf
           "%s%s [shape=rect; color=blue; margin=0.1];\n"
@@ -1468,8 +1494,6 @@ module DotExport = struct
       (List.map fst lev);
     print_list
       out
-      ~delim:("", "")
-      ~sep:""
       (fun (k, lp) ->
         let lp' = LocSet.elements lp in
         sprintf
@@ -1483,8 +1507,6 @@ module DotExport = struct
     let lm = List.of_seq (LIPairMap.to_seq m) in
     print_list
       out
-      ~delim:("", "")
-      ~sep:""
       (fun ((l, f), lp) ->
         let lp' = LocSet.elements lp in
         sprintf
@@ -1506,8 +1528,6 @@ module DotExport = struct
     in
     print_list
       out
-      ~delim:("", "")
-      ~sep:""
       (fun x ->
         sprintf
           "%s%s [shape=rect; color=blue; margin=0.1];\n"
@@ -1516,8 +1536,6 @@ module DotExport = struct
       vars;
     print_list
       out
-      ~delim:("", "")
-      ~sep:""
       (fun (l, vl) ->
         let vl' = IdentSet.elements vl in
         sprintf
@@ -1532,8 +1550,6 @@ module DotExport = struct
     let print_one ((l, vl) : absloc * (ident * LocSet.t) list) : unit =
       print_list
         out
-        ~delim:("", "")
-        ~sep:""
         (fun (f, vs) ->
           sprintf
             "%s%s -> %s [label=\"%s\"];\n"

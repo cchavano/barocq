@@ -59,8 +59,10 @@
         ("bool", TYP_BOOL); ("i32", TYP_INT32); ("u32", TYP_UINT32);
         ("i64", TYP_INT64); ("u64", TYP_UINT64); ("array", TYP_ARRAY);
         ("type", TYPE); ("of", OF); ("defn", DEFN); ("decl", DECL);
-        ("let", LET); ("in", IN); ("and", AND); ("with", WITH); ("as", AS);
-        ("if", IF); ("then", THEN); ("else", ELSE);
+        ("let", LET); ("and", AND); ("in", IN);
+        ("match", MATCH); ("with", WITH); ("end", END);
+        ("as", AS); ("if", IF); ("then", THEN); ("else", ELSE);
+        ("lor", OP_ORINT)
       ]
 }
 
@@ -82,8 +84,9 @@ rule read_token = parse
   | ";;"          { SEMISEMI }
   | "[|"          { LBRACKETBAR }
   | "|]"          { RBRACKETBAR }
-  | "->"          { ARROW }
-  | "<-"          { ARROW_INV }
+  | "=>"          { RDARROW }
+  | "->"          { RARROW }
+  | "<-"          { LARROW }
   | "=="          { OP_EQ }
   | "!="          { OP_NEQ }
   | "<="          { OP_LE }
@@ -109,13 +112,14 @@ rule read_token = parse
   | "/"           { OP_DIV }
   | "%"           { OP_MOD }
   | "&"           { OP_ANDINT }
-  | "|"           { OP_ORINT }
+  | "|"           { PIPE }
   | "^"           { OP_XORINT }
   | "~"           { OP_NOTINT }
   | "<"           { OP_LT }
   | ">"           { OP_GT }
   | "!"           { OP_NOTBOOL }
   | "="           { BIND }
+  | "_"           { UNDERSCORE }
   | "\""
     {
       Buffer.clear string_buf;

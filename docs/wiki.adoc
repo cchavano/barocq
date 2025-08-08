@@ -3,9 +3,9 @@
 
 == Preamble
 
-Barocq is a restricted functional programming language with built-in records and arrays.
+Barocq is a restricted functional programming language with built-in enums, records and arrays.
 
-The purpose of Barocq is to integrate C-like features into a functional language to easily write system code (e.g. microkernel). Barocq is compiled to Clight, an intermediate language of https://github.com/AbsInt/CompCert[CompCert]. Clight programs can be pretty-printed as compilable C files. A Barocq program can also be translated to a shallow and deep embedding in Coq/Rocq. Proofs of correspondence between the two embeddings are automatically generated.
+The purpose of Barocq is to integrate C-like features into a functional language to easily write system code (e.g. microkernel). Barocq is compiled to Clight, an intermediate language of https://github.com/AbsInt/CompCert[CompCert]. Clight programs can be pretty-printed as compilable C files. A Barocq program can also be translated to a shallow and deep embedding in Coq/Rocq.
 
 Even though Barocq has a purely functional semantics, the compiler transforms all record and array modifications into in-place updates in C (i.e. no copies are performed). Of course, only a really small subset of functional programs can be translated to imperative ones using in-place updates without breaking the source program's semantics. Thus, Barocq is equipped with a static analyzer that rejects the programs whose compilation would be incorrect.
 
@@ -38,7 +38,7 @@ Finally, install the modified version of CompCert:
 
 [source,bash]
 ----
-opam pin -y -b add https://gitlab.inria.fr/cchavano/compcert-ce.git
+opam pin -y -b add https://gitlab.inria.fr/cchavano/compcert-ce.git#enums
 ----
 
 The `-b` option tells opam to keep the build directory of CompCert, which is necessary to build the Barocq compiler.
@@ -63,9 +63,9 @@ There is a syntax-highlighting support for VSCode. Open the VSCode command palet
 
 === Types
 
-==== Primitive types
+==== Integers and Booleans
 
-Barocq supports the usual boolean and integer types. These types correspond to _primitive_ types.
+Barocq supports the usual boolean and integer types.
 
 [cols="1,1"]
 |===
@@ -88,6 +88,19 @@ Barocq supports the usual boolean and integer types. These types correspond to _
 |===
 
 For the moment, there is no support for integers whose size depend on the architecture.
+
+==== Enumerated types
+
+Enumerated types can be created with the keyword `type`. An example an enum type definition:
+
+[source]
+----
+type retcode =
+    | SUCCESS
+    | ERROR
+----
+
+The enum constructors must begin with an uppercase letter.
 
 ==== Record types
 
@@ -127,7 +140,8 @@ Type aliases is a front-end feature only, i.e. they will not appear in the compi
 
 ==== About the compilation of types
 
-All non-primitive types are boxed in the generated C file, i.e. they are wrapped in a pointer.
+Integers, Booleans and Enums are primitive types.
+All *non-primitive* types are boxed in the generated C file, i.e. they are wrapped in a pointer.
 
 === Expressions
 
@@ -224,7 +238,7 @@ The two operands of a binary operation must have the same type.
 |Bitwise AND
 |Any integer type
 
-|`\|`
+|`lor`
 |Bitwise OR
 |Any integer type
 
@@ -272,6 +286,9 @@ The following table summarizes the other expressions of the language. All identi
 |`if e1 then e2 else e3`
 |Conditional expression
 
+|`match e0 with \| p1 => e1 \| ... \| pn => en end`
+|Pattern-matching*
+
 |`e.f`
 |Accessing a record field
 
@@ -290,6 +307,8 @@ The following table summarizes the other expressions of the language. All identi
 |`f(e1, ..., en)`
 |Calling function `f` with arguments `e1, ..., en`
 |===
+
+*For pattern-matching, each pattern `pi` is either an enum constructor or the wildcard `_`.
 
 ==== Syntactic sugar
 
@@ -326,9 +345,9 @@ p with { x <- 2; y <- 3 }
 
 In this example, `p` should be a record variable, and `x` and `y` fields of the corresponding record type.
 
-IMPORTANT: This syntax is desugarged by a sequence of single-field record updates that keeps the order in which the programmer updated the fields. For example, the code snippet above is desugared as `(p.x \<- 2).y \<- 3`. Using a different order can lead to different errors raised by the compiler if side effects do occur in the update expressions.
+IMPORTANT: This syntax is desugarged by a sequence of single-field record updates that keeps the order in which the programmer updated the fields. For example, the code snippet above is desugared as `(p.x \<- 2).y \<- 3`. Using a different order may lead to different errors raised by the compiler if side effects do occur in the update (compiled) expressions.
 
-NOTE: The type of array indexes depends on the target architecture for which for you want to compile the generated C code. If the target has a 32-bit architecture, you should use `u32` indices, otherwise you should use `u64` for a 64-bit arch. By default, the compiler uses the CompCert Archi.ptr64 constant to get the target architecture. To set a different value, you can use the `-target-arch` option (cf. `barocq -help`.)
+NOTE: The type of array indexes depends on the target architecture for which you want to compile the generated C code. If the target has a 32-bit architecture, you should use `u32` indices, otherwise you should use `u64` for a 64-bit arch. By default, the compiler uses the CompCert Archi.ptr64 constant to get the target architecture. To set a different value, you can use the `-target-arch` option (cf. `barocq -help`.)
 
 === Definitions
 
@@ -348,16 +367,16 @@ The following example declare several constants:
 
 [source]
 ----
-defn MAX_SIZE : u32 = 10U
+defn max_size : u32 = 10U
 
-defn NB_ELEM : u32 = MAX_SIZE / 2U
+defn nb_elem : u32 = max_size / 2U
 
-defn X_COORD_INIT : i32 = 6
+defn x_coord_init : i32 = 6
 
-defn my_array : array point = [|{ x = X_COORD_INIT; y = -2; };  { x = X_COORD_INIT; y = 34; }|]
+defn my_array : array point = [|{ x = x_coord_init; y = -2; };  { x = x_coord_init; y = 34; }|]
 ----
 
-IMPORTANT: Only constants with a primitive type can be used in function bodies. Non-primitive constants may be used by manually written C code which would be linked to Barocq generated code.
+IMPORTANT: Only constants with an integer or boolean type can be used in function bodies. Non-primitive constants may be used by manually written C code which would be linked to Barocq generated code.
 
 ==== Functions
 
@@ -404,9 +423,9 @@ type rec = {
     f2: u32;
 }
 
-decl CONST1 : u32
+decl const1 : u32
 
-decl CONST2 : rec
+decl const2 : rec
 
 decl rand : (i32) -> i32
 
@@ -423,9 +442,8 @@ Any abstract function which returns a non-primitive value shoud have a parameter
 ====
 Abstract function must respect the following contract:
 
-* All arguments passed to an abstract function must be completely independant, i.e. there is no intra- or inter-aliasing between arguments;
 * The function cannot make a newly allocated object escape from the local scope;
-* The function must preserve the memory layout of the call state (e.g. pointer swapping is forbidden). If changes occur in the memory, they can only be a modification of a primitive value contained in the arguments;
+* The function must preserve the memory layout of the call state (e.g. pointer moves are forbidden). If changes occur in the memory, they can only be a modification of a primitive value contained in the arguments;
 * The function cannot modify an argument annotated with `@read`;
 * If the result is non-primitive, it must point to the argument annotated with `@write`.
 ====
@@ -441,7 +459,7 @@ module Mname
 
 The first character of a module name must be an uppercase letter. The following characters can be lowercase or uppercase letters or underscores.
 
-To reference a definition (a type, a constant or a function) of an external module in the current module, the definition identifier must be prefixed with `Mname::` where `Mname` is the module name.
+To reference an external idenfitier in the current module, the identifier must be prefixed with `Mname::` where `Mname` is the module name. The external identifiers can refer to a type, a constant, a function or an enum constructor.
 
 It is also possible to import modules at the beginning of a file just after the module declaration:
 
@@ -487,9 +505,9 @@ Now, let's look at `kernel.br`.
 ----
 module Kernel
 
-defn NB_PROCS : u64 = 5UL
+defn nb_procs : u64 = 5UL
 
-defn QUANTUM : u64 = 100UL
+defn quantum : u64 = 100UL
 
 type proc = {
   pid: u64;
@@ -516,8 +534,8 @@ defn incr_proc_nb_sched(ks: state, pid: u64) : state =
 
 defn schedule(ks: state) : state =
   if Machine::read_time(ks.mc) > ks.deadline then
-    let next_pid = (ks.curr_pid + 1UL) % NB_PROCS in
-    let next_deadline = ks.deadline + QUANTUM in
+    let next_pid = (ks.curr_pid + 1UL) % nb_procs in
+    let next_deadline = ks.deadline + quantum in
     let
       ks = ks with { curr_pid <- next_pid; deadline <- next_deadline; } and
       ks = incr_proc_nb_sched(ks, next_pid)
@@ -529,12 +547,12 @@ defn schedule(ks: state) : state =
 
 The kernel state is composed of the current process id, the array of processes, the deadline of the current process and the machine state. A process is represented as a record containing its identifier, its set of saved registers and the number of times it has been scheduled.
 
-Two constants describe the kernel configuration: the number of processes `NB_PROCS`, and the quantum value for a round-robin scheduling `QUANTUM`.
+Two constants describe the kernel configuration: the number of processes `nb_procs`, and the quantum value for a round-robin scheduling `quantum`.
 
-Finally, three core functions are defined. The function `sync` is used to synchronize the kernel data with the machine state. The function `incr_proc_nb_sched` increases by one the number of times a given process has been scheduled. The function `schedule` chooses the next process to be scheduled. Basically, it checks that the current process has exceeded its deadline. If it is the case, it selects the next process to run, increments the `nb_sched` field of this process by one and updates the machine state. If not, it does nothing.
+Finally, three core functions are defined. The function `sync` is used to synchronize the kernel data with the machine state. The function `incr_proc_nb_sched` increases by one the number of times a given process has been scheduled. The function `schedule` chooses the next process to be scheduled. This function checks whether the current process has missed its deadline. If so, it selects the next process to run, increments the `nb_sched` field of this process by one and updates the machine state. Otherwise it does nothing.
 
 
-You may notice that notice that to modify the `nb_sched` field of a process, the function `incr_proc_nb_sched` contains all the steps from getting the process, updating it and updating the process table back. In fact, Barocq does not support _deep updates_ for the moment. If you try to write `ks.procs[next_id].nb_sched \<- v`, this instruction is interpreted as:
+You may notice that notice that to modify the `nb_sched` field of a process, the function `incr_proc_nb_sched` contains all the steps from getting the process, updating it and updating the process table back. In fact, Barocq does *not* support _deep updates_ for the moment. If you try to write `ks.procs[next_id].nb_sched \<- v`, this instruction is interpreted as:
 
 . < Retrieve the value from `ks.procs[next_id]` >, which returns a value of type `proc`;
 . < Update the field `nb_sched` of this value >, which also returns a value of type `proc`.
@@ -558,8 +576,8 @@ As mentionned in the preamble, all array and record modifications are compiled i
 
 NOTE: The points-to analysis is performed on an intermediate representation called `Imp1`. The error messages are thus related to the `Imp1` syntax. Precisely pinpointing the origin of the problem in the source code is a tedious task that has not yet been done. To make the debugging of Barocq code easier, you can display the `Imp1` representation with the `-print-imp1` option of the compiler.
 
-The first thing to have in mind when you write Barocq code is that you are kind of writing an imperative program with a functional syntax. Thus, in the compiled code, assignments to non-primitive values actually create aliases, and modifying an array or a record updates the memory in-place. To make a functional program compatible with those behaviors, it is strongly recommended to adopt an _affine_ programming style (a bit like Rust for those familiar with the language). This means that you should only use a non-primitive value at most once. More precisely, we adopt the following guideline: "everytime you make a modification to an object, never try to use the old version of it". This is what we do in the example above. To help following this good practice, we use variable shadowing every time we modify a variable, so that we are sure that we will only use the last reference to it. +
+The first thing to have in mind when you write Barocq code is that you are kind of writing an imperative program with a functional syntax. Thus, in the compiled code, assignments to non-primitive values actually create aliases, and modifying an array or a record updates the memory in-place. To make a functional program compatible with those behaviors, it is strongly recommended to adopt an _affine_ programming style (a bit like Rust for those familiar with the language). This means that you should only use a non-primitive value at most once. More precisely, we adopt the following guideline: "everytime you make a modification to an object, never try to use the old version of it". This is what we do in the example above. To help following this good practice, we use variable shadowing every time we modify a variable, so that we are sure that we will only use the last reference to it.
 
-The second thing to know concerns arrays. Usually, arrays are accessed with indices whose values are not statically known. Barocq enforces a restrictive policy to make sure the programmer doesn't access an array with different indices at the same time. In short, you can only access one element at a time, and you cannot feed the parameters of a function with arguments containing arrays on which you already have a reference on a element.
+The second thing to know concerns arrays. Usually, arrays are accessed with indices whose values are not statically known. Barocq enforces a very strict policy to make sure the programmer doesn't access an array of non-primitive elements with different indices at the same time. In short, you can only access one element at a time, and you cannot feed the parameters of a function with arguments containing arrays on which you already have a reference on a element.
 
-Finally, you will not be able to swap pointers with the actual implementation of Barocq. The modification you can make in the memory can only correspond to updating primitive values in objects.
+Finally, you will not be able to swap pointers with the actual implementation of Barocq. The modifications you can make in the memory can only correspond to updating primitive values in objects.
