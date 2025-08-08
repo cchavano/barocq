@@ -50,29 +50,50 @@ module Deeptypes = struct
   and opt_parens (ty : mtyp) : string =
     PrintUtils.opt_parens is_simpl_mtyp mtyp_to_typ_string ty
 
-  let typedef_to_string (td : type_def) : string =
+  let typedef_to_string (indent : string) (td : type_def) : string =
     match td with
     | TdEnum ed ->
+        let eid = ident_to_string ed.ed_name in
+        let elems =
+          sprintf
+            "%sDefinition elems_of_%s : list ident := %s.\n"
+            indent
+            eid
+            (list_to_string_bracket Deepgen.ident_to_deep ed.ed_elems)
+        in
         sprintf
-          "Definition %s : typ := TEnum %s %s."
-          (ident_to_string ed.ed_name)
+          "%s\n%sDefinition %s : typ := TEnum %s elems_of_%s."
+          elems
+          indent
+          eid
           (Deepgen.ident_to_deep ed.ed_name)
-          (list_to_string_bracket Deepgen.ident_to_deep ed.ed_elems)
+          eid
     | TdRecord rd ->
+        let rid = ident_to_string rd.rd_name in
+        let fields =
+          sprintf
+            "%sDefinition fields_of_%s : list (ident * typ) := %s.\n"
+            indent
+            rid
+            (list_to_string_bracket
+               (fun (fname, fty) ->
+                 sprintf
+                   "(%s, %s)"
+                   (Deepgen.ident_to_deep fname)
+                   (mtyp_to_typ_string fty))
+               rd.rd_fields)
+        in
         sprintf
-          "Definition %s : typ := TRecord %s %s."
+          "%s\n%sDefinition %s : typ := TRecord %s fields_of_%s."
+          fields
+          indent
           (ident_to_string rd.rd_name)
           (Deepgen.ident_to_deep rd.rd_name)
-          (list_to_string_bracket
-             (fun (fname, fty) ->
-               sprintf
-                 "(%s, %s)"
-                 (Deepgen.ident_to_deep fname)
-                 (mtyp_to_typ_string fty))
-             rd.rd_fields)
+          rid
     | TdAbstract (tid, _) ->
         sprintf
-          "Definition %s : typ := TAbs %s."
+          "%sDefinition %s : typ := TAbs %s."
+          indent
           (ident_to_string tid)
           (Deepgen.ident_to_deep tid)
 
@@ -95,7 +116,7 @@ module Deeptypes = struct
       out
       ~delim:("", "\n")
       ~sep:"\n\n"
-      (fun td -> sprintf "%s%s" indent (typedef_to_string td))
+      (fun td -> sprintf "%s" (typedef_to_string indent td))
       types
 
   let print_deftypes (out : out_channel) (defs : globdef list) : unit =
@@ -857,7 +878,7 @@ let print_defs_corres (out : out_channel) (defs : globdef list) : unit =
           gen_fun_corres fid params tret)
     defs
 
-let print_properties_env (out : out_channel) (defs : globdef list) : unit =
+let print_properties_envs (out : out_channel) (defs : globdef list) : unit =
   let indent3 = make_indent 3 in
   let indent4 = make_indent 4 in
   let gen_const_property (cid : ident) : string =
@@ -938,7 +959,31 @@ let print_properties_env (out : out_channel) (defs : globdef list) : unit =
   fprintf out "\n";
   fprintf out "%s\n" cast;
   fprintf out "\n";
-  fprintf out "Definition all_prop : list propt :=\n";
+  let decls =
+    List.filter
+      (fun (d : BarocqShallow.Monadic.globdef) ->
+        match d with
+        | DeclConst _ | DeclFun _ -> true
+        | _ -> false)
+      defs
+  in
+  let defs =
+    List.filter
+      (fun (d : BarocqShallow.Monadic.globdef) ->
+        match d with
+        | DefConst _ | DefFun _ -> true
+        | _ -> false)
+      defs
+  in
+  fprintf out "Definition decl_prop : list propt :=\n";
+  print_list
+    out
+    ~delim:(sprintf "%s[\n%s" indent (make_indent 2), sprintf "\n%s].\n" indent)
+    ~sep:(sprintf ";\n%s" (make_indent 2))
+    gen_def_property
+    decls;
+  fprintf out "\n";
+  fprintf out "Definition def_prop : list propt :=\n";
   print_list
     out
     ~delim:(sprintf "%s[\n%s" indent (make_indent 2), sprintf "\n%s].\n" indent)
@@ -948,12 +993,92 @@ let print_properties_env (out : out_channel) (defs : globdef list) : unit =
   fprintf out "\n";
   fprintf out "%s\n" has_property
 
+let print_typing_env (out : out_channel) (types : type_def list) : unit =
+  let type_def_to_string (td : type_def) : string =
+    match td with
+    | TdEnum ed ->
+        sprintf
+          "%s (Adt_enum Deeptypes.elems_of_%s)"
+          (Deepgen.ident_to_deep ed.ed_name)
+          (ident_to_string ed.ed_name)
+    | TdRecord rd ->
+        sprintf
+          "%s (Adt_record Deeptypes.fields_of_%s)"
+          (Deepgen.ident_to_deep rd.rd_name)
+          (ident_to_string rd.rd_name)
+    | TdAbstract _ -> assert false
+  in
+  let rec tenv_defs_to_string (indent : string) (types : type_def list) : string
+      =
+    match types with
+    | [] -> "STree.empty"
+    | td :: types' ->
+        sprintf
+          "STree.set %s\n%s(%s)"
+          (type_def_to_string td)
+          indent
+          (tenv_defs_to_string (indent ^ PrintUtils.indent) types')
+  in
+  let rec tenv_enum_def_constr_types (indent : string) (eid : string)
+      (elems : ident list) (next : string) : string =
+    match elems with
+    | [] -> next
+    | e :: elems' ->
+        sprintf
+          "STree.set %s %s\n%s(%s)"
+          (Deepgen.ident_to_deep e)
+          eid
+          indent
+          (tenv_enum_def_constr_types
+             (indent ^ PrintUtils.indent)
+             eid
+             elems'
+             next)
+  in
+  let rec tenv_constr_types_to_string (indent : string) (types : type_def list)
+      : string =
+    match types with
+    | [] -> "STree.empty"
+    | TdEnum ed :: types' ->
+        let indent' =
+          sprintf "%s%s" indent (make_indent (List.length ed.ed_elems))
+        in
+        tenv_enum_def_constr_types
+          indent
+          (Deepgen.ident_to_deep ed.ed_name)
+          ed.ed_elems
+          (tenv_constr_types_to_string indent' types')
+    | _ :: types' -> tenv_constr_types_to_string indent types'
+  in
+  let types =
+    List.filter
+      (fun (td : BarocqShallow.Monadic.type_def) ->
+        match td with
+        | TdAbstract _ -> false
+        | _ -> true)
+      types
+  in
+  fprintf
+    out
+    "Definition typing_env : tenv := {|\n\
+     %stenv_defs :=\n\
+     %s%s;\n\
+     %stenv_constr_types :=\n\
+     %s%s\n\
+     |}.\n"
+    indent
+    (make_indent 2)
+    (tenv_defs_to_string (make_indent 3) types)
+    indent
+    (make_indent 2)
+    (tenv_constr_types_to_string (make_indent 3) types)
+
 let prelude_imports () : string =
   sprintf
     "From Coq Require Import String List.\n\
      From compcert Require Import Integers.\n\
      From BarocqComp Require Import Ident Error Maps2 Barray Benum Brecord \
-     Types Barocq.\n\
+     Types Typing Barocq.\n\
      From %s Require Import %s %s.\n\n\
      Import ListNotations.\n\n\
      Open Scope string_scope.\n"
@@ -1018,9 +1143,15 @@ let print_prelude (out : out_channel) (prog : program) : unit =
   fprintf out "%s" (gen_abs_defs_impl_env defs);
   if defs <> [] then begin
     fprintf out "\n";
-    fprintf out "(** Properties environment *)\n";
+    fprintf out "(** Properties environments *)\n";
     fprintf out "\n";
-    print_properties_env out defs
+    print_properties_envs out defs
+  end;
+  if types <> [] then begin
+    fprintf out "\n";
+    fprintf out "(** Typing environment *)\n";
+    fprintf out "\n";
+    print_typing_env out types
   end
 
 let print_corres (arch : Target.archi) (out : out_channel) (prog : program) :
