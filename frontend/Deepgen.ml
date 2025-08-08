@@ -74,7 +74,7 @@ let rec btyp_to_deep (ty : btyp) : string =
   | BInt32 Unsigned -> "tuint32"
   | BInt64 Signed -> "tint64"
   | BInt64 Unsigned -> "tuint64"
-  | BArray ta -> sprintf "BArray %s" (opt_parens ta)
+  | BArray ta -> sprintf "BArray %s" (opt_parens_btyp ta)
   | BEnum te -> sprintf "BEnum %s" (ident_to_deep te)
   | BRecord tr -> sprintf "BRecord %s" (ident_to_deep tr)
   | BAbs t -> sprintf "BAbs %s" (ident_to_deep t)
@@ -82,9 +82,9 @@ let rec btyp_to_deep (ty : btyp) : string =
       sprintf
         "BFun %s %s"
         (list_to_string_bracket btyp_to_deep tparams)
-        (opt_parens tret)
+        (opt_parens_btyp tret)
 
-and opt_parens (ty : btyp) : string =
+and opt_parens_btyp (ty : btyp) : string =
   PrintUtils.opt_parens is_simpl_btyp btyp_to_deep ty
 
 let rec expr_to_deep (prefix : string) (e : expr) : string =
@@ -288,10 +288,10 @@ let globdef_to_deep (def : globdef) : string =
       sprintf "DefType %s %s_%s" (ident_to_deep id) kind (ident_to_string id)
   | DefConst (id, l, ty) ->
       sprintf
-        "DefConst %s const_%s (%s)"
+        "DefConst %s const_%s %s"
         (ident_to_deep id)
         (ident_to_string id)
-        (btyp_to_deep ty)
+        (opt_parens_btyp ty)
   | DefFun (id, f) ->
       sprintf "DefFun %s fun_%s" (ident_to_deep id) (ident_to_string id)
   | DeclType (id, tk) ->
@@ -302,16 +302,25 @@ let globdef_to_deep (def : globdef) : string =
       in
       sprintf "DeclType %s %s" (ident_to_deep id) st_or_un
   | DeclConst (id, ty) ->
-      sprintf "DeclConst %s (%s)" (ident_to_deep id) (btyp_to_deep ty)
+      sprintf "DeclConst %s %s" (ident_to_deep id) (opt_parens_btyp ty)
   | DeclFun (id, tparams, tret) ->
       sprintf
-        "DeclFun %s (%s) (%s)"
+        "DeclFun %s %s %s"
         (ident_to_deep id)
         (list_to_string_bracket
            (fun (attr, ty) ->
              sprintf "(%s, %s)" (param_attr_to_deep attr) (btyp_to_deep ty))
            tparams)
-        (btyp_to_deep tret)
+        (opt_parens_btyp tret)
+
+let print_decomp_remark (out : out_channel) : unit =
+  fprintf
+    out
+    "Remark prog_decomp : (prog = prog_types ++ prog_decls ++ prog_defs)%%list.\n\
+     Proof.\n\
+     %sreflexivity.\n\
+     Qed.\n"
+    indent
 
 let prim_types : string =
   "Definition tbool := BBool.\n\n\
@@ -340,5 +349,52 @@ let print_program (out : out_channel) (prog : program) : unit =
       ~delim:("Definition prog : Barocq.program := [\n", "\n].\n")
       ~sep:";\n"
       (fun d -> sprintf "%s%s" indent (globdef_to_deep d))
-      prog
+      prog;
+    let types =
+      List.filter
+        (fun (d : Barocq.globdef) ->
+          match d with
+          | DefType _ | DeclType _ -> true
+          | _ -> false)
+        prog
+    in
+    let decls =
+      List.filter
+        (fun (d : Barocq.globdef) ->
+          match d with
+          | DeclConst _ | DeclFun _ -> true
+          | _ -> false)
+        prog
+    in
+    let defs =
+      List.filter
+        (fun (d : Barocq.globdef) ->
+          match d with
+          | DefConst _ | DefFun _ -> true
+          | _ -> false)
+        prog
+    in
+    fprintf out "\n";
+    print_list
+      out
+      ~delim:("Definition prog_types : Barocq.program := [\n", "\n].\n")
+      ~sep:";\n"
+      (fun d -> sprintf "%s%s" indent (globdef_to_deep d))
+      types;
+    fprintf out "\n";
+    print_list
+      out
+      ~delim:("Definition prog_decls : Barocq.program := [\n", "\n].\n")
+      ~sep:";\n"
+      (fun d -> sprintf "%s%s" indent (globdef_to_deep d))
+      decls;
+    fprintf out "\n";
+    print_list
+      out
+      ~delim:("Definition prog_defs : Barocq.program := [\n", "\n].\n")
+      ~sep:";\n"
+      (fun d -> sprintf "%s%s" indent (globdef_to_deep d))
+      defs;
+    fprintf out "\n";
+    print_decomp_remark out
   end
