@@ -3,7 +3,7 @@ From Coq Require Import ExtrOcamlString.
 
 From Coq Require BinInt BinPos.
 From compcert Require Integers Floats Machregs Archi AST Memdata Csyntax Initializers Ctyping Ctypes Clight Ctypesdefs Values.
-From BarocqComp Require Imp1 Imp1gen Barocq Compiler BarocqShallowgen.
+From BarocqComp Require Imp1 Imp1gen Barocq Compiler BarocqShallowgen BarocqVC.
 
 (* Extraction language *)
 Extraction Language OCaml.
@@ -71,4 +71,5 @@ Separate Extraction
   BarocqShallow.Monadic.get_enum_defs
   Imp1.Aliasing_AST.program
   Syntax.get_record_defs
-  Ident.
+  Ident
+  BarocqVC.

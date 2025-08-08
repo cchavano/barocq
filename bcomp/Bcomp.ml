@@ -372,9 +372,9 @@ let () =
         let oc_prelude = open_out prelude_output in
         let oc_corres = open_out corres_output in
         match BarocqShallowgen.monadify_norm_program !target_arch prog with
-        | Errors.OK prog ->
-            Corresgen.print_prelude oc_prelude prog;
-            Corresgen.print_corres !target_arch oc_corres prog;
+        | Errors.OK sprog ->
+            Corresgen.print_prelude oc_prelude !target_arch prog sprog;
+            Corresgen.print_corres !target_arch oc_corres sprog;
             printf
               "Correspondence theorems prelude generated at %s\n"
               (clean_filename prelude_output);
