@@ -391,11 +391,55 @@ module EnumConv = struct
       (econv_elems_BtoR ed.ed_elems)
       indent
 
+  let gen_econv_inv1_thm (ed : enum_def) : string =
+    let eid = ident_to_string ed.ed_name in
+    sprintf
+      "Theorem econv_%s_inv1 :\n\
+       %sforall (e: %s.%s),\n\
+       %seconv_%s_BtoR (econv_%s_RtoB e) = e.\n\
+       Proof.\n\
+       %sintro. destruct e; reflexivity.\n\
+       Qed."
+      eid
+      indent
+      !shallowfile
+      eid
+      indent
+      eid
+      eid
+      indent
+
+  let gen_econv_inv2_thm (ed : enum_def) : string =
+    let eid = ident_to_string ed.ed_name in
+    sprintf
+      "Theorem econv_%s_inv2 :\n\
+       %sforall (e: enum Btypedefs.%s),\n\
+       %seconv_%s_RtoB (econv_%s_BtoR e) = e.\n\
+       Proof.\n\
+       %sintro. repeat destruct e; simpl; try (destruct c; reflexivity).\n\
+       %sdestruct e. reflexivity.\n\
+       Qed."
+      eid
+      indent
+      eid
+      indent
+      eid
+      eid
+      indent
+      indent
+
   let print_conversions (out : out_channel) (enums : enum_def list) : unit =
     if enums <> [] then begin
       fprintf out "(** * Barocq <-> Rocq enum conversions *)\n\n";
       print_list out ~delim:("", "\n\n") ~sep:"\n\n" gen_econv_RtoB enums;
       print_list out ~delim:("", "\n") ~sep:"\n\n" gen_econv_BtoR enums
+    end
+
+  let print_inversibility (out : out_channel) (enums : enum_def list) : unit =
+    if enums <> [] then begin
+      fprintf out "(** * Barocq <-> Rocq enum conversions *)\n\n";
+      print_list out ~delim:("", "\n\n") ~sep:"\n\n" gen_econv_inv1_thm enums;
+      print_list out ~delim:("", "\n") ~sep:"\n\n" gen_econv_inv2_thm enums
     end
 end
 
@@ -1299,7 +1343,9 @@ let print_prelude (out : out_channel) (arch : Target.archi)
   fprintf out "%s" (gen_abs_types_impl_env types);
   if enums <> [] then begin
     fprintf out "\n";
-    EnumConv.print_conversions out enums
+    EnumConv.print_conversions out enums;
+    fprintf out "\n";
+    EnumConv.print_inversibility out enums
   end;
   if records <> [] then begin
     fprintf out "\n";
