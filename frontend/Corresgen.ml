@@ -656,6 +656,78 @@ module RecordConv = struct
       fields_conv
       proof
 
+  let rec rconv_field_proof_inv (inv_kind : string) (ty : mtyp) : string =
+    match ty with
+    | MArray ta ->
+        let pr = rconv_field_proof_inv inv_kind ta in
+        if pr <> "" then
+          sprintf
+            "apply transl_array_conv_inv; %s"
+            (rconv_field_proof_inv inv_kind ta)
+        else ""
+    | MEnum eid ->
+        sprintf "apply econv_%s_inv%s." (ident_to_string eid) inv_kind
+    | MRecord rid ->
+        sprintf "apply rconv_%s_inv%s." (ident_to_string rid) inv_kind
+    | _ -> ""
+
+  let gen_rconv_inv1_thm (rd : record_def) : string =
+    let rid = ident_to_string rd.rd_name in
+    let proof =
+      sprintf
+        "%sintro. destruct r; simpl. f_equal.\n%s"
+        indent
+        (list_to_string
+           (fun s -> if s <> "" then sprintf "%s- %s\n" indent s else s)
+           (List.map
+              (fun (_, fty) -> rconv_field_proof_inv "1" fty)
+              rd.rd_fields))
+    in
+    sprintf
+      "Theorem rconv_%s_inv1 :\n\
+       %sforall (r: %s.%s),\n\
+       %srconv_%s_BtoR (rconv_%s_RtoB r) = r.\n\
+       Proof.\n\
+       %sQed."
+      rid
+      indent
+      !shallowfile
+      rid
+      indent
+      rid
+      rid
+      proof
+
+  let gen_rconv_inv2_thm (rd : record_def) : string =
+    let rid = ident_to_string rd.rd_name in
+    let proof =
+      sprintf
+        "%sintro. destruct_record r. unfold rconv_%s_RtoB.\n\
+         %ssimpl. repeat f_equal.\n\
+         %s"
+        indent
+        rid
+        indent
+        (list_to_string
+           (fun s -> if s <> "" then sprintf "%s- %s\n" indent s else s)
+           (List.map
+              (fun (_, fty) -> rconv_field_proof_inv "2" fty)
+              rd.rd_fields))
+    in
+    sprintf
+      "Theorem rconv_%s_inv2 :\n\
+       %sforall (r: record Btypedefs.%s),\n\
+       %srconv_%s_RtoB (rconv_%s_BtoR r) = r.\n\
+       Proof.\n\
+       %sQed."
+      rid
+      indent
+      rid
+      indent
+      rid
+      rid
+      proof
+
   let print_correctness_lemmas (out : out_channel) (records : record_def list) :
       unit =
     print_list
@@ -670,6 +742,31 @@ module RecordConv = struct
       ~sep:"\n\n"
       gen_rconv_BtoR_correctness_thm
       records
+
+  let print_array_conv_inversibility (out : out_channel) : unit =
+    fprintf
+      out
+      "Theorem transl_array_conv_inv :\n\
+       %sforall (A B: Type) (f: A -> B) (g: B -> A) (Hinv: forall x, g (f x) = \
+       x),\n\
+       %sforall (a: array A), transl_array g (transl_array f a) = a.\n\
+       Proof.\n\
+       %sinduction a as [|a0 a']; intros.\n\
+       %s- reflexivity.\n\
+       %s- simpl. rewrite (Hinv a0). f_equal. apply IHa'.\n\
+       Qed.\n"
+      indent
+      indent
+      indent
+      indent
+      indent
+
+  let print_inversibility (out : out_channel) (records : record_def list) : unit
+      =
+    print_array_conv_inversibility out;
+    fprintf out "\n";
+    print_list out ~delim:("", "\n\n") ~sep:"\n\n" gen_rconv_inv1_thm records;
+    print_list out ~delim:("", "\n") ~sep:"\n\n" gen_rconv_inv2_thm records
 end
 
 module FFI = struct
@@ -1351,7 +1448,9 @@ let print_prelude (out : out_channel) (arch : Target.archi)
     fprintf out "\n";
     RecordConv.print_conversions out records;
     fprintf out "\n";
-    RecordConv.print_correctness_lemmas out records
+    RecordConv.print_correctness_lemmas out records;
+    fprintf out "\n";
+    RecordConv.print_inversibility out records
   end;
   fprintf out "\n";
   fprintf
