@@ -980,13 +980,16 @@ let gen_fun_corres (fid : ident) (params : (ident * mtyp) list) (tret : mtyp) :
     sprintf "%s_val %s" fid_shallow (fun_corres_deep_call_args params)
   in
   let call_shallow = fun_corres_shallow_call (indent ^ " ") fid params tret in
+  let corres =
+    if forall = "" then sprintf "%s(%s =\n%s)" indent call_deep call_shallow
+    else
+      sprintf "%s(%s\n%s %s =\n%s)" indent forall indent call_deep call_shallow
+  in
   sprintf
     "Theorem fun_%s_corres :\n\
      %sexists %s_val,\n\
      %seval_def %s = OK (VAL Deeptypes.typof_%s %s_val) /\\\n\
-     %s(%s\n\
-     %s %s =\n\
-     %s).\n\
+     %s.\n\
      Admitted."
     fid_shallow
     indent
@@ -995,11 +998,7 @@ let gen_fun_corres (fid : ident) (params : (ident * mtyp) list) (tret : mtyp) :
     fid_deep
     fid_shallow
     fid_shallow
-    indent
-    forall
-    indent
-    call_deep
-    call_shallow
+    corres
 
 let params_of_absfun (tparams : (param_attr * mtyp) list) : (ident * mtyp) list
     =
@@ -1202,7 +1201,7 @@ let print_typing_env (out : out_channel) (types : type_def list) : unit =
   in
   fprintf
     out
-    "Definition typing_env : tenv := {|\n\
+    "Definition typing_env : tenv := Eval compute in {|\n\
      %stenv_defs :=\n\
      %s%s;\n\
      %stenv_constr_types :=\n\
@@ -1397,7 +1396,7 @@ module VCgen = struct
       ~delim:(sprintf "%s[\n" indent, sprintf "\n%s]." indent)
       ~sep:(sprintf ";\n%s(* ========================== *)\n" (make_indent 2))
       gen_def_vc
-      sdefs
+      (List.rev sdefs)
 end
 
 let prelude_imports () : string =
