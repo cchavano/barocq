@@ -577,27 +577,31 @@ let print_program (out : out_channel) (prog : program) : unit =
   let types = prog.prog_types in
   let defs = prog.prog_defs in
   fprintf out "%s" imports;
-  fprintf out "\n";
-  fprintf out "Definition neqb (b1 b2: bool) := negb (eqb b1 b2).\n";
   if types <> [] then begin
     fprintf out "\n";
+    fprintf out "(** * Type definitions *)\n\n";
     print_list out ~delim:("", "\n") ~sep:"\n\n" type_def_to_rocq types
   end;
   let records = get_record_defs types in
   if records <> [] then begin
     fprintf out "\n";
+    fprintf out "(** * Setters for records *)\n\n";
     print_list out ~delim:("", "\n") ~sep:"\n\n" gen_record_eta_update records
   end;
   let enums = get_enum_defs types in
   if enums <> [] then begin
     fprintf out "\n";
+    fprintf out "(** * Auxiliary functions *)\n\n";
     print_list out ~delim:("", "\n") ~sep:"\n\n" gen_enum_eq_dec enums;
     fprintf out "\n";
     print_list out ~delim:("", "\n") ~sep:"\n\n" gen_enum_i32_cast enums;
     fprintf out "\n";
     print_list out ~delim:("", "\n") ~sep:"\n\n" gen_i32_enum_cast enums
   end;
+  fprintf out "\n";
+  fprintf out "Definition neqb (b1 b2: bool) := negb (eqb b1 b2).\n";
   if defs <> [] then begin
     fprintf out "\n";
+    fprintf out "(** * Program *)\n\n";
     print_list out ~delim:("", "\n") ~sep:"\n\n" globdef_to_rocq defs
   end
