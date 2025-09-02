@@ -27,11 +27,14 @@ End StringIndexed.
 Module SMap := IMap(StringIndexed).
 
 Module STree.
-  
+
   Include ITree(StringIndexed).
 
   Definition fold {A B} (f: B -> StringIndexed.t -> A -> B) (m: STree.t A) (v: B) : B :=
     PTree.fold (fun acc ki vi => f acc (Ident.of_pos ki) vi) m v.
+
+  Definition map {A B} (f : BinNums.positive -> A -> B) (m : STree.t A) : STree.t B :=
+    PTree.map f m.
 
 End STree.
 

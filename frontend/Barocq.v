@@ -854,15 +854,37 @@ Section DENOT.
     - apply fail.
   Defined.
 
+  Fixpoint update_record (fields : smaplist typ) (rc : eval_recordtyp eval_typ fields) (k:ident) (tv:typ) (v:eval_typ tv)  {struct fields} : res (eval_recordtyp eval_typ fields).
+  Proof.
+    unfold eval_recordtyp in *.
+    destruct fields.
+    - simpl in rc. apply fail.
+    - simpl in rc.
+      destruct p as (k',tk').
+      simpl in rc.
+      simpl.
+      destruct (string_dec  k k').
+      +  destruct (typ_eq_dec tv tk').
+         * apply OK. split.
+         constructor. rewrite e0 in v. apply v.
+         apply (snd rc).
+         * apply fail.
+      + eapply bind.
+        apply (update_record _ (snd rc) k tv v).
+        intro.
+        apply (OK (fst rc, X)).
+  Defined.
+
+
 
   Definition eval_record_update_aux (n: ident) (fields: smaplist typ) (rc: eval_typ (TRecord n fields)) (k: ident) (v: value) : res value.
-    simpl in rc. destruct v as [tv v].
-    apply cast_typof_field with (k:=k) (fields := fields) in v.
-    destruct v as [v | _].
-    - destruct (update rc k v) as [rc' |].
-      +  apply (ret (Val (TRecord n fields) rc')).
-      +  apply fail.
-    - apply fail.
+  Proof.
+    simpl in rc.
+    destruct v as [tv v].
+    eapply bind.
+    eapply (update_record _ rc k tv v).
+    intro.
+    apply (ret (Val (TRecord n fields) X)).
   Defined.
 
 (*
