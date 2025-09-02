@@ -4,6 +4,10 @@ open Types
 open Syntax
 open BarocqShallow.Monadic
 
+let coqlib : string ref = ref ""
+
+let shver : BarocqShallowgen.shallow_version ref = ref BarocqShallowgen.ShallowR
+
 let rec is_simpl_mtyp (ty : mtyp) : bool =
   match ty with
   | MBool | MInt32 _ | MInt64 _ | MEnum _ | MRecord _ | MAbs _ -> true
@@ -149,16 +153,26 @@ let binary_op_to_rocq (ty : mtyp) (op : binary_op) : string =
   | BopXorint -> intop "xor"
   | BopShl -> intop "shl"
   | BopShr -> intop "shr"
-  | BopEq -> (
+  | BopEq -> begin
       match ty with
       | MBool -> "eqb"
-      | MEnum t -> sprintf "%s_eq" (ident_to_string t)
-      | _ -> intop "eq")
-  | BopNeq -> (
+      | MEnum t -> begin
+          match !shver with
+          | BarocqShallowgen.ShallowR -> sprintf "%s_eq" (ident_to_string t)
+          | BarocqShallowgen.ShallowB -> "enum_eq"
+        end
+      | _ -> intop "eq"
+    end
+  | BopNeq -> begin
       match ty with
       | MBool -> "neqb"
-      | MEnum t -> sprintf "%s_neq" (ident_to_string t)
-      | _ -> sprintf "%s %s" (intop "cmp") "Cne")
+      | MEnum t -> begin
+          match !shver with
+          | BarocqShallowgen.ShallowR -> sprintf "%s_neq" (ident_to_string t)
+          | BarocqShallowgen.ShallowB -> "enum_neq"
+        end
+      | _ -> sprintf "%s %s" (intop "cmp") "Cne"
+    end
   | BopLt -> intop "lt"
   | BopGt -> sprintf "%s %s" (intop "cmp") "Cgt"
   | BopLe -> sprintf "%s %s" (intop "cmp") "Cle"
@@ -189,20 +203,33 @@ let rec atom_to_rocq (a : atom) : string =
       begin
         match t1 with
         | MEnum tid ->
+            let cast_op =
+              match !shver with
+              | BarocqShallowgen.ShallowR ->
+                  sprintf "cast_%s_to_i32" (ident_to_string tid)
+              | BarocqShallowgen.ShallowB -> "Benum.to_i32"
+            in
             if dst_ty = MInt32 Signed then
-              sprintf "cast_%s_to_i32 %s" (ident_to_string tid) (opt_parens a1)
+              sprintf "%s %s" cast_op (opt_parens a1)
             else
               sprintf
-                "%s (cast_%s_to_i32 %s)"
+                "%s (%s %s)"
                 (cast_to_rocq (MInt32 Signed) dst_ty)
-                (ident_to_string tid)
+                cast_op
                 (opt_parens a1)
         | _ -> begin
             match dst_ty with
             | MEnum tid ->
+                let cast_op =
+                  match !shver with
+                  | BarocqShallowgen.ShallowR ->
+                      sprintf "cast_i32_to_%s" (ident_to_string tid)
+                  | BarocqShallowgen.ShallowB ->
+                      sprintf "Benum.of_i32 elems_of_%s" (ident_to_string tid)
+                in
                 sprintf
-                  "cast_i32_to_%s (%s %s)"
-                  (ident_to_string tid)
+                  "%s (%s %s)"
+                  cast_op
                   (cast_to_rocq t1 (MInt32 Signed))
                   (opt_parens a1)
             | _ ->
@@ -279,6 +306,14 @@ let rec expr_to_rocq_rec (prefix : string) (e : expr) : string =
           else sprintf "(uint_to_uint64 %s)" (opt_parens a2)
         in
         sprintf "Barray.set %s %s %s" (opt_parens a1) sa2 (opt_parens a3)
+    | ERecordProj (a1, f, _) ->
+        sprintf "Brecord.proj %s %s" (opt_parens a1) (Deepgen.ident_to_deep f)
+    | ERecordUpdate (a1, f, a2, _) ->
+        sprintf
+          "Brecord.update %s %s %s"
+          (opt_parens a1)
+          (Deepgen.ident_to_deep f)
+          (opt_parens a2)
     | EApp (a1, args, _) ->
         let sargs =
           match args with
@@ -305,13 +340,32 @@ let rec expr_to_rocq_rec (prefix : string) (e : expr) : string =
               prefix
               (expr_to_rocq_rec prefix' e3)
       end
-    | EMatch (a1, cases, _) ->
-        sprintf
-          "match %s with\n%s\n%send"
-          (opt_parens a1)
-          (list_to_string ~sep:"\n" (match_case_to_string prefix) cases)
-          prefix
-    | ELetIn (x, e1, e2, _) -> (
+    | EMatch (a1, cases, _) -> begin
+        match !shver with
+        | BarocqShallowgen.ShallowR ->
+            sprintf
+              "match %s with\n%s\n%send"
+              (opt_parens a1)
+              (list_to_string ~sep:"\n" (match_case_to_string prefix) cases)
+              prefix
+        | BarocqShallowgen.ShallowB ->
+            let _, c1 = List.hd cases in
+            let match_op =
+              match BarocqShallowgen.Monadification.typof_expr c1 with
+              | MRes _ -> "match_with_err"
+              | _ -> "match_with"
+            in
+            sprintf
+              "%s %s [\n%s\n%s]"
+              match_op
+              (opt_parens a1)
+              (list_to_string
+                 ~sep:";\n"
+                 (match_case_to_string (prefix ^ indent))
+                 cases)
+              prefix
+      end
+    | ELetIn (x, e1, e2, _) -> begin
         match e1 with
         | ELetIn _ | ELetMon _ | EIfThenElse _ | EMatch _ ->
             sprintf
@@ -325,8 +379,9 @@ let rec expr_to_rocq_rec (prefix : string) (e : expr) : string =
               "let %s := %s in\n%s"
               (ident_to_string x)
               (expr_to_rocq_rec "" e1)
-              (expr_to_rocq_rec prefix e2))
-    | ELetMon (x, e1, e2, _) -> (
+              (expr_to_rocq_rec prefix e2)
+      end
+    | ELetMon (x, e1, e2, _) -> begin
         match e1 with
         | ELetIn _ | ELetMon _ | EIfThenElse _ | EMatch _ ->
             sprintf
@@ -340,7 +395,8 @@ let rec expr_to_rocq_rec (prefix : string) (e : expr) : string =
               "let* %s := %s in\n%s"
               (ident_to_string x)
               (expr_to_rocq_rec "" e1)
-              (expr_to_rocq_rec prefix e2))
+              (expr_to_rocq_rec prefix e2)
+      end
     | ERet (e1, _) -> begin
         match e1 with
         | EAtom (a1, _) -> sprintf "ret %s" (opt_parens a1)
@@ -352,16 +408,25 @@ let rec expr_to_rocq_rec (prefix : string) (e : expr) : string =
 
 and match_case_to_string (prefix : string) ((p, ep) : Benum.pattern * expr) :
     string =
-  let case =
-    match p with
-    | Benum.PIdent i -> ident_to_string i
-    | Benum.PWildcard -> "_"
-  in
-  sprintf
-    "%s| %s =>\n%s"
-    prefix
-    case
-    (expr_to_rocq_rec (prefix ^ make_indent 2) ep)
+  match !shver with
+  | BarocqShallowgen.ShallowR ->
+      let case =
+        match p with
+        | Benum.PIdent i -> ident_to_string i
+        | Benum.PWildcard -> "_"
+      in
+      sprintf
+        "%s| %s =>\n%s"
+        prefix
+        case
+        (expr_to_rocq_rec (prefix ^ make_indent 2) ep)
+  | BarocqShallowgen.ShallowB ->
+      let case =
+        match p with
+        | Benum.PIdent i -> sprintf "PIdent %s" (Deepgen.ident_to_deep i)
+        | Benum.PWildcard -> "PWildcard"
+      in
+      sprintf "%s(%s,\n%s)" prefix case (expr_to_rocq_rec (prefix ^ indent) ep)
 
 let expr_to_rocq (e : expr) : string = expr_to_rocq_rec PrintUtils.indent e
 
@@ -380,228 +445,452 @@ let function_to_rocq (f : coq_function) : string =
     (mtyp_to_rocq f.fn_return)
     (expr_to_rocq f.fn_body)
 
-let is_simpl_lit (l : literal) : bool =
-  match l with
-  | LTrue _ | LFalse _ -> true
-  | _ -> false
+module SR = struct
+  let is_simpl_lit (l : literal) : bool =
+    match l with
+    | LTrue _ | LFalse _ -> true
+    | _ -> false
 
-let rec literal_to_rocq (l : literal) : string =
-  match l with
-  | LTrue _ -> "true"
-  | LFalse _ -> "false"
-  | LInt32 (i, t) -> int_to_rocq i t
-  | LInt64 (i, t) -> int64_to_rocq i t
-  | LArray (la, _) -> list_to_string_bracket literal_to_rocq la
-  | LRecord (rc, t) -> begin
-      match t with
-      | MRecord rid -> record_lit_to_rocq (ident_to_string rid) rc
-      | _ -> assert false
-    end
+  let rec literal_to_rocq (l : literal) : string =
+    match l with
+    | LTrue _ -> "true"
+    | LFalse _ -> "false"
+    | LInt32 (i, t) -> int_to_rocq i t
+    | LInt64 (i, t) -> int64_to_rocq i t
+    | LArray (la, _) -> list_to_string_bracket literal_to_rocq la
+    | LRecord (rc, t) -> begin
+        match t with
+        | MRecord rid -> record_lit_to_rocq (ident_to_string rid) rc
+        | _ -> assert false
+      end
 
-and field_lit_to_rocq (rid : string) (fl : ident * literal) : string =
-  sprintf
-    "%s_%s := %s"
-    (String.lowercase_ascii rid)
-    (ident_to_string (fst fl))
-    (opt_parens (snd fl))
-
-and record_lit_to_rocq (rid : string) (rc : (ident * literal) list) : string =
-  list_to_string ~delim:("{| ", " |}") ~sep:"; " (field_lit_to_rocq rid) rc
-
-and opt_parens (l : literal) : string =
-  PrintUtils.opt_parens is_simpl_lit literal_to_rocq l
-
-let field_typ_to_rocq (rid : string) ((fname, ftyp) : ident * mtyp) : string =
-  sprintf
-    "%s%s_%s: %s"
-    indent
-    (String.lowercase_ascii rid)
-    (ident_to_string fname)
-    (mtyp_to_rocq ftyp)
-
-let enum_def_to_rocq (ed : enum_def) : string =
-  let eid = ident_to_string ed.ed_name in
-  sprintf
-    "Inductive %s :=\n%s."
-    eid
-    (list_to_string
-       ~sep:"\n"
-       (fun e -> sprintf "%s| %s" indent (ident_to_string e))
-       ed.ed_elems)
-
-let record_def_to_rocq (rd : record_def) : string =
-  let rid = ident_to_string rd.rd_name in
-  sprintf
-    "Record %s := mk_%s {\n%s\n}."
-    rid
-    rid
-    (list_to_string ~sep:";\n" (field_typ_to_rocq rid) rd.rd_fields)
-
-let type_def_to_rocq (td : type_def) : string =
-  match td with
-  | TdEnum ed -> enum_def_to_rocq ed
-  | TdRecord rd -> record_def_to_rocq rd
-  | TdAbstract (t, _) -> sprintf "Parameter %s : Type." (ident_to_string t)
-
-let globdef_to_rocq (def : globdef) : string =
-  match def with
-  | DefConst (x, l, ty) ->
-      sprintf
-        "Definition %s : %s := %s."
-        (ident_to_string x)
-        (mtyp_to_rocq ty)
-        (literal_to_rocq l)
-  | DefFun (x, f) ->
-      sprintf "Definition %s %s." (ident_to_string x) (function_to_rocq f)
-  | DeclConst (x, ty) ->
-      sprintf "Parameter %s : %s." (ident_to_string x) (mtyp_to_rocq ty)
-  | DeclFun (x, tparams, tret) ->
-      let ty = MFun (List.map snd tparams, tret) in
-      sprintf "Parameter %s : %s." (ident_to_string x) (mtyp_to_rocq ty)
-
-let gen_record_eta_update (rd : record_def) : string =
-  let rid = ident_to_string rd.rd_name in
-  let fnames =
-    List.map
-      (fun (fname, _) ->
-        sprintf "%s_%s" (String.lowercase_ascii rid) (ident_to_string fname))
-      rd.rd_fields
-  in
-  sprintf
-    "Instance eta_%s : Settable %s :=\n%ssettable! mk_%s <%s>."
-    rid
-    rid
-    (String.make 2 ' ')
-    rid
-    (PrintUtils.list_to_string ~sep:"; " (fun x -> x) fnames)
-
-let gen_enum_eq_dec (ed : enum_def) : string =
-  let eid = ident_to_string ed.ed_name in
-  let eq_dec =
+  and field_lit_to_rocq (rid : string) (fl : ident * literal) : string =
     sprintf
-      "Lemma %s_eq_dec :\n\
-       %sforall (x y: %s), {x = y} + {x <> y}.\n\
-       Proof.\n\
-       %sdecide equality.\n\
-       Defined."
-      eid
-      indent
-      eid
-      indent
-  in
-  let eq =
-    sprintf
-      "Definition %s_eq (x y: %s) : bool :=\n\
-       %sif %s_eq_dec x y then true else false."
-      eid
-      eid
-      indent
-      eid
-  in
-  let neq =
-    sprintf
-      "Definition %s_neq (x y: %s) : bool :=\n\
-       %sif %s_eq_dec x y then false else true."
-      eid
-      eid
-      indent
-      eid
-  in
-  sprintf "%s\n\n%s\n\n%s" eq_dec eq neq
+      "%s_%s := %s"
+      (String.lowercase_ascii rid)
+      (ident_to_string (fst fl))
+      (opt_parens (snd fl))
 
-let gen_enum_i32_cast (ed : enum_def) : string =
-  let eid = ident_to_string ed.ed_name in
-  let rec gen_elems_cast (elems : ident list) (acc : int) : string =
-    match elems with
-    | [] -> assert false
-    | ex :: [] ->
-        sprintf "%s| %s => Int.repr %d%%Z" indent (ident_to_string ex) acc
-    | ex :: elems' ->
+  and record_lit_to_rocq (rid : string) (rc : (ident * literal) list) : string =
+    list_to_string ~delim:("{| ", " |}") ~sep:"; " (field_lit_to_rocq rid) rc
+
+  and opt_parens (l : literal) : string =
+    PrintUtils.opt_parens is_simpl_lit literal_to_rocq l
+
+  let enum_def_to_rocq (ed : enum_def) : string =
+    let eid = ident_to_string ed.ed_name in
+    sprintf
+      "Inductive %s :=\n%s."
+      eid
+      (list_to_string
+         ~sep:"\n"
+         (fun e -> sprintf "%s| %s" indent (ident_to_string e))
+         ed.ed_elems)
+
+  let field_typ_to_rocq (rid : string) ((fname, fty) : ident * mtyp) : string =
+    sprintf
+      "%s%s_%s: %s"
+      indent
+      (String.lowercase_ascii rid)
+      (ident_to_string fname)
+      (mtyp_to_rocq fty)
+
+  let record_def_to_rocq (rd : record_def) : string =
+    let rid = ident_to_string rd.rd_name in
+    sprintf
+      "Record %s := mk_%s {\n%s\n}."
+      rid
+      rid
+      (list_to_string ~sep:";\n" (field_typ_to_rocq rid) rd.rd_fields)
+
+  let type_def_to_rocq (td : type_def) : string =
+    match td with
+    | TdEnum ed -> enum_def_to_rocq ed
+    | TdRecord rd -> record_def_to_rocq rd
+    | TdAbstract (t, _) -> sprintf "Parameter %s : Type." (ident_to_string t)
+
+  let globdef_to_rocq (def : globdef) : string =
+    match def with
+    | DefConst (x, l, ty) ->
         sprintf
-          "%s| %s => Int.repr %d%%Z\n%s"
-          indent
-          (ident_to_string ex)
-          acc
-          (gen_elems_cast elems' (acc + 1))
-  in
-  sprintf
-    "Definition cast_%s_to_i32 (e: %s) : int :=\n%smatch e with\n%s\n%send."
-    eid
-    eid
-    indent
-    (gen_elems_cast ed.ed_elems 0)
-    indent
+          "Definition %s : %s := %s."
+          (ident_to_string x)
+          (mtyp_to_rocq ty)
+          (literal_to_rocq l)
+    | DefFun (x, f) ->
+        sprintf "Definition %s %s." (ident_to_string x) (function_to_rocq f)
+    | DeclConst (x, ty) ->
+        sprintf "Parameter %s : %s." (ident_to_string x) (mtyp_to_rocq ty)
+    | DeclFun (x, tparams, tret) ->
+        let ty = MFun (List.map snd tparams, tret) in
+        sprintf "Parameter %s : %s." (ident_to_string x) (mtyp_to_rocq ty)
 
-let gen_i32_enum_cast (ed : enum_def) : string =
-  let eid = ident_to_string ed.ed_name in
-  let gen_int_cast (elems : ident list) : string =
-    let rec aux (elems : ident list) (acc : int) =
+  let gen_record_eta_update (rd : record_def) : string =
+    let rid = ident_to_string rd.rd_name in
+    let fnames =
+      List.map
+        (fun (fname, _) ->
+          sprintf "%s_%s" (String.lowercase_ascii rid) (ident_to_string fname))
+        rd.rd_fields
+    in
+    sprintf
+      "Instance eta_%s : Settable %s :=\n%ssettable! mk_%s <%s>."
+      rid
+      rid
+      (String.make 2 ' ')
+      rid
+      (PrintUtils.list_to_string ~sep:"; " (fun x -> x) fnames)
+
+  let gen_enum_eq_dec (ed : enum_def) : string =
+    let eid = ident_to_string ed.ed_name in
+    let eq_dec =
+      sprintf
+        "Lemma %s_eq_dec :\n\
+         %sforall (x y: %s), {x = y} + {x <> y}.\n\
+         Proof.\n\
+         %sdecide equality.\n\
+         Defined."
+        eid
+        indent
+        eid
+        indent
+    in
+    let eq =
+      sprintf
+        "Definition %s_eq (x y: %s) : bool :=\n\
+         %sif %s_eq_dec x y then true else false."
+        eid
+        eid
+        indent
+        eid
+    in
+    let neq =
+      sprintf
+        "Definition %s_neq (x y: %s) : bool :=\n\
+         %sif %s_eq_dec x y then false else true."
+        eid
+        eid
+        indent
+        eid
+    in
+    sprintf "%s\n\n%s\n\n%s" eq_dec eq neq
+
+  let gen_enum_i32_cast (ed : enum_def) : string =
+    let eid = ident_to_string ed.ed_name in
+    let rec gen_elems_cast (elems : ident list) (acc : int) : string =
       match elems with
-      | [] -> sprintf "%selse fail" indent
+      | [] -> assert false
+      | ex :: [] ->
+          sprintf "%s| %s => Int.repr %d%%Z" indent (ident_to_string ex) acc
       | ex :: elems' ->
           sprintf
-            "%selse if Int.eq i (Int.repr %d%%Z) then\n%sret %s\n%s"
+            "%s| %s => Int.repr %d%%Z\n%s"
             indent
+            (ident_to_string ex)
             acc
+            (gen_elems_cast elems' (acc + 1))
+    in
+    sprintf
+      "Definition cast_%s_to_i32 (e: %s) : int :=\n%smatch e with\n%s\n%send."
+      eid
+      eid
+      indent
+      (gen_elems_cast ed.ed_elems 0)
+      indent
+
+  let gen_i32_enum_cast (ed : enum_def) : string =
+    let eid = ident_to_string ed.ed_name in
+    let gen_int_cast (elems : ident list) : string =
+      let rec aux (elems : ident list) (acc : int) =
+        match elems with
+        | [] -> sprintf "%selse fail" indent
+        | ex :: elems' ->
+            sprintf
+              "%selse if Int.eq i (Int.repr %d%%Z) then\n%sret %s\n%s"
+              indent
+              acc
+              (make_indent 2)
+              (ident_to_string ex)
+              (aux elems' acc)
+      in
+      match elems with
+      | [] -> assert false
+      | ex :: elems' ->
+          sprintf
+            "%sif Int.eq i (Int.repr %d%%Z) then \n%sret %s\n%s"
+            indent
+            0
             (make_indent 2)
             (ident_to_string ex)
-            (aux elems' acc)
+            (aux elems 1)
     in
-    match elems with
-    | [] -> assert false
-    | ex :: elems' ->
+
+    sprintf
+      "Definition cast_i32_to_%s (i: int) : res %s :=\n%s."
+      eid
+      eid
+      (gen_int_cast ed.ed_elems)
+
+  let imports : string =
+    "From Coq Require Import Bool List BinIntDef.\n\
+     From compcert Require Import Integers.\n\
+     From RecordUpdate Require Import RecordUpdate.\n\
+     From BarocqComp Require Import Error Barray Intop.\n\
+     Import BoolNotations ListNotations.\n\n\
+     Open Scope error_monad_scope.\n"
+
+  let print_program (out : out_channel) (prog : program) : unit =
+    shver := BarocqShallowgen.ShallowR;
+    let types = prog.prog_types in
+    let defs = prog.prog_defs in
+    fprintf out "%s" imports;
+    if types <> [] then begin
+      fprintf out "\n";
+      fprintf out "(** * Type definitions *)\n\n";
+      print_list out ~delim:("", "\n") ~sep:"\n\n" type_def_to_rocq types
+    end;
+    let records = get_record_typedefs types in
+    if records <> [] then begin
+      fprintf out "\n";
+      fprintf out "(** * Setters for records *)\n\n";
+      print_list out ~delim:("", "\n") ~sep:"\n\n" gen_record_eta_update records
+    end;
+    fprintf out "\n";
+    fprintf out "(** * Auxiliary functions *)\n";
+    let enums = get_enum_typedefs types in
+    if enums <> [] then begin
+      fprintf out "\n";
+      print_list out ~delim:("", "\n") ~sep:"\n\n" gen_enum_eq_dec enums;
+      fprintf out "\n";
+      print_list out ~delim:("", "\n") ~sep:"\n\n" gen_enum_i32_cast enums;
+      fprintf out "\n";
+      print_list out ~delim:("", "\n") ~sep:"\n\n" gen_i32_enum_cast enums
+    end;
+    fprintf out "\n";
+    fprintf out "Definition neqb (b1 b2: bool) := negb (eqb b1 b2).\n";
+    if defs <> [] then begin
+      fprintf out "\n";
+      fprintf out "(** * Program *)\n\n";
+      print_list out ~delim:("", "\n") ~sep:"\n\n" globdef_to_rocq defs
+    end
+end
+
+module SB = struct
+  let is_simpl_lit (l : literal) : bool =
+    match l with
+    | LTrue _ | LFalse _ -> true
+    | _ -> false
+
+  let rec literal_to_rocq (l : literal) : string =
+    match l with
+    | LTrue _ -> "true"
+    | LFalse _ -> "false"
+    | LInt32 (i, t) -> int_to_rocq i t
+    | LInt64 (i, t) -> int64_to_rocq i t
+    | LArray (la, _) -> list_to_string_bracket literal_to_rocq la
+    | LRecord (rc, t) -> begin
+        match t with
+        | MRecord rid -> record_lit_to_rocq rc
+        | _ -> assert false
+      end
+
+  and record_lit_to_rocq (rc : (ident * literal) list) : string =
+    List.fold_right
+      (fun (fname, lit) acc ->
         sprintf
-          "%sif Int.eq i (Int.repr %d%%Z) then \n%sret %s\n%s"
+          "(Field %s %s, %s)"
+          (Deepgen.ident_to_deep fname)
+          (opt_parens lit)
+          acc)
+      rc
+      "tt"
+
+  and opt_parens (l : literal) : string =
+    PrintUtils.opt_parens is_simpl_lit literal_to_rocq l
+
+  let enum_def_to_rocq (ed : enum_def) : string =
+    let eid = ident_to_string ed.ed_name in
+    sprintf
+      "Definition elems_of_%s : list ident := [\n\
+       %s\n\
+       ].\n\n\
+       Definition %s : Type := enum elems_of_%s."
+      eid
+      (list_to_string
+         ~sep:";\n"
+         (fun cid -> sprintf "%s%s" indent (Deepgen.ident_to_deep cid))
+         ed.ed_elems)
+      eid
+      eid
+
+  let print_enum_constructors (out : out_channel) (ed : enum_def) : unit =
+    let eid = ident_to_string ed.ed_name in
+    let rec aux (elems : ident list) (constr : string) (parens : string) : unit
+        =
+      match elems with
+      | [] -> assert false
+      | i :: [] ->
+          fprintf
+            out
+            "\nDefinition %s : %s :=\n%s%s (Constr %s)%s.\n"
+            (ident_to_string i)
+            eid
+            indent
+            constr
+            (Deepgen.ident_to_deep i)
+            parens
+      | i :: elems' ->
+          let constr' = sprintf "%s (inr" constr in
+          let parens' = sprintf "%s)" parens in
+          fprintf
+            out
+            "\nDefinition %s : %s :=\n%s%s (inl (Constr %s))%s.\n"
+            (ident_to_string i)
+            eid
+            indent
+            constr
+            (Deepgen.ident_to_deep i)
+            parens;
+
+          aux elems' constr' parens'
+    in
+    match ed.ed_elems with
+    | [] -> assert false
+    | i :: elems' ->
+        fprintf
+          out
+          "\nDefinition %s : %s :=\n%sinl (Constr %s).\n"
+          (ident_to_string i)
+          eid
           indent
-          0
-          (make_indent 2)
-          (ident_to_string ex)
-          (aux elems 1)
-  in
+          (Deepgen.ident_to_deep i);
+        aux elems' "inr" ""
 
-  sprintf
-    "Definition cast_i32_to_%s (i: int) : res %s :=\n%s."
-    eid
-    eid
-    (gen_int_cast ed.ed_elems)
+  let field_typ_to_rocq ((fname, fty) : ident * mtyp) : string =
+    sprintf
+      "%s(%s, %s : Type)"
+      (make_indent 2)
+      (Deepgen.ident_to_deep fname)
+      (mtyp_to_rocq fty)
 
-let imports : string =
-  "From Coq Require Import Bool List BinIntDef.\n\
-   From compcert Require Import Integers.\n\
-   From RecordUpdate Require Import RecordUpdate.\n\
-   From BarocqComp Require Import Error Barray Intop.\n\
-   Import BoolNotations ListNotations.\n\n\
-   Open Scope error_monad_scope.\n"
+  let record_def_to_rocq (rd : record_def) : string =
+    let rid = ident_to_string rd.rd_name in
+    sprintf
+      "Definition %s : Type :=\n%srecord [\n%s\n%s]."
+      rid
+      indent
+      (list_to_string ~sep:";\n" field_typ_to_rocq rd.rd_fields)
+      indent
 
-let print_program (out : out_channel) (prog : program) : unit =
-  let types = prog.prog_types in
-  let defs = prog.prog_defs in
-  fprintf out "%s" imports;
-  if types <> [] then begin
-    fprintf out "\n";
-    fprintf out "(** * Type definitions *)\n\n";
-    print_list out ~delim:("", "\n") ~sep:"\n\n" type_def_to_rocq types
-  end;
-  let records = get_record_defs types in
-  if records <> [] then begin
-    fprintf out "\n";
-    fprintf out "(** * Setters for records *)\n\n";
-    print_list out ~delim:("", "\n") ~sep:"\n\n" gen_record_eta_update records
-  end;
-  let enums = get_enum_defs types in
-  if enums <> [] then begin
+  let type_def_to_rocq (td : type_def) : string =
+    match td with
+    | TdEnum ed -> enum_def_to_rocq ed
+    | TdRecord rd -> record_def_to_rocq rd
+    | TdAbstract (t, _) -> sprintf "Parameter %s : Type." (ident_to_string t)
+
+  let gen_ffi_fun_body (fid : ident) (tparams : mtyp list) (tret : mtyp) :
+      string =
+    let indent2 = make_indent 2 in
+    let rec gen_args (n : int) : string =
+      if n >= List.length tparams then ""
+      else sprintf "a%d %s" n (gen_args (n + 1))
+    in
+    let conv_args : string =
+      snd
+        (List.fold_left
+           (fun (ctr, str) ty ->
+             let arg = sprintf "a%d" ctr in
+             let conv_arg = Btypesgen.conv_value Btypesgen.BtoR ty arg in
+             if conv_arg = arg then (ctr + 1, str)
+             else
+               let str' =
+                 sprintf
+                   "%s%slet %s := %s in\n"
+                   str
+                   indent2
+                   arg
+                   (Btypesgen.conv_value Btypesgen.BtoR ty arg)
+               in
+               (ctr + 1, str'))
+           (0, "")
+           tparams)
+    in
+    let gen_call () : string =
+      sprintf
+        "%slet* r := %s_ShallowR.%s %sin\n"
+        indent2
+        !coqlib
+        (ident_to_string fid)
+        (gen_args 0)
+    in
+    let gen_return () : string =
+      let tret = BarocqShallowgen.Monadification.unwrap_mtyp tret in
+      sprintf
+        "%sret %s."
+        indent2
+        (Btypesgen.conv_value_opt_parens Btypesgen.RtoB tret "r")
+    in
+    sprintf
+      "%sfun %s=>\n%s%s%s"
+      indent
+      (gen_args 0)
+      conv_args
+      (gen_call ())
+      (gen_return ())
+
+  let gen_ffi_fun (fid : ident) (tparams : (param_attr * mtyp) list)
+      (tret : mtyp) : string =
+    let tparams = List.map snd tparams in
+    sprintf
+      "Definition %s : %s :=\n%s"
+      (ident_to_string fid)
+      (mtyp_to_rocq (MFun (tparams, tret)))
+      (gen_ffi_fun_body fid tparams tret)
+
+  let globdef_to_rocq (def : globdef) : string =
+    match def with
+    | DefConst (x, l, ty) ->
+        sprintf
+          "Definition %s : %s := %s."
+          (ident_to_string x)
+          (mtyp_to_rocq ty)
+          (literal_to_rocq l)
+    | DefFun (x, f) ->
+        sprintf "Definition %s %s." (ident_to_string x) (function_to_rocq f)
+    | DeclConst (x, ty) ->
+        sprintf "Parameter %s : %s." (ident_to_string x) (mtyp_to_rocq ty)
+    | DeclFun (x, tparams, tret) -> gen_ffi_fun x tparams tret
+
+  let imports () : string =
+    sprintf
+      "From Coq Require Import Bool List BinIntDef String.\n\
+       From compcert Require Import Integers.\n\
+       From RecordUpdate Require Import RecordUpdate.\n\
+       From BarocqComp Require Import Ident Error Barray Benum Brecord Intop.\n\
+       From %s Require Import %s_Types.\n\
+       Import BoolNotations ListNotations.\n\n\
+       Open Scope string_scope.\n\
+       Open Scope error_monad_scope.\n"
+      !coqlib
+      !coqlib
+
+  let print_program (out : out_channel) (prog : program) : unit =
+    shver := BarocqShallowgen.ShallowB;
+    let types = prog.prog_types in
+    let defs = prog.prog_defs in
+    fprintf out "%s" (imports ());
+    let enums = get_enum_typedefs types in
+    if enums <> [] then begin
+      fprintf out "\n";
+      fprintf out "(** * Enum constructors *)\n";
+      List.iter (print_enum_constructors out) enums
+    end;
     fprintf out "\n";
     fprintf out "(** * Auxiliary functions *)\n\n";
-    print_list out ~delim:("", "\n") ~sep:"\n\n" gen_enum_eq_dec enums;
-    fprintf out "\n";
-    print_list out ~delim:("", "\n") ~sep:"\n\n" gen_enum_i32_cast enums;
-    fprintf out "\n";
-    print_list out ~delim:("", "\n") ~sep:"\n\n" gen_i32_enum_cast enums
-  end;
-  fprintf out "\n";
-  fprintf out "Definition neqb (b1 b2: bool) := negb (eqb b1 b2).\n";
-  if defs <> [] then begin
-    fprintf out "\n";
-    fprintf out "(** * Program *)\n\n";
-    print_list out ~delim:("", "\n") ~sep:"\n\n" globdef_to_rocq defs
-  end
+    fprintf out "Definition neqb (b1 b2: bool) := negb (Bool.eqb b1 b2).\n";
+    if defs <> [] then begin
+      fprintf out "\n";
+      fprintf out "(** * Program *)\n\n";
+      print_list out ~delim:("", "\n") ~sep:"\n\n" globdef_to_rocq defs
+    end
+end

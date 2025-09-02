@@ -4,7 +4,15 @@ From BarocqComp Require Import Target Monads Error Maps2 Types Utils Syntax Barr
 Import ListNotations.
 Import MonCounterErr.
 
+Inductive shallow_version : Type :=
+  | ShallowR  (* shallow embedding with native Rocq records and enums. *)
+  | ShallowB. (* shallow embedding with Barocq encoding for records and enums. *)
+
 Module Normalization.
+
+  Section NORM.
+
+  Variable shver : shallow_version.
 
   Import BNF.
 
@@ -31,11 +39,17 @@ Module Normalization.
         eret (EArraySet a1 a2 a3)
     | Barocq.ERecordProj _ x =>
         let* a := list_nth_err la 0 in
-        eret (EAtom (ARecordProj a x))
+        match shver with
+        | ShallowR => eret (EAtom (ARecordProj a x))
+        | ShallowB => eret (ERecordProj a x)
+        end
     | Barocq.ERecordUpdate _ x _ =>
         let* a1 := list_nth_err la 0 in
         let* a2 := list_nth_err la 1 in
-        eret (EAtom (ARecordUpdate a1 x a2))
+        match shver with
+        | ShallowR => eret (EAtom (ARecordUpdate a1 x a2))
+        | ShallowB => eret (ERecordUpdate a1 x a2)
+        end
     | Barocq.EApp _ _ =>
         let* a := list_nth_err la 0 in
         let args := tail la in
@@ -59,38 +73,74 @@ Module Normalization.
       | Barocq.ECast e1 ty =>
           match ty with
           | BEnum _ =>
+              let* (li1, a1) := norm_expr_aux e1 in
               let* x := fresh_var in
-              let* be := norm_expr_rec e in
-              ret ((x, be) :: nil, AVar x)
+              ret (li1 ++ [(x, (EAtom (ACast a1 ty)))], AVar x)
           | _ =>
               let* (li1, a1) := norm_expr_aux e1 in
               ret (li1, ACast a1 ty)
           end
-      | EUnaryOp op e1 =>
+      | Barocq.EUnaryOp op e1 =>
           let* (li, a1) := norm_expr_aux e1 in
           ret (li, AUnaryOp op a1)
-      | EBinaryOp op e1 e2 =>
+      | Barocq.EBinaryOp op e1 e2 =>
+          let* (li1, a1) := norm_expr_aux e1 in
+          let* (li2, a2) := norm_expr_aux e2 in
           match op with
           | BopDiv | BopMod =>
               let* x := fresh_var in
-              let* be := norm_expr_rec e in
-              ret ((x, be) :: nil, AVar x)
+              ret (li1 ++ li2 ++ [(x, (EAtom (ABinaryOp op a1 a2)))], AVar x)
           | _ =>
-            let* (li1, a1) := norm_expr_aux e1 in
-            let* (li2, a2) := norm_expr_aux e2 in
             ret (li1 ++ li2, ABinaryOp op a1 a2)
           end
-      | ERecordProj e1 f =>
-          let* (li1, a1) := norm_expr_aux e1 in
-          ret (li1, ARecordProj a1 f)
-      | ERecordUpdate e1 f e2 =>
+      | Barocq.EArrayGet e1 e2 =>
           let* (li1, a1) := norm_expr_aux e1 in
           let* (li2, a2) := norm_expr_aux e2 in
-          ret (li1 ++ li2, ARecordUpdate a1 f a2)
-      | _ =>
           let* x := fresh_var in
-          let* be := norm_expr_rec e in
-          ret ((x, be) :: nil, AVar x)
+          ret (li1 ++ li2 ++ [(x, EArrayGet a1 a2)], AVar x)
+      | Barocq.EArraySet e1 e2 e3 =>
+          let* (li1, a1) := norm_expr_aux e1 in
+          let* (li2, a2) := norm_expr_aux e2 in
+          let* (li3, a3) := norm_expr_aux e3 in
+          let* x := fresh_var in
+          ret (li1 ++ li2 ++ li3 ++ [(x, EArraySet a1 a2 a3)], AVar x)
+      | Barocq.ERecordProj e1 f =>
+          let* (li1, a1) := norm_expr_aux e1 in
+          match shver with
+          | ShallowR =>
+              ret (li1, ARecordProj a1 f)
+          | ShallowB =>
+              let* x := fresh_var in
+              ret (li1 ++ [(x, ERecordProj a1 f)], AVar x)
+          end
+      | Barocq.ERecordUpdate e1 f e2 =>
+          let* (li1, a1) := norm_expr_aux e1 in
+          let* (li2, a2) := norm_expr_aux e2 in
+          match shver with
+          | ShallowR =>
+              ret (li1 ++ li2, ARecordUpdate a1 f a2)
+          | ShallowB =>
+              let* x := fresh_var in
+              ret (li1 ++ li2 ++ [(x, ERecordUpdate a1 f a2)], AVar x)
+          end
+      | EDeepAccess _ _ => fail
+      | Barocq.EApp e1 args =>
+          let* (li1, a1) := norm_expr_aux e1 in
+          let* (l_args, a_args) :=
+            List.fold_left
+              (fun acc arg =>
+                let* (acc_l, acc_args) := acc in
+                let* (lia, a) := norm_expr_aux arg in
+                ret (acc_l ++ lia, acc_args ++ [a]))
+              args
+              (ret ([], []))
+          in
+          let* x := fresh_var in
+          ret (li1 ++ l_args ++ [(x, EApp a1 a_args)], AVar x)
+      | _ =>
+        let* x := fresh_var in
+        let* be := norm_expr_rec e in
+        ret ((x, be) :: nil, AVar x)
       end
     in
     let fix mk_norm (le: smaplist BNF.expr) (e: expr) : BNF.expr :=
@@ -223,15 +273,19 @@ Module Normalization.
       prog_types := types
     |}.
 
+  End NORM.
+
 End Normalization.
 
 Module Monadification.
 
   Import Monadic.
 
-  Section ARCHI.
+  Section MON.
 
   Variable arch : Target.archi.
+
+  Variable shver : shallow_version.
 
   Definition arr_index_mtyp : mtyp :=
     match arch with
@@ -272,6 +326,8 @@ Module Monadification.
     | EAtom _ ty
     | EArrayGet _ _ ty
     | EArraySet _ _ _ ty
+    | ERecordProj _ _ ty
+    | ERecordUpdate _ _ _ ty
     | EApp _ _ ty
     | EIfThenElse _ _ _ ty
     | EMatch _ _ ty
@@ -670,19 +726,24 @@ Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res 
         let* t := typecheck_binary_op op ty1 ty2 in
         eret (ABinaryOp op a1' a2' t)
     | BNF.ARecordProj a1 x =>
-        let* a1' := typecheck_atom me gx lx a1 in
-        let ty1 := typof_atom a1' in
-        let* t := typecheck_record_proj me ty1 x in
-        let* rid := record_id ty1 in
-        eret (ARecordProj a1' x t)
+        match shver with
+        | ShallowR =>
+            let* a1' := typecheck_atom me gx lx a1 in
+            let ty1 := typof_atom a1' in
+            let* t := typecheck_record_proj me ty1 x in
+            eret (ARecordProj a1' x t)
+        | ShallowB => efail
+        end
     | BNF.ARecordUpdate a1 x a2 =>
-        let* a1' := typecheck_atom me gx lx a1 in
-        let* a2' := typecheck_atom me gx lx a2 in
-        let ty1 := typof_atom a1' in
-        let ty2 := typof_atom a2' in
-        let* (a2', t) := typecheck_record_update me ty1 a2' x in
-        let* rid := record_id ty1 in
-        eret (ARecordUpdate a1' x a2' t)
+        match shver with
+        | ShallowR =>
+            let* a1' := typecheck_atom me gx lx a1 in
+            let* a2' := typecheck_atom me gx lx a2 in
+            let ty1 := typof_atom a1' in
+            let* (a2', t) := typecheck_record_update me ty1 a2' x in
+            eret (ARecordUpdate a1' x a2' t)
+        | ShallowB => efail
+        end
     end.
 
   Fixpoint typecheck_call_rec (tparams: list mtyp) (args: list atom) (tret: mtyp) : res (list atom * mtyp) :=
@@ -773,6 +834,25 @@ Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res 
         let ty3 := typof_atom a3' in
         let* (a3', t) := typecheck_array_set ty1 ty2 a3' in
         eret (EArraySet a1' a2' a3' t)
+    | BNF.ERecordProj a1 x =>
+        match shver with
+        | ShallowR => efail
+        | ShallowB =>
+            let* a1' := typecheck_atom me gx lx a1 in
+            let ty1 := typof_atom a1' in
+            let* t := typecheck_record_proj me ty1 x in
+            eret (ERecordProj a1' x (MRes t))
+        end
+    | BNF.ERecordUpdate a1 x a2 =>
+        match shver with
+        | ShallowR => efail
+        | ShallowB =>
+            let* a1' := typecheck_atom me gx lx a1 in
+            let* a2' := typecheck_atom me gx lx a2 in
+            let ty1 := typof_atom a1' in
+            let* (a2', t) := typecheck_record_update me ty1 a2' x in
+            eret (ERecordUpdate a1' x a2' (MRes t))
+        end
     | BNF.EApp a1 args =>
         let* a1' := typecheck_atom me gx lx a1 in
         let ty1 := typof_atom a1' in
@@ -841,6 +921,17 @@ Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res 
               end
           | true =>
               eret (MapList.map fst ncases)
+          end
+        in
+        (* If we use the Barocq encoding for enums, the pattern-matching is always a monadic operation *)
+        let t :=
+          match shver with
+          | ShallowR => t
+          | ShallowB =>
+              match t with
+              | MRes _ => t
+              | _ => MRes t
+              end
           end
         in
         eret (EMatch a' ncases t)
@@ -1007,13 +1098,13 @@ Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res 
       prog_defs := defs;
     |}.
 
-  End ARCHI.
+  End MON.
 
 End Monadification.
 
 Open Scope error_monad_scope.
 
-Definition monadify_norm_program (arch: Target.archi) (prog: Barocq.program) : res Monadic.program :=
-  let/catch bnf := Normalization.norm_program prog /> "unable to normalize the program" in
-  let/catch mon := Monadification.monadify_program arch bnf /> "unable to monadify the program" in
+Definition monadify_norm_program (arch: Target.archi) (shver: shallow_version) (prog: Barocq.program) : res Monadic.program :=
+  let/catch bnf := Normalization.norm_program shver prog /> "unable to normalize the program" in
+  let/catch mon := Monadification.monadify_program arch shver bnf /> "unable to monadify the program" in
   eret mon.

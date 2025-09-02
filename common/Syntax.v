@@ -161,7 +161,7 @@ Record program (G: Type) : Type := mk_program {
   prog_types : list type_def;
 }.
 
-Definition get_record_defs (types: list type_def) : list record_def :=
+Definition get_record_typedefs (types: list type_def) : list record_def :=
   List.fold_right
     (fun td acc =>
       match td with

@@ -30,6 +30,8 @@ Module BNF.
     | EAtom : atom -> expr
     | EArrayGet : atom -> atom -> expr
     | EArraySet : atom -> atom -> atom -> expr
+    | ERecordProj : atom -> ident -> expr
+    | ERecordUpdate : atom -> ident -> atom -> expr
     | EApp : atom -> list atom -> expr
     | EIfThenElse : atom -> expr -> expr -> expr
     | EMatch : atom -> list (pattern * expr) -> expr
@@ -103,6 +105,8 @@ Module Monadic.
     | EAtom : atom -> mtyp -> expr
     | EArrayGet : atom -> atom -> mtyp -> expr
     | EArraySet : atom -> atom -> atom -> mtyp -> expr
+    | ERecordProj : atom -> ident -> mtyp -> expr
+    | ERecordUpdate : atom -> ident -> atom -> mtyp -> expr
     | EApp : atom -> list atom -> mtyp -> expr
     | EIfThenElse : atom -> expr -> expr -> mtyp -> expr
     | EMatch : atom -> list (pattern * expr) -> mtyp -> expr
@@ -148,7 +152,17 @@ Module Monadic.
     prog_types : list type_def
   }.
 
-  Definition get_record_defs (types: list type_def) : list record_def :=
+  Definition get_enum_typedefs (types: list type_def) : list enum_def :=
+    List.fold_right
+      (fun td acc =>
+        match td with
+        | TdEnum ed => cons ed acc
+        | _ => acc
+        end)
+      nil
+      types.
+
+  Definition get_record_typedefs (types: list type_def) : list record_def :=
     List.fold_right
       (fun td acc =>
         match td with
@@ -158,11 +172,11 @@ Module Monadic.
       nil
       types.
 
-  Definition get_enum_defs (types: list type_def) : list enum_def :=
+  Definition get_abstract_typedefs (types: list type_def) : list (ident * struct_or_union) :=
     List.fold_right
       (fun td acc =>
         match td with
-        | TdEnum ed => cons ed acc
+        | TdAbstract tid su => cons (tid, su) acc
         | _ => acc
         end)
       nil

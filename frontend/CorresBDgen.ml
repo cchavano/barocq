@@ -161,7 +161,7 @@ let gen_abs_types_impl_env (types : type_def list) : string =
   let env_list prefix l =
     list_to_string
       ~sep:";\n"
-      (fun (d, s) -> sprintf "%s(%s, %s.%s : Type)" prefix d !shallowfile s)
+      (fun (d, s) -> sprintf "%s(%s, %s : Type)" prefix d s)
       l
   in
   let env_build env_list l =
@@ -187,693 +187,6 @@ let gen_abs_types_impl_env (types : type_def list) : string =
     | [] -> "SMap.init (unit : Type)"
     | _ -> env_build env_list (lassoc types))
 
-module Btypedefs = struct
-  let rec is_simpl_mtyp (ty : mtyp) : bool =
-    match ty with
-    | MBool | MInt32 _ | MInt64 _ | MAbs _ -> true
-    | MRes ty' -> is_simpl_mtyp ty'
-    | _ -> false
-
-  let rec mtyp_to_string (ty : mtyp) : string =
-    match ty with
-    | MBool -> "bool"
-    | MInt32 _ -> "int"
-    | MInt64 _ -> "int64"
-    | MArray ta -> sprintf "array %s" (opt_parens ta)
-    | MEnum te -> sprintf "enum %s" (ident_to_string te)
-    | MRecord tr -> sprintf "record %s" (ident_to_string tr)
-    | MAbs t -> sprintf "%s.%s" !shallowfile (ident_to_string t)
-    | MFun (tparams, tret) -> (
-        match tparams with
-        | [] -> sprintf "unit -> %s" (opt_parens tret)
-        | _ ->
-            List.fold_right
-              (fun t acc -> sprintf "%s -> %s" (opt_parens t) acc)
-              tparams
-              (opt_parens tret))
-    | MRes ty' -> sprintf "res %s" (opt_parens ty')
-
-  and opt_parens (ty : mtyp) : string =
-    PrintUtils.opt_parens is_simpl_mtyp mtyp_to_string ty
-
-  let enum_def_to_string (ed : enum_def) : string =
-    sprintf
-      "Definition %s : list ident := %s."
-      (ident_to_string ed.ed_name)
-      (list_to_string_bracket Deepgen.ident_to_deep ed.ed_elems)
-
-  let record_def_to_string (rd : record_def) : string =
-    sprintf
-      "Definition %s : list (ident * Type) := %s."
-      (ident_to_string rd.rd_name)
-      (list_to_string_bracket
-         (fun (fname, fty) ->
-           sprintf
-             "(%s, %s : Type)"
-             (Deepgen.ident_to_deep fname)
-             (opt_parens fty))
-         rd.rd_fields)
-
-  let type_def_to_string (td : type_def) : string =
-    match td with
-    | TdEnum ed -> enum_def_to_string ed
-    | TdRecord rd -> record_def_to_string rd
-    | TdAbstract _ -> assert false
-
-  let print_typedefs (out : out_channel) (types : type_def list) : unit =
-    let types =
-      List.filter
-        (fun (td : BarocqShallow.Monadic.type_def) ->
-          match td with
-          | TdAbstract _ -> false
-          | _ -> true)
-        types
-    in
-    print_list
-      out
-      ~delim:("", "\n")
-      ~sep:"\n\n"
-      (fun td -> sprintf "%s%s" indent (type_def_to_string td))
-      types
-
-  let print (out : out_channel) (prog : program) : unit =
-    let types = prog.prog_types in
-    fprintf out "\n";
-    fprintf out "Module Btypedefs.\n\n";
-    if types <> [] then begin
-      print_typedefs out prog.prog_types;
-      fprintf out "\n"
-    end;
-    fprintf out "End Btypedefs.\n"
-end
-
-type direction =
-  | RtoB
-  | BtoR
-
-let direction_to_string (d : direction) : string =
-  match d with
-  | RtoB -> "RtoB"
-  | BtoR -> "BtoR"
-
-let rec conv_mtyp_str (d : direction) (ty : mtyp) : string =
-  match ty with
-  | MEnum eid ->
-      sprintf "econv_%s_%s" (ident_to_string eid) (direction_to_string d)
-  | MRecord rid ->
-      sprintf "rconv_%s_%s" (ident_to_string rid) (direction_to_string d)
-  | MArray ta ->
-      let r = conv_mtyp_str d ta in
-      if r = "" then ""
-      else if
-        String.starts_with ~prefix:"rconv" r
-        || String.starts_with ~prefix:"econv" r
-      then sprintf "transl_array %s" r
-      else sprintf "transl_array (%s)" r
-  | _ -> ""
-
-let conv_value (d : direction) (fty : mtyp) (v : string) : string =
-  let tstr = conv_mtyp_str d fty in
-  if tstr = "" then v else sprintf "%s %s" tstr v
-
-let conv_value_opt_parens (d : direction) (fty : mtyp) (v : string) : string =
-  let v_conv = conv_value d fty v in
-  if v_conv = v then v else sprintf "(%s)" v_conv
-
-module EnumConv = struct
-  let econv_elems_RtoB (elems : ident list) : string =
-    let rec aux (elems : ident list) (constr : string) (parens : string) :
-        string =
-      match elems with
-      | [] -> assert false
-      | i :: [] ->
-          sprintf
-            "%s| %s => %s (Constr %s)%s"
-            indent
-            (ident_to_string i)
-            constr
-            (Deepgen.ident_to_deep i)
-            parens
-      | i :: elems' ->
-          let constr' = sprintf "%s (inr" constr in
-          let parens' = sprintf "%s)" parens in
-          sprintf
-            "%s| %s => %s (inl (Constr %s))%s\n%s"
-            indent
-            (ident_to_string i)
-            constr
-            (Deepgen.ident_to_deep i)
-            parens
-            (aux elems' constr' parens')
-    in
-    match elems with
-    | [] -> assert false
-    | i :: elems' ->
-        sprintf
-          "%s| %s => inl (Constr %s)\n%s"
-          indent
-          (ident_to_string i)
-          (Deepgen.ident_to_deep i)
-          (aux elems' "inr" "")
-
-  let gen_econv_RtoB (ed : enum_def) : string =
-    let eid = ident_to_string ed.ed_name in
-    sprintf
-      "Definition econv_%s_RtoB (e: %s) : enum Btypedefs.%s :=\n\
-       %smatch e with\n\
-       %s\n\
-       %send."
-      eid
-      eid
-      eid
-      indent
-      (econv_elems_RtoB ed.ed_elems)
-      indent
-
-  let econv_elems_BtoR (elems : ident list) : string =
-    let rec aux (elems : ident list) (constr : string) (parens : string) :
-        string =
-      match elems with
-      | [] -> assert false
-      | i :: [] ->
-          sprintf "%s| %s _%s => %s" indent constr parens (ident_to_string i)
-      | i :: elems' ->
-          let constr' = sprintf "%s (inr" constr in
-          let parens' = sprintf "%s)" parens in
-          sprintf
-            "%s| %s (inl _)%s => %s\n%s"
-            indent
-            constr
-            parens
-            (ident_to_string i)
-            (aux elems' constr' parens')
-    in
-    match elems with
-    | [] -> assert false
-    | i :: elems' ->
-        sprintf
-          "%s| inl _ => %s\n%s"
-          indent
-          (ident_to_string i)
-          (aux elems' "inr" "")
-
-  let gen_econv_BtoR (ed : enum_def) : string =
-    let eid = ident_to_string ed.ed_name in
-    sprintf
-      "Definition econv_%s_BtoR (e: enum Btypedefs.%s) : %s :=\n\
-       %smatch e with\n\
-       %s\n\
-       %send."
-      eid
-      eid
-      eid
-      indent
-      (econv_elems_BtoR ed.ed_elems)
-      indent
-
-  let gen_econv_inv1_thm (ed : enum_def) : string =
-    let eid = ident_to_string ed.ed_name in
-    sprintf
-      "Theorem econv_%s_inv1 :\n\
-       %sforall (e: %s.%s),\n\
-       %seconv_%s_BtoR (econv_%s_RtoB e) = e.\n\
-       Proof.\n\
-       %sintro. destruct e; reflexivity.\n\
-       Qed."
-      eid
-      indent
-      !shallowfile
-      eid
-      indent
-      eid
-      eid
-      indent
-
-  let gen_econv_inv2_thm (ed : enum_def) : string =
-    let eid = ident_to_string ed.ed_name in
-    sprintf
-      "Theorem econv_%s_inv2 :\n\
-       %sforall (e: enum Btypedefs.%s),\n\
-       %seconv_%s_RtoB (econv_%s_BtoR e) = e.\n\
-       Proof.\n\
-       %sintro. repeat destruct e; simpl; try (destruct c; reflexivity).\n\
-       %sdestruct e. reflexivity.\n\
-       Qed."
-      eid
-      indent
-      eid
-      indent
-      eid
-      eid
-      indent
-      indent
-
-  let print_conversions (out : out_channel) (enums : enum_def list) : unit =
-    if enums <> [] then begin
-      fprintf out "(** * Barocq <-> Rocq enum conversions *)\n\n";
-      print_list out ~delim:("", "\n\n") ~sep:"\n\n" gen_econv_RtoB enums;
-      print_list out ~delim:("", "\n") ~sep:"\n\n" gen_econv_BtoR enums
-    end
-
-  let print_inversibility (out : out_channel) (enums : enum_def list) : unit =
-    if enums <> [] then begin
-      fprintf out "(** * Barocq <-> Rocq enum conversions *)\n\n";
-      print_list out ~delim:("", "\n\n") ~sep:"\n\n" gen_econv_inv1_thm enums;
-      print_list out ~delim:("", "\n") ~sep:"\n\n" gen_econv_inv2_thm enums
-    end
-end
-
-module RecordConv = struct
-  (* Rocq to Barocq *)
-
-  let rconv_field_RtoB (rid : string) (fname : ident) (fty : mtyp)
-      (arg : string) : string =
-    let v =
-      sprintf
-        "%s.(%s_%s)"
-        arg
-        (String.lowercase_ascii rid)
-        (ident_to_string fname)
-    in
-    sprintf
-      "Field %s %s"
-      (Deepgen.ident_to_deep fname)
-      (conv_value_opt_parens RtoB fty v)
-
-  let rconv_RtoB (rd : record_def) (arg : string) : string =
-    List.fold_right
-      (fun (fname, fty) acc ->
-        sprintf
-          "(%s, %s)"
-          (rconv_field_RtoB (ident_to_string rd.rd_name) fname fty arg)
-          acc)
-      rd.rd_fields
-      "tt"
-
-  let gen_rconv_RtoB (rd : record_def) : string =
-    let rid = ident_to_string rd.rd_name in
-    sprintf
-      "Definition rconv_%s_RtoB (r: %s.%s) : record Btypedefs.%s :=\n%s%s."
-      rid
-      !shallowfile
-      rid
-      rid
-      indent
-      (rconv_RtoB rd "r")
-
-  (* Barocq to Rocq *)
-
-  let rec rconv_letmon_BtoR (fields : (ident * mtyp) list) : string =
-    match fields with
-    | [] -> ""
-    | (fname, fty) :: fields' ->
-        let fid = ident_to_string fname in
-        let v_conv = conv_value BtoR fty fid in
-        if v_conv = fid then rconv_letmon_BtoR fields'
-        else
-          sprintf
-            "%slet* %s := %s in\n%s"
-            (make_indent 3)
-            fid
-            v_conv
-            (rconv_letmon_BtoR fields')
-
-  let rconv_BtoR (rd : record_def) : string =
-    let match_case =
-      List.fold_right
-        (fun (fname, fty) acc ->
-          sprintf "(Field _ %s, %s)" (ident_to_string fname) acc)
-        rd.rd_fields
-        "tt"
-    in
-    let mk_record =
-      sprintf
-        "mk_%s %s"
-        (ident_to_string rd.rd_name)
-        (list_to_string
-           ~sep:" "
-           (fun (fname, fty) ->
-             conv_value_opt_parens BtoR fty (ident_to_string fname))
-           rd.rd_fields)
-    in
-    sprintf
-      "%smatch r with\n%s| %s =>\n%s%s\n%send"
-      indent
-      indent
-      match_case
-      (make_indent 3)
-      mk_record
-      indent
-
-  let gen_rconv_BtoR (rd : record_def) : string =
-    let rid = ident_to_string rd.rd_name in
-    sprintf
-      "Definition rconv_%s_BtoR (r: record Btypedefs.%s) : %s.%s :=\n%s."
-      rid
-      rid
-      !shallowfile
-      rid
-      (rconv_BtoR rd)
-
-  (* Main printing function *)
-
-  let print_conversions (out : out_channel) (records : record_def list) : unit =
-    if records <> [] then begin
-      fprintf out "(** * Barocq <-> Rocq record conversions **)\n\n";
-      fprintf
-        out
-        "Definition transl_array {A B: Type} (f: A -> B) (a: array A) : array \
-         B :=\n\
-         %sList.map f a.\n\n"
-        indent;
-      fprintf
-        out
-        "Definition transl_array_err {A B: Type} (f: A -> res B) (a: array A) \
-         : res (array B) :=\n\
-         %sErrors.mmap f a.\n\n"
-        indent;
-      print_list out ~delim:("", "\n\n") ~sep:"\n\n" gen_rconv_RtoB records;
-      print_list out ~delim:("", "\n") ~sep:"\n\n" gen_rconv_BtoR records
-    end
-
-  (* Correctness theorems *)
-
-  let gen_rconv_RtoB_correctness_thm (rd : record_def) : string =
-    let rid = ident_to_string rd.rd_name in
-    let forall = sprintf "forall (r: %s) (b: record Btypedefs.%s)," rid rid in
-    let conv_call = sprintf "rconv_%s_RtoB r = b" rid in
-    let fields_conv =
-      list_to_string
-        ~sep:" /\\\n"
-        (fun (fname, fty) ->
-          let rproj =
-            sprintf
-              "r.(%s_%s)"
-              (String.lowercase_ascii rid)
-              (ident_to_string fname)
-          in
-          let rproj = conv_value_opt_parens RtoB fty rproj in
-          sprintf
-            "%s@Brecord.proj Btypedefs.%s b %s = OK %s"
-            indent
-            rid
-            (Deepgen.ident_to_deep fname)
-            rproj)
-        rd.rd_fields
-    in
-    let proof = sprintf "Proof.\n%sintros. subst. repeat split.\nQed." indent in
-    sprintf
-      "Lemma rconv_%s_RtoB_correct :\n%s%s\n%s%s ->\n%s.\n%s"
-      rid
-      indent
-      forall
-      indent
-      conv_call
-      fields_conv
-      proof
-
-  let gen_rconv_BtoR_correctness_thm (rd : record_def) : string =
-    let rid = ident_to_string rd.rd_name in
-    let forall = sprintf "forall (b: record Btypedefs.%s) (r: %s)," rid rid in
-    let conv_call = sprintf "rconv_%s_BtoR b = r" rid in
-    let field_conv (fname : ident) (fty : mtyp) : string =
-      let fid = ident_to_string fname in
-      let rval = conv_value BtoR fty fid in
-      if rval = fid then
-        sprintf
-          "%s@Brecord.proj Btypedefs.%s b %s = OK r.(%s_%s)"
-          indent
-          rid
-          (Deepgen.ident_to_deep fname)
-          (String.lowercase_ascii rid)
-          fid
-      else
-        sprintf
-          "%s(exists %s, @Brecord.proj Btypedefs.%s b %s = OK %s /\\ %s = \
-           r.(%s_%s))"
-          indent
-          fid
-          rid
-          (Deepgen.ident_to_deep fname)
-          fid
-          rval
-          (String.lowercase_ascii rid)
-          fid
-    in
-    let fields_conv =
-      list_to_string
-        ~sep:" /\\\n"
-        (fun (fname, fty) -> field_conv fname fty)
-        rd.rd_fields
-    in
-    let record_destruct =
-      List.fold_right
-        (fun (fname, fty) acc ->
-          sprintf "[[%s] %s]" (ident_to_string fname) acc)
-        rd.rd_fields
-        "[]"
-    in
-    let proof =
-      sprintf
-        "Proof.\n\
-         %s(* intros b r Hconv. unfold rconv_%s_BtoR in Hconv. compute in b.\n\
-         %sdestruct b as %s.\n\
-         %sdestruct Hconv. simpl. repeat esplit. *)\n\
-         Admitted."
-        indent
-        rid
-        indent
-        record_destruct
-        indent
-    in
-    sprintf
-      "Lemma rconv_%s_BtoR_correct :\n%s%s\n%s%s ->\n%s.\n%s"
-      rid
-      indent
-      forall
-      indent
-      conv_call
-      fields_conv
-      proof
-
-  let rec rconv_field_proof_inv (inv_kind : string) (ty : mtyp) : string =
-    match ty with
-    | MArray ta ->
-        let pr = rconv_field_proof_inv inv_kind ta in
-        if pr <> "" then
-          sprintf
-            "apply transl_array_conv_inv; %s"
-            (rconv_field_proof_inv inv_kind ta)
-        else ""
-    | MEnum eid ->
-        sprintf "apply econv_%s_inv%s." (ident_to_string eid) inv_kind
-    | MRecord rid ->
-        sprintf "apply rconv_%s_inv%s." (ident_to_string rid) inv_kind
-    | _ -> ""
-
-  let gen_rconv_inv1_thm (rd : record_def) : string =
-    let rid = ident_to_string rd.rd_name in
-    let proof =
-      sprintf
-        "%sintro. destruct r; simpl. f_equal.\n%s"
-        indent
-        (list_to_string
-           (fun s -> if s <> "" then sprintf "%s- %s\n" indent s else s)
-           (List.map
-              (fun (_, fty) -> rconv_field_proof_inv "1" fty)
-              rd.rd_fields))
-    in
-    sprintf
-      "Theorem rconv_%s_inv1 :\n\
-       %sforall (r: %s.%s),\n\
-       %srconv_%s_BtoR (rconv_%s_RtoB r) = r.\n\
-       Proof.\n\
-       %sQed."
-      rid
-      indent
-      !shallowfile
-      rid
-      indent
-      rid
-      rid
-      proof
-
-  let gen_rconv_inv2_thm (rd : record_def) : string =
-    let rid = ident_to_string rd.rd_name in
-    let proof =
-      sprintf
-        "%sintro. destruct_record r. unfold rconv_%s_RtoB.\n\
-         %ssimpl. repeat f_equal.\n\
-         %s"
-        indent
-        rid
-        indent
-        (list_to_string
-           (fun s -> if s <> "" then sprintf "%s- %s\n" indent s else s)
-           (List.map
-              (fun (_, fty) -> rconv_field_proof_inv "2" fty)
-              rd.rd_fields))
-    in
-    sprintf
-      "Theorem rconv_%s_inv2 :\n\
-       %sforall (r: record Btypedefs.%s),\n\
-       %srconv_%s_RtoB (rconv_%s_BtoR r) = r.\n\
-       Proof.\n\
-       %sQed."
-      rid
-      indent
-      rid
-      indent
-      rid
-      rid
-      proof
-
-  let print_correctness_lemmas (out : out_channel) (records : record_def list) :
-      unit =
-    print_list
-      out
-      ~delim:("", "\n\n")
-      ~sep:"\n\n"
-      gen_rconv_RtoB_correctness_thm
-      records;
-    print_list
-      out
-      ~delim:("", "\n")
-      ~sep:"\n\n"
-      gen_rconv_BtoR_correctness_thm
-      records
-
-  let print_array_conv_inversibility (out : out_channel) : unit =
-    fprintf
-      out
-      "Theorem transl_array_conv_inv :\n\
-       %sforall (A B: Type) (f: A -> B) (g: B -> A) (Hinv: forall x, g (f x) = \
-       x),\n\
-       %sforall (a: array A), transl_array g (transl_array f a) = a.\n\
-       Proof.\n\
-       %sinduction a as [|a0 a']; intros.\n\
-       %s- reflexivity.\n\
-       %s- simpl. rewrite (Hinv a0). f_equal. apply IHa'.\n\
-       Qed.\n"
-      indent
-      indent
-      indent
-      indent
-      indent
-
-  let print_inversibility (out : out_channel) (records : record_def list) : unit
-      =
-    print_array_conv_inversibility out;
-    fprintf out "\n";
-    print_list out ~delim:("", "\n\n") ~sep:"\n\n" gen_rconv_inv1_thm records;
-    print_list out ~delim:("", "\n") ~sep:"\n\n" gen_rconv_inv2_thm records
-end
-
-module FFI = struct
-  let rec is_simpl_mtyp (ty : mtyp) : bool =
-    match ty with
-    | MBool | MInt32 _ | MInt64 _ | MAbs _ -> true
-    | MRes ty' -> is_simpl_mtyp ty'
-    | _ -> false
-
-  let rec mtyp_to_string (ty : mtyp) : string =
-    match ty with
-    | MBool -> "bool"
-    | MInt32 _ -> "int"
-    | MInt64 _ -> "int64"
-    | MArray ta -> sprintf "array %s" (opt_parens ta)
-    | MEnum te -> sprintf "enum Btypedefs.%s" (ident_to_string te)
-    | MRecord t -> sprintf "record Btypedefs.%s" (ident_to_string t)
-    | MAbs t -> ident_to_string t
-    | MFun (tparams, tret) -> (
-        match tparams with
-        | [] -> sprintf "unit -> %s" (opt_parens tret)
-        | _ ->
-            List.fold_right
-              (fun t acc -> sprintf "%s -> %s" (opt_parens t) acc)
-              tparams
-              (opt_parens tret))
-    | MRes ty' -> sprintf "res %s" (opt_parens ty')
-
-  and opt_parens (ty : mtyp) : string =
-    PrintUtils.opt_parens is_simpl_mtyp mtyp_to_string ty
-
-  let gen_fun_body (fid : ident) (tparams : mtyp list) (tret : mtyp) : string =
-    let rec gen_args (n : int) : string =
-      if n >= List.length tparams then ""
-      else sprintf "a%d %s" n (gen_args (n + 1))
-    in
-    let conv_args : string =
-      snd
-        (List.fold_left
-           (fun (ctr, str) ty ->
-             let arg = sprintf "a%d" ctr in
-             let conv_arg = conv_value BtoR ty arg in
-             if conv_arg = arg then (ctr + 1, str)
-             else
-               let str' =
-                 sprintf
-                   "%s%slet %s := %s in\n"
-                   str
-                   (make_indent 3)
-                   arg
-                   (conv_value BtoR ty arg)
-               in
-               (ctr + 1, str'))
-           (0, "")
-           tparams)
-    in
-    let gen_call () : string =
-      sprintf
-        "%slet* r := %s.%s %sin\n"
-        (make_indent 3)
-        !shallowfile
-        (ident_to_string fid)
-        (gen_args 0)
-    in
-    let gen_return () : string =
-      let tret = BarocqShallowgen.Monadification.unwrap_mtyp tret in
-      sprintf "%sret %s." (make_indent 3) (conv_value_opt_parens RtoB tret "r")
-    in
-    sprintf
-      "%sfun %s=>\n%s%s%s"
-      (make_indent 2)
-      (gen_args 0)
-      conv_args
-      (gen_call ())
-      (gen_return ())
-
-  let gen_ffi_fun (fid : ident) (tparams : (param_attr * mtyp) list)
-      (tret : mtyp) : string =
-    let tparams = List.map snd tparams in
-    sprintf
-      "Definition %s : %s :=\n%s"
-      (ident_to_string fid)
-      (mtyp_to_string (MFun (tparams, tret)))
-      (gen_fun_body fid tparams tret)
-
-  let print_functions (out : out_channel) (defs : globdef list) : unit =
-    fprintf out "Module FFI.\n\n";
-    print_list
-      out
-      (fun (d : BarocqShallow.Monadic.globdef) ->
-        match d with
-        | DeclFun (fid, tparams, tret) ->
-            sprintf "%s%s\n\n" indent (gen_ffi_fun fid tparams tret)
-        | DeclConst (cid, t) ->
-            let cid = ident_to_string cid in
-            sprintf
-              "%sDefinition %s : %s :=\n%s%s.\n\n"
-              indent
-              cid
-              (mtyp_to_string t)
-              (make_indent 2)
-              (conv_value RtoB t (sprintf "%s.%s" !shallowfile cid))
-        | _ -> "")
-      defs;
-    fprintf out "End FFI.\n"
-end
-
 let gen_abs_defs_impl_env (defs : globdef list) : string =
   let rec lassoc (defs : globdef list) : (string * string) list =
     match defs with
@@ -890,8 +203,7 @@ let gen_abs_defs_impl_env (defs : globdef list) : string =
   let genv_list prefix l =
     list_to_string
       ~sep:";\n"
-      (fun (d, s) ->
-        sprintf "%s(%s, VAL Deeptypes.typof_%s FFI.%s)" prefix d s s)
+      (fun (d, s) -> sprintf "%s(%s, VAL Deeptypes.typof_%s %s)" prefix d s s)
       l
   in
   let genv_build genv_list l =
@@ -923,7 +235,7 @@ let gen_const_corres (cid : ident) (ty : mtyp) : string =
       "eval_def %s = OK (VAL Deeptypes.typof_%s %s)"
       (Deepgen.ident_to_deep cid)
       (ident_to_string cid)
-      (conv_value RtoB ty (sprintf "%s.%s" !shallowfile (ident_to_string cid)))
+      (sprintf "%s.%s" !shallowfile (ident_to_string cid))
   in
   sprintf
     "Theorem const_%s_corres :\n%s%s.\nProof.\n%sreflexivity.\nQed."
@@ -935,26 +247,13 @@ let gen_const_corres (cid : ident) (ty : mtyp) : string =
 let fun_corres_deep_call_args (args : (ident * mtyp) list) : string =
   match args with
   | [] -> "tt"
-  | _ ->
-      list_to_string
-        ~sep:" "
-        (fun (aid, aty) ->
-          let aid = ident_to_string aid in
-          conv_value_opt_parens RtoB aty aid)
-        args
+  | _ -> list_to_string ~sep:" " (fun (aid, _) -> ident_to_string aid) args
 
 let fun_corres_shallow_call_ret (indent : string) (call : string) (ty : mtyp) :
     string =
   match ty with
-  | MRes tr ->
-      let v_conv = conv_value RtoB tr "r" in
-      if v_conv = "r" then sprintf "%s%s" indent call
-      else sprintf "%slet* r := %s in\n%sOK (%s)" indent call indent v_conv
-  | _ ->
-      sprintf
-        "%sOK %s"
-        indent
-        (conv_value_opt_parens RtoB ty (sprintf "(%s)" call))
+  | MRes tr -> sprintf "%s%s" indent call
+  | _ -> sprintf "%sOK (%s)" indent call
 
 let fun_corres_forall (params : (ident * mtyp) list) : string =
   match params with
@@ -1299,10 +598,9 @@ module VCgen = struct
     let indent2 = make_indent 2 in
     let indent3 = make_indent 3 in
     let cid_str = ident_to_string cid in
-    let constval_shallow =
-      conv_value RtoB ty (sprintf "%s.%s" !shallowfile cid_str)
-    in
-    if is_abs then sprintf "%sFFI.%s = %s" indent2 cid_str constval_shallow
+    let constval_shallow = sprintf "%s.%s" !shallowfile cid_str in
+    if is_abs then
+      sprintf "%s%s.%s = %s" indent2 !shallowfile cid_str constval_shallow
     else
       let constval_deep =
         sprintf
@@ -1342,7 +640,7 @@ module VCgen = struct
     let call_deep = sprintf "v %s" (fun_corres_deep_call_args params) in
     let call_shallow = fun_corres_shallow_call indent3 fid params tret in
     let funval_deep =
-      if is_abs then sprintf "FFI.%s" fid_shallow
+      if is_abs then sprintf "%s.%s" !shallowfile fid_shallow
       else
         sprintf
           "Barocq.build_funval arch abs_types_impl typing_env ge params_%s \
@@ -1405,9 +703,10 @@ let prelude_imports () : string =
      From compcert Require Import Integers.\n\
      From BarocqComp Require Import Ident Error Maps2 Barray Benum Brecord \
      Types Typing Barocq.\n\
-     From %s Require Import %s %s.\n\n\
+     From %s Require Import %s_Types %s %s.\n\n\
      Import ListNotations.\n\n\
      Open Scope string_scope.\n"
+    !coqlib
     !coqlib
     !shallowfile
     !deepfile
@@ -1418,8 +717,9 @@ let imports () : string =
      From compcert Require Import Integers.\n\
      From BarocqComp Require Import Target Monads Error Barray Brecord Types \
      Barocq.\n\
-     From %s Require Import %s %s %s_CorresPrelude.\n\n\
+     From %s Require Import %s_Types %s %s %s_CorresBD_Prelude.\n\n\
      Open Scope string_scope.\n"
+    !coqlib
     !coqlib
     !shallowfile
     !deepfile
@@ -1427,47 +727,19 @@ let imports () : string =
 
 let print_prelude (out : out_channel) (arch : Target.archi)
     (bprog : Barocq.program) (sprog : program) : unit =
+  shallowfile := sprintf "%s_ShallowB" !coqlib;
+  deepfile := sprintf "%s_Deep" !coqlib;
   let types = sprog.prog_types in
-  let records = get_record_defs types in
-  let enums = get_enum_defs types in
   let defs = sprog.prog_defs in
   fprintf out "%s" (prelude_imports ());
   Deeptypes.print out sprog;
-  Btypedefs.print out sprog;
   fprintf out "\n";
   fprintf out "(** * Abstract types implementation *)\n\n";
   fprintf out "%s" (gen_abs_types_impl_env types);
-  if enums <> [] then begin
-    fprintf out "\n";
-    EnumConv.print_conversions out enums;
-    fprintf out "\n";
-    EnumConv.print_inversibility out enums
-  end;
-  if records <> [] then begin
-    fprintf out "\n";
-    RecordConv.print_conversions out records;
-    fprintf out "\n";
-    RecordConv.print_correctness_lemmas out records;
-    fprintf out "\n";
-    RecordConv.print_inversibility out records
-  end;
   fprintf out "\n";
   fprintf
     out
     "Local Notation \"# X\" := (Types.eval_typ abs_types_impl X) (at level 90).\n";
-  let exists_absdef =
-    List.exists
-      (fun (d : BarocqShallow.Monadic.globdef) ->
-        match d with
-        | DeclConst _ | DeclFun _ -> true
-        | _ -> false)
-      defs
-  in
-  if exists_absdef then begin
-    fprintf out "\n";
-    fprintf out "(** * FFI *)\n\n";
-    FFI.print_functions out defs
-  end;
   fprintf out "\n";
   fprintf out "Definition VAL (t: typ) (v: #t) := Val abs_types_impl t v.\n";
   fprintf out "\n";
@@ -1487,8 +759,10 @@ let print_prelude (out : out_channel) (arch : Target.archi)
     VCgen.print_vc out arch bprog sprog
   end
 
-let print_corres (arch : Target.archi) (out : out_channel) (prog : program) :
+let print_corres (out : out_channel) (arch : Target.archi) (prog : program) :
     unit =
+  shallowfile := sprintf "%s_ShallowB" !coqlib;
+  deepfile := sprintf "%s_Deep" !coqlib;
   let arch_str =
     match arch with
     | Target.Ptr32 -> "Ptr32"

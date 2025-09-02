@@ -1389,7 +1389,7 @@ let gen_absfun_descr (re : renv) (fe : fenv)
     function is defined or declared with this name in the program [p]. *)
 let get_fun_descr (p : program) (fname : string) : fun_descr option =
   let fid = ident_of_string fname in
-  let re = renv_from_record_defs (get_record_defs p.prog_types) in
+  let re = renv_from_record_defs (get_record_typedefs p.prog_types) in
   let rec aux fe defs =
     match defs with
     | [] -> None
@@ -1463,7 +1463,7 @@ let gen_aliasing_program (show_debug : bool) (prog : Imp1Typed.program) :
     match defs with
     | [] -> Errors.OK []
     | d :: defs' -> begin
-        let re = renv_from_record_defs (get_record_defs prog.prog_types) in
+        let re = renv_from_record_defs (get_record_typedefs prog.prog_types) in
         match gen_aliasing_globdef re fe d show_debug with
         | Errors.OK (d', fe') -> begin
             match aux fe' defs' with

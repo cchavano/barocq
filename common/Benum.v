@@ -32,6 +32,12 @@ Proof.
       * decide equality. apply constr_eq_dec.
 Defined.
 
+Definition enum_eq {elems: list ident} (x y: enum elems) :=
+  if enum_eq_dec x y then true else false.
+
+Definition enum_neq {elems: list ident} (x y: enum elems) :=
+ if enum_eq_dec x y then false else true.
+
 Fixpoint make_enum (elems: list ident) (i: ident) : res (enum elems) :=
   match elems as l0 return (res (enum l0)) with
   | [] => fail
@@ -75,7 +81,7 @@ Definition to_i32 {elems: list ident} (e: enum elems) : int :=
   in
   aux elems Int.zero.
 
-Definition of_i32 (i: int) (elems: list ident) : res (enum elems) :=
+Definition of_i32 (elems: list ident)  (i: int) : res (enum elems) :=
   if Int.cmp Clt i Int.zero then fail
   else
     let* ei := list_nth_err elems (I32.to_nat i) in
@@ -94,5 +100,17 @@ Fixpoint match_with {elems: list ident} {A: Type} (e: enum elems) (cases: list (
           if Ident.eq_dec (ident_of_constr e) i then (ret ai)
           else match_with e cases'
       | PWildcard => ret ai
+      end
+  end.
+
+Fixpoint match_with_err {elems: list ident} {A: Type} (e: enum elems) (cases: list (pattern * res A)) : res A :=
+  match cases with
+  | nil => fail
+  | (ei, ai) :: cases' =>
+      match ei with
+      | PIdent i =>
+          if Ident.eq_dec (ident_of_constr e) i then ai
+          else match_with_err e cases'
+      | PWildcard => ai
       end
   end.

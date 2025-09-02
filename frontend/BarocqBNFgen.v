@@ -67,27 +67,54 @@ Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
         let* (li, a1) := norm_expr_aux ifc e1 in
         ret (li, AUnaryOp op a1)
     | EBinaryOp op e1 e2 =>
-        let op_and_or :=
-          match op with
-          | BopAndbool | BopOrbool => true
-          | _ => false
-          end
-        in
+        let* (li1, a1) := norm_expr_aux ifc e1 in
+        let* (li2, a2) := norm_expr_aux ifc e2 in
         if ifc then
-          let* (li1, a1) := norm_expr_aux ifc e1 in
-          let* (li2, a2) := norm_expr_aux ifc e2 in
           ret (li1 ++ li2, ABinaryOp op a1 a2)
         else
           match op with
-          | BopAndbool | BopOrbool =>
+          | BopAndbool =>
               let* x := fresh_var in
-              let* be := norm_expr_rec e in
-              ret ((x, be) :: nil, AVar x)
+              ret (li1 ++ li2 ++ [(x, EIfThenElse a1 (EAtom a2) (EAtom AFalse))], AVar x)
+          | BopOrbool =>
+              let* x := fresh_var in
+              ret (li1 ++ li2 ++ [(x, (EIfThenElse a1 (EAtom ATrue) (EAtom a2)))], AVar x)
           | _ =>
-              let* (li1, a1) := norm_expr_aux ifc e1 in
-              let* (li2, a2) := norm_expr_aux ifc e2 in
               ret (li1 ++ li2, ABinaryOp op a1 a2)
           end
+    | Barocq.EArrayGet e1 e2 =>
+        let* (li1, a1) := norm_expr_aux ifc e1 in
+        let* (li2, a2) := norm_expr_aux ifc e2 in
+        let* x := fresh_var in
+        ret (li1 ++ li2 ++ [(x, EArrayGet a1 a2)], AVar x)
+    | Barocq.EArraySet e1 e2 e3 =>
+        let* (li1, a1) := norm_expr_aux ifc e1 in
+        let* (li2, a2) := norm_expr_aux ifc e2 in
+        let* (li3, a3) := norm_expr_aux ifc e3 in
+        let* x := fresh_var in
+        ret (li1 ++ li2 ++ li3 ++ [(x, EArraySet a1 a2 a3)], AVar x)
+    | Barocq.ERecordProj e1 f =>
+        let* (li1, a1) := norm_expr_aux ifc e1 in
+        let* x := fresh_var in
+        ret (li1 ++ [(x, ERecordProj a1 f)], AVar x)
+    | Barocq.ERecordUpdate e1 f e2 =>
+        let* (li1, a1) := norm_expr_aux ifc e1 in
+        let* (li2, a2) := norm_expr_aux ifc e2 in
+        let* x := fresh_var in
+        ret (li1 ++ li2 ++ [(x, ERecordUpdate a1 f a2)], AVar x)
+    | Barocq.EApp e1 args =>
+        let* (li1, a1) := norm_expr_aux ifc e1 in
+        let* (l_args, a_args) :=
+          List.fold_left
+            (fun acc arg =>
+              let* (acc_l, acc_args) := acc in
+              let* (lia, a) := norm_expr_aux ifc arg in
+              ret (acc_l ++ lia, acc_args ++ [a]))
+            args
+            (ret ([], []))
+        in
+        let* x := fresh_var in
+        ret (li1 ++ l_args ++ [(x, EApp a1 a_args)], AVar x)
     | _ =>
         let* x := fresh_var in
         let* be := norm_expr_rec e in

@@ -388,7 +388,7 @@ Section DENOT.
             let iv := if s then I64.of_bool b else U64.of_bool b in
             ret (Val (TInt64 s) iv)
         | TEnum eid elems =>
-            let* iv := Benum.of_i32 (I32.of_bool b) elems in
+            let* iv := Benum.of_i32 elems (I32.of_bool b) in
             ret (Val (TEnum eid elems) iv)
         | _ => fail
         end
@@ -417,7 +417,7 @@ Section DENOT.
               | Unsigned => I32.of_u32 i
               end
             in
-            let* iv := Benum.of_i32 i elems in
+            let* iv := Benum.of_i32 elems i in
             ret (Val (TEnum eid elems) iv)
         | _ => fail
         end
@@ -446,7 +446,7 @@ Section DENOT.
               | Unsigned => I32.of_u64 i
               end
             in
-            let* iv := Benum.of_i32 i elems in
+            let* iv := Benum.of_i32 elems i in
             ret (Val (TEnum eid elems) iv)
         | _ => fail
         end
@@ -930,11 +930,11 @@ Section DENOT.
         typecheck_match_branches elems v cases' (Some t)
     end. *)
 
-  Definition eval_match (v: value) (cases: list (pattern * value)) : res value :=
+  Definition eval_match (v: value) (cases: list (pattern * (res value))) : res value :=
     let '(Val tv v) := v in
     (match tv as t0 return (eval_typ t0 -> res value) with
     | TEnum _ elems => 
-        (fun v0 => match_with v0 cases)
+        (fun v0 => match_with_err v0 cases)
     | _ => (fun _ => fail)
     end) v.
 
@@ -1036,7 +1036,7 @@ Section DENOT.
         eval_ifthenelse v1 v2 v3
     | EMatch e1 cases =>
         let* v1 := eval_expr te ge le e1 in
-        let* vcases := MapList.map_err (eval_expr te ge le) cases in
+        let vcases := MapList.map (eval_expr te ge le) cases in
         eval_match v1 vcases
     | ELetIn x e1 e2 =>
         let* v1 := eval_expr te ge le e1 in
@@ -1231,8 +1231,9 @@ Section DENOT.
             let* ge' := eval_def_fun te ge x f in
             eval_prog_rec te ge' prog'
         | DeclType _ _ => eval_prog_rec te ge prog'
-        | DeclConst y bt => let* _ := eval_decl_const te ge y bt in
-                            eval_prog_rec te ge prog'
+        | DeclConst y bt =>
+            let* _ := eval_decl_const te ge y bt in
+            eval_prog_rec te ge prog'
         | DeclFun y params tret =>
             let* _ := eval_decl_fun te ge y params tret in
             eval_prog_rec te ge prog'
@@ -1245,7 +1246,7 @@ Section DENOT.
   (** Redefinition of eval_def by computing the whole global environment first *)
 
   Definition eval_def2 (impl: genv) (prog: program) (x: ident) : res value :=
-    let* (_,ge) := eval_prog impl prog in
+    let* (_, ge) := eval_prog impl prog in
     genv_get ge x.
 
 End DENOT.

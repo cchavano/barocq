@@ -67,9 +67,10 @@ Separate Extraction
   Compiler.compile_to_imp1
   Compiler.compile
   BarocqShallowgen.monadify_norm_program
-  BarocqShallow.Monadic.get_record_defs
-  BarocqShallow.Monadic.get_enum_defs
+  BarocqShallow.Monadic.get_enum_typedefs
+  BarocqShallow.Monadic.get_record_typedefs
+  BarocqShallow.Monadic.get_abstract_typedefs
   Imp1.Aliasing_AST.program
-  Syntax.get_record_defs
+  Syntax.get_record_typedefs
   Ident
   BarocqVC.
