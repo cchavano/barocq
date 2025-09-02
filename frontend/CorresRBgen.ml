@@ -69,18 +69,24 @@ let fun_corres_forall (params : (ident * mtyp) list) : string =
   | [] -> ""
   | _ -> sprintf "forall %s," (Shallowgen.param_list_to_rocq params)
 
+let args_to_string (args : (ident * mtyp) list) : string =
+  match args with
+  | [] -> "tt"
+  | _ -> list_to_string ~sep:" " ident_to_string (List.map fst args)
+
 let fun_corres_shallowR_call (indent : string) (fid : ident)
     (params : (ident * mtyp) list) (tr : mtyp) (tb : mtyp) : string =
-  let args =
-    match params with
-    | [] -> "tt"
-    | _ -> list_to_string ~sep:" " ident_to_string (List.map fst params)
+  let call =
+    sprintf
+      "%s_ShallowR.%s %s"
+      !coqlib
+      (ident_to_string fid)
+      (args_to_string params)
   in
-  let call = sprintf "%s_ShallowR.%s %s" !coqlib (ident_to_string fid) args in
   fun_corres_shallowR_call_ret indent call tr tb
 
-let gen_fun_corres (fid : ident) (params : (ident * mtyp) list) (tr : mtyp)
-    (tb : mtyp) : string =
+let gen_fun_corres (is_abs : bool) (fid : ident) (params : (ident * mtyp) list)
+    (tr : mtyp) (tb : mtyp) : string =
   let forall = fun_corres_forall params in
   let fid_shallow = ident_to_string fid in
   let call_shallowB =
@@ -102,7 +108,46 @@ let gen_fun_corres (fid : ident) (params : (ident * mtyp) list) (tr : mtyp)
         call_shallowB
         call_shallowR
   in
-  sprintf "Theorem fun_%s_corres : \n%s.\nAdmitted." fid_shallow corres
+  if is_abs then
+    let proof =
+      let rewrites_conv =
+        List.fold_left
+          (fun acc (_, mty) ->
+            match mty with
+            | MEnum eid ->
+                sprintf
+                  "%s%srewrite econv_%s_inv1.\n"
+                  acc
+                  indent
+                  (ident_to_string eid)
+            | MRecord rid ->
+                sprintf
+                  "%s%srewrite rconv_%s_inv1.\n"
+                  acc
+                  indent
+                  (ident_to_string rid)
+            | _ -> acc)
+          ""
+          params
+      in
+      sprintf
+        "%sintros. unfold %s_ShallowB.%s.\n\
+         %s%sdestruct (%s_ShallowR.%s %s); reflexivity."
+        indent
+        !coqlib
+        fid_shallow
+        rewrites_conv
+        indent
+        !coqlib
+        fid_shallow
+        (args_to_string params)
+    in
+    sprintf
+      "Theorem fun_%s_corres : \n%s.\nProof.\n%s\nQed."
+      fid_shallow
+      corres
+      proof
+  else sprintf "Theorem fun_%s_corres : \n%s.\nAdmitted." fid_shallow corres
 
 let params_of_absfun (tparams : (param_attr * mtyp) list) : (ident * mtyp) list
     =
@@ -115,12 +160,12 @@ let gen_def_corres (rdef : globdef) (bdef : globdef) : string =
       if rcid = bcid then gen_const_corres rcid rty else assert false
   | DefFun (rfid, rf), DefFun (bfid, bf) ->
       if rfid = bfid then
-        gen_fun_corres rfid rf.fn_params rf.fn_return bf.fn_return
+        gen_fun_corres false rfid rf.fn_params rf.fn_return bf.fn_return
       else assert false
   | DeclFun (rfid, rtparams, tr), DeclFun (bfid, btparams, tb) ->
       if rfid = bfid then
         let params = params_of_absfun rtparams in
-        gen_fun_corres rfid params tr tb
+        gen_fun_corres true rfid params tr tb
       else assert false
   | _ -> assert false
 
