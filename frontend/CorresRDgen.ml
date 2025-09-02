@@ -214,12 +214,40 @@ let gen_fun_corres (fid : ident) (params : (ident * mtyp) list) (tret : mtyp) :
     else
       sprintf "%s(%s\n%s %s =\n%s)" indent forall indent call_deep call_shallow
   in
+  let proof =
+    sprintf
+      "%spose proof %s_CorresBD.fun_%s_corres as [%s_val [Heval HcorresBD]].\n\
+       %sexists %s_val. split.\n\
+       %s- exact Heval.\n\
+       %s- intros.%s\n\
+       %srewrite HcorresBD. rewrite %s_CorresRB.fun_%s_corres.\n\
+       %sreflexivity."
+      indent
+      !coqlib
+      fid_shallow
+      fid_shallow
+      indent
+      fid_shallow
+      indent
+      indent
+      (if params <> [] then
+         sprintf
+           " specialize (HcorresBD %s)."
+           (fun_corres_deep_call_args params)
+       else "")
+      (make_indent 2)
+      !coqlib
+      fid_shallow
+      (make_indent 2)
+  in
   sprintf
     "Theorem fun_%s_corres :\n\
      %sexists %s_val,\n\
      %seval_def %s = OK (VAL Deeptypes.typof_%s %s_val) /\\\n\
      %s.\n\
-     Admitted."
+     Proof.\n\
+     %s\n\
+     Qed."
     fid_shallow
     indent
     fid_shallow
@@ -228,6 +256,7 @@ let gen_fun_corres (fid : ident) (params : (ident * mtyp) list) (tret : mtyp) :
     fid_shallow
     fid_shallow
     corres
+    proof
 
 let params_of_absfun (tparams : (param_attr * mtyp) list) : (ident * mtyp) list
     =
@@ -254,12 +283,13 @@ let imports () : string =
      From BarocqComp Require Import Target Monads Error Barray Brecord Types \
      Barocq.\n\
      From %s Require Import %s_Types %s %s %s_CorresBD_Prelude.\n\
-     From %s Require %s_CorresBD.\n\n\
+     From %s Require %s_CorresRB %s_CorresBD.\n\n\
      Open Scope string_scope.\n"
     !coqlib
     !coqlib
     !shallowfile
     !deepfile
+    !coqlib
     !coqlib
     !coqlib
     !coqlib
