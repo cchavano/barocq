@@ -46,7 +46,7 @@ let int_to_rocq (i : Integers.Int.int) (ty : mtyp) : string =
   let si =
     if Integers.Int.lt i Integers.Int.zero then sprintf "(%s)" si else si
   in
-  sprintf "Int.repr %s%%Z" si
+  sprintf "Int.repr %s" si
 
 let int64_to_rocq (i : Integers.Int64.int) (ty : mtyp) : string =
   let si =
@@ -58,7 +58,7 @@ let int64_to_rocq (i : Integers.Int64.int) (ty : mtyp) : string =
   let si =
     if Integers.Int64.lt i Integers.Int64.zero then sprintf "(%s)" si else si
   in
-  sprintf "Int64.repr %s%%Z" si
+  sprintf "Int64.repr %s" si
 
 let cast_to_rocq (src_ty : mtyp) (dst_ty : mtyp) : string =
   let modl ty =
@@ -581,10 +581,10 @@ module SR = struct
       match elems with
       | [] -> assert false
       | ex :: [] ->
-          sprintf "%s| %s => Int.repr %d%%Z" indent (ident_to_string ex) acc
+          sprintf "%s| %s => Int.repr %d" indent (ident_to_string ex) acc
       | ex :: elems' ->
           sprintf
-            "%s| %s => Int.repr %d%%Z\n%s"
+            "%s| %s => Int.repr %d\n%s"
             indent
             (ident_to_string ex)
             acc
@@ -600,43 +600,43 @@ module SR = struct
 
   let gen_i32_enum_cast (ed : enum_def) : string =
     let eid = ident_to_string ed.ed_name in
-    let gen_int_cast (elems : ident list) : string =
-      let rec aux (elems : ident list) (acc : int) =
-        match elems with
-        | [] -> sprintf "%selse fail" indent
-        | ex :: elems' ->
-            sprintf
-              "%selse if Int.eq i (Int.repr %d%%Z) then\n%sret %s\n%s"
-              indent
-              acc
-              (make_indent 2)
-              (ident_to_string ex)
-              (aux elems' acc)
-      in
-      match elems with
-      | [] -> assert false
-      | ex :: elems' ->
-          sprintf
-            "%sif Int.eq i (Int.repr %d%%Z) then \n%sret %s\n%s"
-            indent
-            0
-            (make_indent 2)
-            (ident_to_string ex)
-            (aux elems 1)
+    let cast_body =
+      sprintf
+        "%slet ni := I32.to_nat i in\n\
+         %sif Int.cmp Clt i Int.zero || Nat.leb %d%%nat ni then fail\n\
+         %selse\n\
+         %slist_nth_err\n\
+         %s[\n\
+         %s\n\
+         %s]\n\
+         %sni"
+        indent
+        indent
+        (List.length ed.ed_elems)
+        indent
+        (make_indent 2)
+        (make_indent 3)
+        (list_to_string
+           ~sep:";\n"
+           (fun constr ->
+             sprintf "%s%s" (make_indent 4) (ident_to_string constr))
+           ed.ed_elems)
+        (make_indent 3)
+        (make_indent 3)
     in
-
     sprintf
       "Definition cast_i32_to_%s (i: int) : res %s :=\n%s."
       eid
       eid
-      (gen_int_cast ed.ed_elems)
+      cast_body
 
   let imports : string =
     "From Coq Require Import Bool List BinIntDef.\n\
      From compcert Require Import Integers.\n\
      From RecordUpdate Require Import RecordUpdate.\n\
-     From BarocqComp Require Import Error Barray Intop.\n\
+     From BarocqComp Require Import Error Barray Intop Utils.\n\
      Import BoolNotations ListNotations.\n\n\
+     Open Scope Z_scope.\n\
      Open Scope error_monad_scope.\n"
 
   let print_program (out : out_channel) (prog : program) : unit =
@@ -869,6 +869,7 @@ module SB = struct
        From BarocqComp Require Import Ident Error Barray Benum Brecord Intop.\n\
        From %s Require Import %s_Types.\n\
        Import BoolNotations ListNotations.\n\n\
+       Open Scope Z_scope.\n\
        Open Scope string_scope.\n\
        Open Scope error_monad_scope.\n"
       !coqlib

@@ -1,4 +1,4 @@
-From Coq Require Import List.
+From Coq Require Import List Bool.
 From compcert Require Import Integers.
 From BarocqComp Require Import Ident Intop Error Utils.
 
@@ -81,8 +81,9 @@ Definition to_i32 {elems: list ident} (e: enum elems) : int :=
   in
   aux elems Int.zero.
 
-Definition of_i32 (elems: list ident)  (i: int) : res (enum elems) :=
-  if Int.cmp Clt i Int.zero then fail
+Definition of_i32 (elems: list ident) (i: int) : res (enum elems) :=
+  if Int.cmp Clt i Int.zero
+     || Nat.leb (List.length elems) (I32.to_nat i) then fail
   else
     let* ei := list_nth_err elems (I32.to_nat i) in
     make_enum elems ei.

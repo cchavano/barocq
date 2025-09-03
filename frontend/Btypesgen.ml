@@ -582,13 +582,64 @@ module RecordConv = struct
     print_list out ~delim:("", "\n") ~sep:"\n\n" gen_rconv_inv2_thm records
 end
 
+let gen_i32_enum_cast_corres (ed : enum_def) : string =
+  let eid = ident_to_string ed.ed_name in
+  let nb_elems = List.length ed.ed_elems in
+  let rec int_to_nat_destruct (i : int) : string =
+    if i <= 0 then sprintf "[| n]"
+    else sprintf "[| %s]" (int_to_nat_destruct (i - 1))
+  in
+  let proof : string =
+    sprintf
+      "%sintro. unfold Benum.of_i32. unfold cast_i32_to_%s.\n\
+       %sassert (Hlength: List.length elems_of_%s = %d%%nat). reflexivity. \
+       rewrite Hlength.\n\
+       %sdestruct (Int.cmp Clt i Int.zero); destruct (Nat.leb %d%%nat \
+       (Intop.I32.to_nat i)); simpl; try reflexivity.\n\
+       %sdestruct (Intop.I32.to_nat i) as %s; reflexivity."
+      indent
+      eid
+      indent
+      eid
+      nb_elems
+      indent
+      nb_elems
+      indent
+      (int_to_nat_destruct nb_elems)
+  in
+  sprintf
+    "Lemma cast_i32_to_%s_corres :\n\
+     %sforall (i: int),\n\
+     %sBenum.of_i32 %s_Types.elems_of_%s i =\n\
+     %smatch %s_ShallowR.cast_i32_to_%s i with\n\
+     %s| OK en => OK (econv_%s_RtoB en)\n\
+     %s| Error e => Error e\n\
+     %send.\n\
+     Proof.\n\
+     %s\n\
+     Qed."
+    eid
+    indent
+    indent
+    !coqlib
+    eid
+    indent
+    !coqlib
+    eid
+    indent
+    eid
+    indent
+    indent
+    proof
+
 let imports () : string =
   sprintf
-    "From Coq Require Import List String.\n\
+    "From Coq Require Import List String BinIntDef.\n\
      From compcert Require Import Integers.\n\
      From BarocqComp Require Import Ident Error Barray Benum Brecord.\n\
      From %s Require Import %s_ShallowR.\n\
      Import ListNotations.\n\n\
+     Open Scope Z_scope.\n\
      Open Scope string_scope.\n"
     !coqlib
     !coqlib
@@ -621,7 +672,12 @@ let print (out : out_channel) (prog : program) : unit =
     fprintf out "\n";
     EnumConv.print_conversions out enums;
     fprintf out "\n";
-    EnumConv.print_inversibility out enums
+    EnumConv.print_inversibility out enums;
+    fprintf out "\n";
+    fprintf
+      out
+      "(** * Correspondence between the i32 to enum cast operations *)\n\n";
+    print_list out ~delim:("", "\n") ~sep:"\n\n" gen_i32_enum_cast_corres enums
   end;
   if records <> [] then begin
     fprintf out "\n";

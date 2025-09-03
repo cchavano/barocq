@@ -15,7 +15,7 @@ let int_to_deep (i : Integers.Int.int) (s : signedness) : string =
   let si =
     if Integers.Int.lt i Integers.Int.zero then sprintf "(%s)" si else si
   in
-  sprintf "Int.repr %s%%Z" si
+  sprintf "Int.repr %s" si
 
 let tint64o_deep (i : Integers.Int64.int) (s : signedness) : string =
   let si =
@@ -26,7 +26,7 @@ let tint64o_deep (i : Integers.Int64.int) (s : signedness) : string =
   let si =
     if Integers.Int64.lt i Integers.Int64.zero then sprintf "(%s)" si else si
   in
-  sprintf "Int64.repr %s%%Z" si
+  sprintf "Int64.repr %s" si
 
 let unary_op_to_deep (op : unary_op) : string =
   match op with
@@ -334,6 +334,7 @@ let imports : string =
    From compcert Require Import Integers.\n\
    From BarocqComp Require Import Ident Types Syntax Benum Barocq.\n\
    Import ListNotations.\n\n\
+   Open Scope Z_scope.\n\
    Open Scope string_scope.\n"
 
 let print_program (out : out_channel) (prog : program) : unit =
