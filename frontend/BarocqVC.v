@@ -3,7 +3,7 @@
 
 From Coq Require Import String List.
 From compcert Require Import Integers Maps.
-From BarocqComp Require Import Target Ident Monads Error Barray Brecord Types Barocq Maps2 MergeSort.
+From BarocqComp Require Import Target Ident Monads Error Barray Brecord Types Barocq Maps2 MergeSort Utils.
 From compcert Require Import Coqlib.
 From Coq Require Import ZifyBool.
 
