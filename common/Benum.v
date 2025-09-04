@@ -115,3 +115,98 @@ Fixpoint match_with_err {elems: list ident} {A: Type} (e: enum elems) (cases: li
       | PWildcard => ai
       end
   end.
+
+(** Brute force proof principle for enumeration types *)
+
+Fixpoint forallb_enum (l: list ident) (P : enum l -> bool) {struct l}: bool.
+Proof.
+  destruct l.
+  - exact false.
+  - specialize (forallb_enum l).
+    destruct l.
+    + simpl in P. apply (P (Constr i)).
+    + change (enum (i :: i0 ::l)) with (constr i + enum (i0::l))%type in P.
+      apply andb.
+      apply (P (inl (Constr i))).
+      apply (forallb_enum (fun x => P (inr x))).
+Defined.
+
+Fixpoint forallb_enum_correct (l:list ident) : forall P, forallb_enum l P = true->
+                                         forall e, P e = true.
+Proof.
+  destruct l.
+  - simpl. discriminate.
+  - intros.
+    specialize (forallb_enum_correct  l).
+    destruct l.
+    + simpl in H. destruct e. assumption.
+    +
+      change (enum (i :: i0 ::l)) with
+        (constr i + (enum (i0 ::l)))%type in e.
+      specialize (forallb_enum_correct (fun x => P (inr x))).
+      unfold forallb_enum in H; fold forallb_enum in H.
+      rewrite andb_true_iff in H.
+      destruct e.
+      * destruct c. tauto.
+      *  apply forallb_enum_correct.
+         destruct H.
+         auto.
+Qed.
+
+Lemma enum_eq_sound : forall l (x y: enum l),
+    enum_eq x y = true ->
+    x = y.
+Proof.
+  unfold enum_eq. intros.
+  destruct (enum_eq_dec x y); auto.
+  congruence.
+Qed.
+
+Lemma forallb_enum_equal : forall (l:list ident) (F: enum l -> enum l),
+  forallb_enum l (fun e : enum l => enum_eq (F e) e) =
+  true ->
+  forall e, F e = e.
+Proof.
+  intros.
+  apply enum_eq_sound.
+  revert e.
+  apply forallb_enum_correct; auto.
+Qed.
+
+Definition cast_eqb {A: Type} (l:list ident) (F : A -> enum l) (l1:list ident)  (l2:list A) :=
+  forall2b (fun x y => match make_enum l x with
+                       | Error _ => false
+                       | OK e    => enum_eq e (F y)
+                       end) l1 l2.
+
+Lemma cast_eqb_sound : forall {A: Type} (l:list ident) (F: A -> enum l) (l': list A) (n:nat),
+    cast_eqb l F l l' = true ->
+    (let* ei := Utils.list_nth_err l n
+     in make_enum l ei) =
+      (let* en := Utils.list_nth_err l' n in eret (F en)).
+Proof.
+  intros.
+  assert (forall l1 l2,
+             cast_eqb l F l1 l2 = true ->
+             (let* ei := list_nth_err l1 n in make_enum l ei) = (let* en := list_nth_err l2 n in eret (F en))).
+  { clear H.
+    unfold cast_eqb.
+    set (G := (fun (x : ident) (y : A) => match make_enum l x with
+                                | OK e => enum_eq e (F y)
+                                | Error _ => false
+                                end)).
+    unfold list_nth_err.
+    intro l1; revert n.
+    induction l1;destruct l2; try discriminate.
+    - simpl. rewrite! nth_error_nil.
+      reflexivity.
+    - simpl.
+      intros.
+      destruct (G a a0) eqn:EQG; try discriminate.
+      destruct n; simpl.
+      + unfold G in EQG. destruct (make_enum l a); try discriminate.
+        apply enum_eq_sound in EQG. unfold eret ; congruence.
+      + apply (IHl1 n); auto.
+  }
+  apply H0;auto.
+Qed.

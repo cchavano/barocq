@@ -9,19 +9,6 @@ From Coq Require Import ZifyBool.
 
 Open Scope string_scope.
 
-Section S.
-  (** is-it already defined elsewhere? *)
-  Context {A B: Type}.
-  Variable f : A -> B -> bool.
-
-  Fixpoint forall2b  (l1: list A) (l2: list B) {struct l1} : bool :=
-    match l1 , l2 with
-  | nil , nil => true
-  | e1::l1, e2::l2 => if f e1 e2 then forall2b l1 l2 else false
-  | _ , _ => false
-  end.
-
-End S.
 
 (** Use [nodup] using MergeSort
 Fixpoint nodup {A: Type} (eqb: A -> A -> bool) (l:list A) : bool :=
