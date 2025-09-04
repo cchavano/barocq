@@ -40,15 +40,7 @@ let fun_corres_shallowR_call_ret (indent : string) (call : string) (tr : mtyp)
   | MRes tr, MRes _ ->
       let v_conv = Btypesgen.conv_value Btypesgen.RtoB tr "r" in
       if v_conv = "r" then sprintf "%s%s" indent call
-      else
-        sprintf
-          "%smatch %s with\n%s| OK r => OK (%s)\n%s| Error e => Error e\n%send"
-          indent
-          call
-          indent
-          v_conv
-          indent
-          indent
+      else sprintf "%slet* r := %s in\n%sOK (%s)" indent call indent v_conv
   | _, MRes _ ->
       sprintf
         "%sOK %s"

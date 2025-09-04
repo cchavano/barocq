@@ -230,8 +230,8 @@ module EnumConv = struct
        %sforall (e: %s),\n\
        %seconv_%s_RtoB (econv_%s_BtoR e) = e.\n\
        Proof.\n\
-       %sintro. repeat destruct e; simpl; try (destruct c; reflexivity).\n\
-       %sdestruct e. reflexivity.\n\
+       %sapply Benum.forallb_enum_equal.\n\
+       %sreflexivity.\n\
        Qed."
       eid
       indent
@@ -585,36 +585,34 @@ end
 let gen_i32_enum_cast_corres (ed : enum_def) : string =
   let eid = ident_to_string ed.ed_name in
   let nb_elems = List.length ed.ed_elems in
-  let rec int_to_nat_destruct (i : int) : string =
+  (* let rec int_to_nat_destruct (i : int) : string =
     if i <= 0 then sprintf "[| n]"
     else sprintf "[| %s]" (int_to_nat_destruct (i - 1))
-  in
+  in *)
   let proof : string =
     sprintf
       "%sintro. unfold Benum.of_i32. unfold cast_i32_to_%s.\n\
        %sassert (Hlength: List.length elems_of_%s = %d%%nat). reflexivity. \
        rewrite Hlength.\n\
-       %sdestruct (Int.cmp Clt i Int.zero); destruct (Nat.leb %d%%nat \
-       (Intop.I32.to_nat i)); simpl; try reflexivity.\n\
-       %sdestruct (Intop.I32.to_nat i) as %s; reflexivity."
+       %sdestruct (Int.cmp Clt i Int.zero). reflexivity.\n\
+       %sdestruct (Nat.leb %d%%nat (Intop.I32.to_nat i)). reflexivity.\n\
+       %sapply cast_eqb_sound. reflexivity."
       indent
       eid
       indent
       eid
       nb_elems
       indent
+      indent
       nb_elems
       indent
-      (int_to_nat_destruct nb_elems)
   in
   sprintf
     "Lemma cast_i32_to_%s_corres :\n\
      %sforall (i: int),\n\
      %sBenum.of_i32 %s_Types.elems_of_%s i =\n\
-     %smatch %s_ShallowR.cast_i32_to_%s i with\n\
-     %s| OK en => OK (econv_%s_RtoB en)\n\
-     %s| Error e => Error e\n\
-     %send.\n\
+     %slet* e := %s_ShallowR.cast_i32_to_%s i in\n\
+     %sOK (econv_%s_RtoB e).\n\
      Proof.\n\
      %s\n\
      Qed."
@@ -628,8 +626,6 @@ let gen_i32_enum_cast_corres (ed : enum_def) : string =
     eid
     indent
     eid
-    indent
-    indent
     proof
 
 let imports () : string =
