@@ -439,24 +439,15 @@ module RecordConv = struct
         (fun (fname, fty) -> field_conv fname fty)
         rd.rd_fields
     in
-    let record_destruct =
-      List.fold_right
-        (fun (fname, fty) acc ->
-          sprintf "[[%s] %s]" (ident_to_string fname) acc)
-        rd.rd_fields
-        "[]"
-    in
     let proof =
       sprintf
         "Proof.\n\
-         %s(* intros b r Hconv. unfold rconv_%s_BtoR in Hconv. compute in b.\n\
-         %sdestruct b as %s.\n\
-         %sdestruct Hconv. simpl. repeat esplit. *)\n\
-         Admitted."
+         %sBrecord.apply_decomp_field.\n\
+         %sunfold rconv_Types_proc_t_BtoR.\n\
+         %sintros. compute. subst. repeat esplit.\n\
+         Qed."
         indent
-        rid
         indent
-        record_destruct
         indent
     in
     sprintf
@@ -585,10 +576,6 @@ end
 let gen_i32_enum_cast_corres (ed : enum_def) : string =
   let eid = ident_to_string ed.ed_name in
   let nb_elems = List.length ed.ed_elems in
-  (* let rec int_to_nat_destruct (i : int) : string =
-    if i <= 0 then sprintf "[| n]"
-    else sprintf "[| %s]" (int_to_nat_destruct (i - 1))
-  in *)
   let proof : string =
     sprintf
       "%sintro. unfold Benum.of_i32. unfold cast_i32_to_%s.\n\
