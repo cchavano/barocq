@@ -60,6 +60,78 @@ Fixpoint make_enum (elems: list ident) (i: ident) : res (enum elems) :=
        end
   end.
 
+Fixpoint mk_enum (elems:list ident) (s:ident) : forall (H : existsb  (String.eqb s) elems = true), enum elems.
+Proof.
+  destruct elems; intro EX.
+  + simpl in EX. discriminate.
+  + simpl in EX.
+    destruct (String.eqb s i).
+    { destruct elems.
+      apply (Constr i).
+      apply (inl (Constr i)). }
+    { unfold orb in EX.
+      specialize (mk_enum elems s EX).
+      destruct elems.
+      discriminate.
+      apply (inr (mk_enum)).
+    }
+Defined.
+
+Lemma make_enum_mk_enum : forall elems s e,
+    make_enum elems s = OK e -> exists H, mk_enum elems s H = e.
+Proof.
+  induction elems.
+  - simpl. discriminate.
+  - simpl. intros.
+    destruct (eq_dec s a).
+    + simpl.
+      inversion H; subst; clear H.
+      rewrite String.eqb_refl.
+      simpl. exists (eq_refl).
+      destruct elems; auto.
+    + destruct (make_enum elems s) eqn:REC; try discriminate.
+      inversion H ; subst; clear H.
+      destruct (IHelems  _ _ REC).
+      assert (EX : String.eqb s a
+         || existsb (String.eqb s) elems = true).
+      { rewrite orb_comm.
+        rewrite x. reflexivity.
+      }
+      destruct (String.eqb s a) eqn:EQB.
+      *  apply String.eqb_eq in EQB.
+         congruence.
+      *  destruct elems.
+         discriminate.
+         exists x.
+         congruence.
+Qed.
+
+Lemma mk_enum_make_enum : forall elems s  H,
+    make_enum elems s = OK (mk_enum elems s H).
+Proof.
+  induction elems.
+  - simpl. discriminate.
+  - simpl. intros.
+    destruct (eq_dec s a).
+    + simpl.
+      subst.
+      destruct (String.eqb a a) eqn:E.
+      * destruct elems.
+      reflexivity.
+      reflexivity.
+      * exfalso.
+        generalize (String.eqb_refl a); congruence.
+    + destruct (String.eqb s a) eqn:E.
+      simpl in H.
+      destruct H.
+      rewrite String.eqb_eq in E. congruence.
+      simpl in H.
+      rewrite IHelems with (H:=H).
+      destruct elems.
+      discriminate.
+      reflexivity.
+Qed.
+
 Definition ident_of_constr {elems: list ident} (e: enum elems) : ident.
   induction elems as [| e0 elems0].
   - destruct e.
