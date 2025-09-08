@@ -503,15 +503,25 @@ module RecordConv = struct
       proof
 
   let gen_rconv_inv2_thm (rd : record_def) : string =
+    let rec field_need_conv (fty : mtyp) : bool =
+      match fty with
+      | MArray ta -> field_need_conv ta
+      | MEnum _ | MRecord _ -> true
+      | _ -> false
+    in
     let rid = ident_to_string rd.rd_name in
     let proof =
+      let refl_of_f_equal =
+        if List.exists (fun (_, fty) -> field_need_conv fty) rd.rd_fields then
+          "simpl; repeat f_equal"
+        else "reflexivity"
+      in
       sprintf
-        "%sintro. destruct_record r. unfold rconv_%s_RtoB.\n\
-         %ssimpl. repeat f_equal.\n\
-         %s"
+        "%sBrecord.apply_decomp_field. unfold rconv_%s_RtoB.\n%s%s.\n%s"
         indent
         rid
         indent
+        refl_of_f_equal
         (list_to_string
            (fun s -> if s <> "" then sprintf "%s- %s\n" indent s else s)
            (List.map
