@@ -962,6 +962,20 @@ Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res 
         (eret STree.empty)
     in
     let* body := monadify_expr me gx lx (Syntax.fn_body f) in
+    let body :=
+      let tret := typof_expr body in
+      match shver with
+      | ShallowR => body
+      | ShallowB =>
+          match tret with
+          | MRes _ => body
+          | _ =>
+              ELetIn "r"%string body
+                (ERet (EAtom (AVar "r"%string tret) tret) (MRes tret))
+                (MRes tret)
+          end
+      end
+    in
     eret {|
       fn_return := typof_expr body;
       fn_params := params;

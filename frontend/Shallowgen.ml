@@ -725,46 +725,21 @@ module SB = struct
 
   let print_enum_constructors (out : out_channel) (ed : enum_def) : unit =
     let eid = ident_to_string ed.ed_name in
-    let rec aux (elems : ident list) (constr : string) (parens : string) : unit
-        =
+    let rec aux (elems : ident list) : unit =
       match elems with
-      | [] -> assert false
-      | i :: [] ->
-          fprintf
-            out
-            "\nDefinition %s : %s :=\n%s%s (Constr %s)%s.\n"
-            (ident_to_string i)
-            eid
-            indent
-            constr
-            (Deepgen.ident_to_deep i)
-            parens
+      | [] -> ()
       | i :: elems' ->
-          let constr' = sprintf "%s (inr" constr in
-          let parens' = sprintf "%s)" parens in
           fprintf
             out
-            "\nDefinition %s : %s :=\n%s%s (inl (Constr %s))%s.\n"
+            "\nDefinition %s : %s :=\n%sBenum.mk_enum elems_of_%s %s eq_refl.\n"
             (ident_to_string i)
             eid
             indent
-            constr
-            (Deepgen.ident_to_deep i)
-            parens;
-
-          aux elems' constr' parens'
+            eid
+            (Deepgen.ident_to_deep i);
+          aux elems'
     in
-    match ed.ed_elems with
-    | [] -> assert false
-    | i :: elems' ->
-        fprintf
-          out
-          "\nDefinition %s : %s :=\n%sinl (Constr %s).\n"
-          (ident_to_string i)
-          eid
-          indent
-          (Deepgen.ident_to_deep i);
-        aux elems' "inr" ""
+    aux ed.ed_elems
 
   let field_typ_to_rocq ((fname, fty) : ident * mtyp) : string =
     sprintf
