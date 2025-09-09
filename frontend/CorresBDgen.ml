@@ -318,86 +318,25 @@ let print_defs_corres (out : out_channel) (defs : globdef list) : unit =
     defs
 
 let gen_def_property (d : globdef) : string =
-  let indent3 = make_indent 3 in
-  let indent4 = make_indent 4 in
   let gen_const_property (cid : ident) : string =
     let cid_str = ident_to_string cid in
     sprintf
-      "(%s,\n\
-       %sfun (t: typ) (v: #t) =>\n\
-       %smatch typ_eq_dec t Deeptypes.typof_%s with\n\
-       %s| left EQ => cast EQ v = %s.%s\n\
-       %s| _ => False\n\
-       %send)"
+      "(%s,VAL Deeptypes.typof_%s %s.%s)"
       (Deepgen.ident_to_deep cid)
-      indent3
-      indent4
       cid_str
-      indent4
       !shallowfile
       cid_str
-      indent4
-      indent4
-  in
-  let gen_fun_property (fid : ident) (params : (ident * mtyp) list)
-      (tret : mtyp) : string =
-    let fid_deep = Deepgen.ident_to_deep fid in
-    let fid_shallow = ident_to_string fid in
-    let forall =
-      if params = [] then ""
-      else sprintf "%s%s\n" (make_indent 6) (fun_corres_forall params)
-    in
-    let call_deep =
-      sprintf "(cast EQ v) %s" (fun_corres_deep_call_args params)
-    in
-    let call_shallow =
-      fun_corres_shallow_call (make_indent 6) fid params tret
-    in
-    sprintf
-      "(%s,\n\
-       %sfun (t: typ) (v: #t) =>\n\
-       %smatch typ_eq_dec t Deeptypes.typof_%s with\n\
-       %s| left EQ =>\n\
-       %s%s%s =\n\
-       %s\n\
-       %s| _ => False\n\
-       %send)"
-      fid_deep
-      indent3
-      indent4
-      fid_shallow
-      indent4
-      forall
-      (make_indent 6)
-      call_deep
-      call_shallow
-      indent4
-      indent4
   in
   match d with
   | DefConst (cid, _, _) | DeclConst (cid, _) -> gen_const_property cid
-  | DefFun (fid, f) -> gen_fun_property fid f.fn_params f.fn_return
-  | DeclFun (fid, tparams, tret) ->
-      let params = params_of_absfun tparams in
-      gen_fun_property fid params tret
+  | DefFun (fid, _) -> gen_const_property fid
+  | DeclFun (fid, _, _) -> gen_const_property fid
 
 let print_properties_envs (out : out_channel) (defs : globdef list) : unit =
   let propt =
-    "Definition propt : Type := string * (forall t : typ, # t -> Prop)."
-  in
-  let cast =
-    "Definition cast {t1 t2: typ} := @Types.typ_cast t1 t2 abs_types_impl."
-  in
-  let has_property =
-    sprintf
-      "Definition has_property (ge : genv abs_types_impl) (p : propt) :=\n\
-       %sexists t (v: #t), genv_get abs_types_impl ge (fst p) = OK (VAL t v) \
-       /\\ (snd p) t v."
-      indent
+    "Definition propt : Type := string * value abs_types_impl."
   in
   fprintf out "%s\n" propt;
-  fprintf out "\n";
-  fprintf out "%s\n" cast;
   fprintf out "\n";
   let decls =
     List.filter
@@ -429,9 +368,7 @@ let print_properties_envs (out : out_channel) (defs : globdef list) : unit =
     ~delim:(sprintf "%s[\n%s" indent (make_indent 2), sprintf "\n%s].\n" indent)
     ~sep:(sprintf ";\n%s" (make_indent 2))
     gen_def_property
-    defs;
-  fprintf out "\n";
-  fprintf out "%s\n" has_property
+    defs
 
 let print_typing_env (out : out_channel) (types : type_def list) : unit =
   let type_def_to_string (td : type_def) : string =
@@ -609,36 +546,33 @@ module VCgen = struct
           cid_str
       in
       sprintf
-        "%smatch %s with\n\
-         %s| OK (Val _ tv v) =>\n\
-         %smatch typ_eq_dec tv Deeptypes.typof_%s with\n\
-         %s| left EQ => cast EQ v = %s\n\
-         %s| _ => False\n\
-         %send\n\
+        "%s forall (u:unit),match %s with\n\
+         %s| OK v => same_value abs_types_impl v (VAL Deeptypes.typof_%s %s) /\\ \n\
+         %s typeof_value abs_types_impl v = Deeptypes.typof_%s \n\
          %s| Error _ => False\n\
          %send"
         indent2
         constval_deep
-        indent2
+        (*  *)
         indent3
         cid_str
-        indent3
         constval_shallow
-        indent3
-        indent3
+        (*   *)
         indent2
+        cid_str
+        indent3
         indent2
 
   let gen_fun_vc (is_abs : bool) (fid : ident) (params : (ident * mtyp) list)
       (tret : mtyp) : string =
     let indent3 = make_indent 3 in
-    let fid_shallow = ident_to_string fid in
-    let forall =
+      let fid_shallow = ident_to_string fid in
+(*    let forall =
       if params = [] then ""
-      else sprintf "%s%s\n" indent3 (fun_corres_forall params)
-    in
-    let call_deep = sprintf "v %s" (fun_corres_deep_call_args params) in
-    let call_shallow = fun_corres_shallow_call indent3 fid params tret in
+      else sprintf "%s%s\n" indent3 (fun_corres_forall params) 
+      in *)
+    (*    let call_deep = sprintf "v %s" (fun_corres_deep_call_args params)  in *)
+    (*let call_shallow = fun_corres_shallow_call indent3 fid params tret in *)
     let funval_deep =
       if is_abs then sprintf "%s.%s" !shallowfile fid_shallow
       else
@@ -651,21 +585,16 @@ module VCgen = struct
           fid_shallow
     in
     sprintf
-      "%sforall (ge: genv abs_types_impl),\n\
-       %sForall (has_property ge) needed_checked_%s ->\n\
+      "%slet ge := genv_has_property abs_types_impl STree.empty needed_checked_%s in\n\
        %slet v : #Deeptypes.typof_%s := %s in\n\
-       %s%s%s =\n\
-       %s"
+       eq_value abs_types_impl (VAL Deeptypes.typof_%s %s) _ v\n"
       (make_indent 2)
-      indent3
       fid_shallow
       indent3
       fid_shallow
       funval_deep
-      forall
-      indent3
-      call_deep
-      call_shallow
+      fid_shallow
+      fid_shallow
 
   let gen_def_vc (d : globdef) : string =
     match d with
@@ -684,10 +613,12 @@ module VCgen = struct
   let print_vc (out : out_channel) (arch : Target.archi)
       (bprog : Barocq.program) (sprog : BarocqShallow.Monadic.program) : unit =
     let sdefs = sprog.prog_defs in
+    let isdef = function BarocqShallow.Monadic.DefConst _ | BarocqShallow.Monadic.DefFun _ -> true | _ -> false in
+    let sdefs = List.filter isdef sdefs in
     fprintf out "Definition arch : Target.archi := %s.\n" (archi_to_string arch);
     fprintf out "\n";
     fprintf out "Definition vc : list Prop :=\n";
-    print_needed_checked_lists out bprog sdefs;
+    print_needed_checked_lists out bprog sprog.prog_defs;
     print_functions_params out sdefs;
     print_list
       out
@@ -702,7 +633,7 @@ let prelude_imports () : string =
     "From Coq Require Import String List.\n\
      From compcert Require Import Integers.\n\
      From BarocqComp Require Import Ident Error Maps2 Barray Benum Brecord \
-     Types Typing Barocq.\n\
+     Types Typing Barocq BarocqVC.\n\
      From %s Require Import %s_Types %s %s.\n\n\
      Import ListNotations.\n\n\
      Open Scope string_scope.\n"

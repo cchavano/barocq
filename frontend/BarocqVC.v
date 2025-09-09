@@ -398,7 +398,11 @@ Fixpoint vars_of_expr (vars : STree.t unit) (e:expr)  : STree.t unit :=
   | EMatch e1 cases =>
       MapList.fold_left (fun vars _ ep => vars_of_expr vars ep) cases (vars_of_expr vars e1)
   | ELetIn x e1 e2 => (* Ignore scopes - should remove x from e2 *)
-      vars_of_expr (vars_of_expr vars e1) e2
+      let vars_e2 :=
+        match STree.get x vars with
+        | Some _ => vars_of_expr vars e2
+        | None   => STree.remove x (vars_of_expr vars e2)
+      end in vars_of_expr vars_e2 e1
   end
   with vars_of_access (vars: STree.t unit) (acc:access) : STree.t unit :=
          match acc with
@@ -417,13 +421,82 @@ Definition eq_value (vl: value abs_typ_impl) (t:typ) (v: #t) :=
   same_value vl (Val _ t v).
 
 
+Fixpoint remove_params {A:Type}(l :smaplist A) (vars : STree.t unit) :=
+  match l with
+  | nil => vars
+  | (p,_) ::l =>  remove_params l (STree.remove p vars)
+  end.
+
+Fixpoint remove_params_r {A:Type}(l :smaplist A) (vars : STree.t unit) :=
+  match l with
+  | nil => vars
+  | (p,_) ::l =>  STree.remove p (remove_params_r l  vars)
+  end.
+
+Lemma remove_params_r_acc_None : forall {A: Type} (params:smaplist A) vars x,
+    STree.get x vars = None ->
+    STree.get x (remove_params_r params  vars) = None.
+Proof.
+  induction params; simpl;auto.
+  intros. destruct a.
+  rewrite STree.grspec.
+  destruct (STree.elt_eq x s); auto.
+Qed.
+
+Lemma remove_acc : forall {A: Type} (params:smaplist A) vars1 vars2 x
+  (ACC : STree.get x vars1 = STree.get x vars2),
+    STree.get x (remove_params_r params  vars1) = STree.get x (remove_params_r params  vars2).
+Proof.
+  induction params; simpl;auto.
+  intros. destruct a.
+  rewrite! STree.grspec.
+  destruct (STree.elt_eq x s); auto.
+Qed.
+
+
+Lemma remove_params_r_comm : forall {A:Type} (p1 p2:smaplist A) vars x,
+  STree.get x (remove_params_r p1 (remove_params_r p2 vars)) =   STree.get x (remove_params_r p2 (remove_params_r p1 vars)).
+Proof.
+  induction p1; simpl;auto.
+  intros.
+  destruct a.
+  rewrite STree.grspec.
+  destruct (STree.elt_eq x s).
+  rewrite remove_params_r_acc_None; auto.
+  subst. rewrite STree.grs; auto.
+  rewrite IHp1.
+  apply remove_acc.
+  rewrite STree.gro by auto.
+  reflexivity.
+Qed.
+
+
+Lemma remove_params_eq : forall {A: Type} (params:smaplist A) vars,
+  forall x, STree.get  x (remove_params params vars) =
+              STree.get  x (remove_params_r params vars).
+Proof.
+  induction params; simpl ; intros.
+  - reflexivity.
+  - destruct a.
+    rewrite IHparams.
+    change (STree.remove s vars) with (remove_params_r ((s,a)::nil) vars).
+    rewrite remove_params_r_comm.
+    simpl. reflexivity.
+Qed.
+
+
+
+Definition vars_of_fun {A:Type} (params : smaplist A) (e:expr) :=
+  remove_params params (vars_of_expr STree.empty e).
+
+
 Definition generate_def_fun_obligation (arch:archi) (te:Typing.tenv)  (params : smaplist btyp) (tret : btyp) (e : expr) (checked : list propt)
   (prop : value abs_typ_impl) : res Prop :=
   if MergeSort.nodup String.leb String.eqb (List.map fst params)
   then
     let* tret' := Typing.btyp_to_typ te tret in
     let* params' := MapList.map_err (Typing.btyp_to_typ te) params in
-    let vars     := vars_of_expr STree.empty e in
+    let vars     := vars_of_fun params e in
     let needed_checked := List.filter (fun '(k,_) => has_var k vars) checked in
     let o := forall ge,
         Forall (has_property ge) needed_checked ->
@@ -457,13 +530,16 @@ Proof.
   simpl in H. intuition congruence.
 Qed.
 
-Definition generate_def_fun_obligation' (arch:archi) (te:Typing.tenv)  (params : smaplist btyp) (tret : btyp) (e : expr) (checked : list propt)
+
+
+
+Definition generate_def_fun_obligation' (arch:archi) (f:ident) (te:Typing.tenv)  (params : smaplist btyp) (tret : btyp) (e : expr) (checked : list propt)
   (prop : value abs_typ_impl) : res Prop :=
   if MergeSort.nodup String.leb String.eqb (List.map fst params)
   then
     let* tret' := Typing.btyp_to_typ te tret in
     let* params' := MapList.map_err (Typing.btyp_to_typ te) params in
-    let vars     := vars_of_expr STree.empty e in
+    let vars     := vars_of_fun params e in
     let needed_checked := List.filter (fun '(k,_) => has_var k vars) checked in
     let ge := genv_has_property STree.empty needed_checked in
     if stree_equal vars ge
@@ -472,15 +548,30 @@ Definition generate_def_fun_obligation' (arch:archi) (te:Typing.tenv)  (params :
           let v := (build_funval arch abs_typ_impl te ge params' tret' e) in
           eq_value prop _ v in
       eret o
-    else fail
-    else fail.
+    else Error (MSG "Def fun " :: MSG f :: nil)
+    else Error (MSG "Def fun " :: MSG f :: nil).
 
-Definition eq_env (keys: STree.t unit) (ge ge' : genv abs_typ_impl) :=
-  forall x, STree.get x keys = Some tt ->
-            option_rel same_value (STree.get x ge) (STree.get x ge').
+Definition eq_env (keys: STree.t unit) (le le': genv abs_typ_impl) (ge ge' : genv abs_typ_impl) :=
+  forall x,
+    STree.get x le   = None ->
+    STree.get x le'   = None ->
+    STree.get x keys = Some tt ->
+    option_rel same_value (STree.get x ge) (STree.get x ge').
 
 Definition eq_env_all (ge ge' : genv abs_typ_impl) :=
   forall x,  option_rel same_value (STree.get x ge) (STree.get x ge').
+
+Lemma eq_env_eq : forall vars le le' ge1 ge1' ge2 ge2',
+    (forall x, STree.get x ge1 = STree.get x ge2) ->
+    (forall x, STree.get x ge1' = STree.get x ge2') ->
+    eq_env vars le le' ge1 ge1' ->
+    eq_env vars le le' ge2 ge2'.
+Proof.
+  unfold eq_env.
+  intros;auto.
+  rewrite <- H. rewrite <- H0.
+  auto.
+Qed.
 
 
 Fixpoint ext_equal_sym (t:typ): forall v1 v2,
@@ -1221,9 +1312,20 @@ Proof.
   subst. apply H3.
 Qed.
 
+Lemma ext_equal_same_value : forall t x y,
+    ext_equal t x y ->
+    same_value (Val abs_typ_impl t y) (Val abs_typ_impl t x).
+Proof.
+  unfold same_value.
+  intros. destruct (typ_eq_dec t t); try congruence.
+  assert (e = eq_refl) by (apply Eqdep_dec.UIP_dec ; apply typ_eq_dec).
+  subst. apply H.
+Qed.
+
+
 Lemma same_value_eval_record_proj : forall x y f,
     same_value x y ->
-    res_rel same_value (eval_record_proj abs_typ_impl x f) (eval_record_proj abs_typ_impl y f).
+    res_rel same_value (eval_record_project abs_typ_impl x f) (eval_record_project abs_typ_impl y f).
 Proof.
   intros.
   unfold same_value in H.
@@ -1233,21 +1335,33 @@ Proof.
   change (cast eq_refl v0)  with v0 in H.
   simpl. destruct t; try constructor.
   simpl in H.
-  induction l; simpl; auto.
+  simpl in v,v0.
+  unfold eval_recordtyp in v,v0.
+  revert v v0 H.
+  induction l.
   - constructor.
-  - destruct a.
-    destruct (eq_dec f i0); subst.
-    constructor.
+  - intros.
+    simpl in v,v0.
+    destruct a. simpl in v,v0.
+    destruct v,v0.
+    destruct f0,f1.
     simpl in H.
-    unfold same_value.
-    destruct (typ_eq_dec t t); try congruence.
-    assert (e = eq_refl) by (apply Eqdep_dec.UIP_dec ;
-                             apply typ_eq_dec).
-    subst.
-    destruct H; auto.
-    apply IHl;auto.
-    destruct H.
-    auto.
+    destruct (String.eqb f i0) eqn:EQ.
+    + unfold eval_record_project_aux.
+      simpl.
+      unfold good_proj,cast_typof_field.
+      simpl.
+      rewrite EQ.
+      simpl. constructor.
+      destruct H.
+      apply ext_equal_same_value;auto.
+    + unfold eval_record_project_aux.
+      simpl.
+      unfold good_proj,cast_typof_field.
+      simpl.
+      rewrite EQ.
+      simpl. apply IHl; auto.
+      tauto.
 Qed.
 
 Lemma equal_update_record :
@@ -1258,6 +1372,7 @@ Lemma equal_update_record :
       (update_record abs_typ_impl fields r2 f ty v2).
 Proof.
   unfold eval_recordtyp.
+  unfold update_record.
   induction fields.
   - simpl. intros.
     constructor.
@@ -1283,6 +1398,8 @@ Proof.
       simpl. constructor.
       simpl. split;auto.
 Qed.
+
+
 
 
 Lemma same_value_eval_record_update : forall r1 r2 v1 v2 f,
@@ -1317,15 +1434,6 @@ Inductive eq_access_value : access_value abs_typ_impl -> access_value abs_typ_im
 | eq_access_index : forall v1 v2, same_value v1 v2 -> eq_access_value (AcvalArrayIndex abs_typ_impl v1)
                                                         (AcvalArrayIndex abs_typ_impl v2).
 
-Lemma ext_equal_same_value : forall t x y,
-    ext_equal t x y ->
-    same_value (Val abs_typ_impl t y) (Val abs_typ_impl t x).
-Proof.
-  unfold same_value.
-  intros. destruct (typ_eq_dec t t); try congruence.
-  assert (e = eq_refl) by (apply Eqdep_dec.UIP_dec ; apply typ_eq_dec).
-  subst. apply H.
-Qed.
 
 Lemma res_rel_ifthenelse : forall x y v1 v2 v1' v2',
     same_value x y ->
@@ -1371,6 +1479,15 @@ Proof.
     destruct a. intros.
     apply IHcases.
     apply get_var_of_expr_acc. auto.
+  - intros.
+    destruct (STree.get x0 acc) eqn:GET.
+    + rewrite get_var_of_expr_acc; auto.
+    +  destruct (STree.elt_eq x x0).
+       congruence.
+       apply get_var_of_expr_acc.
+       rewrite STree.grspec.
+       destruct (STree.elt_eq x x0);try congruence.
+       apply get_var_of_expr_acc;auto.
 Qed.
 
 
@@ -1494,12 +1611,32 @@ Proof.
     rewrite (get_var_of_expr_case x e acc).
     tauto.
   - intros.
-    rewrite get_var_of_expr_case.
-    rewrite get_var_of_expr_case.
-    symmetry.
-    rewrite get_var_of_expr_case.
-    rewrite get_var_of_expr_case.
-    tauto.
+    destruct (STree.get x0 acc) eqn:GET1.
+    + destruct u.
+      rewrite get_var_of_expr_case.
+      rewrite get_var_of_expr_case.
+      symmetry.
+      rewrite get_var_of_expr_case.
+      rewrite get_var_of_expr_case.
+      rewrite STree.grspec.
+      destruct (STree.elt_eq x x0).
+      { subst.
+        rewrite STree.gempty.
+        intuition congruence.
+      }
+      { intuition congruence.
+      }
+    +
+      rewrite get_var_of_expr_case.
+      rewrite STree.grspec.
+      symmetry.
+      rewrite get_var_of_expr_case.
+      rewrite STree.grspec.
+      destruct (STree.elt_eq x x0).
+      subst. intuition congruence.
+      symmetry.
+      rewrite get_var_of_expr_case.
+      tauto.
 Qed.
 
 
@@ -1527,13 +1664,13 @@ Proof.
     tauto.
 Qed.
 
-Definition eq_env_vars_of_expr_acc (e:expr) : forall acc ge ge',
-    eq_env (vars_of_expr acc e) ge ge' ->
-    eq_env acc ge ge'.
+Definition eq_env_vars_of_expr_acc (e:expr) : forall acc le le' ge ge',
+    eq_env (vars_of_expr acc e) le le' ge ge' ->
+    eq_env acc le le' ge ge'.
 Proof.
   unfold eq_env.
   intros.
-  apply H.
+  apply H; auto.
   apply get_var_of_expr_acc; auto.
 Qed.
 
@@ -1543,21 +1680,21 @@ Qed.
 
 
 
-Definition eq_env_vars_of_expr (e:expr) : forall acc ge ge',
-    eq_env (vars_of_expr acc e) ge ge' ->
-    eq_env (vars_of_expr STree.empty e) ge ge'.
+Definition eq_env_vars_of_expr (e:expr) : forall acc le le' ge ge',
+    eq_env (vars_of_expr acc e) le le' ge ge' ->
+    eq_env (vars_of_expr STree.empty e) le le' ge ge'.
 Proof.
   unfold eq_env.
   intros.
-  apply H.
+  apply H; auto.
   rewrite get_var_of_expr_case.
   tauto.
 Qed.
 
-Lemma eq_env_split : forall (e:expr)  acc ge ge',
-    eq_env (vars_of_expr acc e) ge ge' ->
-    eq_env (vars_of_expr STree.empty e) ge ge' /\
-    eq_env acc ge ge'.
+Lemma eq_env_split : forall (e:expr)  acc le le' ge ge',
+    eq_env (vars_of_expr acc e) le le' ge ge' ->
+    eq_env (vars_of_expr STree.empty e) le le' ge ge' /\
+    eq_env acc le le' ge ge'.
 Proof.
   intros.
   split.
@@ -1566,17 +1703,17 @@ Proof.
 Qed.
 
 
-Lemma eq_env_of_access : forall acs acc ge ge',
-    eq_env (fold_left vars_of_access  acs acc ) ge ge' ->
-    eq_env (fold_left vars_of_access acs STree.empty) ge ge' /\
-      eq_env acc ge ge'.
+Lemma eq_env_of_access : forall acs acc le le' ge ge',
+    eq_env (fold_left vars_of_access  acs acc ) le le' ge ge' ->
+    eq_env (fold_left vars_of_access acs STree.empty) le le' ge ge' /\
+      eq_env acc le le' ge ge'.
 Proof.
   unfold eq_env.
   split; intros.
-  apply H.
+  apply H; auto.
   rewrite get_vars_of_access.
   tauto.
-  apply H.
+  apply H;auto.
   rewrite get_vars_of_access.
   tauto.
 Qed.
@@ -1596,15 +1733,15 @@ Proof.
     tauto.
 Qed.
 
-Lemma eq_env_exprs : forall args acc ge ge',
-    eq_env (fold_left vars_of_expr args acc) ge ge' ->
-    eq_env (fold_left vars_of_expr args STree.empty) ge ge' /\
-    eq_env acc ge ge'.
+Lemma eq_env_exprs : forall args acc le le' ge ge',
+    eq_env (fold_left vars_of_expr args acc) le le' ge ge' ->
+    eq_env (fold_left vars_of_expr args STree.empty) le le' ge ge' /\
+    eq_env acc le le' ge ge'.
 Proof.
   unfold eq_env; simpl; split; intros.
-  apply H.
+  apply H;auto.
   rewrite get_fold_vars_of_expr; tauto.
-  apply H.
+  apply H;auto.
   rewrite get_fold_vars_of_expr; tauto.
 Qed.
 
@@ -1624,19 +1761,19 @@ Proof.
 Qed.
 
   
-Lemma eq_env_pattern : forall cases acc ge ge',
+Lemma eq_env_pattern : forall cases acc le le' ge ge',
     eq_env
       (MapList.fold_left (fun (vars : STree.t unit) (_ : Benum.pattern) (ep : expr) => vars_of_expr vars ep) cases
-         acc) ge ge' ->
-    eq_env (MapList.fold_left (fun (vars : STree.t unit) (_ : Benum.pattern) (ep : expr) => vars_of_expr vars ep) cases STree.empty) ge ge'
+         acc) le le' ge ge' ->
+    eq_env (MapList.fold_left (fun (vars : STree.t unit) (_ : Benum.pattern) (ep : expr) => vars_of_expr vars ep) cases STree.empty) le le' ge ge'
     /\
-      eq_env acc ge ge'.
+      eq_env acc le le' ge ge'.
 Proof.
   unfold eq_env. intros.
   split; intros.
-  apply H.
+  apply H;auto.
   rewrite vars_of_pattern. tauto.
-  apply H.
+  apply H;auto.
   rewrite vars_of_pattern. tauto.
 Qed.
 
@@ -1644,7 +1781,7 @@ Qed.
 
 
 
-Lemma eq_env_lenv_update : forall le le' k ty v1 v2,
+Lemma eq_env_all_lenv_update : forall le le' k ty v1 v2,
     eq_env_all le le' ->
     ext_equal ty v1 v2 ->
     eq_env_all (lenv_update abs_typ_impl le k (Val abs_typ_impl ty v1))
@@ -1682,11 +1819,20 @@ Proof.
     auto.
 Qed.
 
-
-
+Lemma eq_env_remove : forall x e le le' v1 v2 ge ge',
+    eq_env (STree.remove x (vars_of_expr STree.empty e)) le le' ge ge' ->
+    eq_env (vars_of_expr STree.empty e) (lenv_update abs_typ_impl le x v1) (lenv_update abs_typ_impl le' x v2) ge ge'.
+Proof.
+  unfold eq_env;intros.
+  unfold lenv_update in *.
+  rewrite STree.gsspec in *.
+  destruct (STree.elt_eq x0 x); try congruence.
+  apply H; auto.
+  rewrite STree.gro;auto.
+Qed.
 
 Fixpoint eq_genv_eval_expr (arch:archi) (te:Typing.tenv)  (ge ge':genv abs_typ_impl) (e:expr) : forall le le',
-    eq_env (vars_of_expr (STree.empty) e) ge ge' ->
+    eq_env (vars_of_expr (STree.empty) e) le le' ge ge' ->
     eq_env_all le le'  ->
     res_rel same_value (eval_expr arch abs_typ_impl te ge le e)
       (eval_expr arch abs_typ_impl te ge' le' e).
@@ -1708,7 +1854,8 @@ Proof.
     simpl in H.
     specialize (H x).
     rewrite STree.gss in H.
-    specialize (H eq_refl).
+    symmetry in H2. symmetry in H3.
+    specialize (H H2 H3 eq_refl).
     inv H.
     constructor.
     simpl. constructor. auto.
@@ -1728,16 +1875,16 @@ Proof.
     apply same_value_eval_unary_op; auto.
   -
     simpl in H.
-    generalize (eq_genv_eval_expr e1 le le' (eq_env_vars_of_expr_acc _ _ _ _ H) H0).
-    generalize (eq_genv_eval_expr e2 le le' (eq_env_vars_of_expr _ _ _ _ H) H0).
+    generalize (eq_genv_eval_expr e1 le le' (eq_env_vars_of_expr_acc _ _ _ _ _ _ H) H0).
+    generalize (eq_genv_eval_expr e2 le le' (eq_env_vars_of_expr _ _ _ _ _ _ H) H0).
     intros E2 E1.
     inv E1 ; try constructor.
     simpl. inv E2 ; try constructor.
     simpl.
     apply same_value_eval_binary_op; auto.
   - simpl in H.
-    generalize (eq_genv_eval_expr e1 le le' (eq_env_vars_of_expr_acc _ _ _ _ H) H0).
-    generalize (eq_genv_eval_expr e2 le le' (eq_env_vars_of_expr _ _ _ _ H) H0).
+    generalize (eq_genv_eval_expr e1 le le' (eq_env_vars_of_expr_acc _ _ _ _ _ _ H) H0).
+    generalize (eq_genv_eval_expr e2 le le' (eq_env_vars_of_expr _ _ _ _ _ _ H) H0).
     intros E2 E1.
     inv E1 ; try constructor.
     simpl. inv E2 ; try constructor.
@@ -1936,7 +2083,7 @@ Proof.
       tauto.
   - simpl in H.
     apply eq_env_split in H as (EQ1 & EQ2).
-    generalize (eq_genv_eval_expr e1 le le' EQ2 H0).
+    generalize (eq_genv_eval_expr e1 le le' EQ1 H0).
     intro E1.
     inv E1.
     constructor.
@@ -1952,10 +2099,11 @@ Proof.
       constructor ;auto.
       apply H0.
     }
-    generalize (eq_genv_eval_expr e2 _ _ EQ1 LE).
+    eapply eq_env_remove in EQ2;eauto.
+(*    generalize (eq_genv_eval_expr e2 _ _ EQ1 LE).
     intro.
     inv H3. constructor.
-    constructor ;auto.
+    constructor ;auto.*)
 Qed.
 
 Lemma eq_env_all_empty : eq_env_all STree.empty STree.empty.
@@ -1966,14 +2114,44 @@ Proof.
   constructor.
 Qed.
 
+Lemma eq_env_lenv_update : forall e le le' s v1 v2 ge ge',
+    eq_env (vars_of_expr STree.empty e) le le' ge ge' ->
+    eq_env (vars_of_expr STree.empty e) (lenv_update abs_typ_impl le s v1)
+    (lenv_update abs_typ_impl le' s v2) ge ge'.
+Proof.
+  unfold eq_env;intros.
+  unfold lenv_update in *.
+  rewrite STree.gsspec in *.
+  destruct (STree.elt_eq x s); try congruence.
+  apply H;auto.
+Qed.
 
+Lemma eq_env_remove_params : forall {A: Type} (a:A)(lt:smaplist A) s vars le le' ge ge' v1 v2,
+    eq_env (remove_params lt (STree.remove s vars)) le le' ge ge' ->
+    eq_env (remove_params lt vars) (lenv_update abs_typ_impl le s v1)
+    (lenv_update abs_typ_impl le' s v2) ge ge'.
+Proof.
+  intros.
+  unfold eq_env in *;intros.
+  unfold lenv_update in *.
+  rewrite STree.gsspec in *.
+  destruct (STree.elt_eq x s); try discriminate.
+  specialize (H _ H0 H1).
+  rewrite remove_params_eq in H.
+  change (STree.remove s vars) with (remove_params_r ((s,a)::nil) vars) in H.
+  rewrite remove_params_r_comm in H.
+  simpl in H.
+  rewrite STree.gro in H by auto.
+  apply H. rewrite remove_params_eq in H2. auto.
+Qed.
 
 Lemma build_funval_rec_eq : forall arch te ge ge' lt e le le' t,
-    eq_env (vars_of_expr STree.empty e) ge ge' ->
+    eq_env (vars_of_fun lt e) le le' ge ge' ->
     eq_env_all le le' ->
     ext_fun ext_equal t (map snd lt) (build_funval_rec arch abs_typ_impl te ge le lt t e)
       (build_funval_rec arch abs_typ_impl te ge' le' lt t e).
 Proof.
+  unfold vars_of_fun.
   induction lt.
   - simpl.
     intros.
@@ -1997,8 +2175,13 @@ Proof.
      destruct a.
      apply IHlt; auto.
      simpl in H1.
-     apply eq_env_lenv_update; auto.
+     simpl in H.
+     apply eq_env_remove_params;auto.
+     apply eq_env_all_lenv_update; auto.
 Qed.
+
+
+
 
 Lemma eq_value_trans : forall v ty v1 v2,
     eq_value v ty v1  ->
@@ -2071,9 +2254,57 @@ Proof.
   apply H.
 Qed.
 
+Lemma map_err_nil : forall {A B:Type} (F : A -> res B) (l:list (string * A)),
+    MapList.map_err F l = OK nil -> l = nil.
+Proof.
+  induction l; simpl.
+  - congruence.
+  - intros.
+    destruct a. destruct (F a); try discriminate.
+    simpl in H.
+    destruct (MapList.map_err F l) eqn:MR.
+    simpl in H. inv H. discriminate.
+Qed.
 
-Lemma generate_def_fun_obligation_impl : forall arch te params tret e checked prop o',
-    generate_def_fun_obligation' arch te params tret e checked prop = OK o' ->
+Lemma eq_env_fst : forall {A B:Type} (v1 : smaplist A) (v2:smaplist B) e g1 g2,
+    map fst v1 = map fst v2 ->
+    eq_env (vars_of_fun v1 e) STree.empty STree.empty g1 g2 ->
+    eq_env (vars_of_fun v2 e) STree.empty STree.empty g1 g2.
+Proof.
+  intros.
+  unfold vars_of_fun in *.
+  unfold eq_env in *.
+  intros.
+  eapply H0 ; eauto.
+  revert H3.
+  revert H.
+  generalize ((vars_of_expr STree.empty e)) as acc.
+  clear. revert v2.
+  induction v1 ; simpl;auto.
+  - destruct v2; simpl;auto.
+    discriminate.
+  - destruct v2 ; try discriminate.
+    simpl;intros.
+    inv H;subst.
+    destruct p. destruct a. simpl in H1. subst.
+    eapply IHv1;eauto.
+Qed.
+
+Lemma map_err_fst : forall (A B:Type) (F : A -> res B) (l1:smaplist A) (l2:smaplist B),
+    MapList.map_err F l1  = OK l2 ->
+    map fst l1 = map fst l2.
+Proof.
+  induction l1;simpl;auto.
+  - intros. inv H. reflexivity.
+  - intros. destruct a.
+    simpl. destruct (F a); try discriminate.
+    simpl in H. destruct (MapList.map_err F l1) eqn:M;try discriminate.
+    simpl in H. inv H.
+    simpl. f_equal ;auto.
+Qed.
+
+Lemma generate_def_fun_obligation_impl : forall arch f te params tret e checked prop o',
+    generate_def_fun_obligation' arch f te params tret e checked prop = OK o' ->
     exists o, generate_def_fun_obligation arch te params tret e checked prop = OK o /\
                 (o' -> o).
 Proof.
@@ -2083,33 +2314,32 @@ Proof.
               (map fst params)); try discriminate.
   destruct (Typing.btyp_to_typ te tret); try discriminate.
   simpl in *.
-  destruct (MapList.map_err (Typing.btyp_to_typ te) params); try discriminate.
+  destruct (MapList.map_err (Typing.btyp_to_typ te) params)eqn:PARAM; try discriminate.
   simpl in *.
   set (ge :=         (genv_has_property STree.empty
-           (filter (fun '(k, _) => has_var k (vars_of_expr STree.empty e))
+           (filter (fun '(k, _) => has_var k (vars_of_fun params e))
               checked))) in *.
-  destruct (stree_equal (vars_of_expr STree.empty e) ge) eqn:ALLKEY; try discriminate.
+  destruct (stree_equal (vars_of_fun params e) ge) eqn:ALLKEY; try discriminate.
   inv H.
   eexists. split. eauto.
   intros.
   eapply eq_value_trans;eauto.
   unfold build_funval.
-  assert (EQENV: eq_env (vars_of_expr STree.empty e) ge ge0).
+  assert (EQENV: eq_env (vars_of_fun params e) STree.empty STree.empty ge ge0).
   {
       unfold eq_env.
       intros.
       apply stree_equal_sound with (x:=x) in ALLKEY.
       destruct (STree.get x ge) eqn:GET.
-      - assert (STree.get x (vars_of_expr STree.empty e) = Some tt) by
-          (intuition congruence).
-        clear ALLKEY.
+      - clear ALLKEY.
         apply genv_has_property_same with (ge' := ge0) in GET;auto.
         destruct GET. auto.
-        rewrite STree.gempty in H3. discriminate.
+        rewrite STree.gempty in H4. discriminate.
       - intuition congruence.
     }
     destruct t0.
     - simpl.
+      apply map_err_nil in PARAM. subst.
       generalize (eq_genv_eval_expr arch te ge ge0 e STree.empty STree.empty EQENV eq_env_all_empty).
       intro EEXPR. inv EEXPR.
       constructor.
@@ -2122,7 +2352,10 @@ Proof.
                                                                      | a :: t1 => snd a :: map t1
                                                                                end) t0))
                with (map snd (p :: t0)).
-      apply build_funval_rec_eq; auto.
+      eapply build_funval_rec_eq.
+      eapply eq_env_fst with (v1 := params).
+      eapply map_err_fst;eauto.
+      auto.
       apply eq_env_all_empty.
 Qed.
 
@@ -2176,7 +2409,7 @@ Fixpoint generate_obligations (arch:archi)  (te:Typing.tenv)
             generate_obligations arch  te ((x,p)::checked) (o::vc) prog'  props'
         | DefFun y f =>
             let* (p,props') := get_prop y props in
-            let*  o   := generate_def_fun_obligation' arch te (Syntax.fn_params f) (Syntax.fn_return f) (Syntax.fn_body f) checked p in
+            let*  o   := generate_def_fun_obligation' arch y te (Syntax.fn_params f) (Syntax.fn_return f) (Syntax.fn_body f) checked p in
             generate_obligations arch  te ((y,p)::checked) (o::vc) prog'  props'
         | DeclType _ _  => generate_obligations arch  te checked vc prog' props
         | DeclConst y bt =>
@@ -2809,7 +3042,7 @@ Proof.
       simpl in GEN.
       apply get_prop_inv in GP.
       subst.
-      destruct (generate_def_fun_obligation' arch te (Syntax.fn_params f) (Syntax.fn_return f) (Syntax.fn_body f) checked p);
+      destruct (generate_def_fun_obligation' arch x te (Syntax.fn_params f) (Syntax.fn_return f) (Syntax.fn_body f) checked p);
         try discriminate.
       simpl in GEN.
       eapply IHprog in GEN;eauto.
@@ -2905,7 +3138,7 @@ Proof.
       destruct p as (p,props').
       simpl in GEN.
       apply get_prop_inv in GP.
-      destruct (generate_def_fun_obligation'  arch te (Syntax.fn_params f) (Syntax.fn_return f) (Syntax.fn_body f) checked p) eqn:CO; try discriminate.
+      destruct (generate_def_fun_obligation'  arch x te (Syntax.fn_params f) (Syntax.fn_return f) (Syntax.fn_body f) checked p) eqn:CO; try discriminate.
       simpl in GEN.
       apply generate_def_fun_obligation_impl in CO.
       destruct CO as (o & CO & IMPL).
