@@ -12,8 +12,6 @@ Module Normalization.
 
   Section NORM.
 
-  Variable shver : shallow_version.
-
   Import BNF.
 
   Definition bnfexpr_of_atomlist (e: Barocq.expr) (la: list atom) : res BNF.expr :=
@@ -39,17 +37,11 @@ Module Normalization.
         eret (EArraySet a1 a2 a3)
     | Barocq.ERecordProj _ x =>
         let* a := list_nth_err la 0 in
-        match shver with
-        | ShallowR => eret (EAtom (ARecordProj a x))
-        | ShallowB => eret (ERecordProj a x)
-        end
+        eret (EAtom (ARecordProj a x))
     | Barocq.ERecordUpdate _ x _ =>
         let* a1 := list_nth_err la 0 in
         let* a2 := list_nth_err la 1 in
-        match shver with
-        | ShallowR => eret (EAtom (ARecordUpdate a1 x a2))
-        | ShallowB => eret (ERecordUpdate a1 x a2)
-        end
+        eret (EAtom (ARecordUpdate a1 x a2))
     | Barocq.EApp _ _ =>
         let* a := list_nth_err la 0 in
         let args := tail la in
@@ -106,23 +98,11 @@ Module Normalization.
           ret (li1 ++ li2 ++ li3 ++ [(x, EArraySet a1 a2 a3)], AVar x)
       | Barocq.ERecordProj e1 f =>
           let* (li1, a1) := norm_expr_aux e1 in
-          match shver with
-          | ShallowR =>
-              ret (li1, ARecordProj a1 f)
-          | ShallowB =>
-              let* x := fresh_var in
-              ret (li1 ++ [(x, ERecordProj a1 f)], AVar x)
-          end
+          ret (li1, ARecordProj a1 f)
       | Barocq.ERecordUpdate e1 f e2 =>
           let* (li1, a1) := norm_expr_aux e1 in
           let* (li2, a2) := norm_expr_aux e2 in
-          match shver with
-          | ShallowR =>
-              ret (li1 ++ li2, ARecordUpdate a1 f a2)
-          | ShallowB =>
-              let* x := fresh_var in
-              ret (li1 ++ li2 ++ [(x, ERecordUpdate a1 f a2)], AVar x)
-          end
+          ret (li1 ++ li2, ARecordUpdate a1 f a2)
       | EDeepAccess _ _ => fail
       | Barocq.EApp e1 args =>
           let* (li1, a1) := norm_expr_aux e1 in
@@ -326,8 +306,6 @@ Module Monadification.
     | EAtom _ ty
     | EArrayGet _ _ ty
     | EArraySet _ _ _ ty
-    | ERecordProj _ _ ty
-    | ERecordUpdate _ _ _ ty
     | EApp _ _ ty
     | EIfThenElse _ _ _ ty
     | EMatch _ _ ty
@@ -726,24 +704,16 @@ Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res 
         let* t := typecheck_binary_op op ty1 ty2 in
         eret (ABinaryOp op a1' a2' t)
     | BNF.ARecordProj a1 x =>
-        match shver with
-        | ShallowR =>
-            let* a1' := typecheck_atom me gx lx a1 in
-            let ty1 := typof_atom a1' in
-            let* t := typecheck_record_proj me ty1 x in
-            eret (ARecordProj a1' x t)
-        | ShallowB => efail
-        end
+        let* a1' := typecheck_atom me gx lx a1 in
+        let ty1 := typof_atom a1' in
+        let* t := typecheck_record_proj me ty1 x in
+        eret (ARecordProj a1' x t)
     | BNF.ARecordUpdate a1 x a2 =>
-        match shver with
-        | ShallowR =>
-            let* a1' := typecheck_atom me gx lx a1 in
-            let* a2' := typecheck_atom me gx lx a2 in
-            let ty1 := typof_atom a1' in
-            let* (a2', t) := typecheck_record_update me ty1 a2' x in
-            eret (ARecordUpdate a1' x a2' t)
-        | ShallowB => efail
-        end
+        let* a1' := typecheck_atom me gx lx a1 in
+        let* a2' := typecheck_atom me gx lx a2 in
+        let ty1 := typof_atom a1' in
+        let* (a2', t) := typecheck_record_update me ty1 a2' x in
+        eret (ARecordUpdate a1' x a2' t)
     end.
 
   Fixpoint typecheck_call_rec (tparams: list mtyp) (args: list atom) (tret: mtyp) : res (list atom * mtyp) :=
@@ -834,25 +804,6 @@ Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res 
         let ty3 := typof_atom a3' in
         let* (a3', t) := typecheck_array_set ty1 ty2 a3' in
         eret (EArraySet a1' a2' a3' t)
-    | BNF.ERecordProj a1 x =>
-        match shver with
-        | ShallowR => efail
-        | ShallowB =>
-            let* a1' := typecheck_atom me gx lx a1 in
-            let ty1 := typof_atom a1' in
-            let* t := typecheck_record_proj me ty1 x in
-            eret (ERecordProj a1' x (MRes t))
-        end
-    | BNF.ERecordUpdate a1 x a2 =>
-        match shver with
-        | ShallowR => efail
-        | ShallowB =>
-            let* a1' := typecheck_atom me gx lx a1 in
-            let* a2' := typecheck_atom me gx lx a2 in
-            let ty1 := typof_atom a1' in
-            let* (a2', t) := typecheck_record_update me ty1 a2' x in
-            eret (ERecordUpdate a1' x a2' (MRes t))
-        end
     | BNF.EApp a1 args =>
         let* a1' := typecheck_atom me gx lx a1 in
         let ty1 := typof_atom a1' in
@@ -1119,6 +1070,6 @@ End Monadification.
 Open Scope error_monad_scope.
 
 Definition monadify_norm_program (arch: Target.archi) (shver: shallow_version) (prog: Barocq.program) : res Monadic.program :=
-  let/catch bnf := Normalization.norm_program shver prog /> "unable to normalize the program" in
+  let/catch bnf := Normalization.norm_program prog /> "unable to normalize the program" in
   let/catch mon := Monadification.monadify_program arch shver bnf /> "unable to monadify the program" in
   eret mon.

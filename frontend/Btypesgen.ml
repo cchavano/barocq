@@ -387,7 +387,7 @@ module RecordConv = struct
           in
           let rproj = conv_value_opt_parens RtoB fty rproj in
           sprintf
-            "%s@Brecord.proj fields_of_%s b %s = OK %s"
+            "%s@Brecord.project fields_of_%s b %s eq_refl = %s"
             indent
             rid
             (Deepgen.ident_to_deep fname)
@@ -411,27 +411,23 @@ module RecordConv = struct
     let conv_call = sprintf "rconv_%s_BtoR b = r" rid in
     let field_conv (fname : ident) (fty : mtyp) : string =
       let fid = ident_to_string fname in
-      let rval = conv_value BtoR fty fid in
-      if rval = fid then
+      let proj =
         sprintf
-          "%s@Brecord.proj fields_of_%s b %s = OK r.(%s_%s)"
-          indent
+          "@Brecord.project fields_of_%s b %s eq_refl"
           rid
           (Deepgen.ident_to_deep fname)
-          (String.lowercase_ascii rid)
-          fid
-      else
-        sprintf
-          "%s(exists %s, @Brecord.proj fields_of_%s b %s = OK %s /\\ %s = \
-           r.(%s_%s))"
-          indent
-          fid
-          rid
-          (Deepgen.ident_to_deep fname)
-          fid
-          rval
-          (String.lowercase_ascii rid)
-          fid
+      in
+      let proj_conv =
+        let proj_paren = sprintf "(%s)" proj in
+        let v = conv_value BtoR fty proj_paren in
+        if v = proj_paren then proj else v
+      in
+      sprintf
+        "%s%s = r.(%s_%s)"
+        indent
+        proj_conv
+        (String.lowercase_ascii rid)
+        fid
     in
     let fields_conv =
       list_to_string

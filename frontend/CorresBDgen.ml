@@ -333,9 +333,7 @@ let gen_def_property (d : globdef) : string =
   | DeclFun (fid, _, _) -> gen_const_property fid
 
 let print_properties_envs (out : out_channel) (defs : globdef list) : unit =
-  let propt =
-    "Definition propt : Type := string * value abs_types_impl."
-  in
+  let propt = "Definition propt : Type := string * value abs_types_impl." in
   fprintf out "%s\n" propt;
   fprintf out "\n";
   let decls =
@@ -547,17 +545,16 @@ module VCgen = struct
       in
       sprintf
         "%s forall (u:unit),match %s with\n\
-         %s| OK v => same_value abs_types_impl v (VAL Deeptypes.typof_%s %s) /\\ \n\
+         %s| OK v => same_value abs_types_impl v (VAL Deeptypes.typof_%s %s) \
+         /\\ \n\
          %s typeof_value abs_types_impl v = Deeptypes.typof_%s \n\
          %s| Error _ => False\n\
          %send"
         indent2
         constval_deep
-        (*  *)
         indent3
         cid_str
         constval_shallow
-        (*   *)
         indent2
         cid_str
         indent3
@@ -566,8 +563,8 @@ module VCgen = struct
   let gen_fun_vc (is_abs : bool) (fid : ident) (params : (ident * mtyp) list)
       (tret : mtyp) : string =
     let indent3 = make_indent 3 in
-      let fid_shallow = ident_to_string fid in
-(*    let forall =
+    let fid_shallow = ident_to_string fid in
+    (*    let forall =
       if params = [] then ""
       else sprintf "%s%s\n" indent3 (fun_corres_forall params) 
       in *)
@@ -585,7 +582,8 @@ module VCgen = struct
           fid_shallow
     in
     sprintf
-      "%slet ge := genv_has_property abs_types_impl STree.empty needed_checked_%s in\n\
+      "%slet ge := genv_has_property abs_types_impl STree.empty \
+       needed_checked_%s in\n\
        %slet v : #Deeptypes.typof_%s := %s in\n\
        eq_value abs_types_impl (VAL Deeptypes.typof_%s %s) _ v\n"
       (make_indent 2)
@@ -613,7 +611,11 @@ module VCgen = struct
   let print_vc (out : out_channel) (arch : Target.archi)
       (bprog : Barocq.program) (sprog : BarocqShallow.Monadic.program) : unit =
     let sdefs = sprog.prog_defs in
-    let isdef = function BarocqShallow.Monadic.DefConst _ | BarocqShallow.Monadic.DefFun _ -> true | _ -> false in
+    let isdef = function
+      | BarocqShallow.Monadic.DefConst _ | BarocqShallow.Monadic.DefFun _ ->
+          true
+      | _ -> false
+    in
     let sdefs = List.filter isdef sdefs in
     fprintf out "Definition arch : Target.archi := %s.\n" (archi_to_string arch);
     fprintf out "\n";

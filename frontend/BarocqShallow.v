@@ -30,8 +30,6 @@ Module BNF.
     | EAtom : atom -> expr
     | EArrayGet : atom -> atom -> expr
     | EArraySet : atom -> atom -> atom -> expr
-    | ERecordProj : atom -> ident -> expr
-    | ERecordUpdate : atom -> ident -> atom -> expr
     | EApp : atom -> list atom -> expr
     | EIfThenElse : atom -> expr -> expr -> expr
     | EMatch : atom -> list (pattern * expr) -> expr
@@ -105,8 +103,6 @@ Module Monadic.
     | EAtom : atom -> mtyp -> expr
     | EArrayGet : atom -> atom -> mtyp -> expr
     | EArraySet : atom -> atom -> atom -> mtyp -> expr
-    | ERecordProj : atom -> ident -> mtyp -> expr
-    | ERecordUpdate : atom -> ident -> atom -> mtyp -> expr
     | EApp : atom -> list atom -> mtyp -> expr
     | EIfThenElse : atom -> expr -> expr -> mtyp -> expr
     | EMatch : atom -> list (pattern * expr) -> mtyp -> expr

@@ -257,19 +257,36 @@ let rec atom_to_rocq (a : atom) : string =
               (opt_parens a1)
               (opt_parens a2)
       end
-  | ARecordProj (a1, x, _) ->
-      sprintf
-        "%s.(%s_%s)"
-        (opt_parens a1)
-        (field_name_prefix (typof_atom a1))
-        (ident_to_string x)
-  | ARecordUpdate (a1, x, a2, ty) ->
-      sprintf
-        "%s <| %s_%s := %s |>"
-        (opt_parens a1)
-        (field_name_prefix ty)
-        (ident_to_string x)
-        (atom_to_rocq a2)
+  | ARecordProj (a1, x, _) -> begin
+      match !shver with
+      | BarocqShallowgen.ShallowR ->
+          sprintf
+            "%s.(%s_%s)"
+            (opt_parens a1)
+            (field_name_prefix (typof_atom a1))
+            (ident_to_string x)
+      | BarocqShallowgen.ShallowB ->
+          sprintf
+            "Brecord.project %s %s eq_refl"
+            (opt_parens a1)
+            (Deepgen.ident_to_deep x)
+    end
+  | ARecordUpdate (a1, x, a2, ty) -> begin
+      match !shver with
+      | BarocqShallowgen.ShallowR ->
+          sprintf
+            "%s <| %s_%s := %s |>"
+            (opt_parens a1)
+            (field_name_prefix ty)
+            (ident_to_string x)
+            (atom_to_rocq a2)
+      | BarocqShallowgen.ShallowB ->
+          sprintf
+            "Brecord.upd %s %s eq_refl %s"
+            (opt_parens a1)
+            (Deepgen.ident_to_deep x)
+            (opt_parens a2)
+    end
   | ALambda (params, a1, _) ->
       sprintf
         "fun %s => %s"
@@ -306,14 +323,6 @@ let rec expr_to_rocq_rec (prefix : string) (e : expr) : string =
           else sprintf "(uint_to_uint64 %s)" (opt_parens a2)
         in
         sprintf "Barray.set %s %s %s" (opt_parens a1) sa2 (opt_parens a3)
-    | ERecordProj (a1, f, _) ->
-        sprintf "Brecord.proj %s %s" (opt_parens a1) (Deepgen.ident_to_deep f)
-    | ERecordUpdate (a1, f, a2, _) ->
-        sprintf
-          "Brecord.update %s %s %s"
-          (opt_parens a1)
-          (Deepgen.ident_to_deep f)
-          (opt_parens a2)
     | EApp (a1, args, _) ->
         let sargs =
           match args with
