@@ -683,21 +683,6 @@ Proof.
       }
 Qed.
 
-Fixpoint no_TFun (t:typ) :=
-  match t with
-  | TFun _ _ => false
-  | TArray t => no_TFun t
-  | TRecord _ l => List.forallb (fun x => no_TFun (snd x)) l
-  | _  => true
-  end.
-
-Fixpoint fo_typ (t:typ) :=
-  match t with
-  | TFun l r => List.forallb no_TFun l && fo_typ r
-  | TArray t => fo_typ t
-  | TRecord _ l => List.forallb (fun x => fo_typ (snd x)) l
-  |   _         => true
-  end.
 
 Fixpoint no_TFun_equal (t:typ) :
   no_TFun t = true ->
@@ -1364,40 +1349,53 @@ Proof.
       tauto.
 Qed.
 
-Lemma equal_update_record :
+Fixpoint no_TFun_fo_typ (ty:typ):  no_TFun ty = true -> fo_typ ty = true.
+Proof.
+  destruct ty; simpl; auto; try discriminate.
+  induction l; simpl;auto.
+  rewrite! andb_true_iff.
+  intuition.
+Qed.
+
+
+Lemma equal_upd_record_aux :
   forall fields r1 r2 f ty v1 v2,
     equal_record ext_equal fields r1 r2 ->
     ext_equal ty v1 v2 ->
-    res_rel (equal_record ext_equal fields) (update_record abs_typ_impl fields r1 f ty v1)
-      (update_record abs_typ_impl fields r2 f ty v2).
+    res_rel (equal_record ext_equal fields) (eval_record_upd_aux abs_typ_impl fields r1 f ty v1)
+      (eval_record_upd_aux abs_typ_impl fields r2 f ty v2).
 Proof.
   unfold eval_recordtyp.
-  unfold update_record.
-  induction fields.
-  - simpl. intros.
-    constructor.
-  - intros.
+  intros.
+  unfold eval_record_upd_aux.
+  repeat match goal with
+  | |- context[bool_dec ?B1 ?B2] => destruct (bool_dec B1 B2)
+  end ; try constructor.
+  destruct (typeof_field_typ abs_typ_impl f ty  fields e1) ; try constructor.
+  apply no_TFun_equal in H0; auto.
+  change  (ext_equal (TRecord "" fields) r1 r2) in H.
+  apply no_TFun_equal in H.
+  subst.
+  change  (equal_record ext_equal fields)
+    with (ext_equal (TRecord "" fields)).
+  apply ext_equal_refl.
+  simpl.
+  clear - e.
+  { induction fields;simpl;auto.
     simpl in *.
-    destruct a.
-    destruct (string_dec f i).
-    destruct (typ_eq_dec ty t).
-    +  constructor.
-       split; auto.
-       simpl. subst.
-       apply H0.
-       simpl. tauto.
-    + constructor.
-    + destruct H.
-      eapply IHfields with (f:=f) in H1; eauto.
-      simpl in *.
-      match goal with
-      | H : res_rel _ ?A ?B |- res_rel ?R (let* _ := ?A1 in _) (let* _ := ?A2 in _) =>
-          change A1 with A ; change A2 with B
-      end.
-      inv H1. constructor.
-      simpl. constructor.
-      simpl. split;auto.
+    rewrite andb_true_iff in *.
+    destruct e.
+    split; auto.
+    apply no_TFun_fo_typ.
+    auto.
+  }
+  simpl.
+  { clear - e. induction  fields ; simpl in * ;auto.
+    rewrite andb_true_iff in *.
+    intuition.
+  }
 Qed.
+
 
 
 
@@ -1419,14 +1417,10 @@ Proof.
   change (cast eq_refl v2) with v2 in H0.
   unfold eval_record_update.
   destruct t; try constructor.
-  unfold eval_record_update_aux.
   simpl in H.
-  eapply equal_update_record with (f:=f) in H; eauto.
+  eapply equal_upd_record_aux with (f:= f) in H; eauto.
   inv H; constructor.
-  unfold same_value.
-  destruct (typ_eq_dec (TRecord i l) (TRecord i l)); try congruence.
-  assert (e =  eq_refl) by (apply Eqdep_dec.UIP_dec ; apply typ_eq_dec).
-  subst. simpl. auto.
+  apply ext_equal_same_value; auto.
 Qed.
 
 Inductive eq_access_value : access_value abs_typ_impl -> access_value abs_typ_impl -> Prop :=
