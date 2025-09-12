@@ -196,7 +196,13 @@ let rec atom_to_rocq (a : atom) : string =
   | AFalse _ -> "false"
   | AInt32 (i, ty) -> int_to_rocq i ty
   | AInt64 (i, ty) -> int64_to_rocq i ty
-  | AConstr (x, _) -> ident_to_string x
+  | AConstr (x, _) ->
+      let x = ident_to_string x in
+      begin
+        match !shver with
+        | BarocqShallowgen.ShallowR -> x
+        | BarocqShallowgen.ShallowB -> sprintf "%s_Types.%s" !coqlib x
+      end
   | AVar (x, _) -> ident_to_string x
   | ACast (a1, dst_ty, _) ->
       let t1 = typof_atom a1 in
@@ -357,7 +363,7 @@ let rec expr_to_rocq_rec (prefix : string) (e : expr) : string =
               (opt_parens a1)
               (list_to_string ~sep:"\n" (match_case_to_string prefix) cases)
               prefix
-        | BarocqShallowgen.ShallowB ->
+        | BarocqShallowgen.ShallowB -> begin
             let _, c1 = List.hd cases in
             let match_op =
               match BarocqShallowgen.Monadification.typof_expr c1 with
@@ -373,6 +379,7 @@ let rec expr_to_rocq_rec (prefix : string) (e : expr) : string =
                  (match_case_to_string (prefix ^ indent))
                  cases)
               prefix
+          end
       end
     | ELetIn (x, e1, e2, _) -> begin
         match e1 with
@@ -575,8 +582,7 @@ module SR = struct
     in
     let neq =
       sprintf
-        "Definition %s_neq (x y: %s) : bool :=\n\
-         %sif %s_eq_dec x y then false else true."
+        "Definition %s_neq (x y: %s) : bool :=\n%snegb (%s_eq x y)."
         eid
         eid
         indent
@@ -623,15 +629,14 @@ module SR = struct
         indent
         (List.length ed.ed_elems)
         indent
-        (make_indent 2)
-        (make_indent 3)
+        indent2
+        indent3
         (list_to_string
            ~sep:";\n"
-           (fun constr ->
-             sprintf "%s%s" (make_indent 4) (ident_to_string constr))
+           (fun constr -> sprintf "%s%s" indent4 (ident_to_string constr))
            ed.ed_elems)
-        (make_indent 3)
-        (make_indent 3)
+        indent3
+        indent3
     in
     sprintf
       "Definition cast_i32_to_%s (i: int) : res %s :=\n%s."
@@ -732,28 +737,10 @@ module SB = struct
       eid
       eid
 
-  let print_enum_constructors (out : out_channel) (ed : enum_def) : unit =
-    let eid = ident_to_string ed.ed_name in
-    let rec aux (elems : ident list) : unit =
-      match elems with
-      | [] -> ()
-      | i :: elems' ->
-          fprintf
-            out
-            "\nDefinition %s : %s :=\n%sBenum.mk_enum elems_of_%s %s eq_refl.\n"
-            (ident_to_string i)
-            eid
-            indent
-            eid
-            (Deepgen.ident_to_deep i);
-          aux elems'
-    in
-    aux ed.ed_elems
-
   let field_typ_to_rocq ((fname, fty) : ident * mtyp) : string =
     sprintf
       "%s(%s, %s : Type)"
-      (make_indent 2)
+      indent2
       (Deepgen.ident_to_deep fname)
       (mtyp_to_rocq fty)
 
@@ -774,7 +761,6 @@ module SB = struct
 
   let gen_ffi_fun_body (fid : ident) (tparams : mtyp list) (tret : mtyp) :
       string =
-    let indent2 = make_indent 2 in
     let rec gen_args (n : int) : string =
       if n >= List.length tparams then ""
       else sprintf "a%d %s" n (gen_args (n + 1))
@@ -861,15 +847,8 @@ module SB = struct
 
   let print_program (out : out_channel) (prog : program) : unit =
     shver := BarocqShallowgen.ShallowB;
-    let types = prog.prog_types in
     let defs = prog.prog_defs in
     fprintf out "%s" (imports ());
-    let enums = get_enum_typedefs types in
-    if enums <> [] then begin
-      fprintf out "\n";
-      fprintf out "(** * Enum constructors *)\n";
-      List.iter (print_enum_constructors out) enums
-    end;
     fprintf out "\n";
     fprintf out "(** * Auxiliary functions *)\n\n";
     fprintf out "Definition neqb (b1 b2: bool) := negb (Bool.eqb b1 b2).\n";

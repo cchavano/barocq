@@ -1,4 +1,4 @@
- open Lexing
+open Lexing
 open Printf
 
 exception CompilerError of string
@@ -217,7 +217,7 @@ let () =
 
       SurfaceTyping.set_arr_index_btyp !target_arch;
 
-      let iprog = SurfaceTyping.typecheck_iprogram s_iprog in
+      let _, iprog = SurfaceTyping.typecheck_iprogram s_iprog in
 
       let prog = Barocq.iprog_to_prog iprog in
 
@@ -226,13 +226,16 @@ let () =
         exit 0
       end;
 
-      let tiprog  = 
+      let tiprog =
         match Barocq.Typing.typecheck_iprogram !target_arch iprog with
         | Errors.OK p -> p
-        | Errors.Error _ -> printf "Typecheking error"; failwith "Typecheking error" in 
+        | Errors.Error _ ->
+            printf "Typecheking error";
+            failwith "Typecheking error"
+      in
 
-      let tprog = Barocq.Typing.program_of_iprogram tiprog in 
-      
+      let tprog = Barocq.Typing.program_of_iprogram tiprog in
+
       if !opt_interp then begin
         let _ = Binterpreter.interpret !target_arch tiprog in
         exit 0
@@ -452,6 +455,13 @@ let () =
 
               (* ShallowR <-> ShallowB correspondence *)
               CorresRBgen.coqlib := rawname;
+              let corresRB_tactics_file = full_filename "_CorresRB_Tactics.v" in
+              let corresRB_tactics_oc = open_out corresRB_tactics_file in
+              CorresRBgen.HelperTactics.print corresRB_tactics_oc rprog bprog;
+              close_out corresRB_tactics_oc;
+              printf
+                "ShallowR <-> ShallowB helper tactics generated at %s\n"
+                (clean_filename corresRB_tactics_file);
               let corresRB_file = full_filename "_CorresRB.v" in
               let corresRB_oc = open_out corresRB_file in
               CorresRBgen.print_corres corresRB_oc rprog bprog;

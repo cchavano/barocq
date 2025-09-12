@@ -36,7 +36,7 @@ Definition enum_eq {elems: list ident} (x y: enum elems) :=
   if enum_eq_dec x y then true else false.
 
 Definition enum_neq {elems: list ident} (x y: enum elems) :=
- if enum_eq_dec x y then false else true.
+ negb (enum_eq x y).
 
 Fixpoint make_enum (elems: list ident) (i: ident) : res (enum elems) :=
   match elems as l0 return (res (enum l0)) with
@@ -163,30 +163,102 @@ Definition of_i32 (elems: list ident) (i: int) : res (enum elems) :=
 Inductive pattern : Type := 
   | PIdent (i: ident) : pattern
   | PWildcard : pattern.
-
+  
 Fixpoint match_with {elems: list ident} {A: Type} (e: enum elems) (cases: list (pattern * A)) : res A :=
   match cases with
   | nil => fail
-  | (ei, ai) :: cases' =>
-      match ei with
+  | (pi, ai) :: cases' =>
+      match pi with
       | PIdent i =>
-          if Ident.eq_dec (ident_of_constr e) i then (ret ai)
+          let* ei := make_enum elems i in
+          if enum_eq ei e then ret ai
           else match_with e cases'
       | PWildcard => ret ai
       end
   end.
 
+Fixpoint match_with2 {elems: list ident} {A E: Type} (e: enum elems) (cases: list (pattern * A))
+  (E_eq_dec: forall (x y: E), {x = y} + {x <> y}) (f: enum elems -> E) : res A :=
+  match cases with
+  | nil => fail
+  | (pi, ai) :: cases' =>
+      match pi with
+      | PIdent i =>
+          let* ei := make_enum elems i in
+          if E_eq_dec (f ei) (f e) then ret ai
+          else match_with2 e cases' E_eq_dec f
+      | PWildcard => ret ai
+      end
+  end.
+
+Lemma match_with_eq_match_with2 :
+  forall (elems: list ident) (A E: Type) (e: enum elems) (cases: list (pattern * A))
+  (E_eq_dec: forall (x y: E), {x = y} + {x <> y})
+  (econv_to: enum elems -> E)
+  (econv_from: E -> enum elems)
+  (INV1: forall (a: enum elems) (b: E), econv_to (econv_from b) = b)
+  (INV2: forall (a: enum elems) (b: E), econv_from (econv_to a) = a),
+  match_with e cases = match_with2 e cases E_eq_dec econv_to.
+Proof.
+  induction cases as [| (pi, ai) cases']; intros.
+  - simpl. reflexivity.
+  - simpl. destruct pi.
+    + destruct (make_enum elems i); simpl.
+      * unfold enum_eq. erewrite <- Utils.bij_eq_iff with (EQB := E_eq_dec); eauto.
+        destruct (E_eq_dec (econv_to e0) (econv_to e)).
+        reflexivity.
+        apply (IHcases' E_eq_dec econv_to econv_from INV1 INV2).
+      * reflexivity.
+    + reflexivity.
+Qed.
+  
 Fixpoint match_with_err {elems: list ident} {A: Type} (e: enum elems) (cases: list (pattern * res A)) : res A :=
   match cases with
   | nil => fail
-  | (ei, ai) :: cases' =>
-      match ei with
+  | (pi, ai) :: cases' =>
+      match pi with
       | PIdent i =>
-          if Ident.eq_dec (ident_of_constr e) i then ai
+          let* ei := make_enum elems i in
+          if enum_eq ei e then ai
           else match_with_err e cases'
       | PWildcard => ai
       end
   end.
+
+Fixpoint match_with_err2 {elems: list ident} {A E: Type} (e: enum elems) (cases: list (pattern * res A))
+  (E_eq_dec: forall (x y: E), {x = y} + {x <> y}) (f: enum elems -> E) : res A :=
+  match cases with
+  | nil => fail
+  | (pi, ai) :: cases' =>
+      match pi with
+      | PIdent i =>
+          let* ei := make_enum elems i in
+          if E_eq_dec (f ei) (f e) then ai
+          else match_with_err2 e cases' E_eq_dec f
+      | PWildcard => ai
+      end
+  end.
+
+Lemma match_with_err_eq_match_with_err2 :
+  forall (elems: list ident) (A E: Type) (e: enum elems) (cases: list (pattern * res A))
+  (E_eq_dec: forall (x y: E), {x = y} + {x <> y})
+  (econv_to: enum elems -> E)
+  (econv_from: E -> enum elems)
+  (INV1: forall (a: enum elems) (b: E), econv_to (econv_from b) = b)
+  (INV2: forall (a: enum elems) (b: E), econv_from (econv_to a) = a),
+  match_with_err e cases = match_with_err2 e cases E_eq_dec econv_to.
+Proof.
+  induction cases as [| (pi, ai) cases']; intros.
+  - simpl. reflexivity.
+  - simpl. destruct pi.
+    + destruct (make_enum elems i); simpl.
+      * unfold enum_eq. erewrite <- Utils.bij_eq_iff with (EQB := E_eq_dec); eauto.
+        destruct (E_eq_dec (econv_to e0) (econv_to e)).
+        reflexivity.
+        apply (IHcases' E_eq_dec econv_to econv_from INV1 INV2).
+      * reflexivity.
+    + reflexivity.
+Qed.
 
 (** Brute force proof principle for enumeration types *)
 

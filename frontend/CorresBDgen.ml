@@ -165,7 +165,6 @@ let gen_abs_types_impl_env (types : type_def list) : string =
       l
   in
   let env_build env_list l =
-    let indent2 = make_indent 2 in
     sprintf
       "List.fold_left\n\
        %s(fun ge '(d, s) => SMap.set d s ge)\n\
@@ -175,7 +174,7 @@ let gen_abs_types_impl_env (types : type_def list) : string =
        %s(SMap.init (unit : Type))"
       indent2
       indent2
-      (env_list (make_indent 3) l)
+      (env_list indent3 l)
       indent2
       indent2
   in
@@ -207,7 +206,6 @@ let gen_abs_defs_impl_env (defs : globdef list) : string =
       l
   in
   let genv_build genv_list l =
-    let indent2 = make_indent 2 in
     sprintf
       "List.fold_left\n\
        %s(fun ge '(d, s) => STree.set d s ge)\n\
@@ -217,7 +215,7 @@ let gen_abs_defs_impl_env (defs : globdef list) : string =
        %sSTree.empty"
       indent2
       indent2
-      (genv_list (make_indent 3) l)
+      (genv_list indent3 l)
       indent2
       indent2
   in
@@ -355,16 +353,16 @@ let print_properties_envs (out : out_channel) (defs : globdef list) : unit =
   fprintf out "Definition decl_prop : list propt :=\n";
   print_list
     out
-    ~delim:(sprintf "%s[\n%s" indent (make_indent 2), sprintf "\n%s].\n" indent)
-    ~sep:(sprintf ";\n%s" (make_indent 2))
+    ~delim:(sprintf "%s[\n%s" indent indent2, sprintf "\n%s].\n" indent)
+    ~sep:(sprintf ";\n%s" indent2)
     gen_def_property
     decls;
   fprintf out "\n";
   fprintf out "Definition def_prop : list propt :=\n";
   print_list
     out
-    ~delim:(sprintf "%s[\n%s" indent (make_indent 2), sprintf "\n%s].\n" indent)
-    ~sep:(sprintf ";\n%s" (make_indent 2))
+    ~delim:(sprintf "%s[\n%s" indent indent2, sprintf "\n%s].\n" indent)
+    ~sep:(sprintf ";\n%s" indent2)
     gen_def_property
     defs
 
@@ -442,11 +440,11 @@ let print_typing_env (out : out_channel) (types : type_def list) : unit =
      %s%s\n\
      |}.\n"
     indent
-    (make_indent 2)
-    (tenv_defs_to_string (make_indent 3) types)
+    indent2
+    (tenv_defs_to_string indent3 types)
     indent
-    (make_indent 2)
-    (tenv_constr_types_to_string (make_indent 3) types)
+    indent2
+    (tenv_constr_types_to_string indent3 types)
 
 module VCgen = struct
   let ident_of_globdef (d : globdef) : ident =
@@ -455,7 +453,8 @@ module VCgen = struct
       -> x
 
   let rec print_needed_checked_lists (out : out_channel)
-      (bprog : Barocq.Typed.globdef list) (sdefs : BarocqShallow.Monadic.globdef list) : unit =
+      (bprog : Barocq.Typed.globdef list)
+      (sdefs : BarocqShallow.Monadic.globdef list) : unit =
     match bprog with
     | [] -> ()
     | bd :: bprog' ->
@@ -467,8 +466,7 @@ module VCgen = struct
               in
               let sdefs_needed =
                 List.filter
-                  (fun (d ) ->
-                    BarocqVC.has_var (ident_of_globdef d) vars)
+                  (fun d -> BarocqVC.has_var (ident_of_globdef d) vars)
                   sdefs
               in
               fprintf
@@ -478,12 +476,12 @@ module VCgen = struct
                 (ident_to_string fid);
               let delim =
                 if sdefs_needed = [] then ("[", "]")
-                else (sprintf "[\n%s" (make_indent 2), sprintf "\n%s]\n" indent)
+                else (sprintf "[\n%s" indent2, sprintf "\n%s]\n" indent)
               in
               print_list
                 out
                 ~delim
-                ~sep:(sprintf ";\n%s" (make_indent 2))
+                ~sep:(sprintf ";\n%s" indent2)
                 gen_def_property
                 sdefs_needed;
               fprintf out "%sin\n" indent
@@ -530,8 +528,6 @@ module VCgen = struct
         print_functions_params out sdefs'
 
   let gen_const_vc (is_abs : bool) (cid : ident) (ty : mtyp) : string =
-    let indent2 = make_indent 2 in
-    let indent3 = make_indent 3 in
     let cid_str = ident_to_string cid in
     let constval_shallow = sprintf "%s.%s" !shallowfile cid_str in
     if is_abs then
@@ -562,7 +558,6 @@ module VCgen = struct
 
   let gen_fun_vc (is_abs : bool) (fid : ident) (params : (ident * mtyp) list)
       (tret : mtyp) : string =
-    let indent3 = make_indent 3 in
     let fid_shallow = ident_to_string fid in
     (*    let forall =
       if params = [] then ""
@@ -586,7 +581,7 @@ module VCgen = struct
        needed_checked_%s in\n\
        %slet v : #Deeptypes.typof_%s := %s in\n\
        eq_value abs_types_impl (VAL Deeptypes.typof_%s %s) _ v\n"
-      (make_indent 2)
+      indent2
       fid_shallow
       indent3
       fid_shallow
@@ -609,7 +604,8 @@ module VCgen = struct
     | Target.Ptr32 -> "Target.Ptr32"
 
   let print_vc (out : out_channel) (arch : Target.archi)
-      (bprog : Barocq.Typed.program) (sprog : BarocqShallow.Monadic.program) : unit =
+      (bprog : Barocq.Typed.program) (sprog : BarocqShallow.Monadic.program) :
+      unit =
     let sdefs = sprog.prog_defs in
     let isdef = function
       | BarocqShallow.Monadic.DefConst _ | BarocqShallow.Monadic.DefFun _ ->
@@ -625,7 +621,7 @@ module VCgen = struct
     print_list
       out
       ~delim:(sprintf "%s[\n" indent, sprintf "\n%s]." indent)
-      ~sep:(sprintf ";\n%s(* ========================== *)\n" (make_indent 2))
+      ~sep:(sprintf ";\n%s(* ========================== *)\n" indent2)
       gen_def_vc
       (List.rev sdefs)
 end

@@ -1,11 +1,17 @@
 open Printf
 open Camlcoq
 
-let indent_size = 2
-
-let indent : string = String.make indent_size ' '
+let indent_size : int = 2
 
 let make_indent (n : int) : string = String.make (n * indent_size) ' '
+
+let indent : string = make_indent 1
+
+let indent2 : string = make_indent 2
+
+let indent3 : string = make_indent 3
+
+let indent4 : string = make_indent 4
 
 let ident_to_string (x : Syntax.ident) : string =
   camlstring_of_coqstring (Ident.to_string x)

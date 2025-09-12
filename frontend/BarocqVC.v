@@ -1693,8 +1693,10 @@ Proof.
     destruct x,y0.
     simpl in *. destruct H; subst.
     destruct p0.
-    destruct (eq_dec (Benum.ident_of_constr y) i0); auto.
-    auto.
+    destruct (Benum.make_enum l i0); simpl.
+    + destruct (Benum.enum_eq e y); auto.
+    + constructor.
+    + exact H1.
 Qed.
 
 

@@ -90,86 +90,109 @@ and opt_parens_btyp (ty : btyp) : string =
 
 let rec expr_to_deep (prefix : string) (e : Typed.expr) : string =
   let prefix' = prefix ^ indent in
-  Typed.(match e with
-  | ETrue -> "ETrue"
-  | EFalse -> "EFalse"
-  | EInt32 (i, s) ->
-      sprintf "EInt32 (%s) %s" (int_to_deep i s) (signedness_to_deep s)
-  | EInt64 (i, s) ->
-      sprintf "EInt64 (%s) %s" (tint64o_deep i s) (signedness_to_deep s)
-  | EConstr(x, bt) -> sprintf "EConstr %s (%s)" (ident_to_deep x) (btyp_to_deep bt) 
-  | EVar(x,bt) -> sprintf "EVar %s (%s)" (ident_to_deep x) (btyp_to_deep bt)
-  | ECast (e1, ty) ->
-      sprintf "ECast (%s) (%s)" (expr_to_deep prefix e1) (btyp_to_deep ty) 
-  | EUnaryOp (op, e1,bt) ->
-      sprintf "EUnaryOp %s (%s) (%s)" (unary_op_to_deep op) (expr_to_deep "" e1) (btyp_to_deep bt)
-  | EBinaryOp (op, e1, e2,bt) ->
-      sprintf
-        "EBinaryOp %s (%s) (%s) (%s)"
-        (binary_op_to_deep op)
-        (expr_to_deep "" e1)
-        (expr_to_deep "" e2) (btyp_to_deep bt)
-  | EArrayGet (e1, e2, bt) ->
-      sprintf "EArrayGet (%s) (%s) (%s)" (expr_to_deep "" e1) (expr_to_deep "" e2) (btyp_to_deep bt)
-  | EArraySet (e1, e2, e3,bt) ->
-      sprintf
-        "EArraySet (%s) (%s) (%s) (%s)"
-        (expr_to_deep "" e1)
-        (expr_to_deep "" e2)
-        (expr_to_deep "" e3) (btyp_to_deep bt)
-  | ERecordProj (e1, x, bt) ->
-      sprintf "ERecordProj (%s) %s (%s)" (expr_to_deep "" e1) (ident_to_deep x) (btyp_to_deep bt)
-  | ERecordUpdate (e1, x, e2, bt) ->
-      sprintf
-        "ERecordUpdate (%s) %s (%s) (%s)"
-        (expr_to_deep "" e1)
-        (ident_to_deep x)
-        (expr_to_deep "" e2) (btyp_to_deep bt)
-  | EDeepAccess (e1, acs, bt) ->
-      sprintf
-        "EDeepAccess (%s) %s (%s)"
-        (expr_to_deep prefix e1)
-        (list_to_string_bracket access_to_deep acs) (btyp_to_deep bt)
-  | EApp (e1, args, bt) ->
-      sprintf
-        "EApp (%s) %s (%s)"
-        (expr_to_deep "" e1)
-        (list_to_string_bracket (expr_to_deep "") args) (btyp_to_deep bt)
-  | EIfThenElse (e1, e2, e3,bt) ->
-      sprintf
-        "EIfThenElse (%s)\n%s(%s)\n%s(%s) (%s)"
-        (expr_to_deep "" e1)
-        prefix'
-        (expr_to_deep prefix' e2)
-        prefix'
-        (expr_to_deep prefix' e3) (btyp_to_deep bt)
-  | EMatch (e1, cases, bt) ->
-      sprintf
-        "EMatch (%s) [\n%s\n%s] (%s)"
-        (expr_to_deep "" e1)
-        (list_to_string ~sep:";\n" (match_case_to_string prefix') cases)
-        prefix (btyp_to_deep bt)
-  | ELetIn (x, e1, e2, bt) -> begin
-      match e1 with
-      | EIfThenElse _ | EMatch _ ->
-          sprintf
-            "ELetIn %s\n%s(%s)\n%s(%s) (%s)"
-            (ident_to_deep x)
-            prefix'
-            (expr_to_deep prefix' e1)
-            prefix'
-            (expr_to_deep prefix' e2) (btyp_to_deep bt)
-      | _ ->
-          sprintf
-            "ELetIn %s (%s)\n%s(%s) (%s)"
-            (ident_to_deep x)
-            (expr_to_deep "" e1)
-            prefix'
-            (expr_to_deep prefix' e2) (btyp_to_deep bt)
-    end)
+  Typed.(
+    match e with
+    | ETrue -> "ETrue"
+    | EFalse -> "EFalse"
+    | EInt32 (i, s) ->
+        sprintf "EInt32 (%s) %s" (int_to_deep i s) (signedness_to_deep s)
+    | EInt64 (i, s) ->
+        sprintf "EInt64 (%s) %s" (tint64o_deep i s) (signedness_to_deep s)
+    | EConstr (x, bt) ->
+        sprintf "EConstr %s (%s)" (ident_to_deep x) (btyp_to_deep bt)
+    | EVar (x, bt) -> sprintf "EVar %s (%s)" (ident_to_deep x) (btyp_to_deep bt)
+    | ECast (e1, ty) ->
+        sprintf "ECast (%s) (%s)" (expr_to_deep prefix e1) (btyp_to_deep ty)
+    | EUnaryOp (op, e1, bt) ->
+        sprintf
+          "EUnaryOp %s (%s) (%s)"
+          (unary_op_to_deep op)
+          (expr_to_deep "" e1)
+          (btyp_to_deep bt)
+    | EBinaryOp (op, e1, e2, bt) ->
+        sprintf
+          "EBinaryOp %s (%s) (%s) (%s)"
+          (binary_op_to_deep op)
+          (expr_to_deep "" e1)
+          (expr_to_deep "" e2)
+          (btyp_to_deep bt)
+    | EArrayGet (e1, e2, bt) ->
+        sprintf
+          "EArrayGet (%s) (%s) (%s)"
+          (expr_to_deep "" e1)
+          (expr_to_deep "" e2)
+          (btyp_to_deep bt)
+    | EArraySet (e1, e2, e3, bt) ->
+        sprintf
+          "EArraySet (%s) (%s) (%s) (%s)"
+          (expr_to_deep "" e1)
+          (expr_to_deep "" e2)
+          (expr_to_deep "" e3)
+          (btyp_to_deep bt)
+    | ERecordProj (e1, x, bt) ->
+        sprintf
+          "ERecordProj (%s) %s (%s)"
+          (expr_to_deep "" e1)
+          (ident_to_deep x)
+          (btyp_to_deep bt)
+    | ERecordUpdate (e1, x, e2, bt) ->
+        sprintf
+          "ERecordUpdate (%s) %s (%s) (%s)"
+          (expr_to_deep "" e1)
+          (ident_to_deep x)
+          (expr_to_deep "" e2)
+          (btyp_to_deep bt)
+    | EDeepAccess (e1, acs, bt) ->
+        sprintf
+          "EDeepAccess (%s) %s (%s)"
+          (expr_to_deep prefix e1)
+          (list_to_string_bracket access_to_deep acs)
+          (btyp_to_deep bt)
+    | EApp (e1, args, bt) ->
+        sprintf
+          "EApp (%s) %s (%s)"
+          (expr_to_deep "" e1)
+          (list_to_string_bracket (expr_to_deep "") args)
+          (btyp_to_deep bt)
+    | EIfThenElse (e1, e2, e3, bt) ->
+        sprintf
+          "EIfThenElse (%s)\n%s(%s)\n%s(%s) (%s)"
+          (expr_to_deep "" e1)
+          prefix'
+          (expr_to_deep prefix' e2)
+          prefix'
+          (expr_to_deep prefix' e3)
+          (btyp_to_deep bt)
+    | EMatch (e1, cases, bt) ->
+        sprintf
+          "EMatch (%s) [\n%s\n%s] (%s)"
+          (expr_to_deep "" e1)
+          (list_to_string ~sep:";\n" (match_case_to_string prefix') cases)
+          prefix
+          (btyp_to_deep bt)
+    | ELetIn (x, e1, e2, bt) -> begin
+        match e1 with
+        | EIfThenElse _ | EMatch _ ->
+            sprintf
+              "ELetIn %s\n%s(%s)\n%s(%s) (%s)"
+              (ident_to_deep x)
+              prefix'
+              (expr_to_deep prefix' e1)
+              prefix'
+              (expr_to_deep prefix' e2)
+              (btyp_to_deep bt)
+        | _ ->
+            sprintf
+              "ELetIn %s (%s)\n%s(%s) (%s)"
+              (ident_to_deep x)
+              (expr_to_deep "" e1)
+              prefix'
+              (expr_to_deep prefix' e2)
+              (btyp_to_deep bt)
+      end)
 
-and match_case_to_string (prefix : string) ((p, ep) : Benum.pattern * Typed.expr) :
-    string =
+and match_case_to_string (prefix : string)
+    ((p, ep) : Benum.pattern * Typed.expr) : string =
   let prefix' = prefix ^ indent in
   let case =
     match p with
@@ -180,8 +203,10 @@ and match_case_to_string (prefix : string) ((p, ep) : Benum.pattern * Typed.expr
 
 and access_to_deep (ac : Typed.access) : string =
   match ac with
-  | AcRecordField(f,bt) -> sprintf "AcRecordField %s (%s)" (ident_to_deep f) (btyp_to_deep bt)
-  | AcArrayIndex(e,bt) -> sprintf "AcArrayIndex (%s) (%s)" (expr_to_deep "" e) (btyp_to_deep bt)
+  | AcRecordField (f, bt) ->
+      sprintf "AcRecordField %s (%s)" (ident_to_deep f) (btyp_to_deep bt)
+  | AcArrayIndex (e, bt) ->
+      sprintf "AcArrayIndex (%s) (%s)" (expr_to_deep "" e) (btyp_to_deep bt)
 
 let params_to_deep (params : (ident * btyp) list) : string =
   list_to_string_bracket
@@ -221,13 +246,13 @@ let fields_to_deep (fields : (ident * btyp) list) : string =
   list_to_string
     ~sep:";\n"
     (fun (id, ty) ->
-      sprintf "%s(%s, %s)" (make_indent 2) (ident_to_deep id) (btyp_to_deep ty))
+      sprintf "%s(%s, %s)" indent2 (ident_to_deep id) (btyp_to_deep ty))
     fields
 
 let elems_to_deep (elems : ident list) : string =
   list_to_string
     ~sep:";\n"
-    (fun e -> sprintf "%s%s" (make_indent 2) (ident_to_deep e))
+    (fun e -> sprintf "%s%s" indent2 (ident_to_deep e))
     elems
 
 let globdef_to_coqdef (def : Typed.globdef) : string =

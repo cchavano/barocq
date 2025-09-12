@@ -235,10 +235,10 @@ let gen_fun_corres (fid : ident) (params : (ident * mtyp) list) (tret : mtyp) :
            " specialize (HcorresBD %s)."
            (fun_corres_deep_call_args params)
        else "")
-      (make_indent 2)
+      indent2
       !coqlib
       fid_shallow
-      (make_indent 2)
+      indent2
   in
   sprintf
     "Theorem fun_%s_corres :\n\

@@ -6,7 +6,7 @@ Import ListNotations.
 
 Set Implicit Arguments.
 
-Definition array (A: Type) := list A.
+Polymorphic Definition array (A: Type) := list A.
 
 Section ARRAYS.
 
@@ -33,4 +33,63 @@ Section ARRAYS.
     if valid_index a i then ret (set_rec a (U64.to_nat i) x)
     else fail.
 
+  Definition map (B: Type) (f: A -> B) (a: array A) : array B :=
+    @List.map A B f a.
+
 End ARRAYS.
+
+Section Specs.
+
+  Lemma map_preserve_length :
+    forall (A B: Type) (f: A -> B) (a: array A),
+    length (map f a) = length a.
+  Proof.
+    induction a.
+    - reflexivity.
+    - simpl. f_equal. apply IHa.
+  Qed.
+
+  Lemma map_preserve_valid_index :
+    forall (A B: Type) (f: A -> B) (a: array A) (i: int64),
+    valid_index (map f a) i = valid_index a i.
+  Proof.
+    intros. unfold valid_index. f_equal.
+    rewrite map_preserve_length.
+    reflexivity.
+  Qed. 
+
+  Lemma get_map_same :
+    forall (A B: Type) (f: A -> B) (a: array A) (i: int64),
+    get (map f a) i =
+    let* x := get a i in
+    ret (f x).
+  Proof.
+    intros. unfold get. rewrite map_preserve_valid_index.
+    destruct (valid_index a i); try reflexivity.
+    apply Utils.list_nth_err_map_same.
+  Qed.
+
+  Lemma set_rec_map_same :
+    forall (A B: Type) (f: A -> B) (v: A) (a: array A) (n: nat),
+    set_rec (map f a) n (f v) =
+    map f (set_rec a n v).
+  Proof.
+    induction a; destruct n.
+    - reflexivity.
+    - reflexivity.
+    - reflexivity.
+    - simpl. f_equal. apply (IHa n).
+  Qed.
+
+  Lemma set_map_same :
+    forall (A B: Type) (f: A -> B) (v: A) (a: array A) (i: int64),
+    set (map f a) i (f v) =
+    let* a' := set a i v in
+    ret (map f a').
+  Proof.
+    intros. unfold set. rewrite map_preserve_valid_index.
+    destruct (valid_index a i); try reflexivity.
+    rewrite set_rec_map_same. reflexivity.
+  Qed.
+
+End Specs.

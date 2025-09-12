@@ -33,6 +33,19 @@ Close Scope state_err_monad_scope.
 Definition list_nth_err {A: Type} (l: list A) (n: nat) : res A :=
   err_of_opt (nth_error l n).
 
+Lemma list_nth_err_map_same : 
+  forall (A B: Type) (f: A -> B) (l: list A) (n: nat),
+  list_nth_err (map f l) n =
+  let* x := list_nth_err l n in
+  eret (f x).
+Proof.
+  unfold list_nth_err. induction l; destruct n.
+  - reflexivity.
+  - reflexivity.
+  - reflexivity.
+  - simpl. apply (IHl n).
+Qed.
+
 Fixpoint list_fold_left_err {A B: Type} (f: A -> B -> res A) (l: list B) (a0: res A) : res A :=
   match l with
   | nil => a0
@@ -84,3 +97,90 @@ Definition sunion (s1 s2: pset) : pset := PositiveSet.union s1 s2.
 Notation sempty := PositiveSet.empty.
 
 Definition ident_set : Type := pset.
+
+(** * Others *)
+
+(* Lemma inj_eq_iff :
+  forall (A B: Type)
+  (EQA: forall (a1 a2: A), {a1 = a2} + {a1 <> a2})
+  (EQB: forall (b1 b2: B), {b1 = b2} + {b1 <> b2})
+  (f: A -> B)
+  (INJ: forall (a1 a2: A), f(a1) = f(a2) -> a1 = a2),
+  forall (a1 a2: A),
+  (if EQB (f a1) (f a2) then true else false) =
+  (if EQA a1 a2 then true else false).
+Proof.
+  intros. destruct (EQB (f a1) (f a2)); destruct (EQA a1 a2).
+  - reflexivity.
+  - specialize (INJ a1 a2 e). tauto.
+  - destruct n. congruence.
+  - reflexivity.
+Qed.
+
+Lemma bij_impl_inj:
+  forall (A B: Type)
+  (f: A -> B)
+  (BIJ: forall (b: B), exists! (a: A), f(a) = b),
+  forall (a1 a2: A), f(a1) = f(a2) -> a1 = a2.
+Proof.
+  intros. specialize (BIJ (f a1)). destruct BIJ as [a UNIQUE].
+  unfold unique in UNIQUE. destruct UNIQUE as [EQ1 INJ].
+  assert (EQ2: f a = f a2). congruence. symmetry in H.
+  apply (INJ a2) in H. specialize (INJ a1). destruct INJ.
+  reflexivity. congruence.
+Qed.
+
+Lemma bij_defs_impl :
+  forall (A B: Type)
+  (EQA: forall (a1 a2: A), {a1 = a2} + {a1 <> a2})
+  (EQB: forall (b1 b2: B), {b1 = b2} + {b1 <> b2})
+  (f: A -> B)
+  (g: B -> A)
+  (BIJ: forall (a: A) (b: B), f(a) = b <-> g(b) = a),
+  forall b, exists! a, f(a) = b.
+Proof.
+  intros. exists (g b). unfold unique. split.
+  - specialize (BIJ (g b) b). tauto.
+  - intro. specialize (BIJ x' b). tauto.
+Qed.
+
+Lemma bij_eq_iff :
+  forall (A B: Type)
+  (EQA: forall (a1 a2: A), {a1 = a2} + {a1 <> a2})
+  (EQB: forall (b1 b2: B), {b1 = b2} + {b1 <> b2})
+  (f: A -> B)
+  (g: B -> A)
+  (BIJ: forall (a: A) (b: B), f(a) = b <-> g(b) = a),
+  forall (a1 a2: A),
+  (if EQB (f a1) (f a2) then true else false) =
+  (if EQA a1 a2 then true else false).
+Proof.
+  intros. destruct (EQB (f a1) (f a2)); destruct (EQA a1 a2).
+  - reflexivity.
+  - destruct n. pose proof BIJ as BIJ'. specialize (BIJ a1 (f a2)).
+    destruct BIJ as [INJ SURJ]. assert (Hgf: g (f a2) = a2).
+    { specialize (BIJ' a2 (f a2)). tauto. } specialize (INJ e). congruence.
+  - destruct n. congruence.
+  - reflexivity.
+Qed. *)
+
+Lemma bij_eq_iff :
+  forall (A B: Type)
+  (EQA: forall (a1 a2: A), {a1 = a2} + {a1 <> a2})
+  (EQB: forall (b1 b2: B), {b1 = b2} + {b1 <> b2})
+  (f: A -> B)
+  (g: B -> A)
+  (BIJ: forall (a: A) (b: B), f (g b) = b /\ g (f a) = a),
+  forall (a1 a2: A),
+  (if EQB (f a1) (f a2) then true else false) =
+  (if EQA a1 a2 then true else false).
+Proof.
+  intros. destruct (EQB (f a1) (f a2)); destruct (EQA a1 a2).
+  - reflexivity.
+  - pose proof BIJ as BIJ'. specialize (BIJ a1 (f a1)).
+    specialize (BIJ' a2 (f a2)). destruct BIJ; destruct BIJ'.
+    congruence.
+  - destruct n. congruence.
+  - reflexivity.
+Qed.
+
