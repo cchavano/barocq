@@ -423,7 +423,7 @@ let () =
             prog
         in
         let bprog =
-          BarocqShallowgen.monadify_norm_program
+          BarocqShallowgen.monadify_norm2_program
             !target_arch
             BarocqShallowgen.ShallowB
             prog

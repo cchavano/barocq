@@ -10,8 +10,6 @@ Inductive shallow_version : Type :=
 
 Module Normalization.
 
-  Section NORM.
-
   Import BNF.
 
   Definition bnfexpr_of_atomlist (e: Barocq.expr) (la: list atom) : res BNF.expr :=
@@ -253,9 +251,189 @@ Module Normalization.
       prog_types := types
     |}.
 
-  End NORM.
-
 End Normalization.
+
+Module Normalization2.
+
+  Import BNF.
+
+  Fixpoint atom_of_expr (e: Barocq.expr) : res atom :=
+    match e with
+    | Barocq.ETrue => eret ATrue
+    | Barocq.EFalse => eret AFalse
+    | Barocq.EInt32 i s => eret (AInt32 i s)
+    | Barocq.EInt64 i s => eret (AInt64 i s)
+    | Barocq.EConstr c => eret (AConstr c)
+    | Barocq.EVar x => eret (AVar x)
+    | Barocq.ECast e1 ty =>
+        match ty with
+        | BEnum _ => efail
+        | _ =>
+            let* a1 := atom_of_expr e1 in
+            eret (ACast a1 ty)
+        end
+    | Barocq.EUnaryOp op e1 =>
+        let* a1 := atom_of_expr e1 in
+        eret (AUnaryOp op a1)
+    | Barocq.EBinaryOp op e1 e2 =>
+        match op with
+        | BopDiv | BopMod => efail
+        | _ =>
+            let* a1 := atom_of_expr e1 in
+            let* a2 := atom_of_expr e2 in
+            eret (ABinaryOp op a1 a2)
+        end
+    | Barocq.ERecordProj e1 x =>
+        let* a1 := atom_of_expr e1 in
+        eret (ARecordProj a1 x)
+    | Barocq.ERecordUpdate e1 x e2 =>
+        let* a1 := atom_of_expr e1 in
+        let* a2 := atom_of_expr e2 in
+        eret (ARecordUpdate a1 x a2)
+    | _ => efail
+    end.
+
+  Open Scope state_err_monad_scope.
+
+  Definition fresh_var : crmon ident := Utils.fresh_var_err "b".
+
+  Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BNF.expr :=
+    let fix norm_exprlist_rec (e: Barocq.expr) (la: list atom) (le: list Barocq.expr) : crmon BNF.expr :=
+      match le with
+      | nil => lift_err (Normalization.bnfexpr_of_atomlist e (rev' la))
+      | e1 :: le' =>
+          match atom_of_expr e1 with
+          | OK a1 => norm_exprlist_rec e (a1 :: la) le'
+          | Error _ =>
+              let* x := fresh_var in
+              let* ne1 := norm_expr_rec e1 in
+              let* ner := norm_exprlist_rec e (AVar x :: la) le' in
+              ret (ELetIn x ne1 ner)
+          end
+      end
+    in
+    let norm_exprlist (e: Barocq.expr) (le: list Barocq.expr) : crmon BNF.expr :=
+      norm_exprlist_rec e [] le
+    in
+    let fix norm_match_cases (cases: list (pattern * Barocq.expr)) : crmon (list (pattern * BNF.expr)) :=
+      match cases with
+      | nil => ret nil
+      | (c, e) :: cases' =>
+          let* ne := norm_expr_rec e in
+          let* ncases' := norm_match_cases cases' in
+          ret ((c, ne) :: ncases')
+      end
+    in
+    match e with
+    | Barocq.ETrue =>
+        ret (EAtom ATrue)
+    | Barocq.EFalse =>
+        ret (EAtom AFalse)
+    | Barocq.EInt32 i s =>
+        ret (EAtom (AInt32 i s))
+    | Barocq.EInt64 i s =>
+        ret (EAtom (AInt64 i s))
+    | Barocq.EConstr x =>
+        ret (EAtom (AConstr x))
+    | Barocq.EVar x =>
+        ret (EAtom (AVar x))
+    | Barocq.ECast e1 ty =>
+        norm_exprlist e [e1]
+    | Barocq.EUnaryOp op e1 =>
+        norm_exprlist e [e1]
+    | Barocq.EBinaryOp op e1 e2 =>
+        norm_exprlist e [e1; e2]
+    | Barocq.EArrayGet e1 e2 =>
+        norm_exprlist e [e1; e2]
+    | Barocq.EArraySet e1 e2 e3 =>
+        norm_exprlist e [e1; e2; e3]
+    | Barocq.ERecordProj e1 k =>
+        norm_exprlist e [e1]
+    | Barocq.ERecordUpdate e1 k e2 =>
+        norm_exprlist e [e1; e2]
+    | Barocq.EDeepAccess _ _ => fail
+    | Barocq.EApp e1 args =>
+        norm_exprlist e (e1 :: args)
+    | Barocq.EIfThenElse e1 e2 e3 =>
+        let* ne2 := norm_expr_rec e2 in
+        let* ne3 := norm_expr_rec e3 in
+        match atom_of_expr e1 with
+        | OK a1 => ret (EIfThenElse a1 ne2 ne3)
+        | Error _ =>
+            let* x1 := fresh_var in
+            let* ne1 := norm_expr_rec e1 in
+            ret (ELetIn x1 ne1 (EIfThenElse (AVar x1) ne2 ne3))
+        end
+    | Barocq.EMatch e1 cases =>
+        let* ncases := norm_match_cases cases in
+        match atom_of_expr e1 with
+        | OK a1 => ret (EMatch a1 ncases)
+        | Error _ =>
+            let* x1 := fresh_var in
+            let* ne1 := norm_expr_rec e1 in
+            ret (ELetIn x1 ne1 (EMatch (AVar x1) ncases))
+        end
+    | Barocq.ELetIn x e1 e2 =>
+        let* ne1 := norm_expr_rec e1 in
+        let* ne2 := norm_expr_rec e2 in
+        ret (ELetIn x ne1 ne2)
+    end.
+
+  Close Scope state_err_monad_scope.
+
+  Definition norm_expr (e: Barocq.expr) : res BNF.expr :=
+    let* ne := norm_expr_rec e 0 in
+    eret (fst ne).
+
+  Definition norm_function (f: Barocq.function) : res BNF.function :=
+    let* body_norm := norm_expr (fn_body f) in
+    eret {|
+      fn_return := fn_return f;
+      fn_params := fn_params f;
+      fn_body := body_norm
+    |}.
+
+  Fixpoint norm_program_rec (prog: Barocq.program) : res (list BarocqShallow.BNF.globdef * list type_def) :=
+    match prog with
+    | nil => eret (nil, nil)
+    | d :: prog' =>
+        match d with
+        | Barocq.DefType x adt =>
+            let* (ndefs, types) := norm_program_rec prog' in
+            let td :=
+              match adt with
+              | Adt_enum elems => TdEnum {| ed_name := x; ed_elems := elems |}
+              | Adt_record fields => TdRecord {| rd_name := x; rd_fields := fields |}
+              end
+            in
+            eret (ndefs, td :: types)
+        | Barocq.DefConst x l ty =>
+            let* (ndefs, types) := norm_program_rec prog' in
+            eret (Syntax.DefConst x l ty :: ndefs, types)
+        | Barocq.DefFun x f =>
+            let* f' := norm_function f in
+            let* (ndefs, types):= norm_program_rec prog' in
+            eret (Syntax.DefFun x f' :: ndefs, types)
+        | Barocq.DeclType t tk =>
+            let* (ndefs, types) := norm_program_rec prog' in
+            eret (ndefs, TdAbstract t tk :: types)
+        | Barocq.DeclConst x ty =>
+            let* (ndefs, types) := norm_program_rec prog' in
+            eret (Syntax.DeclConst x ty :: ndefs, types)
+        | Barocq.DeclFun f tparams tret =>
+            let* (ndefs, types) := norm_program_rec prog' in
+            eret (Syntax.DeclFun f tparams tret :: ndefs, types)
+        end
+    end.
+    
+  Definition norm_program (prog: Barocq.program) : res BNF.program :=
+    let* (defs, types) := norm_program_rec prog in
+    eret {|
+      prog_defs := defs;
+      prog_types := types
+    |}.
+
+End Normalization2.
 
 Module Monadification.
 
@@ -1072,4 +1250,9 @@ Open Scope error_monad_scope.
 Definition monadify_norm_program (arch: Target.archi) (shver: shallow_version) (prog: Barocq.program) : res Monadic.program :=
   let/catch bnf := Normalization.norm_program prog /> "unable to normalize the program" in
   let/catch mon := Monadification.monadify_program arch shver bnf /> "unable to monadify the program" in
+  eret mon.
+
+Definition monadify_norm2_program (arch: Target.archi) (shver: shallow_version) (prog: Barocq.program) : res Monadic.program :=
+  let/catch bnf := Normalization2.norm_program prog /> "unable to normalize the program (v2)" in
+  let/catch mon := Monadification.monadify_program arch shver bnf /> "unable to monadify the program (v2)" in
   eret mon.
