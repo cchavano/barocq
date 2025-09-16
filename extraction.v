@@ -60,6 +60,9 @@ Separate Extraction
   Clight.type_of_function
   ClightCegen.program_idents
   Barocq.Typing.typecheck_program
+  Barocq.Typing.typecheck_iprogram
+  Barocq.Typing.program_of_iprogram
+  Barocq.typof_expr
   Barocq.interpret
   Barocq.iprog_to_prog
   Barocq.eval_def

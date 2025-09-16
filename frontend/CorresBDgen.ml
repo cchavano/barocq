@@ -455,19 +455,19 @@ module VCgen = struct
       -> x
 
   let rec print_needed_checked_lists (out : out_channel)
-      (bprog : Barocq.program) (sdefs : globdef list) : unit =
+      (bprog : Barocq.Typed.globdef list) (sdefs : BarocqShallow.Monadic.globdef list) : unit =
     match bprog with
     | [] -> ()
     | bd :: bprog' ->
         begin
           match bd with
-          | Barocq.DefFun (fid, f) ->
+          | Barocq.Typed.DefFun (fid, f) ->
               let vars =
                 BarocqVC.vars_of_expr Maps2.STree.empty f.Syntax.fn_body
               in
               let sdefs_needed =
                 List.filter
-                  (fun (d : BarocqShallow.Monadic.globdef) ->
+                  (fun (d ) ->
                     BarocqVC.has_var (ident_of_globdef d) vars)
                   sdefs
               in
@@ -487,7 +487,7 @@ module VCgen = struct
                 gen_def_property
                 sdefs_needed;
               fprintf out "%sin\n" indent
-          | Barocq.DeclFun (fid, _, _) ->
+          | Barocq.Typed.DeclFun (fid, _, _) ->
               fprintf
                 out
                 "%slet needed_checked_%s : list propt := [] in\n"
@@ -609,7 +609,7 @@ module VCgen = struct
     | Target.Ptr32 -> "Target.Ptr32"
 
   let print_vc (out : out_channel) (arch : Target.archi)
-      (bprog : Barocq.program) (sprog : BarocqShallow.Monadic.program) : unit =
+      (bprog : Barocq.Typed.program) (sprog : BarocqShallow.Monadic.program) : unit =
     let sdefs = sprog.prog_defs in
     let isdef = function
       | BarocqShallow.Monadic.DefConst _ | BarocqShallow.Monadic.DefFun _ ->
@@ -659,7 +659,7 @@ let imports () : string =
     !coqlib
 
 let print_prelude (out : out_channel) (arch : Target.archi)
-    (bprog : Barocq.program) (sprog : program) : unit =
+    (bprog : Barocq.Typed.program) (sprog : program) : unit =
   shallowfile := sprintf "%s_ShallowB" !coqlib;
   deepfile := sprintf "%s_Deep" !coqlib;
   let types = sprog.prog_types in

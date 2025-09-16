@@ -1,6 +1,7 @@
 From Coq Require Import List String ListDec PArith Bool.
 From compcert Require Import Coqlib Integers Maps Ctypes.
 From BarocqComp Require Import Error Maps2 Utils Intop Barray Brecord Benum Types Typing Syntax.
+From BarocqComp Require  DList.
 Import ListNotations.
 
 
@@ -70,6 +71,7 @@ Definition iprog_to_prog (iprog: iprogram) : program :=
     nil
     iprog.
 
+
 Module Typed.
 
   (** * Typed abstract syntax *)
@@ -77,10 +79,10 @@ Module Typed.
   (** ** Expressions *)
 
   Inductive expr : Type :=
-    | ETrue : btyp -> expr
-    | EFalse : btyp -> expr
-    | EInt32 : int -> btyp -> expr
-    | EInt64 : int64 -> btyp -> expr
+    | ETrue : expr
+    | EFalse : expr
+    | EInt32 : int -> signedness -> expr
+    | EInt64 : int64 -> signedness -> expr
     | EConstr : ident -> btyp -> expr
     | EVar : ident -> btyp -> expr
     | ECast : expr -> btyp -> expr
@@ -121,6 +123,12 @@ Module Typed.
 
   Definition program := list globdef.
 
+  Inductive command : Type :=
+  | CmdDef (def: globdef) : command      (* top level definition *)
+  | CmdExpr (ty:btyp) (e: expr) : command.         (* top level expression to be evaluated *)
+
+  Definition iprogram := list command.
+
 End Typed.
 
 Module BarocqTyped := Barocq.Typed.
@@ -135,10 +143,9 @@ Module Typing.
 
   Definition typof_expr (e: expr) : btyp :=
     match e with
-    | ETrue ty
-    | EFalse ty
-    | EInt32 _ ty
-    | EInt64 _ ty
+    | ETrue | EFalse => BBool
+    | EInt32 _ s     => BInt32 s
+    | EInt64 _ s     => BInt64 s
     | EConstr _ ty
     | EVar _ ty
     | ECast _ ty
@@ -175,10 +182,10 @@ Module Typing.
 
   Fixpoint typecheck_expr (be: benv) (gx: gcontext) (lx: lcontext) (e: Barocq.expr) : res BarocqTyped.expr :=
     match e with
-    | Barocq.ETrue => ret (ETrue BBool)
-    | Barocq.EFalse => ret (EFalse BBool)
-    | Barocq.EInt32 i s => ret (EInt32 i (BInt32 s))
-    | Barocq.EInt64 i s => ret (EInt64 i (BInt64 s))
+    | Barocq.ETrue => ret ETrue
+    | Barocq.EFalse => ret EFalse
+    | Barocq.EInt32 i s => ret (EInt32 i s)
+    | Barocq.EInt64 i s => ret (EInt64 i s)
     | Barocq.EConstr x =>
         let* t := typof_constr be x in
         ret (EConstr x t)
@@ -275,52 +282,86 @@ Module Typing.
       elems
       (ret be).
 
-  Fixpoint typecheck_globdefs (be: benv) (gx: gcontext) (defs: list Barocq.globdef) : res (list BarocqTyped.globdef) :=
-    match defs with
-    | nil => ret nil
-    | d :: defs' =>
-      match d with
-      | Barocq.DefType x adt =>
-          let* be' := benv_update_defs be x adt in
-          let* be' :=
-            match adt with
-            | Adt_enum elems => register_enum_elems be' x elems
-            | _ => ret be'
-            end
-          in
-          let* rd := typecheck_globdefs be' gx defs' in
-          ret ((DefType x adt) :: rd)
-      | Barocq.DefConst x l ty =>
-          let* l' := typecheck_literal be l in
-          if btyp_eq_dec ty (Typing.typof_literal l') then
-            let* gx' := gcontext_update gx x ty in
-            let* rd := typecheck_globdefs be gx' defs' in
-            ret (DefConst x l ty :: rd)
-          else
-            failwith "Barocq.Typing.typecheck_globdef: type mismatch in constant definition"
+
+  Definition typecheck_globdef (be:benv) (gx:gcontext) (d: Barocq.globdef) : res (benv* gcontext* BarocqTyped.globdef) :=
+    match d with
+    | Barocq.DefType x adt =>
+        let* be' := benv_update_defs be x adt in
+        let* be' :=
+          match adt with
+          | Adt_enum elems => register_enum_elems be' x elems
+          | _ => ret be'
+          end
+        in
+        ret (be',gx, (DefType x adt))
+    | Barocq.DefConst x l ty =>
+        let* l' := typecheck_literal be l in
+        if btyp_eq_dec ty (Typing.typof_literal l') then
+          let* gx' := gcontext_update gx x ty in
+          ret (be,gx',DefConst x l ty)
+        else
+          failwith "Barocq.Typing.typecheck_globdef: type mismatch in constant definition"
       | Barocq.DefFun x f =>
           let* f' := typecheck_function arch be gx f in
           let tf := mk_fun_btyp (fn_params f') (fn_return f') in
           let* gx' := gcontext_update gx x tf in
-          let* rd := typecheck_globdefs be gx' defs' in
-          ret (DefFun x f' :: rd)
+          ret (be,gx',DefFun x f')
       | Barocq.DeclType t tk =>
-          let* rd := typecheck_globdefs be gx defs' in
-          ret (DeclType t tk :: rd)
+          ret (be,gx,DeclType t tk)
       | Barocq.DeclConst x ty =>
           let* gx' := gcontext_update gx x ty in
-          let* rd := typecheck_globdefs be gx' defs' in
-          ret (DeclConst x ty :: rd)
+          ret (be,gx',DeclConst x ty)
       | Barocq.DeclFun x tparams tret =>
           let tf := mk_fun_btyp tparams tret in
           let* gx' := gcontext_update gx x tf in
-          let* rd := typecheck_globdefs be gx' defs' in
-          ret (DeclFun x tparams tret :: rd)
-      end
+          ret (be,gx',DeclFun x tparams tret)
+    end.
+
+
+  Fixpoint typecheck_globdefs (be: benv) (gx: gcontext) (defs: list Barocq.globdef) : res (list BarocqTyped.globdef) :=
+    match defs with
+    | nil => ret nil
+    | d :: defs' =>
+        let* gd := typecheck_globdef be gx d in
+        let '(be',gx',d') := gd in
+        let* rd :=typecheck_globdefs be' gx' defs' in
+        ret (d':: rd)
     end.
 
   Definition typecheck_program (prog: Barocq.program) : res BarocqTyped.program :=
     typecheck_globdefs benv_empty STree.empty prog.
+
+
+  Definition typecheck_command (be:benv) (gx: gcontext) (cmd : Barocq.command) : res (benv * gcontext * BarocqTyped.command) :=
+    match  cmd with
+    | Barocq.CmdDef gd => let* gd := typecheck_globdef be gx gd in
+                   let '(be',gx',d') := gd in
+                   OK (be',gx',CmdDef d')
+    | Barocq.CmdExpr e =>
+        let* e := typecheck_expr be gx STree.empty e in
+        let bt := typof_expr e in
+        OK(be,gx,CmdExpr bt e)
+    end.
+
+  Fixpoint typecheck_commands (be:benv) (gx:gcontext) (prog: Barocq.iprogram) : res BarocqTyped.iprogram :=
+    match prog with
+    | nil => ret nil
+    | d :: defs' =>
+        let* gd := typecheck_command be gx d in
+        let '(be',gx',d') := gd in
+        let* rd :=typecheck_commands be' gx' defs' in
+        ret (d':: rd)
+    end.
+
+  Definition typecheck_iprogram (prog: Barocq.iprogram) : res BarocqTyped.iprogram :=
+    typecheck_commands benv_empty STree.empty prog.
+
+  Fixpoint program_of_iprogram (p: BarocqTyped.iprogram) : BarocqTyped.program :=
+    match p with
+    | nil => nil
+    | CmdDef d::l => d :: program_of_iprogram l
+    | CmdExpr e _ ::l => program_of_iprogram l
+    end.
 
   End ARCHI.
 
@@ -329,7 +370,7 @@ End Typing.
 (** * Denotational semantics *)
 
 Section DENOT.
-
+  Import Typed.
   (** The denotational semantics lifts programs to evaluable Coq terms. *)
 
   Variable arch : Target.archi.
@@ -341,9 +382,17 @@ Section DENOT.
   Inductive value : Type :=
     | Val (t: typ) (v: eval_typ t) : value.
 
+  Definition typof_index : typ :=
+    match arch with
+    | Target.Ptr32 => TInt32 Unsigned
+    | Target.Ptr64 => TInt64 Unsigned
+    end.
+
+
+  
   Inductive access_value : Type :=
    | AcvalRecordField : ident -> access_value
-   | AcvalArrayIndex : value -> access_value.
+   | AcvalArrayIndex : eval_typ typof_index -> access_value.
 
   Definition genv := STree.t value.
 
@@ -364,337 +413,264 @@ Section DENOT.
   Definition lenv_update (le: lenv) (x: ident) (v: value) : lenv :=
     STree.set x v le.
 
-  Definition eval_var (ge: genv) (le: lenv) (x: ident) : res value :=
+  Definition cast_typ  {t2:typ} (v: eval_typ t2) (t1:typ): res (eval_typ t1).
+  Proof.
+    destruct (typ_eq_dec t1 t2).
+    subst. exact (OK v).
+    apply fail.
+  Defined.
+
+  Definition ecast_typ  {t2:typ} (v: res (eval_typ t2)) (t1:typ): res (eval_typ t1).
+  Proof.
+    destruct (typ_eq_dec t1 t2).
+    - subst. exact v.
+    - apply fail.
+  Defined.
+
+
+  Definition cast_value  (v:value) (t1:typ) : res (eval_typ t1).
+  Proof.
+    destruct v.
+    apply (cast_typ v t1).
+  Defined.
+
+  Definition eval_var  (ge: genv) (le: lenv) (x: ident) (ty:typ) : res (eval_typ ty) :=
     match (lenv_get le x) with
-    | OK v => ret v
-    | Error _ => genv_get ge x
+    | OK v => cast_value  v ty
+    | Error _ => let* v := genv_get ge x in
+                 cast_value v ty
     end.
 
-  Definition eval_constr (te: tenv) (x: ident) : res value :=
+  Definition eval_constr  (te: tenv) (x: ident) (ty:typ) : res (eval_typ ty) :=
     let* eid := tenv_get_constr_typ te x in
     let* elems := tenv_get_edef te eid in
-    let* e := make_enum elems x in
-    ret (Val (TEnum eid elems) e).
-
-  Definition eval_cast (v: value) (to: typ) : res value :=
-    match v with
-    | Val TBool b =>
-        match to with
-        | TBool => ret (Val TBool b)
-        | TInt32 s =>
-            let iv := if s then I32.of_bool b else U32.of_bool b in
-            ret (Val (TInt32 s) iv)
-        | TInt64 s =>
-            let iv := if s then I64.of_bool b else U64.of_bool b in
-            ret (Val (TInt64 s) iv)
-        | TEnum eid elems =>
-            let* iv := Benum.of_i32 elems (I32.of_bool b) in
-            ret (Val (TEnum eid elems) iv)
-        | _ => fail
-        end
-    | Val (TInt32 s) i =>
-        match to with
-        | TBool => 
-            if s then ret (Val TBool (I32.to_bool i))
-            else ret (Val TBool (U32.to_bool i))
-        | TInt32 s' =>
-            match s, s' with
-            | Signed, Unsigned => ret (Val (TInt32 s') (U32.of_i32 i))
-            | Unsigned, Signed => ret (Val (TInt32 s') (I32.of_u32 i))
-            | _, _ => ret (Val (TInt32 s') i)
-            end
-        | TInt64 s' =>
-            match s, s' with
-            | Signed, Signed => ret (Val (TInt64 s') (I64.of_i32 i))
-            | Signed, Unsigned => ret (Val (TInt64 s') (U64.of_i32 i))
-            | Unsigned, Signed => ret (Val (TInt64 s') (I64.of_u32 i))
-            | Unsigned, Unsigned => ret (Val (TInt64 s') (U64.of_u32 i))
-            end
-        | TEnum eid elems =>
-            let i :=
-              match s with
-              | Signed => i
-              | Unsigned => I32.of_u32 i
-              end
-            in
-            let* iv := Benum.of_i32 elems i in
-            ret (Val (TEnum eid elems) iv)
-        | _ => fail
-        end
-    | Val (TInt64 s) i =>
-        match to with
-        | TBool => 
-            if s then ret (Val TBool (I64.to_bool i))
-            else ret (Val TBool (U64.to_bool i))
-        | TInt32 s' =>
-            match s, s' with
-            | Signed, Signed => ret (Val (TInt32 s') (I32.of_i64 i))
-            | Signed, Unsigned => ret (Val (TInt32 s') (U32.of_i64 i))
-            | Unsigned, Signed => ret (Val (TInt32 s') (I32.of_u64 i))
-            | Unsigned, Unsigned => ret (Val (TInt32 s') (U32.of_u64 i))
-            end
-        | TInt64 s' =>
-            match s, s' with
-            | Signed, Unsigned => ret (Val (TInt64 s') (U64.of_i64 i))
-            | Unsigned, Signed => ret (Val (TInt64 s') (I64.of_u64 i))
-            | _, _ => ret (Val (TInt64 s') i)
-            end
-        | TEnum eid elems =>
-            let i :=
-              match s with
-              | Signed => I32.of_i64 i
-              | Unsigned => I32.of_u64 i
-              end
-            in
-            let* iv := Benum.of_i32 elems i in
-            ret (Val (TEnum eid elems) iv)
-        | _ => fail
-        end
-    | Val (TEnum tid elems) e =>
-        let ei := Benum.to_i32 e in
-        match to with
-        | TBool => ret (Val TBool (I32.to_bool ei))
-        | TInt32 Signed => ret (Val (TInt32 Signed) ei)
-        | TInt32 Unsigned => ret (Val (TInt32 Unsigned) (U32.of_i32 ei))
-        | TInt64 Signed => ret (Val (TInt64 Signed) (I64.of_i32 ei))
-        | TInt64 Unsigned => ret (Val (TInt64 Unsigned) (U64.of_i32 ei))
-        | _ => fail
-        end
-    | _ => fail
+    match (bool_dec (existsb (String.eqb x) elems) true) with
+    | left EQ =>  @cast_typ (TEnum eid elems)   (mk_enum elems x EQ) ty
+    | right _ => fail
     end.
 
-  Definition eval_unary_op (op: unary_op) (v: value) : res value :=
-    match op, v with
-    | UopNotbool, Val TBool b => ret (Val TBool (negb b))
-    | UopNotint, Val (TInt32 s) i => ret (Val (TInt32 s) (Int.not i))
-    | UopNeg, Val (TInt32 s) i => ret (Val (TInt32 s) (Int.neg i))
-    | UopPlus, Val (TInt32 s) i => ret (Val (TInt32 s) i)
-    | UopNotint, Val (TInt64 s) i => ret (Val (TInt64 s) (Int64.not i))
-    | UopNeg, Val (TInt64 s) i => ret (Val (TInt64 s) (Int64.neg i))
-    | UopPlus, Val (TInt64 s) i => ret (Val (TInt64 s) i)
-    | _, _ => fail
+  Definition partial {A B: Type} (F : A -> B) : A -> res B :=
+    fun x => OK (F x).
+
+  Definition get_cast (ty:typ) (ty':typ) : res (eval_typ ty -> res (eval_typ ty')) :=
+    match ty, ty' with
+      (* TBool *)
+    | TBool , TBool => OK (fun x => OK x)
+    | TBool , TInt32 s => OK (partial (if s then I32.of_bool else U32.of_bool))
+    | TBool , TInt64 s => OK (partial (if s then I64.of_bool else U64.of_bool))
+    | TBool , TEnum eid elems => OK (fun x => Benum.of_i32 elems (I32.of_bool x))
+       (* TInt32 *)
+    | TInt32 s , TBool =>  OK (partial (if s then I32.to_bool else U32.to_bool))
+    | TInt32 s , TInt32 s' => OK (partial (match s , s' with
+                                              | Signed , Unsigned => U32.of_i32
+                                              | Unsigned , Signed => I32.of_u32
+                                              |  _       ,   _    => fun x => x
+                                              end))
+    | TInt32 s , TInt64 s' => OK (partial (match s, s' with
+                                              | Signed, Signed => I64.of_i32
+                                              | Signed, Unsigned => U64.of_i32
+                                              | Unsigned, Signed => I64.of_u32
+                                              | Unsigned, Unsigned => U64.of_u32
+                                              end))
+    | TInt32 s ,  TEnum eid elems => OK (fun x => Benum.of_i32 elems (if s then x else I32.of_u32 x))
+                 (*  Tint64 *)
+    | TInt64 s , TBool => OK (partial (if s then I64.to_bool else U64.to_bool))
+    | TInt64 s , TInt32 s' => OK (partial (
+                                      match s, s' with
+                                      | Signed, Signed =>  I32.of_i64
+                                      | Signed, Unsigned => U32.of_i64
+                                      | Unsigned, Signed => I32.of_u64
+                                      | Unsigned, Unsigned => U32.of_u64
+                                      end))
+    | TInt64 s ,  TInt64 s' => OK (partial (
+                                       match s, s' with
+                                       | Signed, Unsigned => U64.of_i64
+                                       | Unsigned, Signed => I64.of_u64
+                                       | _, _ => fun x => x
+                                       end))
+    | TInt64 s , TEnum eid elems => OK (fun x => Benum.of_i32 elems (if s then I32.of_i64 x else I32.of_u64 x))
+            (* Tenum *)
+    | TEnum tid elems , TBool  => OK (partial (fun x => I32.to_bool (Benum.to_i32 x)))
+    | TEnum tid elems , TInt32 s => OK (partial (fun x => if s then Benum.to_i32 x else U32.of_i32 (Benum.to_i32 x)))
+    | TEnum tid elems , TInt64 s => OK (partial (fun x => if s then I64.of_i32 (Benum.to_i32 x)
+                                                          else  U64.of_i32 (Benum.to_i32 x)))
+    | _ , _ => fail
     end.
 
-  Definition eval_binary_op (op: binary_op) (v1 v2: value) : res value :=
+  Definition eval_cast (ty:typ) (v1:eval_typ ty) (tr:typ) : res (eval_typ tr) :=
+    let* f := get_cast ty tr in f  v1.
+
+  Definition eval_unary_op (op: unary_op) (ty:typ) : forall (v: eval_typ ty) (tyr : typ), res (eval_typ tyr):=
+    match op, ty with
+    | UopNotbool, TBool    => (fun v tyr => @cast_typ TBool (negb v) tyr)
+    | UopNotint,  TInt32 s => (fun v tyr => @cast_typ (TInt32 s) (Int.not v) tyr)
+    | UopNeg,  TInt32 s    => (fun v tyr => @cast_typ (TInt32 s) (Int.neg v) tyr)
+    | UopPlus, TInt32 s    => (fun v tyr => @cast_typ (TInt32 s) v tyr)
+    | UopNotint, TInt64 s  => (fun v tyr => @cast_typ (TInt64 s) (Int64.not v) tyr)
+    | UopNeg, TInt64 s     => (fun v tyr => @cast_typ (TInt64 s) (Int64.neg v) tyr)
+    | UopPlus, TInt64 s    => (fun v tyr => cast_typ  v tyr)
+    | _, _ => (fun _ _ => fail)
+    end.
+
+  Definition bool_bool_bool (t1 t2:typ) :=
+    match t1 , t2 with
+    | TBool , TBool => OK TBool
+    |   _   ,   _    => fail
+    end.
+
+  Definition int_int_int (t1 t2:typ) :=
+    match t1,t2 with
+    | TInt32 Signed , TInt32 Signed => OK (TInt32 Signed)
+    | TInt32 Unsigned , TInt32 Unsigned => OK (TInt32 Unsigned)
+    | TInt64 Signed , TInt64 Signed   => OK (TInt64 Signed)
+    | TInt64 Unsigned , TInt64 Unsigned   => OK (TInt64 Unsigned)
+    |  _ , _ => fail
+    end.
+
+  Definition int_int_bool (t1 t2:typ) :=
+    match t1,t2 with
+    | TInt32 Signed , TInt32 Signed => OK TBool
+    | TInt32 Unsigned , TInt32 Unsigned => OK TBool
+    | TInt64 Signed , TInt64 Signed   => OK TBool
+    | TInt64 Unsigned , TInt64 Unsigned   => OK TBool
+    |  _ , _ => fail
+    end.
+
+  Definition eq_neq_bool (t1 t2:typ) :=
+    match t1,t2 with
+    | TBool , TBool => OK TBool
+    | TInt32 Signed , TInt32 Signed => OK TBool
+    | TInt32 Unsigned , TInt32 Unsigned => OK TBool
+    | TInt64 Signed , TInt64 Signed   => OK TBool
+    | TInt64 Unsigned , TInt64 Unsigned   => OK TBool
+    | TEnum _ _ , TEnum _ _ => if typ_eq_dec t1 t2 then OK TBool else fail
+    |  _ , _ => fail
+    end.
+
+
+
+  Definition typof_binary_op (op:binary_op)  :=
     match op with
-    | BopAndbool =>
-        match v1, v2 with
-        | Val TBool b1, Val TBool b2 => ret (Val TBool (andb b1 b2))
-        | _, _ => fail
+    | BopAndbool => bool_bool_bool
+    | BopOrbool => bool_bool_bool
+    | BopXorbool => bool_bool_bool
+    | BopAdd => int_int_int
+    | BopSub => int_int_int
+    | BopMul => int_int_int
+    | BopDiv => int_int_int
+    | BopMod => int_int_int
+    | BopAndint => int_int_int
+    | BopOrint => int_int_int
+    | BopXorint => int_int_int
+    | BopShl => int_int_int
+    | BopShr => int_int_int
+    | BopEq => eq_neq_bool
+    | BopNeq => eq_neq_bool
+    | BopLt => int_int_bool
+    | BopGt => int_int_bool
+    | BopLe => int_int_bool
+    | BopGe => int_int_bool
+    end.
+
+  Definition bool_op (F : bool -> bool -> bool) (t1 t2:typ) : eval_typ t1 -> eval_typ t2 -> forall (tyr:typ),res (eval_typ tyr) :=
+    match t1, t2 with
+    | TBool , TBool => (fun v1 v2 tyr => @cast_typ TBool (F v1 v2) tyr)
+    | _, _ =>   (fun _ _ _ => fail)
+    end.
+
+
+  Definition int_op (F32 : int -> int -> int) (F64 : int64 -> int64 -> int64)
+    (t1 t2:typ) : eval_typ t1 -> eval_typ t2 -> forall (tyr:typ),res (eval_typ tyr) :=
+    match t1, t2 with
+    | TInt32 s , TInt32 s' => if signedness_eq_dec s s' then
+                                (fun v1 v2 tyr => @cast_typ (TInt32 s) (F32 v1 v2) tyr)
+                              else (fun _ _ _ => fail)
+    | TInt64 s , TInt64 s' => if signedness_eq_dec s s' then
+                                (fun v1 v2 tyr => @cast_typ (TInt64 s) (F64 v1 v2) tyr)
+                              else (fun _ _ _ => fail)
+    | _, _ =>   (fun _ _ _ => fail)
+    end.
+
+
+  Definition int_op_s (F32s : int -> int -> res int) (F32u : int -> int -> res int)
+    (F64s : int64 -> int64 -> res int64) (F64u : int64 -> int64 -> res int64)
+    (t1 t2:typ) : eval_typ t1 -> eval_typ t2 -> forall (tyr:typ),res (eval_typ tyr) :=
+    match t1, t2 with
+    | TInt32 s , TInt32 s'  =>
+        match s , s' with
+        | Signed , Signed => (fun v1 v2 tyr => @ecast_typ (TInt32 Signed) (F32s v1 v2) tyr)
+        | Unsigned , Unsigned => (fun v1 v2 tyr => @ecast_typ (TInt32 Signed) (F32u v1 v2) tyr)
+        | _   , _ => (fun _ _ _ => fail)
         end
-    | BopOrbool =>
-        match v1, v2 with
-        | Val TBool b1, Val TBool b2 => ret (Val TBool (orb b1 b2))
-        | _, _ => fail
+    | TInt64 s , TInt64 s'  =>
+        match s , s' with
+        | Signed , Signed => (fun v1 v2 tyr => @ecast_typ (TInt64 Signed) (F64s v1 v2) tyr)
+        | Unsigned , Unsigned => (fun v1 v2 tyr => @ecast_typ (TInt64 Signed) (F64u v1 v2) tyr)
+        | _   , _ => (fun _ _ _ => fail)
         end
-    | BopXorbool =>
-        match v1, v2 with
-        | Val TBool b1, Val TBool b2 => ret (Val TBool (xorb b1 b2))
-        | _, _ => fail
+    | _, _ =>   (fun _ _ _ => fail)
+    end.
+
+  Definition int_eq_neq (equal:bool) (Fbool : bool -> bool -> bool)
+    (F32 : int -> int -> bool) (F64 : int64 -> int64 -> bool) (Fenum : forall (elems : list ident), enum elems -> enum elems -> bool)
+    (t1 t2:typ) : eval_typ t1 -> eval_typ t2 -> forall (tyr:typ),res (eval_typ tyr) :=
+    let map b := if equal then b else negb b in
+    match t1, t2 with
+    | TBool , TBool => (fun v1 v2 tyr => @cast_typ TBool (map (eqb v1 v2)) tyr)
+    | TInt32 s , TInt32 s'  => (fun v1 v2 tyr => if signedness_eq_dec s s' then @cast_typ TBool (map (F32 v1 v2)) tyr else fail)
+    | TInt64 s , TInt64 s'  => (fun v1 v2 tyr => if signedness_eq_dec s s' then @cast_typ TBool (map (F64 v1 v2)) tyr else fail)
+    | ((TEnum n1 elems1) as t1) , ((TEnum n2 elems2) as t2) =>
+        (fun v1 v2 tyr =>
+           match typ_eq_dec t1 t2 with
+           | left Eqt => @cast_typ TBool (map (Fenum elems2  (typ_cast abs_typ_impl Eqt v1) v2)) tyr
+           |  _       => fail
+           end
+        )
+    | _, _ =>   (fun _ _ _ => fail)
+    end.
+
+  Definition cmp_op (cmp32s : int -> int -> bool) (cmp32u:int -> int -> bool) (cmp64s : int64 -> int64 -> bool) (cmp64u : int64 -> int64 -> bool)
+    (t1 t2:typ) : eval_typ t1 -> eval_typ t2 -> forall (tyr:typ),res (eval_typ tyr) :=
+    match t1, t2 with
+    | TInt32 s , TInt32 s'  =>
+        match s , s' with
+        | Signed , Signed => (fun v1 v2 tyr => @cast_typ TBool (cmp32s v1 v2) tyr)
+        | Unsigned , Unsigned => (fun v1 v2 tyr => @cast_typ TBool (cmp32u v1 v2) tyr)
+        |  _   , _ => (fun _ _ _ => fail)
         end
-    | BopAdd =>
-        match v1, v2 with
-        | Val (TInt32 s1) i1, Val (TInt32 s2) i2 =>
-            if signedness_eq_dec s1 s2 then ret (Val (TInt32 s1) (Int.add i1 i2))
-            else fail
-        | Val (TInt64 s1) i1, Val (TInt64 s2) i2 =>
-            if signedness_eq_dec s1 s2 then ret (Val (TInt64 s1) (Int64.add i1 i2))
-            else fail
-        | _, _ => fail
+    | TInt64 s , TInt64 s' =>
+        match s , s' with
+        | Signed , Signed => (fun v1 v2 tyr => @cast_typ TBool (cmp64s v1 v2) tyr)
+        | Unsigned , Unsigned => (fun v1 v2 tyr => @cast_typ TBool (cmp64u v1 v2) tyr)
+        |  _   , _ => (fun _ _ _ => fail)
         end
-    | BopSub =>
-        match v1, v2 with
-        | Val (TInt32 s1) i1, Val (TInt32 s2) i2 =>
-            if signedness_eq_dec s1 s2 then ret (Val (TInt32 s1) (Int.sub i1 i2))
-            else fail
-        | Val (TInt64 s1) i1, Val (TInt64 s2) i2 =>
-            if signedness_eq_dec s1 s2 then ret (Val (TInt64 s1) (Int64.sub i1 i2))
-            else fail
-        | _, _ => fail
-        end
-    | BopMul =>
-        match v1, v2 with
-        | Val (TInt32 s1) i1, Val (TInt32 s2) i2 =>
-            if signedness_eq_dec s1 s2 then ret (Val (TInt32 s1) (Int.mul i1 i2))
-            else fail
-        | Val (TInt64 s1) i1, Val (TInt64 s2) i2 =>
-            if signedness_eq_dec s1 s2 then ret (Val (TInt64 s1) (Int64.mul i1 i2))
-            else fail
-        | _, _ => fail
-        end
-    | BopDiv =>
-        match v1, v2 with
-        | Val (TInt32 Signed) i1, Val (TInt32 Signed) i2 =>
-            let* r := I32.div i1 i2 in
-            ret (Val (TInt32 Signed) r)
-        | Val (TInt32 Unsigned) i1, Val (TInt32 Unsigned) i2 =>
-            let* r := U32.div i1 i2 in
-            ret (Val (TInt32 Unsigned) r)
-        | Val (TInt64 Signed) i1, Val (TInt64 Signed) i2 =>
-            let* r := I64.div i1 i2 in
-            ret (Val (TInt64 Signed) r)
-        | Val (TInt64 Unsigned) i1, Val (TInt64 Unsigned) i2 =>
-            let* r := U64.div i1 i2 in
-            ret (Val (TInt64 Unsigned) r)
-        | _, _ => fail
-        end
-    | BopMod =>
-        match v1, v2 with
-        | Val (TInt32 Signed) i1, Val (TInt32 Signed) i2 =>
-            let* r := I32.mod i1 i2 in
-            ret (Val (TInt32 Signed) r)
-        | Val (TInt32 Unsigned) i1, Val (TInt32 Unsigned) i2 =>
-            let* r := U32.mod i1 i2 in
-            ret (Val (TInt32 Unsigned) (Int.modu i1 i2))
-        | Val (TInt64 Signed) i1, Val (TInt64 Signed) i2 =>
-            let* r := I64.mod i1 i2 in
-            ret (Val (TInt64 Signed) (Int64.mods i1 i2))
-        | Val (TInt64 Unsigned) i1, Val (TInt64 Unsigned) i2 =>
-            let* r := U64.mod i1 i2 in
-            ret (Val (TInt64 Unsigned) r)
-        | _, _ => fail
-        end
-    | BopAndint =>
-        match v1, v2 with
-        | Val (TInt32 s1) i1, Val (TInt32 s2) i2 =>
-            if signedness_eq_dec s1 s2 then ret (Val (TInt32 s1) (Int.and i1 i2))
-            else fail
-        | Val (TInt64 s1) i1, Val (TInt64 s2) i2 =>
-            if signedness_eq_dec s1 s2 then ret (Val (TInt64 s1) (Int64.and i1 i2))
-            else fail
-        | _, _ => fail
-        end
-    | BopOrint =>
-        match v1, v2 with
-        | Val (TInt32 s1) i1, Val (TInt32 s2) i2 =>
-            if signedness_eq_dec s1 s2 then ret (Val (TInt32 s1) (Int.or i1 i2))
-            else fail
-        | Val (TInt64 s1) i1, Val (TInt64 s2) i2 =>
-            if signedness_eq_dec s1 s2 then ret (Val (TInt64 s1) (Int64.or i1 i2))
-            else fail
-        | _, _ => fail
-        end
-    | BopXorint =>
-        match v1, v2 with
-        | Val (TInt32 s1) i1, Val (TInt32 s2) i2 =>
-            if signedness_eq_dec s1 s2 then ret (Val (TInt32 s1) (Int.xor i1 i2))
-            else fail
-        | Val (TInt64 s1) i1, Val (TInt64 s2) i2 =>
-            if signedness_eq_dec s1 s2 then ret (Val (TInt64 s1) (Int64.xor i1 i2))
-            else fail
-        | _, _ => fail
-        end
-    | BopShl =>
-        match v1, v2 with
-        | Val (TInt32 s1) i1, Val (TInt32 s2) i2 =>
-            if signedness_eq_dec s1 s2 then ret (Val (TInt32 s1) (Int.shl i1 i2))
-            else fail
-        | Val (TInt64 s1) i1, Val (TInt64 s2) i2 =>
-            if signedness_eq_dec s1 s2 then ret (Val (TInt64 s1) (Int64.shl i1 i2))
-            else fail
-        | _, _ => fail
-        end
-    | BopShr =>
-        match v1, v2 with
-        | Val (TInt32 Signed) i1, Val (TInt32 Signed) i2 =>
-            ret (Val (TInt32 Signed) (Int.shr i1 i2))
-        | Val (TInt32 Unsigned) i1, Val (TInt32 Unsigned) i2 =>
-            ret (Val (TInt32 Unsigned) (Int.shru i1 i2))
-        | Val (TInt64 Signed) i1, Val (TInt64 Signed) i2 =>
-            ret (Val (TInt64 Signed) (Int64.shr i1 i2))
-        | Val (TInt64 Unsigned) i1, Val (TInt64 Unsigned) i2 =>
-            ret (Val (TInt64 Unsigned) (Int64.shru i1 i2))
-        | _, _ => fail
-        end
-    | BopEq =>
-        match v1, v2 with
-        | Val TBool b1, Val TBool b2 => ret (Val TBool (eqb b1 b2))
-        | Val (TInt32 s1) i1, Val (TInt32 s2) i2 =>
-            if signedness_eq_dec s1 s2 then ret (Val TBool (Int.eq i1 i2))
-            else fail
-        | Val (TInt64 s1) i1, Val (TInt64 s2) i2 =>
-            if signedness_eq_dec s1 s2 then ret (Val TBool (Int64.eq i1 i2))
-            else fail
-        | Val ((TEnum n1 elems1) as t1) e1, Val ((TEnum n2 elems2) as t2) e2 =>
-            match typ_eq_dec t1 t2 with
-            | left Eqt =>
-                if enum_eq_dec (typ_cast abs_typ_impl Eqt e1) e2
-                then ret (Val TBool true)
-                else ret (Val TBool false)
-             | _ => fail
-             end
-        | _, _ => fail
-        end
-    | BopNeq =>
-        match v1, v2 with
-        | Val TBool b1, Val TBool b2 =>
-            ret (Val TBool (negb (eqb b1 b2)))
-        | Val (TInt32 Signed) i1, Val (TInt32 Signed) i2 =>
-            ret (Val TBool (Int.cmp Cne i1 i2))
-        | Val (TInt32 Unsigned) i1, Val (TInt32 Unsigned) i2 =>
-            ret (Val TBool (Int.cmpu Cne i1 i2))
-        | Val (TInt64 Signed) i1, Val (TInt64 Signed) i2 =>
-            ret (Val TBool (Int64.cmp Cne i1 i2))
-        | Val (TInt64 Unsigned) i1, Val (TInt64 Unsigned) i2 =>
-            ret (Val TBool (Int64.cmpu Cne i1 i2))
-        | Val ((TEnum n1 elems1) as t1) e1, Val ((TEnum n2 elems2) as t2) e2 =>
-            match typ_eq_dec t1 t2 with
-            | left Eqt =>
-                if enum_eq_dec (typ_cast abs_typ_impl Eqt e1) e2
-                then ret (Val TBool false)
-                else ret (Val TBool true)
-             | _ => fail
-             end
-        | _, _ => fail
-        end
-    | BopLt =>
-        match v1, v2 with
-        | Val (TInt32 Signed) i1, Val (TInt32 Signed) i2 =>
-            ret (Val TBool (Int.lt i1 i2))
-        | Val (TInt32 Unsigned) i1, Val (TInt32 Unsigned) i2 =>
-            ret (Val TBool (Int.ltu i1 i2))
-        | Val (TInt64 Signed) i1, Val (TInt64 Signed) i2 =>
-            ret (Val TBool (Int64.lt i1 i2))
-        | Val (TInt64 Unsigned) i1, Val (TInt64 Unsigned) i2 =>
-            ret (Val TBool (Int64.ltu i1 i2))
-        | _, _ => fail
-        end
-    | BopGt =>
-        match v1, v2 with
-        | Val (TInt32 Signed) i1, Val (TInt32 Signed) i2 =>
-            ret (Val TBool (Int.cmp Cge i1 i2))
-        | Val (TInt32 Unsigned) i1, Val (TInt32 Unsigned) i2 =>
-            ret (Val TBool (Int.cmpu Cge i1 i2))
-        | Val (TInt64 Signed) i1, Val (TInt64 Signed) i2 =>
-            ret (Val TBool (Int64.cmp Cge i1 i2))
-        | Val (TInt64 Unsigned) i1, Val (TInt64 Unsigned) i2 =>
-            ret (Val TBool (Int64.cmpu Cge i1 i2))
-        | _, _ => fail
-        end
-    | BopLe =>
-        match v1, v2 with
-        | Val (TInt32 Signed) i1, Val (TInt32 Signed) i2 =>
-            ret (Val TBool (Int.cmp Cle i1 i2))
-        | Val (TInt32 Unsigned) i1, Val (TInt32 Unsigned) i2 =>
-            ret (Val TBool (Int.cmpu Cle i1 i2))
-        | Val (TInt64 Signed) i1, Val (TInt64 Signed) i2 =>
-            ret (Val TBool (Int64.cmp Cle i1 i2))
-        | Val (TInt64 Unsigned) i1, Val (TInt64 Unsigned) i2 =>
-            ret (Val TBool (Int64.cmpu Cle i1 i2))
-        | _, _ => fail
-        end
-    | BopGe =>
-        match v1, v2 with
-        | Val (TInt32 Signed) i1, Val (TInt32 Signed) i2 =>
-            ret (Val TBool (Int.cmp Cge i1 i2))
-        | Val (TInt32 Unsigned) i1, Val (TInt32 Unsigned) i2 =>
-            ret (Val TBool (Int.cmpu Cge i1 i2))
-        | Val (TInt64 Signed) i1, Val (TInt64 Signed) i2 =>
-            ret (Val TBool (Int64.cmp Cge i1 i2))
-        | Val (TInt64 Unsigned) i1, Val (TInt64 Unsigned) i2 =>
-            ret (Val TBool (Int64.cmpu Cge i1 i2))
-        | _, _ => fail
-        end
+    |  _ ,  _ => (fun _ _ _ => fail)
+    end.
+
+
+  Definition eval_binary_op (op: binary_op) : forall (t1:typ) (t2: typ)  (v1: eval_typ t1)  (v2: eval_typ t2) (tyr : typ), res (eval_typ tyr) :=
+    match op with
+    | BopAndbool => bool_op andb
+    | BopOrbool  => bool_op orb
+    | BopXorbool => bool_op xorb
+    | BopAdd => int_op Int.add Int64.add
+    | BopSub => int_op Int.sub Int64.sub
+    | BopMul => int_op Int.mul Int64.mul
+    | BopDiv => int_op_s I32.div U32.div I64.div U64.div
+    | BopMod => int_op_s I32.mod U32.mod I64.mod U64.mod
+    | BopAndint => int_op Int.and Int64.and
+    | BopOrint => int_op Int.or Int64.or
+    | BopXorint => int_op Int.xor Int64.xor
+    | BopShl => int_op Int.shl Int64.shl
+    | BopShr => int_op Int.shr Int64.shr
+    | BopEq => int_eq_neq true eqb Int.eq Int64.eq  (fun elems v1 v2 =>
+                                                  if enum_eq_dec v1 v2 then true else false)
+    | BopNeq => int_eq_neq false eqb Int.eq Int64.eq  (fun elems v1 v2 =>
+                                                  if enum_eq_dec v1 v2 then true else false)
+    | BopLt => cmp_op Int.lt Int.ltu Int64.lt Int64.ltu
+    | BopGt => cmp_op (Int.cmp Cgt) (Int.cmpu Cgt) (Int64.cmp Cgt) (Int64.cmpu Cgt)
+    | BopLe => cmp_op (Int.cmp Cle) (Int.cmpu Cle) (Int64.cmp Cle) (Int64.cmpu Cle)
+    | BopGe => cmp_op (Int.cmp Cge) (Int.cmpu Cge) (Int64.cmp Cge) (Int64.cmpu Cge)
     end.
 
   Fixpoint eval_array_lit (a: array value) : res value :=
@@ -737,45 +713,48 @@ Section DENOT.
       * apply fail.
   Defined.
 
-  Definition eval_array_get (v1 v2: value) : res value.
-    destruct v1 as [ta a]. destruct v2 as [t2 i].
+  Definition eval_array_get (ta:typ) (a: eval_typ ta) (t2:typ) (i: eval_typ t2) (tyr:typ): res (eval_typ tyr).
     destruct ta.
     4:
     {
       destruct arch eqn:Earch.
         - destruct (typ_eq_dec t2 (TInt32 Unsigned)).
           + subst. simpl in i. simpl in a.
-            destruct (Barray.get a (U64.of_u32 i)).
-              * apply (ret (Val ta e)).
-              * apply fail.
+            eapply bind.
+            apply (Barray.get a (U64.of_u32 i)).
+              * apply (fun e => cast_typ e tyr).
           + apply fail.
         - destruct (typ_eq_dec t2 (TInt64 Unsigned)).
-          + subst. simpl in i. simpl in a. destruct (Barray.get a i).
-            * apply (ret (Val ta e)).
-            * apply fail. 
+          + subst. simpl in i. simpl in a.
+            eapply bind.
+            apply (Barray.get a i).
+            * apply (fun e => cast_typ  e tyr).
           + apply fail.
     }
     all: apply fail.
   Defined.
 
-  Definition eval_array_set (v1 v2 v3: value) : res value.
-    destruct v1 as [ta a]. destruct v2 as [t2 i]. destruct v3 as [t v].
+  Definition eval_array_set (ta: typ) (a : eval_typ ta) (t2:typ)
+    (i : eval_typ t2) (t:typ) (v: eval_typ t) (tyr : typ): res (eval_typ tyr).
+  Proof.
     destruct ta.
     4 :
     {
       destruct arch eqn:Earch.
       - destruct (typ_eq_dec t2 (TInt32 Unsigned)).
         + destruct (typ_eq_dec ta t).
-          * subst. simpl in i. simpl in a. destruct (Barray.set a (U64.of_u32 i) v).
-            -- apply (ret (Val (TArray t) a0)).
-            -- apply fail.
+          * subst. simpl in i. simpl in a.
+            eapply bind.
+            apply (Barray.set a (U64.of_u32 i) v).
+            apply (fun a0 => @cast_typ (TArray t)  a0 tyr).
           * apply fail.
         + apply fail.
       - destruct (typ_eq_dec t2 (TInt64 Unsigned)).
         + destruct (typ_eq_dec ta t).
-          * subst. simpl in i. simpl in a. destruct (Barray.set a i v).
-            -- apply (ret (Val (TArray t) a0)).
-            -- apply fail.
+          * subst. simpl in i. simpl in a.
+            eapply bind.
+            apply (Barray.set a i v).
+            apply (fun a0 => @cast_typ (TArray t) a0 tyr).
           * apply fail.
         + apply fail.
     }
@@ -811,22 +790,23 @@ Section DENOT.
     apply (Val ty (cast EQ X)).
   Defined.
 
-  Definition eval_record_project_aux (fields: smaplist typ) (rc: eval_recordtyp eval_typ fields) (k: ident) : res value.
+  Definition eval_record_project_aux (fields: smaplist typ) (rc: eval_recordtyp eval_typ fields) (k: ident) (ty:typ) : res (eval_typ ty).
     simpl in rc.
     unfold eval_recordtyp in rc.
     destruct (good_proj k (eval_fields_typ eval_typ fields)) eqn:GP.
     - specialize (project rc k GP).
       intro.
-      apply cast_typof_field in X.
-      exact (OK X).
+      destruct (exists_typeof_field _ _ GP) as (ty1 & EQ).
+      apply (cast EQ) in X.
+      exact (cast_typ X ty).
     - exact fail.
   Defined.
 
 
-  Definition eval_record_project (v: value) (k: ident) : res value :=
-    match v with
-    | Val (TRecord _ fields) st => eval_record_project_aux fields st k
-    | _ => fail
+  Definition eval_record_project (ty:typ) : forall (v: eval_typ ty) (k: ident) (tyr : typ), res (eval_typ tyr) :=
+    match ty with
+    | TRecord _ fields => fun v k tyr => eval_record_project_aux fields v k tyr
+    | _ => fun _ _ _ => fail
     end.
 
 
@@ -953,38 +933,51 @@ Lemma typof_field_is_type :
   Defined.
 *)
 
-  Definition eval_record_update (v1: value) (k: ident) (v2: value) : res value :=
-    match v1,v2 with
-    | Val (TRecord n fields) st , Val tv v => let* r' := eval_record_upd_aux fields st k tv v in
-                                              eret (Val (TRecord n fields) r')
-    | _ , _=> fail
+  Definition eval_record_update (t1:typ) : forall (v1: eval_typ t1) (k: ident) (tv : typ) (v: eval_typ tv) (tyr:typ), res (eval_typ tyr) :=
+    match t1 with
+    | TRecord n fields => fun st k tv v tyr =>
+                            @ecast_typ (TRecord n fields) (eval_record_upd_aux fields st k tv v) tyr
+    | _ => fun _ _ _ _ _ => fail
     end.
 
-  Fixpoint eval_access_list (v: value) (acs: list access_value) {struct acs} : res value :=
+  Definition typof_record_project (ty:typ) (f:ident): res typ :=
+    match ty with
+    | TRecord _ l => find_err key_eq f l
+    |    _      => fail
+    end.
+
+  Definition typof_array (ty:typ) : res typ :=
+    match ty with
+    | TArray e => OK e
+    |    _      => fail
+    end.
+
+
+  Fixpoint eval_access_list (ty:typ) (v: eval_typ ty) (acs: list access_value) (tyr : typ) {struct acs} : res (eval_typ tyr) :=
     match acs with
-    | nil => OK v
+    | nil => cast_typ v tyr
     | ac :: acs' =>
         match ac with
         | AcvalRecordField f =>
-            let* v' := eval_record_project v f in
-            eval_access_list v' acs'
+            let* tp := typof_record_project ty f in
+            let* v' := eval_record_project ty v f tp in
+            eval_access_list tp v' acs' tyr
         | AcvalArrayIndex va =>
-            let* v' := eval_array_get v va in
-            eval_access_list v' acs'
+            let* te := typof_array ty in
+            let* v' := eval_array_get _ v typof_index va te in
+            eval_access_list te v' acs' tyr
         end
     end.
-    
+
   Definition res_eq_typ (v1 v2 : res value) : bool :=
     match v1 , v2 with
     | Error _ , _ | _ , Error _ => true
     | OK v1 , OK v2 => proj_sumbool (typ_eq_dec (typeof_value v1) (typeof_value v2))
     end.
 
-  Definition eval_ifthenelse (v1:value) (v2 v3: res value) : res value :=
-    match v1 with
-    | Val TBool b => if b then v2 else v3
-    | _ => fail
-    end.
+  Definition eval_ifthenelse (c:bool) (t2: typ) (v2:res (eval_typ t2)) (t3: typ)  (v3: res (eval_typ t3)) (tr:typ) : res (eval_typ tr) :=
+    if c then ecast_typ v2 tr else ecast_typ v3 tr.
+
 
   (* Fixpoint typecheck_match_branches (elems: list ident) (v: enum elems) (cases: list (pattern * value)) (tr: option typ) : res typ :=
     let check_val_typ (v: value) : res typ :=
@@ -1005,129 +998,244 @@ Lemma typof_field_is_type :
         typecheck_match_branches elems v cases' (Some t)
     end. *)
 
-  Definition eval_match (v: value) (cases: list (pattern * (res value))) : res value :=
-    let '(Val tv v) := v in
-    (match tv as t0 return (eval_typ t0 -> res value) with
+  Definition eval_match (tv:typ) (v: eval_typ tv) (tr: typ) (cases: list (pattern * (res (eval_typ tr)))) : res (eval_typ tr) :=
+    (match tv as t0 return (eval_typ t0 -> res (eval_typ tr)) with
     | TEnum _ elems => 
         (fun v0 => match_with_err v0 cases)
     | _ => (fun _ => fail)
     end) v.
 
-  Fixpoint eval_app_rec (tparams: list typ) (tret: typ) (f: eval_funtyp eval_typ tparams tret) (args: list value) : res value :=
-  match tparams as l return (eval_funtyp eval_typ l tret -> res value) with
-  | [] =>
-      fun f0 : eval_funtyp eval_typ [] tret =>
-      match args with
-      | [] => let* v := f0 in eret (Val tret v)
-      | v :: l => match v with
-                  | Val _ _ => fun _ : list value => fail
-                  end l
-      end
-  | t :: l =>
-      fun f0 : eval_funtyp eval_typ (t :: l) tret =>
-      match args with
-      | [] => fail
-      | v :: l0 =>
-          match v with
-          | Val t0 v0 =>
-              fun args' : list value =>
-              match typ_eq_dec t0 t with
-              | left e => eval_app_rec l tret (f0 (typ_cast abs_typ_impl e v0)) args'
-              | right _ => fail
-              end
-          end l0
-      end
-  end f.
+  Fixpoint eval_app_rec (tparams: list typ) (tret: typ) (f: eval_funtyp eval_typ tparams tret) (args: DList.dlist abs_typ_impl tparams) :
+    res (eval_typ tret).
+  Proof.
+    destruct args.
+    - simpl in f. apply f.
+    - simpl in f. apply (eval_app_rec _ _ (f e) args).
+  Defined.
 
-  Definition eval_app (v: value) (args: list value) : res value :=
-    match v with
-    | Val t v0 =>
-        match t as t1 return (eval_typ t1 -> res value) with
-        | TFun tparams tret =>
-            match tparams as tparams' return (eval_typ (TFun tparams' tret) -> res value) with
-          | [] =>
-              fun vt1 : eval_typ (TFun [] tret) =>
-              match args with
-              | [] =>
-                  match vt1 tt with
-                  | OK e => eret (Val tret e)
-                  | Error e => Error e
-                  end
-              | v1 :: l0 => fail
-              end
-          | x  => fun f  => eval_app_rec x tret f args
-          end
-     | _ => fun _ => fail
-     end  v0
+  Definition eval_app (tparams : list typ) (tret :typ) : forall (v: eval_typ (TFun tparams tret)) (args: DList.dlist abs_typ_impl tparams) , res (eval_typ tret) :=
+    match tparams  with
+    | [] =>
+        (fun (vt1: eval_typ (TFun nil tret)) args  =>
+           match args with
+           | DList.DNIL _ => vt1 tt
+           | DList.DCONS _ v1  l0 => fail
+           end)
+    | x  => (fun f args  =>  (eval_app_rec x tret f args))
     end.
 
-  Fixpoint eval_expr (te: tenv) (ge: genv) (le: lenv) (e: expr) : res value :=
+
+  Fixpoint eval_app_typ_rec (tparams: list typ) (tret: typ) (f: eval_funtyp eval_typ tparams tret) (args: DList.dlist abs_typ_impl tparams) (ty:typ):
+    res (eval_typ ty).
+  Proof.
+    destruct args.
+    - simpl in f. apply (ecast_typ f ty).
+    - simpl in f. apply (eval_app_typ_rec _ _ (f e) args ty).
+  Defined.
+
+  Definition eval_app_typ (tparams : list typ) (tret :typ) : forall (v: eval_typ (TFun tparams tret)) (args: DList.dlist abs_typ_impl tparams) (ty:typ), res (eval_typ ty) :=
+    match tparams  with
+    | [] =>
+        (fun (vt1: eval_typ (TFun nil tret)) args ty  =>
+           match args with
+           | DList.DNIL _ => ecast_typ (vt1 tt) ty
+           | DList.DCONS _ v1  l0 => fail
+           end)
+    | x  => (fun f args ty =>  (eval_app_typ_rec x tret f args ty))
+    end.
+
+
+
+  Definition typof_expr (te:tenv) (e:expr) : res typ :=
+    btyp_to_typ te (Typing.typof_expr e).
+
+  Definition cast_int (t:typ) (i:int) : res (eval_typ t) :=
+    match t with
+    | TInt32 s => OK i
+    |  _       => fail
+    end.
+
+  Definition cast_int64 (t:typ) (i:int64) : res (eval_typ t) :=
+    match t with
+    | TInt64 s => OK i
+    |  _       => fail
+    end.
+
+
+  Fixpoint eval_expr (te: tenv) (ge: genv) (le: lenv) (ty:typ) (e: expr)  : res (eval_typ ty) :=
     match e with
-    | ETrue => ret (Val TBool true)
-    | EFalse => ret (Val TBool false)
-    | EInt32 i s => ret (Val (TInt32 s) i)
-    | EInt64 i s => ret (Val (TInt64 s) i)
-    | EConstr x => eval_constr te x
-    | EVar x => eval_var ge le x
-    | ECast e1 ty =>
-        let* ty' := btyp_to_typ te ty in
-        let* v1 := eval_expr te ge le e1 in
-        eval_cast v1 ty'
-    | EUnaryOp op e =>
-        let* v := eval_expr te ge le e in
-        eval_unary_op op v
-    | EBinaryOp op e1 e2 =>
-        let* v1 := eval_expr te ge le e1 in
-        let* v2 := eval_expr te ge le e2 in
-        eval_binary_op op v1 v2
-    | EArrayGet e1 e2 =>
-        let* v1 := eval_expr te ge le e1 in
-        let* v2 := eval_expr te ge le e2 in
-        eval_array_get v1 v2
-    | EArraySet e1 e2 e3 =>
-        let* v1 := eval_expr te ge le e1 in
-        let* v2 := eval_expr te ge le e2 in
-        let* v3 := eval_expr te ge le e3 in
-        eval_array_set v1 v2 v3
-    | ERecordProj e k =>
-        let* v := eval_expr te ge le e in
-        eval_record_project v k
-    | ERecordUpdate e1 k e2 =>
-        let* v1 := eval_expr te ge le e1 in
-        let* v2 := eval_expr te ge le e2 in
-        eval_record_update v1 k v2
-    | EDeepAccess e1 acs =>
-        let* v1 := eval_expr te ge le e1 in
+    | ETrue  => @cast_typ TBool true ty
+    | EFalse => @cast_typ TBool false ty
+    | EInt32 i s => @cast_typ (TInt32 s) i ty
+    | EInt64 i s => @cast_typ (TInt64 s) i ty
+    | EConstr x _  => eval_constr te x ty
+    | EVar x _ => eval_var ge le x ty
+    | ECast e1 tr =>
+        let* tr' := btyp_to_typ te tr in
+        let* te1  := typof_expr te e1 in
+        let* v1 := eval_expr te ge le te1 e1  in
+        ecast_typ  (eval_cast te1 v1 tr') ty
+    | EUnaryOp op e bt =>
+        let* tye := btyp_to_typ te bt in
+        let* v := eval_expr te ge le tye e in
+        eval_unary_op op tye v ty
+    | EBinaryOp op e1 e2 bt =>
+        let* tye1 := typof_expr te e1 in
+        let* tye2  := typof_expr te e2 in
+        let* v1 := eval_expr te ge le tye1 e1  in
+        let* v2 := eval_expr te ge le tye2 e2  in
+        eval_binary_op op tye1 tye2 v1 v2 ty
+    | EArrayGet e1 e2 _ =>
+        let* tye1 := typof_expr te e1 in
+        let* tye2 := typof_expr te e2 in
+        let* v1 := eval_expr te ge le tye1 e1  in
+        let* v2 := eval_expr te ge le tye2 e2  in
+        eval_array_get tye1 v1 tye2 v2 ty
+    | EArraySet e1 e2 e3 _ =>
+        let* tye1 := typof_expr te e1 in
+        let* tye2 := typof_expr te e2 in
+        let* tye3 := typof_expr te e3 in
+        let* v1 := eval_expr te ge le tye1 e1 in
+        let* v2 := eval_expr te ge le tye2 e2 in
+        let* v3 := eval_expr te ge le tye3 e3 in
+        eval_array_set tye1 v1 tye2 v2 tye3 v3 ty
+    | ERecordProj e k _ =>
+        let* tye := typof_expr te e in
+        let* v := eval_expr te ge le tye e in
+        eval_record_project tye v k ty
+    | ERecordUpdate e1 k e2 _ =>
+        let* te1 := typof_expr te e1 in
+        let* te2 := typof_expr te e2 in
+        let* v1 := eval_expr te ge le te1 e1 in
+        let* v2 := eval_expr te ge le te2 e2 in
+        eval_record_update te1 v1 k te2 v2 ty
+    | EDeepAccess e1 acs _ =>
+        let* tye1 := typof_expr te e1 in
+        let* v1 := eval_expr te ge le tye1 e1 in
         let* vacs := mmap (eval_access_expr te ge le) acs in
-        eval_access_list v1 vacs
-    | EApp v args =>
-        let* f := eval_expr te ge le v in
-        let* vargs := mmap (eval_expr te ge le) args
-        in eval_app f vargs
-    | EIfThenElse e1 e2 e3 =>
-        let* v1 := eval_expr te ge le e1 in
-        let v2 := eval_expr te ge le e2 in
-        let v3 := eval_expr te ge le e3 in
-        eval_ifthenelse v1 v2 v3
-    | EMatch e1 cases =>
-        let* v1 := eval_expr te ge le e1 in
-        let vcases := MapList.map (eval_expr te ge le) cases in
-        eval_match v1 vcases
-    | ELetIn x e1 e2 =>
-        let* v1 := eval_expr te ge le e1 in
-        let le' := lenv_update le x v1 in
-        eval_expr te ge le' e2
+        eval_access_list tye1 v1 vacs ty
+    | EApp v args _ =>
+        let* tyf := typof_expr te v in
+        match tyf with
+        | TFun tparams tret =>
+            let* f := eval_expr te ge le  (TFun tparams tret) v in
+            let* vargs := DList.mmap abs_typ_impl (eval_expr te ge le) args tparams in
+            eval_app_typ tparams tret f vargs ty
+        |  _  => fail
+        end
+    | EIfThenElse e1 e2 e3 _ =>
+        let* v1 := eval_expr te ge le TBool e1  in
+        let* te2 := typof_expr te e2 in
+        let* te3 := typof_expr te e3 in
+        let v2 := eval_expr te ge le te2 e2 in
+        let v3 := eval_expr te ge le te3 e3  in
+        eval_ifthenelse  v1 te2 v2 te3 v3 ty
+    | EMatch e1 cases _  =>
+        let* te1:= typof_expr te e1 in
+        let* v1 := eval_expr te ge le te1 e1 in
+        let vcases := MapList.map (eval_expr te ge le ty) cases in
+        eval_match te1 v1 ty vcases
+    | ELetIn x e1 e2 _ =>
+        let* te1 := typof_expr te e1 in
+        let* v1 := eval_expr te ge le te1 e1 in
+        let le' := lenv_update le x (Val te1 v1) in
+        eval_expr te ge le' ty e2
     end
 
   with eval_access_expr (te: tenv) (ge: genv) (le: lenv) (ac: access) : res access_value :=
     match ac with
-    | AcRecordField f => ret (AcvalRecordField f)
-    | AcArrayIndex e =>
-        let* v := eval_expr te ge le e in
+    | AcRecordField f _ => ret (AcvalRecordField f)
+    | AcArrayIndex e _ =>
+        let* v := eval_expr te ge le typof_index e  in
         ret (AcvalArrayIndex v)
     end.
 
-  Fixpoint eval_literal (te: tenv) (l: literal) : res value :=
+
+  Lemma eval_expr_rew : forall (te: tenv) (ge: genv) (le: lenv) (ty:typ) (e: expr),
+      eval_expr te ge le ty e =
+    match e with
+    | ETrue  => @cast_typ TBool true ty
+    | EFalse => @cast_typ TBool false ty
+    | EInt32 i s => @cast_typ (TInt32 s) i ty
+    | EInt64 i s => @cast_typ (TInt64 s) i ty
+    | EConstr x _  => eval_constr te x ty
+    | EVar x _ => eval_var ge le x ty
+    | ECast e1 tr =>
+        let* tr' := btyp_to_typ te tr in
+        let* te1  := typof_expr te e1 in
+        let* v1 := eval_expr te ge le te1 e1  in
+        ecast_typ  (eval_cast te1 v1 tr') ty
+    | EUnaryOp op e bt =>
+        let* tye := btyp_to_typ te bt in
+        let* v := eval_expr te ge le tye e in
+        eval_unary_op op tye v ty
+    | EBinaryOp op e1 e2 bt =>
+        let* tye1 := typof_expr te e1 in
+        let* tye2  := typof_expr te e2 in
+        let* v1 := eval_expr te ge le tye1 e1  in
+        let* v2 := eval_expr te ge le tye2 e2  in
+        eval_binary_op op tye1 tye2 v1 v2 ty
+    | EArrayGet e1 e2 _ =>
+        let* tye1 := typof_expr te e1 in
+        let* tye2 := typof_expr te e2 in
+        let* v1 := eval_expr te ge le tye1 e1  in
+        let* v2 := eval_expr te ge le tye2 e2  in
+        eval_array_get tye1 v1 tye2 v2 ty
+    | EArraySet e1 e2 e3 _ =>
+        let* tye1 := typof_expr te e1 in
+        let* tye2 := typof_expr te e2 in
+        let* tye3 := typof_expr te e3 in
+        let* v1 := eval_expr te ge le tye1 e1 in
+        let* v2 := eval_expr te ge le tye2 e2 in
+        let* v3 := eval_expr te ge le tye3 e3 in
+        eval_array_set tye1 v1 tye2 v2 tye3 v3 ty
+    | ERecordProj e k _ =>
+        let* tye := typof_expr te e in
+        let* v := eval_expr te ge le tye e in
+        eval_record_project tye v k ty
+    | ERecordUpdate e1 k e2 _ =>
+        let* te1 := typof_expr te e1 in
+        let* te2 := typof_expr te e2 in
+        let* v1 := eval_expr te ge le te1 e1 in
+        let* v2 := eval_expr te ge le te2 e2 in
+        eval_record_update te1 v1 k te2 v2 ty
+    | EDeepAccess e1 acs _ =>
+        let* tye1 := typof_expr te e1 in
+        let* v1 := eval_expr te ge le tye1 e1 in
+        let* vacs := mmap (eval_access_expr te ge le) acs in
+        eval_access_list tye1 v1 vacs ty
+    | EApp v args _ =>
+        let* tyf := typof_expr te v in
+        match tyf with
+        | TFun tparams tret =>
+            let* f := eval_expr te ge le  (TFun tparams tret) v in
+            let* vargs := DList.mmap abs_typ_impl (eval_expr te ge le) args tparams in
+            eval_app_typ tparams tret f vargs ty
+        |  _  => fail
+        end
+    | EIfThenElse e1 e2 e3 _ =>
+        let* v1 := eval_expr te ge le TBool e1  in
+        let* te2 := typof_expr te e2 in
+        let* te3 := typof_expr te e3 in
+        let v2 := eval_expr te ge le te2 e2 in
+        let v3 := eval_expr te ge le te3 e3  in
+        eval_ifthenelse  v1 te2 v2 te3 v3 ty
+    | EMatch e1 cases _  =>
+        let* te1:= typof_expr te e1 in
+        let* v1 := eval_expr te ge le te1 e1 in
+        let vcases := MapList.map (eval_expr te ge le ty) cases in
+        eval_match te1 v1 ty vcases
+    | ELetIn x e1 e2 _ =>
+        let* te1 := typof_expr te e1 in
+        let* v1 := eval_expr te ge le te1 e1 in
+        let le' := lenv_update le x (Val te1 v1) in
+        eval_expr te ge le' ty e2
+    end.
+  Proof.
+    destruct e; reflexivity.
+  Qed.
+
+    Fixpoint eval_literal (te: tenv) (l: literal) : res value :=
     match l with
     | LTrue => ret (Val TBool true)
     | LFalse => ret (Val TBool false)
@@ -1154,10 +1262,7 @@ Lemma typof_field_is_type :
   Fixpoint build_funval_rec_aux (te: tenv) (ge: genv) (le: lenv) (params: smaplist typ) (tret: typ) (e: expr) : eval_funtyp eval_typ (List.map (fun x => snd x) params) tret.
     destruct params as [| (x, tx) params'].
     - simpl.
-      eapply bind.
-      apply (eval_expr te ge le e).
-      intro v.
-      apply (cast_typ_M tret v).
+      apply (eval_expr te ge le  tret e).
     - simpl. apply (fun (y: eval_typ tx) => build_funval_rec_aux te ge (lenv_update le x (Val tx y)) params' tret e).
   Defined.
 
@@ -1168,10 +1273,7 @@ Lemma typof_field_is_type :
     destruct params as [| p params'].
     - simpl.
       intro.
-      eapply bind.
-      apply (eval_expr te ge STree.empty e).
-      intro v.
-      apply (cast_typ_M tret v).
+      apply (eval_expr te ge STree.empty tret e).
     - apply (build_funval_rec te ge STree.empty (p :: params') tret e).
   Defined.
 
@@ -1226,8 +1328,7 @@ Lemma typof_field_is_type :
 
 
   (** Interpreter *)
-
-  Fixpoint interpret_rec (te: tenv) (ge: genv) (cmds: list Barocq.command) : res (list value) :=
+  Fixpoint interpret_rec (te: tenv) (ge: genv) (cmds: list command) : res (list value) :=
     match cmds with
     | nil => ret nil
     | c :: xprog' =>
@@ -1244,19 +1345,20 @@ Lemma typof_field_is_type :
         | CmdDef (DeclType _ _) => failwith "the program contains abstract types"
         | CmdDef (DeclConst _ _)
         | CmdDef (DeclFun _ _ _) => failwith "the program contains abstract definitions"
-        | CmdExpr e =>
-            let* v := eval_expr te ge STree.empty e in
+        | CmdExpr bt e =>
+            let* ty := typof_expr te e in
+            let* v := eval_expr te ge STree.empty ty e in
             let* l := interpret_rec te ge xprog' in
-            ret (v :: l)
+            ret (Val ty v :: l)
         end
     end.
 
-  Definition interpret (iprog: iprogram) : res (list value) :=
+  Definition interpret (iprog: list command) : res (list value) :=
     interpret_rec tenv_empty STree.empty iprog.
 
   (** Evaluation of a definition with dynamic environments *)
-  
-  Fixpoint eval_def_rec (te: tenv) (ge: genv) (prog: Barocq.program) (x: ident) : res value :=
+
+  Fixpoint eval_def_rec (te: tenv) (ge: genv) (prog: program) (x: ident) : res value :=
     match prog with
     | nil => fail
     | d :: prog' =>

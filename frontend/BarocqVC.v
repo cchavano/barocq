@@ -8,7 +8,7 @@ From compcert Require Import Coqlib.
 From Coq Require Import ZifyBool.
 
 Open Scope string_scope.
-
+Import Typed.
 
 (** Use [nodup] using MergeSort
 Fixpoint nodup {A: Type} (eqb: A -> A -> bool) (l:list A) : bool :=
@@ -140,9 +140,6 @@ Section S.
   Local Notation "# X" := (Types.eval_typ abs_typ_impl X) (at level 90).
 
 
-  Inductive res_rel {A B : Type} (R : A -> B -> Prop) : res A -> res B -> Prop :=
-    res_rel_error : forall m m', res_rel R (Error m) (Error m')
-  | res_rel_ok : forall (x : A) (y : B), R x y -> res_rel R (OK x) (OK y).
 
   Section EQUAL_FUN.
     Variable PRED : forall (t:typ), # t -> # t -> Prop.
@@ -270,23 +267,23 @@ Section S.
     - simpl; intros. inv EVAL. apply env_preserve_defs_refl.
     - simpl; intros.
       destruct a.
-      + destruct (eval_def_type te tid adt); try discriminate.
+      + destruct (eval_def_type te i a); try discriminate.
         simpl in EVAL.
         eapply IHprog in EVAL;eauto.
-      + destruct (eval_def_const abs_typ_impl te ge x l ty) eqn:EQN; try discriminate.
+      + destruct (eval_def_const abs_typ_impl te ge i l b) eqn:EQN; try discriminate.
         simpl in EVAL.
         eapply IHprog in EVAL;eauto.
         eapply eval_decl_const_preserve_defs in EQN; eauto.
         eapply env_preserve_defs_trans; eauto.
-    +  destruct (eval_def_fun arch abs_typ_impl te ge x f) eqn:EQN; try discriminate.
+    +  destruct (eval_def_fun arch abs_typ_impl te ge i f) eqn:EQN; try discriminate.
        simpl in EVAL.
        eapply IHprog in EVAL;eauto.
        eapply eval_def_fun_preserve_defs in EQN;eauto.
        eapply env_preserve_defs_trans;eauto.
     + eauto.
-    + destruct (eval_decl_const abs_typ_impl te ge x ty); try discriminate.
+    + destruct (eval_decl_const abs_typ_impl te ge i b); try discriminate.
       simpl in EVAL ; eauto.
-    + destruct (eval_decl_fun abs_typ_impl te ge x tparams tret); try discriminate.
+    + destruct (eval_decl_fun abs_typ_impl te ge i l b); try discriminate.
       simpl in EVAL; eauto.
 Qed.
 
@@ -384,20 +381,20 @@ Definition get_prop (s:ident) (props : list propt) :=
 
 Fixpoint vars_of_expr (vars : STree.t unit) (e:expr)  : STree.t unit :=
   match e with
-  | ETrue | EFalse |EInt32 _ _ | EInt64 _ _ | EConstr _ => vars
-  | EVar id => STree.set id tt vars
+  | ETrue  | EFalse  |EInt32 _ _ | EInt64 _ _ | EConstr _ _ => vars
+  | EVar id _ => STree.set id tt vars
   | ECast e _ => vars_of_expr vars e
-  | EUnaryOp _ e => vars_of_expr vars e
-  | EBinaryOp _ e1 e2 | EArrayGet e1 e2 => vars_of_expr (vars_of_expr vars e1) e2
-  | EArraySet e1 e2 e3 => vars_of_expr (vars_of_expr (vars_of_expr vars e1) e2) e3
-  | ERecordProj e _ => vars_of_expr vars e
-  | ERecordUpdate e1 _ e2 => vars_of_expr (vars_of_expr vars e1) e2
-  | EDeepAccess e acc => vars_of_expr (List.fold_left vars_of_access acc vars) e
-  | EApp e l   => List.fold_left vars_of_expr l (vars_of_expr vars e)
-  | EIfThenElse e1 e2 e3 => vars_of_expr (vars_of_expr (vars_of_expr vars e1) e2) e3
-  | EMatch e1 cases =>
+  | EUnaryOp _ e _ => vars_of_expr vars e
+  | EBinaryOp _ e1 e2 _ | EArrayGet e1 e2 _ => vars_of_expr (vars_of_expr vars e1) e2
+  | EArraySet e1 e2 e3 _ => vars_of_expr (vars_of_expr (vars_of_expr vars e1) e2) e3
+  | ERecordProj e _ _ => vars_of_expr vars e
+  | ERecordUpdate e1 _ e2 _ => vars_of_expr (vars_of_expr vars e1) e2
+  | EDeepAccess e acc _ => vars_of_expr (List.fold_left vars_of_access acc vars) e
+  | EApp e l _   => List.fold_left vars_of_expr l (vars_of_expr vars e)
+  | EIfThenElse e1 e2 e3 _ => vars_of_expr (vars_of_expr (vars_of_expr vars e1) e2) e3
+  | EMatch e1 cases _  =>
       MapList.fold_left (fun vars _ ep => vars_of_expr vars ep) cases (vars_of_expr vars e1)
-  | ELetIn x e1 e2 => (* Ignore scopes - should remove x from e2 *)
+  | ELetIn x e1 e2 _ => (* Ignore scopes - should remove x from e2 *)
       let vars_e2 :=
         match STree.get x vars with
         | Some _ => vars_of_expr vars e2
@@ -406,8 +403,8 @@ Fixpoint vars_of_expr (vars : STree.t unit) (e:expr)  : STree.t unit :=
   end
   with vars_of_access (vars: STree.t unit) (acc:access) : STree.t unit :=
          match acc with
-         | AcRecordField _ => vars
-         | AcArrayIndex e => vars_of_expr vars e
+         | AcRecordField _ _ => vars
+         | AcArrayIndex e _ => vars_of_expr vars e
          end.
 
 Definition has_var (s:string) (vars:STree.t unit) :=
@@ -798,291 +795,238 @@ Proof.
   eapply ext_equal_trans;eauto.
 Qed.
 
+Lemma res_rel_refl : forall {A : Type} (P : A -> A -> Prop),
+    (forall x, P x x) ->
+    forall x, res_rel P x x.
+Proof.
+  intros.
+  destruct x; constructor.
+  apply H.
+Qed.
 
-Lemma same_value_eval_cast : forall x y t,
-    same_value x y ->
-    res_rel same_value (eval_cast abs_typ_impl x t) (eval_cast abs_typ_impl y t).
+
+
+Lemma get_cast_fo_typ : forall  ty t r,
+    get_cast abs_typ_impl ty t = OK r ->
+    no_TFun ty = true /\ no_TFun t = true.
+Proof.
+  unfold get_cast.
+  destruct ty,t; try discriminate; simpl; split; reflexivity.
+Qed.
+
+Fixpoint no_TFun_fo_typ (ty:typ):  no_TFun ty = true -> fo_typ ty = true.
+Proof.
+  destruct ty; simpl; auto; try discriminate.
+  induction l; simpl;auto.
+  rewrite! andb_true_iff.
+  intuition.
+Qed.
+
+
+Lemma ext_equal_eval_cast : forall ty x y t,
+    ext_equal ty x y ->
+    res_rel (ext_equal t) (eval_cast abs_typ_impl ty x t) (eval_cast abs_typ_impl ty y t).
 Proof.
   unfold eval_cast.
-  destruct x,y; simpl; auto.
   intros.
-  destruct (typ_eq_dec t0 t); try congruence.
+  destruct (get_cast abs_typ_impl ty t) eqn:C; try constructor.
+  apply get_cast_fo_typ in C as (F1 & F2).
+  simpl.
+  apply no_TFun_equal in H; auto.
   subst.
-  change (cast eq_refl v0) with v0 in H.
-  destruct t; auto; try constructor.
-  - simpl in H.
-    subst.
-    destruct t1; try (constructor; apply same_value_refl;  reflexivity).
-    destruct (Benum.of_i32 l (Intop.I32.of_bool v)); constructor;
-      apply same_value_refl. reflexivity.
-  - simpl in H. subst.
-    destruct s,t1 ; try (constructor; apply same_value_refl;reflexivity).
-    destruct s; try (constructor; apply same_value_refl;reflexivity).
-    destruct s; try (constructor; apply same_value_refl;reflexivity).
-    destruct (Benum.of_i32 l v); (constructor; apply same_value_refl;reflexivity).
-    destruct s; try (constructor; apply same_value_refl;reflexivity).
-    destruct s; try (constructor; apply same_value_refl;reflexivity).
-    destruct (Benum.of_i32 l (Intop.I32.of_u32 v)); (constructor; apply same_value_refl;reflexivity).
-  - simpl in H. subst.
-    destruct s,t1 ; try (constructor; apply same_value_refl; reflexivity).
-    destruct s; try (constructor; apply same_value_refl;reflexivity).
-    destruct s; try (constructor; apply same_value_refl;reflexivity).
-    destruct (Benum.of_i32 l (Intop.I32.of_i64 v)); (constructor; apply same_value_refl;reflexivity).
-    destruct s; try (constructor; apply same_value_refl;reflexivity).
-    destruct s; try (constructor; apply same_value_refl;reflexivity).
-    destruct (Benum.of_i32 l (Intop.I32.of_u64 v)); (constructor; apply same_value_refl;reflexivity).
-  - simpl in H. subst.
-    destruct t1;
-      try (constructor; apply same_value_refl;reflexivity).
-    + destruct s;
-      (constructor; apply same_value_refl;reflexivity).
-    + destruct s;
-        (constructor; apply same_value_refl;reflexivity).
-  -  tauto.
+  apply res_rel_refl. intros. apply ext_equal_refl.
+  apply no_TFun_fo_typ; auto.
 Qed.
 
-Lemma same_value_eval_unary_op : forall op x y,
-    same_value x y ->
-    res_rel same_value (eval_unary_op abs_typ_impl op x)
-      (eval_unary_op abs_typ_impl op y).
-Proof.
-  destruct x,y.
-  simpl. intros.
-  destruct (typ_eq_dec t0 t); try tauto.
-  subst. change (cast eq_refl v0) with v0 in H.
-  destruct op,t; try constructor.
-  - simpl in H; subst. apply same_value_refl;reflexivity.
-  - simpl in H; subst. apply same_value_refl;reflexivity.
-  - simpl in H; subst. apply same_value_refl;reflexivity.
-  - simpl in H; subst. apply same_value_refl;reflexivity.
-  - simpl in H; subst. apply same_value_refl;reflexivity.
-  - simpl in H; subst. apply same_value_refl;reflexivity.
-  - simpl in H; subst. apply same_value_refl;reflexivity.
-Qed.
-
-Lemma same_value_eval_binary_op : forall op v1 v1' v2 v2',
-    same_value v1 v1' ->
-    same_value v2 v2' ->
-    res_rel same_value (eval_binary_op abs_typ_impl op v1 v2) (eval_binary_op abs_typ_impl op v1' v2').
+Lemma res_rel_cast_typ_refl : forall ti tf v,
+    fo_typ ti = true ->
+    res_rel (ext_equal tf) (@cast_typ abs_typ_impl ti v tf) (@cast_typ abs_typ_impl ti v tf).
 Proof.
   intros.
-  unfold same_value in H,H0.
-  destruct v1,v2,v1',v2'.
-  destruct (typ_eq_dec t1 t); try tauto.
-  destruct (typ_eq_dec t2 t0); try tauto.
+  unfold cast_typ.
+  destruct (typ_eq_dec tf ti).
+  subst. apply res_rel_refl.
+  intros. apply ext_equal_refl. auto.
+  constructor.
+Qed.
+
+Lemma ext_equal_cast_typ : forall ti tf v1 v2,
+    ext_equal ti v1 v2 ->
+    res_rel (ext_equal tf) (cast_typ abs_typ_impl v1 tf) (cast_typ abs_typ_impl v2 tf).
+Proof.
+  unfold cast_typ.
+  intros. destruct (typ_eq_dec tf ti); try constructor.
   subst.
-  change (cast eq_refl v1) with v1 in H.
-  change (cast eq_refl v2) with v2 in H0.
-  destruct op.
-  - simpl.
-    destruct t,t0 ; try constructor.
-    simpl in *; subst. reflexivity.
-  - simpl.
-    destruct t,t0 ; try constructor.
-    simpl in *; subst. reflexivity.
-  - simpl.
-    destruct t,t0 ; try constructor.
-    simpl in *; subst. reflexivity.
-  - simpl.
-    destruct t,t0 ; try constructor;
+  constructor. auto.
+Qed.
+
+
+Lemma ext_equal_eval_unary_op : forall op ti x y tf,
+    ext_equal ti x y ->
+    res_rel (ext_equal tf) (eval_unary_op abs_typ_impl op ti x tf)
+      (eval_unary_op abs_typ_impl op ti y tf).
+Proof.
+  intros.
+  destruct op,ti; simpl; try constructor.
+  apply ext_equal_cast_typ; simpl in *; congruence.
+  apply ext_equal_cast_typ; simpl in *; congruence.
+  apply ext_equal_cast_typ; simpl in *; congruence.
+  apply ext_equal_cast_typ; simpl in *; congruence.
+  apply ext_equal_cast_typ; simpl in *; congruence.
+  apply ext_equal_cast_typ; simpl in *; congruence.
+  apply ext_equal_cast_typ; simpl in *; congruence.
+Qed.
+
+Lemma ext_equal_bool_op : forall op t1 t2 v1 v1' v2 v2' tf,
+    ext_equal t1 v1 v1' ->
+    ext_equal t2 v2 v2' ->
+    res_rel (ext_equal tf) (bool_op abs_typ_impl op t1 t2 v1 v2 tf) (bool_op abs_typ_impl op t1 t2 v1' v2' tf).
+Proof.
+  unfold bool_op.
+  destruct t1,t2; try constructor.
+  intros. simpl in *. subst.
+  apply ext_equal_cast_typ. reflexivity.
+Qed.
+
+Lemma ext_equal_int_op : forall op32 op64 t1 t2 v1 v1' v2 v2' tf,
+    ext_equal t1 v1 v1' ->
+    ext_equal t2 v2 v2' ->
+    res_rel (ext_equal tf) (int_op abs_typ_impl op32 op64 t1 t2 v1 v2 tf) (int_op abs_typ_impl op32 op64 t1 t2 v1' v2' tf).
+Proof.
+  unfold int_op.
+  destruct t1,t2; try constructor.
+  - intros. simpl in *. subst.
+    destruct signedness_eq_dec.
+    apply ext_equal_cast_typ. reflexivity.
+    constructor.
+  - intros. simpl in *. subst.
+    destruct signedness_eq_dec.
+    apply ext_equal_cast_typ. reflexivity.
+    constructor.
+Qed.
+
+Lemma ext_equal_ecast_typ : forall ti tf v1 v2,
+    res_rel (ext_equal ti) v1 v2 ->
+    res_rel (ext_equal tf) (@ecast_typ abs_typ_impl ti v1 tf) (@ecast_typ abs_typ_impl ti v2 tf).
+Proof.
+  intros.
+  unfold ecast_typ.
+  destruct (typ_eq_dec tf ti). subst.
+  apply H.
+  constructor.
+Qed.
+
+Lemma ext_equal_int_ops : forall op32s op32u op64s op64u t1 t2 v1 v1' v2 v2' tf,
+    ext_equal t1 v1 v1' ->
+    ext_equal t2 v2 v2' ->
+    res_rel (ext_equal tf) (int_op_s abs_typ_impl op32s op32u op64s op64u t1 t2 v1 v2 tf)
+      (int_op_s abs_typ_impl op32s op32u op64s op64u t1 t2 v1' v2' tf).
+Proof.
+  unfold int_op_s.
+  destruct t1,t2; try constructor.
+  - intros.
+    destruct s,s0; try constructor.
+    apply ext_equal_ecast_typ.
     simpl in *. subst.
-    destruct (signedness_eq_dec s s0); try constructor.
-    apply same_value_refl;reflexivity.
-    destruct (signedness_eq_dec s s0); try constructor.
-    subst.
-    apply same_value_refl;reflexivity.
-  - simpl.
-    destruct t,t0 ; try constructor;
+    apply res_rel_refl; auto.
+    apply ext_equal_ecast_typ.
     simpl in *. subst.
-    destruct (signedness_eq_dec s s0); try constructor.
-    apply same_value_refl;reflexivity.
-    destruct (signedness_eq_dec s s0); try constructor.
-    subst.
-    apply same_value_refl;reflexivity.
-  - simpl.
-    destruct t,t0 ; try constructor;
+    apply res_rel_refl; auto.
+  - intros.
+    destruct s,s0; try constructor.
+    apply ext_equal_ecast_typ.
     simpl in *. subst.
-    destruct (signedness_eq_dec s s0); try constructor.
-    apply same_value_refl;reflexivity.
-    destruct (signedness_eq_dec s s0); try constructor.
-    subst.
-    apply same_value_refl;reflexivity.
-  - simpl.
-    destruct t,t0 ; try constructor;
-    simpl in *;subst; destruct s; try constructor.
-    + destruct s0; try constructor.
-      destruct (Intop.I32.div v v0); constructor.
-      apply same_value_refl;reflexivity.
-    + destruct s0; try constructor.
-      destruct (Intop.U32.div v v0); constructor.
-      apply same_value_refl;reflexivity.
-    + destruct s0; try constructor.
-      destruct (Intop.I64.div v v0); constructor.
-      apply same_value_refl;reflexivity.
-    + destruct s0; try constructor.
-      destruct (Intop.U64.div v v0); constructor.
-      apply same_value_refl;reflexivity.
-  - simpl.
-    destruct t,t0 ; try constructor;
-    simpl in *;subst; destruct s; try constructor.
-    + destruct s0; try constructor.
-      destruct (Intop.I32.mod v v0); constructor.
-      apply same_value_refl;reflexivity.
-    + destruct s0; try constructor.
-      destruct (Intop.U32.mod v v0); constructor.
-      apply same_value_refl;reflexivity.
-    + destruct s0; try constructor.
-      destruct (Intop.I64.mod v v0); constructor.
-      apply same_value_refl;reflexivity.
-    + destruct s0; try constructor.
-      destruct (Intop.U64.mod v v0); constructor.
-      apply same_value_refl;reflexivity.
-  -  destruct t,t0 ; try constructor;
-       simpl in *;subst.
-     destruct (signedness_eq_dec s s0); try constructor.
-     apply same_value_refl;reflexivity.
-     destruct (signedness_eq_dec s s0); try constructor.
-     apply same_value_refl;reflexivity.
-  -  destruct t,t0 ; try constructor;
-       simpl in *;subst.
-     destruct (signedness_eq_dec s s0); try constructor.
-     apply same_value_refl;reflexivity.
-     destruct (signedness_eq_dec s s0); try constructor.
-     apply same_value_refl;reflexivity.
-  -  destruct t,t0 ; try constructor;
-       simpl in *;subst.
-     destruct (signedness_eq_dec s s0); try constructor.
-     apply same_value_refl;reflexivity.
-     destruct (signedness_eq_dec s s0); try constructor.
-     apply same_value_refl;reflexivity.
-  -  destruct t,t0 ; try constructor;
-       simpl in *;subst.
-     destruct (signedness_eq_dec s s0); try constructor.
-     apply same_value_refl;reflexivity.
-     destruct (signedness_eq_dec s s0); try constructor.
-     apply same_value_refl;reflexivity.
-  -  destruct t,t0 ; try constructor;
-       simpl in *;subst.
-     destruct s; try constructor.
-     destruct s,s0; try constructor.
-     apply same_value_refl;reflexivity.
-     apply same_value_refl;reflexivity.
-     destruct s; try constructor.
-     destruct s; try constructor.
-     destruct s; try constructor.
-     destruct s; try constructor.
-     destruct s; try constructor.
-     destruct s; try constructor.
-     destruct s; try constructor.
-     destruct s; constructor.
-     destruct s,s0; try constructor.
-     apply same_value_refl;reflexivity.
-     apply same_value_refl;reflexivity.
-     destruct s; constructor.
-     destruct s; constructor.
-     destruct s; constructor.
-     destruct s; constructor.
-     destruct s; constructor.
-  -  destruct t,t0 ; simpl in H,H0; subst;
-       try (constructor;  simpl in *;subst;
-            reflexivity).
-     + simpl.
-       destruct (signedness_eq_dec s s0); try constructor.
-       apply same_value_refl;reflexivity.
-     + simpl.
-       destruct (signedness_eq_dec s s0); try constructor.
-       apply same_value_refl;reflexivity.
-     + unfold eval_binary_op.
-       destruct (typ_eq_dec (TEnum i l) (TEnum i0 l0));
-         try constructor.
-       destruct (Benum.enum_eq_dec (typ_cast abs_typ_impl e v) v0);
-         try constructor.
-       apply same_value_refl;reflexivity.
-       apply same_value_refl;reflexivity.
-  -  destruct t,t0 ; simpl in H,H0; subst;
-       try (constructor;  simpl in *;subst;
-            reflexivity).
-     + simpl.
-       destruct s;  constructor.
-     + simpl.
-       destruct s,s0; try constructor.
-       apply same_value_refl;reflexivity.
-       apply same_value_refl;reflexivity.
-     + unfold eval_binary_op.
-       destruct s; constructor.
-     + unfold eval_binary_op.
-       destruct s; constructor.
-     + unfold eval_binary_op.
-       destruct s; constructor.
-     + unfold eval_binary_op.
-       destruct s; constructor.
-     + unfold eval_binary_op.
-       destruct s; constructor.
-     + unfold eval_binary_op.
-       destruct s; constructor.
-     + unfold eval_binary_op.
-       destruct s; constructor.
-     + unfold eval_binary_op.
-       destruct s; constructor.
-     + unfold eval_binary_op.
-       simpl.
-       destruct s,s0; try constructor;
-         apply same_value_refl;reflexivity.
-     + unfold eval_binary_op.
-       simpl.
-       destruct s; try constructor;
-         apply same_value_refl;reflexivity.
-     + unfold eval_binary_op.
-       simpl.
-       destruct s; constructor.
-     + unfold eval_binary_op.
-       simpl.
-       destruct s; constructor.
-     + unfold eval_binary_op.
-       simpl.
-       destruct s; constructor.
-     + unfold eval_binary_op.
-       simpl.
-       destruct s; constructor.
-     + unfold eval_binary_op.
-       destruct (typ_eq_dec (TEnum i l) (TEnum i0 l0));
-         try constructor.
-       destruct (Benum.enum_eq_dec (typ_cast abs_typ_impl e v) v0);
-         try constructor;
-         apply same_value_refl;reflexivity.
-  -  destruct t,t0 ; try constructor;
-       simpl in *;subst;
-       try (destruct s; constructor).
-     destruct s,s0; try constructor.
-     apply same_value_refl;reflexivity.
-     apply same_value_refl;reflexivity.
-     destruct s,s0; try constructor.
-     apply same_value_refl;reflexivity.
-     apply same_value_refl;reflexivity.
-  -  destruct t,t0 ; try constructor;
-       simpl in *;subst; try (destruct s; constructor).
-     destruct s,s0; try constructor.
-     apply same_value_refl;reflexivity.
-     apply same_value_refl;reflexivity.
-     destruct s,s0; try constructor.
-     apply same_value_refl;reflexivity.
-     apply same_value_refl;reflexivity.
-  -  destruct t,t0 ; try constructor;
-       simpl in *;subst; try (destruct s; constructor).
-     destruct s,s0; try constructor.
-     apply same_value_refl;reflexivity.
-     apply same_value_refl;reflexivity.
-     destruct s,s0; try constructor.
-     apply same_value_refl;reflexivity.
-     apply same_value_refl;reflexivity.
-  -  destruct t,t0 ; try constructor;
-       simpl in *;subst; try (destruct s; constructor).
-     destruct s,s0; try constructor.
-     apply same_value_refl;reflexivity.
-     apply same_value_refl;reflexivity.
-     destruct s,s0; try constructor.
-     apply same_value_refl;reflexivity.
-     apply same_value_refl;reflexivity.
+    apply res_rel_refl; auto.
+    apply ext_equal_ecast_typ.
+    simpl in *. subst.
+    apply res_rel_refl; auto.
+Qed.
+
+
+Lemma ext_equal_int_eq_neq : forall (b:bool) t1 t2 v1 v1' v2 v2' tf,
+    ext_equal t1 v1 v1' ->
+    ext_equal t2 v2 v2' ->
+    res_rel (ext_equal tf)
+    (int_eq_neq abs_typ_impl b eqb Int.eq Int64.eq
+       (fun (elems : list Syntax.ident) (v0 v3 : Benum.enum elems) =>
+        if Benum.enum_eq_dec v0 v3 then true else false) t1 t2 v1 v2 tf)
+    (int_eq_neq abs_typ_impl b eqb Int.eq Int64.eq
+       (fun (elems : list Syntax.ident) (v0 v3 : Benum.enum elems) =>
+        if Benum.enum_eq_dec v0 v3 then true else false) t1 t2 v1' v2'
+       tf).
+Proof.
+  destruct t1,t2; try constructor.
+  - simpl. intros; subst.
+    apply ext_equal_cast_typ.
+    simpl. reflexivity.
+  - simpl. intros; subst.
+    destruct (signedness_eq_dec s s0).
+    apply ext_equal_cast_typ.
+    simpl. reflexivity.
+    constructor.
+  - simpl. intros; subst.
+    destruct (signedness_eq_dec s s0).
+    apply ext_equal_cast_typ.
+    simpl. reflexivity.
+    constructor.
+  - intros.
+    unfold int_eq_neq.
+    destruct (typ_eq_dec (TEnum i l) (TEnum i0 l0)); try constructor.
+    apply ext_equal_cast_typ.
+    simpl in *. subst.
+    reflexivity.
+Qed.
+
+
+Lemma ext_equal_cmp_op : forall cmp32s cmp32u cmp64s cmp64u t1 t2 v1 v1' v2 v2' tf,
+    ext_equal t1 v1 v1' ->
+    ext_equal t2 v2 v2' ->
+ res_rel (ext_equal tf) (cmp_op abs_typ_impl cmp32s cmp32u cmp64s cmp64u t1 t2 v1 v2 tf)
+   (cmp_op abs_typ_impl cmp32s cmp32u cmp64s cmp64u t1 t2 v1' v2' tf).
+Proof.
+  intros.
+  destruct t1,t2; try constructor.
+  - unfold cmp_op.
+    destruct s,s0;simpl; try constructor.
+    simpl in *. subst.
+    apply ext_equal_cast_typ;reflexivity.
+    simpl in *. subst.
+    apply ext_equal_cast_typ;reflexivity.
+  - unfold cmp_op.
+    destruct s,s0;simpl; try constructor.
+    simpl in *. subst.
+    apply ext_equal_cast_typ;reflexivity.
+    simpl in *. subst.
+    apply ext_equal_cast_typ;reflexivity.
+Qed.
+
+
+Lemma ext_equal_eval_binary_op : forall op t1 t2 v1 v1' v2 v2' tf,
+    ext_equal t1 v1 v1' ->
+    ext_equal t2 v2 v2' ->
+    res_rel (ext_equal tf) (eval_binary_op abs_typ_impl op t1 t2 v1 v2 tf) (eval_binary_op abs_typ_impl op t1 t2 v1' v2' tf).
+Proof.
+  intros.
+  unfold eval_binary_op; destruct op.
+  - apply ext_equal_bool_op; auto.
+  - apply ext_equal_bool_op; auto.
+  - apply ext_equal_bool_op; auto.
+  - apply ext_equal_int_op; auto.
+  - apply ext_equal_int_op; auto.
+  - apply ext_equal_int_op; auto.
+  - apply ext_equal_int_ops; auto.
+  - apply ext_equal_int_ops; auto.
+  - apply ext_equal_int_op; auto.
+  - apply ext_equal_int_op; auto.
+  - apply ext_equal_int_op; auto.
+  - apply ext_equal_int_op; auto.
+  - apply ext_equal_int_op; auto.
+  - apply ext_equal_int_eq_neq; auto.
+  - apply ext_equal_int_eq_neq; auto.
+  - apply ext_equal_cmp_op;auto.
+  - apply ext_equal_cmp_op;auto.
+  - apply ext_equal_cmp_op;auto.
+  - apply ext_equal_cmp_op;auto.
 Qed.
 
 Lemma ext_equal_length : forall ty a1 a2,
@@ -1129,60 +1073,42 @@ Proof.
   apply ext_equal_sym;auto.
 Qed.
 
-
-Lemma same_value_array_get : forall arch a1 a2 i1 i2,
-    same_value a1 a2 ->
-    same_value i1 i2 ->
-  res_rel same_value
-    (eval_array_get arch abs_typ_impl a1 i1)
-    (eval_array_get arch abs_typ_impl a2 i2).
+Lemma ext_equal_array_get : forall arch ta a1 a2  ti i1 i2 ty,
+    ext_equal ta a1 a2 ->
+    ext_equal ti i1 i2 ->
+  res_rel (ext_equal ty)
+    (eval_array_get arch abs_typ_impl ta a1 ti i1 ty)
+    (eval_array_get arch abs_typ_impl ta a2 ti i2 ty).
 Proof.
   intros.
-  unfold same_value in H,H0.
-  destruct a1,a2,i1,i2.
-  destruct (typ_eq_dec t0 t); try tauto.
-  destruct (typ_eq_dec t2 t1); try tauto.
-  subst.
-  change (cast eq_refl v0) with v0 in H.
-  change (cast eq_refl v2) with v2 in H0.
   unfold eval_array_get.
-  destruct t; try constructor.
+  destruct ta; try constructor.
   destruct arch.
-  - destruct (typ_eq_dec t1 (TInt32 Unsigned)); subst; try constructor.
+  - destruct (typ_eq_dec ti (TInt32 Unsigned)); subst; try constructor.
     simpl in *.
     subst.
     unfold eq_rect_r, eq_rect; simpl.
     unfold Barray.get.
-    rewrite ext_equal_valid_index with (a2:= v0).
-    destruct (valid_index v0 (Intop.U64.of_u32 v1)).
-    specialize (H (Intop.U64.to_nat (Intop.U64.of_u32 v1))).
+    rewrite ext_equal_valid_index with (a2:= a2).
+    destruct (valid_index a2 (Intop.U64.of_u32 i2)).
+    specialize (H (Intop.U64.to_nat (Intop.U64.of_u32 i2))).
     fold eval_typ in *.
-    inv H; simpl ; constructor.
-    unfold same_value.
-    destruct (typ_eq_dec t t); try congruence.
-    assert (e = eq_refl) by (apply Eqdep_dec.UIP_dec ;
-                             apply typ_eq_dec).
-    subst. auto.
+    inv H; simpl.  constructor.
+    apply ext_equal_cast_typ; auto.
     constructor.
-    apply ext_eq_array_sym.
     repeat intro. auto.
-  - destruct (typ_eq_dec t1 (TInt64 Unsigned)); subst; try constructor.
+  - destruct (typ_eq_dec ti (TInt64 Unsigned)); subst; try constructor.
     simpl in *.
     subst.
     unfold eq_rect_r, eq_rect; simpl.
     unfold Barray.get.
-    rewrite ext_equal_valid_index with (a2:= v0).
-    destruct (valid_index v0  v1).
-    specialize (H (Intop.U64.to_nat v1)).
+    rewrite ext_equal_valid_index with (a2:= a2).
+    destruct (valid_index a2  i2).
+    specialize (H (Intop.U64.to_nat i2)).
     fold eval_typ in *.
-    inv H; simpl ; constructor.
-    unfold same_value.
-    destruct (typ_eq_dec t t); try congruence.
-    assert (e = eq_refl) by (apply Eqdep_dec.UIP_dec ;
-                             apply typ_eq_dec).
-    subst. auto.
+    inv H; simpl ; try constructor.
+    apply ext_equal_cast_typ;auto.
     constructor.
-    apply ext_eq_array_sym.
     repeat intro. auto.
 Qed.
 
@@ -1247,55 +1173,42 @@ Proof.
 Qed.
 
 
-Lemma same_value_array_set : forall arch a1 a2 i1 i2 v1 v2,
-    same_value a1 a2 ->
-    same_value i1 i2 ->
-    same_value v1 v2 ->
-    res_rel same_value (eval_array_set arch abs_typ_impl a1 i1 v1)
-      (eval_array_set arch abs_typ_impl a2 i2 v2).
+Lemma ext_equal_array_set : forall arch ta a1 a2 ti i1 i2 tv v1 v2 ty,
+    ext_equal ta a1 a2 ->
+    ext_equal ti i1 i2 ->
+    ext_equal tv v1 v2 ->
+    res_rel (ext_equal ty) (eval_array_set arch abs_typ_impl ta a1 ti i1 tv v1 ty)
+      (eval_array_set arch abs_typ_impl ta a2 ti i2 tv v2 ty).
 Proof.
   intros.
-  unfold same_value in H,H0,H1.
-  destruct a1,a2,i1,i2,v1,v2.
-  destruct (typ_eq_dec t0 t); try tauto.
-  destruct (typ_eq_dec t2 t1); try tauto.
-  destruct (typ_eq_dec t4 t3); try tauto.
-  subst.
-  change (cast eq_refl v0) with v0 in H.
-  change (cast eq_refl v4) with v4 in H0.
-  change (cast eq_refl v2) with v2 in H1.
   unfold eval_array_set.
-  destruct t; try constructor.
+  destruct ta; try constructor.
   destruct arch.
-  - destruct (typ_eq_dec t1 (TInt32 Unsigned));
+  - destruct (typ_eq_dec ti (TInt32 Unsigned));
     try constructor.
-  destruct (typ_eq_dec t t3); try constructor.
-  subst.
-  unfold eq_rect_r,eq_rect. simpl.
-  simpl in H0. subst.
-  simpl in H.
-  change (ext_eq_array t3 v0 v) in H.
-  apply ext_eq_array_set with (v1:=v2) (v2:=v1) (i:= (Intop.U64.of_u32 v3)) in H; auto.
-  inv H; constructor; auto.
-  unfold same_value.
-  destruct (typ_eq_dec (TArray t3) (TArray t3)); try congruence.
-  assert (e = eq_refl) by (apply Eqdep_dec.UIP_dec ; apply typ_eq_dec).
-  subst. apply H3.
-  - destruct (typ_eq_dec t1 (TInt64 Unsigned));
+    destruct (typ_eq_dec ta tv); try constructor.
+    subst.
+    unfold eq_rect_r,eq_rect. simpl.
+    simpl in H0. subst.
+    simpl in H.
+    change (ext_eq_array tv a1 a2) in H.
+    apply ext_eq_array_set with (v1:=v1) (v2:=v2) (i:= (Intop.U64.of_u32 i2)) in H; auto.
+    fold eval_typ in *.
+    inv H; try constructor; auto.
+    simpl. apply ext_equal_cast_typ;auto.
+  - destruct (typ_eq_dec ti (TInt64 Unsigned));
     try constructor.
-  destruct (typ_eq_dec t t3); try constructor.
-  subst.
-  unfold eq_rect_r,eq_rect. simpl.
-  simpl in H0. subst.
-  simpl in H.
-  change (ext_eq_array t3 v0 v) in H.
-  apply ext_eq_array_set with (v1:=v2) (v2:=v1) (i:=  v3) in H; auto.
-  inv H; constructor; auto.
-  unfold same_value.
-  destruct (typ_eq_dec (TArray t3) (TArray t3)); try congruence.
-  assert (e = eq_refl) by (apply Eqdep_dec.UIP_dec ; apply typ_eq_dec).
-  subst. apply H3.
+    destruct (typ_eq_dec ta tv); try constructor.
+    subst.
+    unfold eq_rect_r,eq_rect. simpl.
+    simpl in H0. subst.
+    simpl in H.
+    change (ext_eq_array tv a1 a2) in H.
+    apply ext_eq_array_set with (v1:=v1) (v2:=v2) (i:= i2) in H; auto.
+    inv H; try constructor; auto.
+    simpl. apply ext_equal_cast_typ;auto.
 Qed.
+
 
 Lemma ext_equal_same_value : forall t x y,
     ext_equal t x y ->
@@ -1307,28 +1220,21 @@ Proof.
   subst. apply H.
 Qed.
 
-
-Lemma same_value_eval_record_proj : forall x y f,
-    same_value x y ->
-    res_rel same_value (eval_record_project abs_typ_impl x f) (eval_record_project abs_typ_impl y f).
+Lemma ext_equal_eval_record_proj : forall tr x y f ty,
+    ext_equal tr x y ->
+    res_rel (ext_equal ty) (eval_record_project abs_typ_impl tr x f ty) (eval_record_project abs_typ_impl tr y f ty).
 Proof.
   intros.
-  unfold same_value in H.
-  destruct x,y.
-  destruct (typ_eq_dec t0 t); try tauto.
-  subst.
-  change (cast eq_refl v0)  with v0 in H.
-  simpl. destruct t; try constructor.
+  unfold eval_record_project.
+  destruct tr; try constructor.
   simpl in H.
-  simpl in v,v0.
-  unfold eval_recordtyp in v,v0.
-  revert v v0 H.
+  revert x y H.
   induction l.
   - constructor.
   - intros.
-    simpl in v,v0.
-    destruct a. simpl in v,v0.
-    destruct v,v0.
+    simpl in x,y.
+    destruct a.
+    destruct x,y.
     destruct f0,f1.
     simpl in H.
     destruct (String.eqb f i0) eqn:EQ.
@@ -1337,9 +1243,8 @@ Proof.
       unfold good_proj,cast_typof_field.
       simpl.
       rewrite EQ.
-      simpl. constructor.
-      destruct H.
-      apply ext_equal_same_value;auto.
+      simpl. apply ext_equal_cast_typ;auto.
+      tauto.
     + unfold eval_record_project_aux.
       simpl.
       unfold good_proj,cast_typof_field.
@@ -1349,13 +1254,6 @@ Proof.
       tauto.
 Qed.
 
-Fixpoint no_TFun_fo_typ (ty:typ):  no_TFun ty = true -> fo_typ ty = true.
-Proof.
-  destruct ty; simpl; auto; try discriminate.
-  induction l; simpl;auto.
-  rewrite! andb_true_iff.
-  intuition.
-Qed.
 
 
 Lemma equal_upd_record_aux :
@@ -1399,54 +1297,44 @@ Qed.
 
 
 
-
-Lemma same_value_eval_record_update : forall r1 r2 v1 v2 f,
-    same_value r1 r2 ->
-    same_value v1 v2 ->
-  res_rel same_value
-    (eval_record_update abs_typ_impl r1 f v1)
-    (eval_record_update abs_typ_impl r2 f v2).
+Lemma ext_equal_eval_record_update : forall tr r1 r2 tv v1 v2 f ty,
+    ext_equal tr r1 r2 ->
+    ext_equal tv v1 v2 ->
+  res_rel (ext_equal ty)
+    (eval_record_update abs_typ_impl tr r1 f tv v1 ty)
+    (eval_record_update abs_typ_impl tr r2 f tv v2 ty).
 Proof.
   intros.
-  unfold same_value in H,H0.
-  destruct r1,r2,v1,v2.
-  destruct (typ_eq_dec t0 t); try tauto.
-  destruct (typ_eq_dec t2 t1); try tauto.
-  subst.
-  change (cast eq_refl v0) with v0 in H.
-  change (cast eq_refl v2) with v2 in H0.
   unfold eval_record_update.
-  destruct t; try constructor.
+  destruct tr; try constructor.
   simpl in H.
   eapply equal_upd_record_aux with (f:= f) in H; eauto.
-  inv H; constructor.
-  apply ext_equal_same_value; auto.
+  eapply ext_equal_ecast_typ;eauto.
 Qed.
 
-Inductive eq_access_value : access_value abs_typ_impl -> access_value abs_typ_impl -> Prop :=
-| eq_access_field : forall k, eq_access_value (AcvalRecordField abs_typ_impl k) (AcvalRecordField abs_typ_impl k)
-| eq_access_index : forall v1 v2, same_value v1 v2 -> eq_access_value (AcvalArrayIndex abs_typ_impl v1)
-                                                        (AcvalArrayIndex abs_typ_impl v2).
 
 
-Lemma res_rel_ifthenelse : forall x y v1 v2 v1' v2',
-    same_value x y ->
-    res_rel same_value v1 v1' ->
-    res_rel same_value v2 v2' ->
-    res_rel same_value
-    (eval_ifthenelse abs_typ_impl x v1 v2)
-    (eval_ifthenelse abs_typ_impl y v1' v2').
+Inductive eq_access_value (arch:archi): access_value arch abs_typ_impl -> access_value arch abs_typ_impl -> Prop :=
+| eq_access_field : forall k, eq_access_value arch (AcvalRecordField arch abs_typ_impl k) (AcvalRecordField arch abs_typ_impl k)
+| eq_access_index : forall v1 v2, ext_equal (typof_index arch) v1 v2 -> eq_access_value arch (AcvalArrayIndex arch abs_typ_impl v1)
+                                                        (AcvalArrayIndex arch abs_typ_impl v2).
+
+Lemma res_rel_ifthenelse : forall x y t1 t2 v1 v2  v1' v2' tr,
+    ext_equal TBool x y ->
+    res_rel (ext_equal t1) v1 v1' ->
+    res_rel (ext_equal t2) v2 v2' ->
+    res_rel (ext_equal tr)
+    (eval_ifthenelse abs_typ_impl x t1 v1 t2 v2 tr)
+    (eval_ifthenelse abs_typ_impl y t1 v1' t2 v2' tr).
 Proof.
   intros.
-  unfold same_value in H.
-  destruct x, y.
-  destruct (typ_eq_dec t0 t); try tauto.
-  subst. change (cast eq_refl v0) with v0 in H.
   unfold eval_ifthenelse.
-  destruct t; try constructor.
   simpl in H. subst.
-  destruct v; auto.
+  destruct y.
+  apply ext_equal_ecast_typ;auto.
+  apply ext_equal_ecast_typ;auto.
 Qed.
+
 
 Fixpoint get_var_of_expr_acc (x:string) (e:expr): forall acc,
     STree.get x acc = Some tt ->
@@ -1454,33 +1342,33 @@ Fixpoint get_var_of_expr_acc (x:string) (e:expr): forall acc,
 Proof.
   destruct e; simpl; auto.
   - intros. rewrite STree.gsspec.
-    destruct (STree.elt_eq x x0); auto.
-  - induction acs; simpl; auto.
+    destruct (STree.elt_eq x i); auto.
+  - induction l; simpl; auto.
     intros.
-    apply IHacs.
+    apply IHl.
     destruct a; simpl;auto.
   - intros.
     apply get_var_of_expr_acc with (e:=e) in H.
     revert H.
     generalize (vars_of_expr acc e) as acc'.
-    induction args; simpl ; auto.
+    induction l; simpl ; auto.
   - intros.
     apply get_var_of_expr_acc with (e:=e) in H.
     revert H.
     generalize (vars_of_expr acc e) as acc'.
     unfold MapList.fold_left.
-    induction cases; simpl ; auto.
+    induction l; simpl ; auto.
     destruct a. intros.
-    apply IHcases.
+    apply IHl.
     apply get_var_of_expr_acc. auto.
   - intros.
-    destruct (STree.get x0 acc) eqn:GET.
+    destruct (STree.get i acc) eqn:GET.
     + rewrite get_var_of_expr_acc; auto.
-    +  destruct (STree.elt_eq x x0).
+    +  destruct (STree.elt_eq x i).
        congruence.
        apply get_var_of_expr_acc.
        rewrite STree.grspec.
-       destruct (STree.elt_eq x x0);try congruence.
+       destruct (STree.elt_eq x i);try congruence.
        apply get_var_of_expr_acc;auto.
 Qed.
 
@@ -1502,7 +1390,7 @@ Proof.
   - intros. rewrite STree.gempty.
     intuition congruence.
   - intros. rewrite! STree.gsspec.
-    destruct (STree.elt_eq x x0).
+    destruct (STree.elt_eq x i).
     tauto.
     rewrite STree.gempty. intuition congruence.
   - intros.
@@ -1539,18 +1427,18 @@ Proof.
     rewrite get_var_of_expr_case.
     symmetry. rewrite get_var_of_expr_case.
     symmetry.
-    assert (STree.get x (fold_left vars_of_access acs acc) = Some tt
+    assert (STree.get x (fold_left vars_of_access l acc) = Some tt
             <->
               (STree.get x acc = Some tt \/
-                 STree.get x (fold_left vars_of_access acs STree.empty) = Some tt)).
+                 STree.get x (fold_left vars_of_access l STree.empty) = Some tt)).
     revert acc.
-    induction acs ; simpl; auto.
+    induction l ; simpl; auto.
     + intros. rewrite STree.gempty.
       intuition congruence.
     + intros.
-      rewrite IHacs.
+      rewrite IHl.
       symmetry.
-      rewrite IHacs.
+      rewrite IHl.
       destruct a; simpl.
       rewrite STree.gempty.
       intuition congruence.
@@ -1559,17 +1447,17 @@ Proof.
     + tauto.
   - intros.
     assert (forall acc',
-               STree.get x (fold_left vars_of_expr args acc') = Some tt <->
+               STree.get x (fold_left vars_of_expr l acc') = Some tt <->
                  (STree.get x acc' = Some tt \/
-                    STree.get x (fold_left vars_of_expr args STree.empty) = Some tt)).
+                    STree.get x (fold_left vars_of_expr l STree.empty) = Some tt)).
     {
-      induction args.
+      induction l.
       - simpl. rewrite STree.gempty.
         intuition congruence.
       - simpl. intros.
-        rewrite IHargs.
+        rewrite IHl.
         symmetry.
-        rewrite IHargs.
+        rewrite IHl.
         rewrite (get_var_of_expr_case x a acc').
         tauto.
     }
@@ -1587,16 +1475,16 @@ Proof.
     tauto.
   - unfold MapList.fold_left.
     set (F := (fun (a : STree.t unit) '(_, v) => vars_of_expr a v)).
-    assert (forall acc', STree.get x (fold_left F cases acc') = Some tt <->
-                           STree.get x acc' = Some tt \/ STree.get x (fold_left F cases STree.empty) = Some tt).
+    assert (forall acc', STree.get x (fold_left F l acc') = Some tt <->
+                           STree.get x acc' = Some tt \/ STree.get x (fold_left F l STree.empty) = Some tt).
     {
-      induction cases; simpl ; auto.
+      induction l; simpl ; auto.
       - intros. rewrite STree.gempty. intuition congruence.
-      - intros. rewrite IHcases.
+      - intros. rewrite IHl.
         unfold F at 1.
         destruct a.
         rewrite get_var_of_expr_case.
-        symmetry. rewrite IHcases.
+        symmetry. rewrite IHl.
         unfold F at 1. tauto.
     }
     intros.
@@ -1605,7 +1493,7 @@ Proof.
     rewrite (get_var_of_expr_case x e acc).
     tauto.
   - intros.
-    destruct (STree.get x0 acc) eqn:GET1.
+    destruct (STree.get i acc) eqn:GET1.
     + destruct u.
       rewrite get_var_of_expr_case.
       rewrite get_var_of_expr_case.
@@ -1613,7 +1501,7 @@ Proof.
       rewrite get_var_of_expr_case.
       rewrite get_var_of_expr_case.
       rewrite STree.grspec.
-      destruct (STree.elt_eq x x0).
+      destruct (STree.elt_eq x i).
       { subst.
         rewrite STree.gempty.
         intuition congruence.
@@ -1626,7 +1514,7 @@ Proof.
       symmetry.
       rewrite get_var_of_expr_case.
       rewrite STree.grspec.
-      destruct (STree.elt_eq x x0).
+      destruct (STree.elt_eq x i).
       subst. intuition congruence.
       symmetry.
       rewrite get_var_of_expr_case.
@@ -1790,28 +1678,25 @@ Proof.
   apply H.
 Qed.
 
-Lemma  same_value_eval_match : forall x y l1 l2,
-    same_value x y ->
-    Forall2 (fun x y => fst x = fst y /\ res_rel same_value (snd x) (snd y))  l1 l2 ->
-    res_rel same_value (eval_match abs_typ_impl x l1) (eval_match abs_typ_impl y l2).
+Lemma  ext_equal_eval_match : forall te x y tr l1 l2,
+    ext_equal te x y ->
+    Forall2 (fun x y => fst x = fst y /\ res_rel (ext_equal tr) (snd x) (snd y))  l1 l2 ->
+    res_rel (ext_equal tr) (eval_match abs_typ_impl te x tr l1) (eval_match abs_typ_impl te y tr l2).
 Proof.
   intros.
   unfold eval_match.
-  unfold same_value in H.
-  destruct x,y.
-  destruct (typ_eq_dec t0 t); try tauto.
-  subst. destruct t; try constructor.
+  destruct te; try constructor.
   simpl in H. subst.
-  change (cast eq_refl v0) with v0.
   induction H0.
   - simpl. constructor.
   - simpl.
-    destruct x,y.
+    destruct x,y0.
     simpl in *. destruct H; subst.
     destruct p0.
-    destruct (eq_dec (Benum.ident_of_constr v0) i0); auto.
+    destruct (eq_dec (Benum.ident_of_constr y) i0); auto.
     auto.
 Qed.
+
 
 Lemma eq_env_remove : forall x e le le' v1 v2 ge ge',
     eq_env (STree.remove x (vars_of_expr STree.empty e)) le le' ge ge' ->
@@ -1825,105 +1710,165 @@ Proof.
   rewrite STree.gro;auto.
 Qed.
 
-Fixpoint eq_genv_eval_expr (arch:archi) (te:Typing.tenv)  (ge ge':genv abs_typ_impl) (e:expr) : forall le le',
+
+
+
+
+Lemma res_rel_ecast_typ_refl : forall ti tf v,
+    fo_typ ti = true ->
+    res_rel (ext_equal tf) (@ecast_typ abs_typ_impl ti v tf) (@ecast_typ abs_typ_impl ti v tf).
+Proof.
+  intros.
+  unfold ecast_typ.
+  destruct (typ_eq_dec tf ti).
+  subst. destruct v.
+  constructor. apply ext_equal_refl; auto.
+  constructor. constructor.
+Qed.
+
+Lemma same_value_cast_value : forall x y ty,
+    same_value x y ->
+    res_rel (ext_equal ty) (cast_value abs_typ_impl x ty) (cast_value abs_typ_impl y ty).
+Proof.
+  unfold same_value. destruct x,y.
+  intros. destruct (typ_eq_dec t0 t); try discriminate.
+  subst. unfold cast_value.
+  change (cast eq_refl v0) with v0 in H.
+  unfold cast_typ.
+  destruct (typ_eq_dec ty t); try constructor.
+  subst.  unfold eq_rect_r,eq_rect.
+  simpl. constructor;auto. apply ext_equal_sym. auto.
+  tauto.
+Qed.
+
+
+
+
+
+
+
+Fixpoint eq_genv_eval_expr (arch:archi) (te:Typing.tenv)  (ge ge':genv abs_typ_impl) (ty:typ) (e:expr) : forall le le',
     eq_env (vars_of_expr (STree.empty) e) le le' ge ge' ->
     eq_env_all le le'  ->
-    res_rel same_value (eval_expr arch abs_typ_impl te ge le e)
-      (eval_expr arch abs_typ_impl te ge' le' e).
+    res_rel (ext_equal ty) (eval_expr arch abs_typ_impl te ge le ty e)
+      (eval_expr arch abs_typ_impl te ge' le' ty e).
 Proof.
   specialize (eq_genv_eval_expr arch te ge ge').
-  destruct e; intros; simpl; try (constructor; apply same_value_refl;reflexivity).
+  destruct e; intros; simpl; try (apply res_rel_cast_typ_refl;reflexivity).
   - unfold eval_constr.
-    destruct (Typing.tenv_get_constr_typ te x); try constructor.
-    simpl. destruct (Typing.tenv_get_edef te i); try constructor.
-    simpl. destruct (Benum.make_enum l x); try constructor.
-    apply same_value_refl;reflexivity.
+    destruct (Typing.tenv_get_constr_typ te i); try constructor.
+    simpl. destruct (Typing.tenv_get_edef te i0); try constructor.
+    simpl. destruct (bool_dec (existsb (String.eqb i) l) true);try constructor.
+    apply res_rel_cast_typ_refl;reflexivity.
   - unfold eval_var.
     unfold lenv_get.
     unfold eq_env in H0.
-    specialize (H0 x).
+    specialize (H0 i).
     inv H0.
     simpl.
     unfold eq_env in H. unfold genv_get.
     simpl in H.
-    specialize (H x).
+    specialize (H i).
     rewrite STree.gss in H.
     symmetry in H2. symmetry in H3.
     specialize (H H2 H3 eq_refl).
     inv H.
     constructor.
-    simpl. constructor. auto.
-    simpl. constructor ;auto.
-  - destruct (Typing.btyp_to_typ te ty); try reflexivity.
+    simpl. apply same_value_cast_value; auto.
+    simpl. apply same_value_cast_value; auto.
+  - destruct (Typing.btyp_to_typ te b); try reflexivity.
     simpl.
-    specialize (eq_genv_eval_expr e le le' H H0).
+    destruct (typof_expr te e); try constructor.
+    simpl.
+    specialize (eq_genv_eval_expr t0 e le le' H H0).
     inv eq_genv_eval_expr.
     constructor.
     simpl.
-    apply same_value_eval_cast; auto.
+    eapply ext_equal_eval_cast with (t:=t)in H3;eauto.
+    apply ext_equal_ecast_typ; auto.
     constructor.
-  - specialize (eq_genv_eval_expr e le le' H H0).
+  - destruct (Typing.btyp_to_typ te b); try constructor.
+    simpl.
+    specialize (eq_genv_eval_expr t e le le' H H0).
     inv eq_genv_eval_expr.
     constructor.
     simpl.
-    apply same_value_eval_unary_op; auto.
+    apply ext_equal_eval_unary_op; auto.
   -
     simpl in H.
-    generalize (eq_genv_eval_expr e1 le le' (eq_env_vars_of_expr_acc _ _ _ _ _ _ H) H0).
-    generalize (eq_genv_eval_expr e2 le le' (eq_env_vars_of_expr _ _ _ _ _ _ H) H0).
+    destruct (typof_expr te e1); try constructor.
+    destruct (typof_expr te e2); try constructor.
+    simpl.
+    generalize (eq_genv_eval_expr t e1 le le' (eq_env_vars_of_expr_acc _ _ _ _ _ _ H) H0).
+    generalize (eq_genv_eval_expr t0 e2 le le' (eq_env_vars_of_expr _ _ _ _ _ _ H) H0).
     intros E2 E1.
     inv E1 ; try constructor.
     simpl. inv E2 ; try constructor.
     simpl.
-    apply same_value_eval_binary_op; auto.
+    apply ext_equal_eval_binary_op; auto.
   - simpl in H.
-    generalize (eq_genv_eval_expr e1 le le' (eq_env_vars_of_expr_acc _ _ _ _ _ _ H) H0).
-    generalize (eq_genv_eval_expr e2 le le' (eq_env_vars_of_expr _ _ _ _ _ _ H) H0).
+    destruct (typof_expr te e1); try constructor.
+    destruct (typof_expr te e2); try constructor.
+    simpl.
+    generalize (eq_genv_eval_expr t e1 le le' (eq_env_vars_of_expr_acc _ _ _ _ _ _ H) H0).
+    generalize (eq_genv_eval_expr t0 e2 le le' (eq_env_vars_of_expr _ _ _ _ _ _ H) H0).
     intros E2 E1.
     inv E1 ; try constructor.
     simpl. inv E2 ; try constructor.
     simpl.
-    apply same_value_array_get; auto.
+    apply ext_equal_array_get; auto.
   - simpl in H.
     apply eq_env_split in H.
     destruct H as (EQ1 & EQ2).
     apply eq_env_split in EQ2 as (EQ2 & EQ3).
-    generalize (eq_genv_eval_expr e1 le le' EQ3 H0).
-    generalize (eq_genv_eval_expr e2 le le' EQ2 H0).
-    generalize (eq_genv_eval_expr e3 le le' EQ1 H0).
+    destruct (typof_expr te e1); try constructor.
+    destruct (typof_expr te e2); try constructor.
+    destruct (typof_expr te e3); try constructor.
+    simpl.
+    generalize (eq_genv_eval_expr t e1 le le' EQ3 H0).
+    generalize (eq_genv_eval_expr t0 e2 le le' EQ2 H0).
+    generalize (eq_genv_eval_expr t1 e3 le le' EQ1 H0).
     intros E3 E2 E1.
     inv E1 ; try constructor.
     simpl. inv E2 ; try constructor.
     simpl. inv E3 ; try constructor.
     simpl.
-    apply same_value_array_set; auto.
-  - specialize (eq_genv_eval_expr e le le' H H0).
+    apply ext_equal_array_set; auto.
+  -
+    destruct (typof_expr te e); try constructor.
+    simpl.
+    specialize (eq_genv_eval_expr t e le le' H H0).
     inv eq_genv_eval_expr; try constructor.
     simpl.
-    apply same_value_eval_record_proj; auto.
+    apply ext_equal_eval_record_proj; auto.
   -
     simpl in H.
     apply eq_env_split in H as (EQ1 & EQ2).
-    generalize (eq_genv_eval_expr e1 le le' EQ2 H0).
-    generalize (eq_genv_eval_expr e2 le le' EQ1 H0).
+    destruct (typof_expr te e1);try constructor.
+    destruct (typof_expr te e2);try constructor.
+    simpl.
+    generalize (eq_genv_eval_expr t e1 le le' EQ2 H0).
+    generalize (eq_genv_eval_expr t0 e2 le le' EQ1 H0).
     intros E2 E1.
     inv E1 ; try constructor.
     simpl. inv E2 ; try constructor.
     simpl.
-    apply same_value_eval_record_update; auto.
+    apply ext_equal_eval_record_update; auto.
   - simpl in H.
     apply eq_env_split in H as (EQ1 & EQ2).
-    generalize (eq_genv_eval_expr e le le' EQ1 H0).
-    intro E1. inv E1.
-    constructor.
+    destruct (typof_expr te e);try constructor.
     simpl.
-    assert (res_rel (Forall2 eq_access_value) (mmap (eval_access_expr arch abs_typ_impl te ge le) acs)
-                    (mmap (eval_access_expr arch abs_typ_impl te ge' le') acs)).
+    generalize (eq_genv_eval_expr t e le le' EQ1 H0).
+    intro E1. inv E1. simpl. constructor.
+    simpl.
+    assert (res_rel (Forall2 (eq_access_value arch))
+              (mmap (eval_access_expr arch abs_typ_impl te ge le) l)
+              (mmap (eval_access_expr arch abs_typ_impl te ge' le') l)).
     {
-      induction acs.
+      induction l.
       -  simpl. constructor. constructor.
       - simpl.
-        assert (res_rel eq_access_value (eval_access_expr arch abs_typ_impl te ge le a)
+        assert (res_rel (eq_access_value arch) (eval_access_expr arch abs_typ_impl te ge le a)
                                 (eval_access_expr arch abs_typ_impl te ge' le' a)).
         {
           destruct a.
@@ -1932,7 +1877,7 @@ Proof.
           - simpl.
             simpl in EQ2.
             apply eq_env_of_access in EQ2 as (EQ0 & EQACC).
-            specialize (eq_genv_eval_expr e0 le le' EQACC H0).
+            specialize (eq_genv_eval_expr (typof_index arch) e0 le le' EQACC H0).
             inv eq_genv_eval_expr.
             constructor.
             simpl. constructor.
@@ -1943,8 +1888,8 @@ Proof.
         simpl.
         simpl in EQ2.
         apply eq_env_of_access in EQ2 as (EQ2 & EQ3).
-        specialize (IHacs EQ2).
-        inv IHacs.
+        specialize (IHl EQ2).
+        inv IHl.
         constructor.
         simpl.
         constructor.
@@ -1953,116 +1898,132 @@ Proof.
     inv H3; try constructor.
     simpl.
     clear - H2 H6.
-    revert x y H2.
+    revert t x y H2.
     induction H6.
-    +  simpl. constructor. auto.
+    +  simpl. intros.
+       apply ext_equal_cast_typ;auto.
     + simpl.
       intros.
       inv H.
-      specialize (same_value_eval_record_proj _ _ k H2).
+      * destruct (typof_record_project t k);try constructor.
+      simpl.
+      specialize (ext_equal_eval_record_proj _ _ _ k t0 H2).
       intro HH ; inv HH.
       constructor.
       simpl.
       auto.
-      specialize (same_value_array_get arch _ _ _ _ H2 H0).
-      intro.
-      inv H.
-      constructor.
-      simpl.
-      auto.
+      * destruct (typof_array t) ; try constructor.
+        simpl.
+        specialize (ext_equal_array_get arch _ _ _ _ _ _ t0 H2 H0).
+        intro.
+        inv H.
+        constructor.
+        simpl.
+        auto.
   -
     simpl in H.
+    destruct (typof_expr te e); try constructor.
+    simpl.
     apply eq_env_exprs in H as (EQ1 & EQ2).
-    assert (E1 := eq_genv_eval_expr e le le' EQ2  H0).
+    destruct t; try constructor.
+    assert (E1 := eq_genv_eval_expr (TFun l0 t) e le le' EQ2  H0).
     inv E1.
     constructor.
     simpl.
-    assert (res_rel (Forall2 same_value) (mmap (eval_expr arch abs_typ_impl te ge le) args)
-                  (mmap (eval_expr arch abs_typ_impl te ge' le') args)).
-        {
-          induction args.
-          -  simpl. constructor. constructor.
-          - simpl.
-            simpl in H.
-            simpl in EQ1.
-            apply eq_env_exprs in EQ1 as (EQ1 & EQ1').
-            specialize (eq_genv_eval_expr a le le' EQ1' H0).
-            inv eq_genv_eval_expr.
-            simpl. constructor.
-            simpl. specialize (IHargs EQ1).
-            inv IHargs.
-            constructor.
-            simpl. constructor.
-            constructor ;auto.
-        }
-        inv H3; try constructor.
-        simpl.
-        clear - H2 H6.
-        unfold same_value in H2.
-        destruct x,y.
-        destruct (typ_eq_dec t0 t); try tauto.
-        subst.
-        change (cast eq_refl v0) with v0 in H2.
-        unfold eval_app.
-        destruct t; try constructor.
-        destruct l.
-        {
-          simpl in H2.
-          inv H6.
-          inv H2. constructor.
-          constructor ; auto.
-          unfold same_value.
-          destruct (typ_eq_dec t t); try congruence.
-          assert (e = eq_refl ) by (apply Eqdep_dec.UIP_dec ; apply typ_eq_dec).
-          subst. apply H1.
-          constructor.
-        }
-        {
-          unfold ext_equal in H2 ; fold ext_equal in H2.
-          unfold eval_typ in v,v0; fold eval_typ in v,v0.
-          revert v v0 H2 x0 y0 H6.
-          induction (t0::l).
-          - simpl. intros; subst.
-            inv H6.
-            inv H2.
-            constructor.
-            simpl.
-            constructor.
-            apply ext_equal_same_value; assumption.
-            destruct x,y.
-            constructor.
-          - simpl.
-            intros.
-            inv H6.
-            constructor.
-            unfold same_value in H.
-            destruct x,y.
-            destruct (typ_eq_dec t2 t1); try tauto.
-            subst.
-            change (cast eq_refl v2) with v2 in H.
-            destruct (typ_eq_dec t1 a); try constructor.
-            subst.
-            apply IHl0; auto.
-        }
+    assert (res_rel (DList.Forall2 abs_typ_impl ext_equal _) (DList.mmap abs_typ_impl (eval_expr arch abs_typ_impl te ge le) l l0)
+                  (DList.mmap abs_typ_impl (eval_expr arch abs_typ_impl te ge' le') l l0)).
+    {
+      clear H2 H H1 x y.
+      revert l0.
+      induction l; destruct l0.
+      - simpl. constructor. constructor.
+      - simpl.
+        constructor.
+      - simpl. constructor.
+      - simpl.
+        simpl in EQ1.
+        apply eq_env_exprs in EQ1 as (EQ1 & EQ1').
+        specialize (eq_genv_eval_expr t0 a le le' EQ1' H0).
+        inv eq_genv_eval_expr.
+        constructor.
+        specialize (IHl EQ1 l0).
+        inv IHl.
+        constructor.
+        simpl. constructor.
+        constructor ;auto.
+    }
+    inv H3; try constructor.
+    simpl.
+    clear - H2 H6.
+    (*
+    eapply ext_equal_ecast_typ.
+    destruct l0.
+    { simpl.
+      assert (XO : x0 = DList.DNIL abs_typ_impl).
+      { apply DList.dlist_nil. }
+      assert (YO : y0 = DList.DNIL abs_typ_impl).
+      { apply DList.dlist_nil. }
+      rewrite XO. rewrite YO.
+      apply H2.
+    }
+    {
+      unfold ext_equal in H2 ; fold ext_equal in H2.
+      unfold eval_typ in x,y; fold eval_typ in x,y.
+      unfold eval_app.
+      revert x y H2.
+      induction H6.
+      - simpl. auto.
+      - simpl.
+        intros.
+        apply IHForall2.
+        auto.
+    } *)
+    destruct l0.
+    { simpl.
+      assert (XO : x0 = DList.DNIL abs_typ_impl).
+      { apply DList.dlist_nil. }
+      assert (YO : y0 = DList.DNIL abs_typ_impl).
+      { apply DList.dlist_nil. }
+      rewrite XO. rewrite YO.
+      apply ext_equal_ecast_typ.
+      apply H2.
+    }
+    {
+      unfold ext_equal in H2 ; fold ext_equal in H2.
+      unfold eval_typ in x,y; fold eval_typ in x,y.
+      unfold eval_app_typ.
+      revert x y H2.
+      induction H6.
+      - simpl. intros. apply ext_equal_ecast_typ;auto.
+      - simpl.
+        intros.
+        apply IHForall2.
+        auto.
+    }
   - simpl in H.
     apply eq_env_split in H as (EQ1 & EQ2).
     apply eq_env_split in EQ2 as (EQ2 & EQ3).
-    generalize (eq_genv_eval_expr e1 _ _ EQ3 H0).
-    generalize (eq_genv_eval_expr e2 _ _ EQ2 H0).
-    generalize (eq_genv_eval_expr e3 _ _ EQ1 H0).
-    intros E3 E2 E1.
-    inv E1; try constructor.
+    generalize (eq_genv_eval_expr TBool e1 _ _ EQ3 H0).
+    intros E1 ; inv E1; try constructor.
     simpl.
+    destruct (typof_expr te e2); try constructor.
+    destruct (typof_expr te e3); try constructor.
+    simpl.
+    generalize (eq_genv_eval_expr t e2 _ _ EQ2 H0).
+    generalize (eq_genv_eval_expr t0 e3 _ _ EQ1 H0).
+    intros E3 E2.
     apply res_rel_ifthenelse; auto.
   - simpl in H.
     apply eq_env_pattern in H.
+    destruct (typof_expr te e); try constructor.
     destruct H as (EQ1 & EQ2).
-    generalize (eq_genv_eval_expr e _ _ EQ2 H0).
+    simpl.
+    generalize (eq_genv_eval_expr t e _ _ EQ2 H0).
     intro E ; inv E; try constructor.
     simpl.
-    apply same_value_eval_match; auto.
+    apply ext_equal_eval_match; auto.
     revert EQ1.
-    induction cases.
+    induction l.
     + simpl. constructor.
     + simpl.
       destruct a.
@@ -2073,24 +2034,28 @@ Proof.
       apply eq_genv_eval_expr.
       destruct EQ1. auto.
       auto.
-      apply IHcases.
+      apply IHl.
       tauto.
   - simpl in H.
+    destruct (typof_expr te e1); try constructor.
+    simpl.
     apply eq_env_split in H as (EQ1 & EQ2).
-    generalize (eq_genv_eval_expr e1 le le' EQ1 H0).
+    generalize (eq_genv_eval_expr t e1 le le' EQ1 H0).
     intro E1.
     inv E1.
     constructor.
     simpl.
-    assert (LE : eq_env_all (lenv_update abs_typ_impl le x x0)
-                   (lenv_update abs_typ_impl le' x y)).
+    assert (LE : eq_env_all (lenv_update abs_typ_impl le i (Val abs_typ_impl t x))
+                   (lenv_update abs_typ_impl le' i (Val abs_typ_impl t y))).
     {
       unfold lenv_update.
       unfold eq_env_all.
       intros.
       rewrite! STree.gsspec.
-      destruct (STree.elt_eq x1 x).
+      destruct (STree.elt_eq x0 i).
       constructor ;auto.
+      apply ext_equal_same_value.
+      apply ext_equal_sym. auto.
       apply H0.
     }
     eapply eq_env_remove in EQ2;eauto.
@@ -2149,21 +2114,12 @@ Proof.
   induction lt.
   - simpl.
     intros.
-    specialize (eq_genv_eval_expr arch te ge ge' e le le' H H0).
+    specialize (eq_genv_eval_expr arch te ge ge' t e le le' H H0).
     intro E1.
     inv E1.
     constructor.
-    simpl.
-    unfold cast_typ_M. destruct x,y.
-    unfold same_value in H3.
-    destruct (typ_eq_dec t1 t0).
-    subst.
-    destruct (typ_eq_dec t0 t).
-    subst.
-    constructor. apply ext_equal_sym.
-    apply H3.
     constructor.
-    tauto.
+    auto.
   -  simpl.
      intros.
      destruct a.
@@ -2334,11 +2290,11 @@ Proof.
     destruct t0.
     - simpl.
       apply map_err_nil in PARAM. subst.
-      generalize (eq_genv_eval_expr arch te ge ge0 e STree.empty STree.empty EQENV eq_env_all_empty).
+      generalize (eq_genv_eval_expr arch te ge ge0 t e STree.empty STree.empty EQENV eq_env_all_empty).
       intro EEXPR. inv EEXPR.
       constructor.
-      simpl.
-      apply same_value_cast_typ_M;assumption.
+      constructor.
+      assumption.
     - unfold ext_equal; fold ext_equal.
       unfold map; fold map.
       change ((snd p :: (fix map (l : list (string * typ)) : list typ := match l with
@@ -3019,36 +2975,36 @@ Proof.
   discriminate.
   - simpl.
     destruct a; intros.
-    + destruct (obligation_def_type te tid adt); try discriminate.
+    + destruct (obligation_def_type te i a); try discriminate.
       simpl in GEN.
       eapply IHprog; eauto.
-    +       destruct (get_prop x props) eqn:GP; try discriminate.
+    +  destruct (get_prop i props) eqn:GP; try discriminate.
       destruct p as (p,props').
       simpl in GEN.
       apply get_prop_inv in GP.
       subst.
-      destruct (generate_const_obligation te x l ty p); try discriminate.
+      destruct (generate_const_obligation te i l b p); try discriminate.
       simpl in GEN.
       eapply IHprog in GEN;eauto.
       simpl. tauto.
-    + destruct (get_prop x props) eqn:GP; try discriminate.
+    + destruct (get_prop i props) eqn:GP; try discriminate.
       destruct p as (p,props').
       simpl in GEN.
       apply get_prop_inv in GP.
       subst.
-      destruct (generate_def_fun_obligation' arch x te (Syntax.fn_params f) (Syntax.fn_return f) (Syntax.fn_body f) checked p);
+      destruct (generate_def_fun_obligation' arch i te (Syntax.fn_params f) (Syntax.fn_return f) (Syntax.fn_body f) checked p);
         try discriminate.
       simpl in GEN.
       eapply IHprog in GEN;eauto.
       simpl. tauto.
     + eapply IHprog;eauto.
     +
-      destruct (generate_decl_const_obligation te checked x ty); try discriminate.
+      destruct (generate_decl_const_obligation te checked i b); try discriminate.
       simpl in GEN.
       eapply IHprog in GEN;eauto.
       simpl. tauto.
     +
-      destruct (generate_decl_fun_obligation te checked x tparams tret); try discriminate.
+      destruct (generate_decl_fun_obligation te checked i l b); try discriminate.
       simpl in GEN.
       eapply IHprog in GEN;eauto.
       simpl. tauto.
@@ -3088,21 +3044,21 @@ Proof.
     destruct a.
     + intros.
       rewrite obligation_def_type_eq in GEN.
-      destruct (eval_def_type te tid adt); try discriminate.
+      destruct (eval_def_type te i a); try discriminate.
       simpl in *.
       eapply IHprog in GEN ; eauto.
       inv ND ; auto.
       apply wf_env_tail in H; auto.
     + intros.
-      destruct (get_prop x props) eqn:GP; try discriminate.
+      destruct (get_prop i props) eqn:GP; try discriminate.
       destruct p as (p,props').
       simpl in GEN.
       apply get_prop_inv in GP.
-      destruct (generate_const_obligation te x l ty p) eqn:CO; try discriminate.
+      destruct (generate_const_obligation te i l b p) eqn:CO; try discriminate.
       simpl in GEN.
       destruct  (generate_const_obligation_sound _ _ _ _ _ _ ge CO) as (ge' & EF & HP ).
       { unfold wf_env in H.
-        apply (H (DefConst x l ty)).
+        apply (H (DefConst i l b)).
         simpl. tauto. reflexivity.
       }
       {
@@ -3117,28 +3073,28 @@ Proof.
       do 2 eexists ; split; eauto.
       subst.
       constructor.
-      apply eval_prog_rec_preserve_properties with (props := (x,p)::nil) in EQ.
+      apply eval_prog_rec_preserve_properties with (props := (i,p)::nil) in EQ.
       inv EQ ; auto.
       constructor ; auto.
       auto.
       inv ND ; auto.
       eapply wf_env_DefConst; eauto.
       constructor ;auto.
-      eapply eval_prog_rec_preserve_properties with (prog := (DefConst x l ty)::nil).
+      eapply eval_prog_rec_preserve_properties with (prog := (DefConst i l b)::nil).
       apply H0. simpl. rewrite EF. reflexivity.
       Unshelve. apply arch.
     + intros.
-      destruct (get_prop x props) eqn:GP; try discriminate.
+      destruct (get_prop i props) eqn:GP; try discriminate.
       destruct p as (p,props').
       simpl in GEN.
       apply get_prop_inv in GP.
-      destruct (generate_def_fun_obligation'  arch x te (Syntax.fn_params f) (Syntax.fn_return f) (Syntax.fn_body f) checked p) eqn:CO; try discriminate.
+      destruct (generate_def_fun_obligation'  arch i te (Syntax.fn_params f) (Syntax.fn_return f) (Syntax.fn_body f) checked p) eqn:CO; try discriminate.
       simpl in GEN.
       apply generate_def_fun_obligation_impl in CO.
       destruct CO as (o & CO & IMPL).
-      destruct  (generate_def_fun_obligation_sound _ _ x _ _  ge _ _ CO) as (ge' & EF & HP ).
+      destruct  (generate_def_fun_obligation_sound _ _ i _ _  ge _ _ CO) as (ge' & EF & HP ).
       { unfold wf_env in H.
-        apply (H (DefFun x f )).
+        apply (H (DefFun i f )).
         simpl. tauto. reflexivity.
       }
       auto.
@@ -3152,22 +3108,22 @@ Proof.
       do 2 eexists ; split; eauto.
       subst.
       constructor.
-      apply eval_prog_rec_preserve_properties with (props := (x,p)::nil) in EQ.
+      apply eval_prog_rec_preserve_properties with (props := (i,p)::nil) in EQ.
       inv EQ ; auto.
       constructor ; auto.
       auto.
       inv ND ; auto.
       eapply wf_env_DefFun; eauto.
       constructor ;auto.
-      eapply eval_prog_rec_preserve_properties with (prog := (DefFun x f)::nil).
+      eapply eval_prog_rec_preserve_properties with (prog := (DefFun i f)::nil).
       apply H0. simpl. rewrite EF. reflexivity.
     + intros.
       eapply IHprog;eauto.
       inv ND;auto.
       eapply wf_env_tail;eauto.
     + intros.
-      destruct (generate_decl_const_obligation te checked x ty) eqn:DECL ; try discriminate.
-      destruct (generate_decl_const_obligation_sound te x ty checked ge P DECL); auto.
+      destruct (generate_decl_const_obligation te checked i b) eqn:DECL ; try discriminate.
+      destruct (generate_decl_const_obligation_sound te i b checked ge P DECL); auto.
       simpl in GEN.
       { apply generate_obligations_incl with (x:=P) in GEN.
         rewrite Forall_forall in OBL. apply OBL;auto.
@@ -3179,8 +3135,8 @@ Proof.
       inv ND ; auto.
       eapply wf_env_tail; eauto.
     + intros.
-      destruct (generate_decl_fun_obligation te checked x tparams tret) eqn:DECL ; try discriminate.
-      destruct (generate_decl_fun_obligation_sound te x tparams tret checked ge P DECL); auto.
+      destruct (generate_decl_fun_obligation te checked i l b) eqn:DECL ; try discriminate.
+      destruct (generate_decl_fun_obligation_sound te i l b checked ge P DECL); auto.
       simpl in GEN.
       { apply generate_obligations_incl with (x:=P) in GEN.
         rewrite Forall_forall in OBL. apply OBL;auto.

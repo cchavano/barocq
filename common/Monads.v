@@ -40,6 +40,10 @@ Module MonError <: MONAD.
     | None => fail
     end.
 
+  Inductive res_rel {A B : Type} (R : A -> B -> Prop) : res A -> res B -> Prop :=
+    res_rel_error : forall m m', res_rel R (Error m) (Error m')
+  | res_rel_ok : forall (x : A) (y : B), R x y -> res_rel R (OK x) (OK y).
+
   Notation eret := ret.
 
   Notation efail := fail.

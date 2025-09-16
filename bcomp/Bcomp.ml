@@ -1,4 +1,4 @@
-open Lexing
+ open Lexing
 open Printf
 
 exception CompilerError of string
@@ -226,8 +226,15 @@ let () =
         exit 0
       end;
 
+      let tiprog  = 
+        match Barocq.Typing.typecheck_iprogram !target_arch iprog with
+        | Errors.OK p -> p
+        | Errors.Error _ -> printf "Typecheking error"; failwith "Typecheking error" in 
+
+      let tprog = Barocq.Typing.program_of_iprogram tiprog in 
+      
       if !opt_interp then begin
-        let _ = Binterpreter.interpret !target_arch iprog in
+        let _ = Binterpreter.interpret !target_arch tiprog in
         exit 0
       end;
 
@@ -393,7 +400,7 @@ let () =
           | Errors.OK prog -> prog
           | _ -> assert false
         in
-        Deepgen.print_program oc prog;
+        Deepgen.print_program oc tprog;
         close_out oc;
         printf "Deep embedding generated at %s\n" (clean_filename file)
       end;
@@ -459,7 +466,7 @@ let () =
               let corresBD_file = full_filename "_CorresBD.v" in
               let preludeBD_oc = open_out preludeBD_file in
               let corresBD_oc = open_out corresBD_file in
-              CorresBDgen.print_prelude preludeBD_oc !target_arch prog bprog;
+              CorresBDgen.print_prelude preludeBD_oc !target_arch tprog bprog;
               CorresBDgen.print_corres corresBD_oc !target_arch bprog;
               close_out preludeBD_oc;
               close_out corresBD_oc;

@@ -25,10 +25,10 @@ Fixpoint create_deep_access_expr (e: BarocqTyped.expr) : Barocq.expr :=
   let fix create_deep_access_rec (e: BarocqTyped.expr) (acs: list Barocq.access)
     : Barocq.expr * (list Barocq.access) :=
     match e with
-    | BarocqTyped.ETrue _ => (Barocq.ETrue, acs)
-    | BarocqTyped.EFalse _ => (Barocq.EFalse, acs)
-    | BarocqTyped.EInt32 i (BInt32 s) => (Barocq.EInt32 i s, acs)
-    | BarocqTyped.EInt64 i (BInt64 s) => (Barocq.EInt64 i s, acs)
+    | BarocqTyped.ETrue  => (Barocq.ETrue, acs)
+    | BarocqTyped.EFalse  => (Barocq.EFalse, acs)
+    | BarocqTyped.EInt32 i s => (Barocq.EInt32 i s, acs)
+    | BarocqTyped.EInt64 i s => (Barocq.EInt64 i s, acs)
     | BarocqTyped.EConstr x _ => (Barocq.EConstr x, acs)
     | BarocqTyped.EVar x _ => (Barocq.EVar x, acs)
     | BarocqTyped.EArrayGet e1 e2 ty =>
@@ -98,9 +98,6 @@ Fixpoint create_deep_access_expr (e: BarocqTyped.expr) : Barocq.expr :=
         let e1' := create_deep_access_expr e1 in
         let e2' := create_deep_access_expr e2 in
         (Barocq.ELetIn x e1' e2', acs)
-    | _ =>
-      (* The rest are ill-typed constant integers, we return an arbitraty expression. *)
-      (ETrue, acs)
     end
   in
   match create_deep_access_rec e nil with

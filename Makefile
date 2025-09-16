@@ -2,7 +2,7 @@
 
 COMMON=\
 	Monads.v Error.v Utils.v Barray.v Brecord.v Benum.v Maps2.v\
-	Types.v Syntax.v Typing.v Intop.v Ident.v Target.v MergeSort.v
+	Types.v Syntax.v Typing.v Intop.v Ident.v Target.v MergeSort.v DList.v
 
 FRONTEND=\
 	Barocq.v BarocqTransf.v BarocqBNF.v BarocqBNFgen.v\
