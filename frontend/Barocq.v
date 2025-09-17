@@ -392,7 +392,7 @@ Section DENOT.
   
   Inductive access_value : Type :=
    | AcvalRecordField : ident -> access_value
-   | AcvalArrayIndex : eval_typ typof_index -> access_value.
+   | AcvalArrayIndex : res (eval_typ typof_index) -> access_value.
 
   Definition genv := STree.t value.
 
@@ -451,6 +451,10 @@ Section DENOT.
 
   Definition partial {A B: Type} (F : A -> B) : A -> res B :=
     fun x => OK (F x).
+
+  Definition partial2 {A B C: Type} (F : A -> B -> C) : A -> B -> res C :=
+    fun x y => OK (F x y).
+
 
   Definition get_cast (ty:typ) (ty':typ) : res (eval_typ ty -> res (eval_typ ty')) :=
     match ty, ty' with
@@ -599,13 +603,13 @@ Section DENOT.
     | TInt32 s , TInt32 s'  =>
         match s , s' with
         | Signed , Signed => (fun v1 v2 tyr => @ecast_typ (TInt32 Signed) (F32s v1 v2) tyr)
-        | Unsigned , Unsigned => (fun v1 v2 tyr => @ecast_typ (TInt32 Signed) (F32u v1 v2) tyr)
+        | Unsigned , Unsigned => (fun v1 v2 tyr => @ecast_typ (TInt32 Unsigned) (F32u v1 v2) tyr)
         | _   , _ => (fun _ _ _ => fail)
         end
     | TInt64 s , TInt64 s'  =>
         match s , s' with
         | Signed , Signed => (fun v1 v2 tyr => @ecast_typ (TInt64 Signed) (F64s v1 v2) tyr)
-        | Unsigned , Unsigned => (fun v1 v2 tyr => @ecast_typ (TInt64 Signed) (F64u v1 v2) tyr)
+        | Unsigned , Unsigned => (fun v1 v2 tyr => @ecast_typ (TInt64 Unsigned) (F64u v1 v2) tyr)
         | _   , _ => (fun _ _ _ => fail)
         end
     | _, _ =>   (fun _ _ _ => fail)
@@ -662,7 +666,7 @@ Section DENOT.
     | BopOrint => int_op Int.or Int64.or
     | BopXorint => int_op Int.xor Int64.xor
     | BopShl => int_op Int.shl Int64.shl
-    | BopShr => int_op Int.shr Int64.shr
+    | BopShr => int_op_s (partial2 Int.shr) (partial2 Int.shru) (partial2 Int64.shr)  (partial2 Int64.shru)
     | BopEq => int_eq_neq true eqb Int.eq Int64.eq  (fun elems v1 v2 =>
                                                   if enum_eq_dec v1 v2 then true else false)
     | BopNeq => int_eq_neq false eqb Int.eq Int64.eq  (fun elems v1 v2 =>
@@ -720,15 +724,13 @@ Section DENOT.
       destruct arch eqn:Earch.
         - destruct (typ_eq_dec t2 (TInt32 Unsigned)).
           + subst. simpl in i. simpl in a.
-            eapply bind.
+            eapply ecast_typ.
             apply (Barray.get a (U64.of_u32 i)).
-              * apply (fun e => cast_typ e tyr).
           + apply fail.
         - destruct (typ_eq_dec t2 (TInt64 Unsigned)).
           + subst. simpl in i. simpl in a.
-            eapply bind.
+            eapply ecast_typ.
             apply (Barray.get a i).
-            * apply (fun e => cast_typ  e tyr).
           + apply fail.
     }
     all: apply fail.
@@ -744,17 +746,13 @@ Section DENOT.
       - destruct (typ_eq_dec t2 (TInt32 Unsigned)).
         + destruct (typ_eq_dec ta t).
           * subst. simpl in i. simpl in a.
-            eapply bind.
-            apply (Barray.set a (U64.of_u32 i) v).
-            apply (fun a0 => @cast_typ (TArray t)  a0 tyr).
+            apply (@ecast_typ (TArray t) (Barray.set a (U64.of_u32 i) v)).
           * apply fail.
         + apply fail.
       - destruct (typ_eq_dec t2 (TInt64 Unsigned)).
         + destruct (typ_eq_dec ta t).
           * subst. simpl in i. simpl in a.
-            eapply bind.
-            apply (Barray.set a i v).
-            apply (fun a0 => @cast_typ (TArray t) a0 tyr).
+            apply (@ecast_typ (TArray t) (Barray.set a  i v)).
           * apply fail.
         + apply fail.
     }
@@ -953,18 +951,21 @@ Lemma typof_field_is_type :
     end.
 
 
-  Fixpoint eval_access_list (ty:typ) (v: eval_typ ty) (acs: list access_value) (tyr : typ) {struct acs} : res (eval_typ tyr) :=
+  Fixpoint eval_access_list (ty:typ) (v: res (eval_typ ty)) (acs: list access_value) (tyr : typ) {struct acs} : res (eval_typ tyr) :=
     match acs with
-    | nil => cast_typ v tyr
+    | nil => ecast_typ v tyr
     | ac :: acs' =>
         match ac with
         | AcvalRecordField f =>
             let* tp := typof_record_project ty f in
-            let* v' := eval_record_project ty v f tp in
+            let* v  := v in
+            let v' := eval_record_project ty v f tp in
             eval_access_list tp v' acs' tyr
         | AcvalArrayIndex va =>
             let* te := typof_array ty in
-            let* v' := eval_array_get _ v typof_index va te in
+            let* v  := v  in
+            let* i  := va in
+            let v' := eval_array_get _ v typof_index i te in
             eval_access_list te v' acs' tyr
         end
     end.
@@ -1005,7 +1006,7 @@ Lemma typof_field_is_type :
     | _ => (fun _ => fail)
     end) v.
 
-  Fixpoint eval_app_rec (tparams: list typ) (tret: typ) (f: eval_funtyp eval_typ tparams tret) (args: DList.dlist abs_typ_impl tparams) :
+  Fixpoint eval_app_rec (tparams: list typ) (tret: typ) (f: eval_funtyp eval_typ tparams tret) (args: DList.dlist eval_typ  tparams) :
     res (eval_typ tret).
   Proof.
     destruct args.
@@ -1013,7 +1014,8 @@ Lemma typof_field_is_type :
     - simpl in f. apply (eval_app_rec _ _ (f e) args).
   Defined.
 
-  Definition eval_app (tparams : list typ) (tret :typ) : forall (v: eval_typ (TFun tparams tret)) (args: DList.dlist abs_typ_impl tparams) , res (eval_typ tret) :=
+  Definition eval_app (tparams : list typ) (tret :typ) : forall (v: eval_typ (TFun tparams tret))
+                                                                (args: DList.dlist eval_typ tparams) , res (eval_typ tret) :=
     match tparams  with
     | [] =>
         (fun (vt1: eval_typ (TFun nil tret)) args  =>
@@ -1025,7 +1027,7 @@ Lemma typof_field_is_type :
     end.
 
 
-  Fixpoint eval_app_typ_rec (tparams: list typ) (tret: typ) (f: eval_funtyp eval_typ tparams tret) (args: DList.dlist abs_typ_impl tparams) (ty:typ):
+  Fixpoint eval_app_typ_rec (tparams: list typ) (tret: typ) (f: eval_funtyp eval_typ tparams tret) (args: DList.dlist eval_typ tparams) (ty:typ):
     res (eval_typ ty).
   Proof.
     destruct args.
@@ -1033,7 +1035,7 @@ Lemma typof_field_is_type :
     - simpl in f. apply (eval_app_typ_rec _ _ (f e) args ty).
   Defined.
 
-  Definition eval_app_typ (tparams : list typ) (tret :typ) : forall (v: eval_typ (TFun tparams tret)) (args: DList.dlist abs_typ_impl tparams) (ty:typ), res (eval_typ ty) :=
+  Definition eval_app_typ (tparams : list typ) (tret :typ) : forall (v: eval_typ (TFun tparams tret)) (args: DList.dlist eval_typ tparams) (ty:typ), res (eval_typ ty) :=
     match tparams  with
     | [] =>
         (fun (vt1: eval_typ (TFun nil tret)) args ty  =>
@@ -1042,6 +1044,30 @@ Lemma typof_field_is_type :
            | DList.DCONS _ v1  l0 => fail
            end)
     | x  => (fun f args ty =>  (eval_app_typ_rec x tret f args ty))
+    end.
+
+
+  Fixpoint eval_app_res_typ_rec (tparams: list typ) (tret: typ) (f: eval_funtyp eval_typ tparams tret)
+    (args: DList.dlist (fun (ty:typ) => res (eval_typ ty)) tparams) (ty:typ):
+    res (eval_typ ty).
+  Proof.
+    destruct args.
+    - simpl in f. apply (ecast_typ f ty).
+    - simpl in f. eapply bind. apply e.
+      apply (fun x => eval_app_res_typ_rec _ _ (f x) args ty).
+  Defined.
+
+  Definition eval_app_res (tparams : list typ) (tret :typ) :
+    forall (v: eval_typ (TFun tparams tret))
+           (args: DList.dlist (fun ty => res (eval_typ ty)) tparams) (ty:typ), res (eval_typ ty):=
+    match tparams  with
+    | [] =>
+        (fun (vt1: eval_typ (TFun nil tret)) args ty  =>
+           match args with
+           | DList.DNIL _ => ecast_typ (vt1 tt) ty
+           | DList.DCONS _ v1  l0 => fail
+           end)
+    | x  => (fun f args ty =>  (eval_app_res_typ_rec x tret f args ty))
     end.
 
 
@@ -1111,16 +1137,16 @@ Lemma typof_field_is_type :
         eval_record_update te1 v1 k te2 v2 ty
     | EDeepAccess e1 acs _ =>
         let* tye1 := typof_expr te e1 in
-        let* v1 := eval_expr te ge le tye1 e1 in
-        let* vacs := mmap (eval_access_expr te ge le) acs in
+        let v1 := eval_expr te ge le tye1 e1 in
+        let vacs := List.map (eval_access_expr te ge le) acs in
         eval_access_list tye1 v1 vacs ty
     | EApp v args _ =>
         let* tyf := typof_expr te v in
         match tyf with
         | TFun tparams tret =>
             let* f := eval_expr te ge le  (TFun tparams tret) v in
-            let* vargs := DList.mmap abs_typ_impl (eval_expr te ge le) args tparams in
-            eval_app_typ tparams tret f vargs ty
+            let* vargs := DList.map2 _ (eval_expr te ge le) args tparams in
+            eval_app_res tparams tret f vargs ty
         |  _  => fail
         end
     | EIfThenElse e1 e2 e3 _ =>
@@ -1142,12 +1168,12 @@ Lemma typof_field_is_type :
         eval_expr te ge le' ty e2
     end
 
-  with eval_access_expr (te: tenv) (ge: genv) (le: lenv) (ac: access) : res access_value :=
+  with eval_access_expr (te: tenv) (ge: genv) (le: lenv) (ac: access) : access_value :=
     match ac with
-    | AcRecordField f _ => ret (AcvalRecordField f)
+    | AcRecordField f _ => (AcvalRecordField f)
     | AcArrayIndex e _ =>
-        let* v := eval_expr te ge le typof_index e  in
-        ret (AcvalArrayIndex v)
+        let v := eval_expr te ge le typof_index e  in
+        AcvalArrayIndex v
     end.
 
 
@@ -1201,16 +1227,16 @@ Lemma typof_field_is_type :
         eval_record_update te1 v1 k te2 v2 ty
     | EDeepAccess e1 acs _ =>
         let* tye1 := typof_expr te e1 in
-        let* v1 := eval_expr te ge le tye1 e1 in
-        let* vacs := mmap (eval_access_expr te ge le) acs in
+        let v1 := eval_expr te ge le tye1 e1 in
+        let vacs := List.map (eval_access_expr te ge le) acs in
         eval_access_list tye1 v1 vacs ty
     | EApp v args _ =>
         let* tyf := typof_expr te v in
         match tyf with
         | TFun tparams tret =>
             let* f := eval_expr te ge le  (TFun tparams tret) v in
-            let* vargs := DList.mmap abs_typ_impl (eval_expr te ge le) args tparams in
-            eval_app_typ tparams tret f vargs ty
+            let* vargs := DList.map2 _ (eval_expr te ge le) args tparams in
+            eval_app_res tparams tret f vargs ty
         |  _  => fail
         end
     | EIfThenElse e1 e2 e3 _ =>

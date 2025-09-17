@@ -1,5 +1,5 @@
 From Coq Require Import PArith List String.
-From BarocqComp Require Import Error Maps2 Ident.
+From BarocqComp Require Import Error Maps2 Ident Utils.
 
 Definition key : Type := ident.
 
@@ -134,10 +134,6 @@ Ltac apply_decomp_field :=
                     unfold pred;clear pred
                 end
                 end.
-
-Definition cast {A B: Type} (EQ : A = B) (v: A) : B.
-  rewrite EQ in v. exact v.
-Defined.
 
 Lemma type_of_field_fst : forall k A fields,
     A = type_of_field k ((k, A) :: fields).

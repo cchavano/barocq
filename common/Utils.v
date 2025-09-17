@@ -5,6 +5,10 @@ Import MonCounter.
 Import MonCounterErr.
 Import ListNotations.
 
+Definition cast {A B: Type} (EQ : A = B) (v: A) : B.
+  rewrite EQ in v. exact v.
+Defined.
+
 (** * Identifiers *)
 
 Definition transl_user_ident (i: ident) : ident :=

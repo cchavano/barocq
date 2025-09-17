@@ -1020,7 +1020,7 @@ Proof.
   - apply ext_equal_int_op; auto.
   - apply ext_equal_int_op; auto.
   - apply ext_equal_int_op; auto.
-  - apply ext_equal_int_op; auto.
+  - apply ext_equal_int_ops; auto.
   - apply ext_equal_int_eq_neq; auto.
   - apply ext_equal_int_eq_neq; auto.
   - apply ext_equal_cmp_op;auto.
@@ -1088,27 +1088,28 @@ Proof.
     simpl in *.
     subst.
     unfold eq_rect_r, eq_rect; simpl.
+    eapply ext_equal_ecast_typ.
     unfold Barray.get.
     rewrite ext_equal_valid_index with (a2:= a2).
     destruct (valid_index a2 (Intop.U64.of_u32 i2)).
     specialize (H (Intop.U64.to_nat (Intop.U64.of_u32 i2))).
     fold eval_typ in *.
     inv H; simpl.  constructor.
-    apply ext_equal_cast_typ; auto.
+    constructor;auto.
     constructor.
     repeat intro. auto.
   - destruct (typ_eq_dec ti (TInt64 Unsigned)); subst; try constructor.
     simpl in *.
     subst.
     unfold eq_rect_r, eq_rect; simpl.
+    eapply ext_equal_ecast_typ.
     unfold Barray.get.
     rewrite ext_equal_valid_index with (a2:= a2).
     destruct (valid_index a2  i2).
     specialize (H (Intop.U64.to_nat i2)).
     fold eval_typ in *.
     inv H; simpl ; try constructor.
-    apply ext_equal_cast_typ;auto.
-    constructor.
+    auto. constructor.
     repeat intro. auto.
 Qed.
 
@@ -1191,11 +1192,9 @@ Proof.
     unfold eq_rect_r,eq_rect. simpl.
     simpl in H0. subst.
     simpl in H.
+    apply ext_equal_ecast_typ.
     change (ext_eq_array tv a1 a2) in H.
     apply ext_eq_array_set with (v1:=v1) (v2:=v2) (i:= (Intop.U64.of_u32 i2)) in H; auto.
-    fold eval_typ in *.
-    inv H; try constructor; auto.
-    simpl. apply ext_equal_cast_typ;auto.
   - destruct (typ_eq_dec ti (TInt64 Unsigned));
     try constructor.
     destruct (typ_eq_dec ta tv); try constructor.
@@ -1204,9 +1203,8 @@ Proof.
     simpl in H0. subst.
     simpl in H.
     change (ext_eq_array tv a1 a2) in H.
+    apply ext_equal_ecast_typ.
     apply ext_eq_array_set with (v1:=v1) (v2:=v2) (i:= i2) in H; auto.
-    inv H; try constructor; auto.
-    simpl. apply ext_equal_cast_typ;auto.
 Qed.
 
 
@@ -1316,7 +1314,7 @@ Qed.
 
 Inductive eq_access_value (arch:archi): access_value arch abs_typ_impl -> access_value arch abs_typ_impl -> Prop :=
 | eq_access_field : forall k, eq_access_value arch (AcvalRecordField arch abs_typ_impl k) (AcvalRecordField arch abs_typ_impl k)
-| eq_access_index : forall v1 v2, ext_equal (typof_index arch) v1 v2 -> eq_access_value arch (AcvalArrayIndex arch abs_typ_impl v1)
+| eq_access_index : forall v1 v2, res_rel (ext_equal (typof_index arch)) v1 v2 -> eq_access_value arch (AcvalArrayIndex arch abs_typ_impl v1)
                                                         (AcvalArrayIndex arch abs_typ_impl v2).
 
 Lemma res_rel_ifthenelse : forall x y t1 t2 v1 v2  v1' v2' tr,
@@ -1743,8 +1741,42 @@ Proof.
   tauto.
 Qed.
 
-
-
+Lemma ext_equal_eval_app_res :
+    let Ftyp := fun ty : typ => res (# ty) in
+    let Pred := fun ty : typ => res_rel (ext_equal ty) in
+    forall l0 t x y x0 y0 ty,
+    ext_equal (TFun l0 t) x y ->
+    DList.Forall2 Ftyp Pred l0 x0 y0 ->
+    res_rel (ext_equal ty) (eval_app_res abs_typ_impl l0 t x x0 ty)
+    (eval_app_res abs_typ_impl l0 t y y0 ty).
+Proof.
+  intros.
+  destruct l0.
+  { simpl.
+    assert (XO : x0 = DList.DNIL Ftyp).
+    { apply DList.dlist_nil. }
+    assert (YO : y0 = DList.DNIL Ftyp).
+    { apply DList.dlist_nil. }
+    rewrite XO. rewrite YO.
+    apply ext_equal_ecast_typ.
+    apply H.
+  }
+  {
+      unfold ext_equal in H ; fold ext_equal in H.
+      unfold eval_typ in x,y; fold eval_typ in x,y.
+      unfold eval_app_res.
+      revert x y H.
+      induction H0.
+      - simpl. intros. apply ext_equal_ecast_typ;auto.
+      - simpl.
+        intros.
+        unfold Pred in H.
+        inv H. constructor.
+        simpl.
+        apply IHForall2.
+        auto.
+    }
+Qed.
 
 
 
@@ -1861,21 +1893,19 @@ Proof.
     destruct (typof_expr te e);try constructor.
     simpl.
     generalize (eq_genv_eval_expr t e le le' EQ1 H0).
-    intro E1. inv E1. simpl. constructor.
-    simpl.
-    assert (res_rel (Forall2 (eq_access_value arch))
-              (mmap (eval_access_expr arch abs_typ_impl te ge le) l)
-              (mmap (eval_access_expr arch abs_typ_impl te ge' le') l)).
+    intro E1.
+    assert (ALL : Forall2 (eq_access_value arch)
+              (map (eval_access_expr arch abs_typ_impl te ge le) l)
+              (map (eval_access_expr arch abs_typ_impl te ge' le') l)).
     {
       induction l.
-      -  simpl. constructor. constructor.
+      -  simpl. constructor.
       - simpl.
-        assert (res_rel (eq_access_value arch) (eval_access_expr arch abs_typ_impl te ge le a)
-                                (eval_access_expr arch abs_typ_impl te ge' le' a)).
+        constructor.
         {
           destruct a.
           - simpl.
-            constructor. constructor.
+            constructor.
           - simpl.
             simpl in EQ2.
             apply eq_env_of_access in EQ2 as (EQ0 & EQACC).
@@ -1883,44 +1913,36 @@ Proof.
             inv eq_genv_eval_expr.
             constructor.
             simpl. constructor.
-            constructor. auto.
+            constructor. constructor;auto.
         }
-        inv H3.
-        constructor.
-        simpl.
         simpl in EQ2.
         apply eq_env_of_access in EQ2 as (EQ2 & EQ3).
-        specialize (IHl EQ2).
-        inv IHl.
-        constructor.
-        simpl.
-        constructor.
-        constructor;auto.
+        apply IHl; auto.
     }
-    inv H3; try constructor.
-    simpl.
-    clear - H2 H6.
-    revert t x y H2.
-    induction H6.
+    clear - E1 ALL.
+    revert E1.
+    generalize (eval_expr arch abs_typ_impl te ge le t e) as e1.
+    generalize (eval_expr arch abs_typ_impl te ge' le' t e) as e2.
+    revert t.
+    induction ALL.
     +  simpl. intros.
-       apply ext_equal_cast_typ;auto.
+       apply ext_equal_ecast_typ;auto.
     + simpl.
       intros.
       inv H.
       * destruct (typof_record_project t k);try constructor.
       simpl.
-      specialize (ext_equal_eval_record_proj _ _ _ k t0 H2).
-      intro HH ; inv HH.
-      constructor.
+      inv E1. constructor.
       simpl.
-      auto.
+      apply IHALL.
+      apply ext_equal_eval_record_proj; auto.
       * destruct (typof_array t) ; try constructor.
         simpl.
-        specialize (ext_equal_array_get arch _ _ _ _ _ _ t0 H2 H0).
-        intro.
-        inv H.
-        constructor.
+        inv E1. constructor.
+        simpl. inv H0. constructor.
         simpl.
+        apply IHALL.
+        apply ext_equal_array_get. auto.
         auto.
   -
     simpl in H.
@@ -1932,8 +1954,10 @@ Proof.
     inv E1.
     constructor.
     simpl.
-    assert (res_rel (DList.Forall2 abs_typ_impl ext_equal _) (DList.mmap abs_typ_impl (eval_expr arch abs_typ_impl te ge le) l l0)
-                  (DList.mmap abs_typ_impl (eval_expr arch abs_typ_impl te ge' le') l l0)).
+    set (Ftyp := fun (ty:typ) => res (eval_typ abs_typ_impl ty)).
+    set (Pred := fun ty => res_rel (ext_equal ty)).
+    assert (res_rel (DList.Forall2 Ftyp Pred  _) (DList.map2 (eval_typ abs_typ_impl) (eval_expr arch abs_typ_impl te ge le) l l0)
+              (DList.map2 (eval_typ abs_typ_impl) (eval_expr arch abs_typ_impl te ge' le') l l0)).
     {
       clear H2 H H1 x y.
       revert l0.
@@ -1946,8 +1970,6 @@ Proof.
         simpl in EQ1.
         apply eq_env_exprs in EQ1 as (EQ1 & EQ1').
         specialize (eq_genv_eval_expr t0 a le le' EQ1' H0).
-        inv eq_genv_eval_expr.
-        constructor.
         specialize (IHl EQ1 l0).
         inv IHl.
         constructor.
@@ -1980,28 +2002,7 @@ Proof.
         apply IHForall2.
         auto.
     } *)
-    destruct l0.
-    { simpl.
-      assert (XO : x0 = DList.DNIL abs_typ_impl).
-      { apply DList.dlist_nil. }
-      assert (YO : y0 = DList.DNIL abs_typ_impl).
-      { apply DList.dlist_nil. }
-      rewrite XO. rewrite YO.
-      apply ext_equal_ecast_typ.
-      apply H2.
-    }
-    {
-      unfold ext_equal in H2 ; fold ext_equal in H2.
-      unfold eval_typ in x,y; fold eval_typ in x,y.
-      unfold eval_app_typ.
-      revert x y H2.
-      induction H6.
-      - simpl. intros. apply ext_equal_ecast_typ;auto.
-      - simpl.
-        intros.
-        apply IHForall2.
-        auto.
-    }
+    apply ext_equal_eval_app_res; auto.
   - simpl in H.
     apply eq_env_split in H as (EQ1 & EQ2).
     apply eq_env_split in EQ2 as (EQ2 & EQ3).

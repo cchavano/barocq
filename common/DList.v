@@ -1,18 +1,16 @@
 (** Dependent list indexed by [typ] *)
 From BarocqComp Require Import Types.
-From BarocqComp Require Import Error.
+From BarocqComp Require Import Error Utils.
 From compcert Require Import Coqlib.
 Import List Notations.
 
 Section S.
 
-  Variable abs_typ_impl : Maps.PMap.t Type.
-
-  Notation eval_typ := (eval_typ abs_typ_impl).
+  Variable Ftyp : typ -> Type.
 
   Inductive dlist : list typ -> Type :=
   | DNIL : dlist nil
-  | DCONS : forall {ty:typ} (e: eval_typ ty) {l:list typ} (dl : dlist l) , dlist (ty::l).
+  | DCONS : forall {ty:typ} (e: Ftyp ty) {l:list typ} (dl : dlist l) , dlist (ty::l).
 
   Lemma inj_list_hd : forall {A:Type} {e1 e2:A} {l1 l2:list A},
       e1::l1 = e2::l2 ->  e1 = e2.
@@ -26,13 +24,20 @@ Section S.
     congruence.
   Defined.
 
-  Definition car {ty:typ} {lt:list typ} (dl : dlist (ty::lt)) : eval_typ ty.
+  Definition cast (ty ty': typ) (EQ: ty = ty') (v: Ftyp ty) : Ftyp ty'.
+  Proof.
+    apply (@cast  (Ftyp ty)).
+    f_equal.
+    exact EQ.
+    exact v.
+  Defined.
+
+  Definition car {ty:typ} {lt:list typ} (dl : dlist (ty::lt)) : Ftyp ty.
   Proof.
     remember (ty::lt) as l.
     destruct dl.
     -  exfalso. discriminate.
-    - eapply Types.typ_cast.
-      apply (inj_list_hd Heql).
+    - eapply cast. apply (inj_list_hd Heql).
       exact e.
   Defined.
 
@@ -46,19 +51,13 @@ Section S.
       exact dl.
   Defined.
 
-  (*Fixpoint map (l:list typ) (x:dlist l): dlist l:=
-    match x with
-    | DNIL  => DNIL
-    | DCONS e tl  => DCONS e (map _ tl)
-    end. *)
-
-  Fixpoint map (l:list typ) : forall (x:dlist l), dlist l:=
+  Fixpoint seq (l:list typ) : forall (x:dlist l), dlist l:=
     match l with
     | nil  => fun _ => DNIL
-    | ty ::tl  => fun x => DCONS (car x) (map _ (cdr x))
+    | ty ::tl  => fun x => DCONS (car x) (seq _ (cdr x))
     end.
 
-  Lemma map_id : forall l x, map l x = x.
+  Lemma seq_id : forall l x, seq l x = x.
   Proof.
     induction x; simpl;auto.
     - rewrite IHx.
@@ -68,7 +67,7 @@ Section S.
   Lemma dlist_nil : forall (x:dlist nil), x = DNIL.
   Proof.
     intros.
-    rewrite <- (map_id _  x).
+    rewrite <- (seq_id _  x).
     reflexivity.
   Qed.
 
@@ -77,7 +76,7 @@ Section S.
 
   Section MMAP.
 
-  Variable F : forall (ty:typ), A -> res (eval_typ ty).
+  Variable F : forall (ty:typ), A -> res (Ftyp ty).
 
   Fixpoint mmap  (l:list A) (lt:list typ) : res (dlist lt) :=
     match l with
@@ -88,16 +87,17 @@ Section S.
     | cons e l' => match lt with
                    | nil =>  fail
                    | ty::lt' =>
-                       match F ty e , mmap l' lt' with
-                       | OK v , OK dl => OK (DCONS v dl)
-                       | _   , _      => fail
-                       end
+                       let* v := F ty e in
+                       let* m := mmap l' lt' in
+                       eret (DCONS v m)
                    end
     end.
 
+
+
   End MMAP.
 
-  Variable P : forall (ty:typ) (v1 v2: eval_typ ty), Prop.
+  Variable P : forall (ty:typ) (v1 v2: Ftyp ty), Prop.
 
   Inductive Forall2 : forall (lt:list typ) (d1 d2: dlist lt), Prop :=
   | ForallDNIL : Forall2 nil DNIL DNIL
@@ -114,6 +114,7 @@ Section S.
     - simpl.
       inv H.
       constructor.
+      simpl.
       inv IHForall2.
       constructor.
       constructor. constructor;auto.
@@ -121,3 +122,28 @@ Section S.
 
 
 End S.
+
+Section MAP.
+
+  Context {A: Type}.
+  Variable Ftyp : typ -> Type.
+  Variable F : forall (ty:typ), A -> res (Ftyp ty).
+
+  Definition resFtyp (ty:typ) := res (Ftyp ty).
+
+  Fixpoint map2  (l:list A) (lt:list typ) : res (dlist resFtyp lt) :=
+    match lt as l0 return (res (dlist resFtyp l0)) with
+    | nil => match l with
+             | nil => OK (DNIL resFtyp)
+             | _ => efail
+             end
+    | ty :: lt' =>
+           match l with
+           | nil => efail
+           | e :: l' =>
+               let* m := map2 l' lt'
+               in OK (DCONS resFtyp (F ty e) m)
+           end
+    end.
+
+End MAP.
