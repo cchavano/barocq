@@ -29,7 +29,7 @@ coq             (version 8.20.1)
 Finally, install the modified version of CompCert:
 
 ```bash
-opam pin -y -b add https://gitlab.inria.fr/cchavano/compcert-ce.git#enums
+opam pin -y -b add https://gitlab.inria.fr/cchavano/compcert-ce.git
 ```
 
 The `-b` option tells opam to keep the build directory of CompCert, which is necessary to build the Barocq compiler.
