@@ -1775,7 +1775,7 @@ let sort_iprogam p =
   in
   List.stable_sort cmp_gdef p
 
-let typecheck_iprogram (iprog : iprogram) : string list * Barocq.iprogram =
+let typecheck_iprogram (iprog : iprogram) : Barocq.iprogram =
   let biprog, _, _, gx =
     List.fold_left
       (fun (acc_iprog, acc_gte, acc_ce, acc_gx) md ->
@@ -1785,4 +1785,4 @@ let typecheck_iprogram (iprog : iprogram) : string list * Barocq.iprogram =
       ([], gtenv_empty, cenv_empty, gcontext_empty)
       iprog
   in
-  (List.map fst (IdentMap.bindings gx.gx_extern), sort_iprogam biprog)
+  sort_iprogam biprog

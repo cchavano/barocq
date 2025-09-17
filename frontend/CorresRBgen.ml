@@ -176,9 +176,6 @@ let params_of_absfun (tparams : (param_attr * mtyp) list) : (ident * mtyp) list
     =
   List.mapi (fun i (_, fty) -> (ident_of_string (sprintf "a%d" i), fty)) tparams
 
-let mod_of_def (mods : string list) (id : string) : string =
-  List.find (fun modl -> String.starts_with ~prefix:modl id) mods
-
 let gen_def_corres (rdef : globdef) (bdef : globdef) : string =
   let fun_rewrite_material (fid : string) : string =
     sprintf

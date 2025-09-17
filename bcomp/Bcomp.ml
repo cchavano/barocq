@@ -217,21 +217,19 @@ let () =
 
       SurfaceTyping.set_arr_index_btyp !target_arch;
 
-      let _, iprog = SurfaceTyping.typecheck_iprogram s_iprog in
-
-      let prog = Barocq.iprog_to_prog iprog in
+      let iprog = SurfaceTyping.typecheck_iprogram s_iprog in
 
       if !opt_typecheck then begin
         printf "Typechecking succeeded\n";
         exit 0
       end;
 
+      let prog = Barocq.iprog_to_prog iprog in
+
       let tiprog =
         match Barocq.Typing.typecheck_iprogram !target_arch iprog with
         | Errors.OK p -> p
-        | Errors.Error _ ->
-            printf "Typecheking error";
-            failwith "Typecheking error"
+        | Errors.Error _ -> raise @@ UnexpectedError "Barocq typing failed"
       in
 
       let tprog = Barocq.Typing.program_of_iprogram tiprog in
@@ -398,12 +396,16 @@ let () =
         let rawname = gen_rocq_prefix () in
         let file = get_full_filename rawname "_Deep.v" in
         let oc = open_out file in
-        let prog =
+        let dprog =
           match BarocqTransf.transf_program !target_arch prog with
-          | Errors.OK prog -> prog
+          | Errors.OK prog -> begin
+              match Barocq.Typing.typecheck_program !target_arch prog with
+              | Errors.OK prog -> prog
+              | _ -> assert false
+            end
           | _ -> assert false
         in
-        Deepgen.print_program oc tprog;
+        Deepgen.print_program oc dprog;
         close_out oc;
         printf "Deep embedding generated at %s\n" (clean_filename file)
       end;
