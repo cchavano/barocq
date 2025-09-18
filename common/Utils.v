@@ -9,6 +9,32 @@ Definition cast {A B: Type} (EQ : A = B) (v: A) : B.
   rewrite EQ in v. exact v.
 Defined.
 
+(** Given a goal of the form [Forall P l], instead of doing [repeat Forall_cons] (slow),
+    do [apply Forall_app_sound]  (fast) *)
+
+(* [Forall_app [l1;...;ln] G] generates the formula P l1 -> ... -> P ln -> G *)
+Fixpoint Forall_app {A: Type} (P : A -> Prop) (l:list A) (G:Prop) {struct l} :=
+  match l with
+  | nil => G
+  | e::l' => P e -> (Forall_app P l' G)
+  end.
+
+Lemma Forall_app_Forall : forall {A: Type} (P : A -> Prop) l G,
+    (Forall P l -> G) ->  Forall_app P l G.
+Proof.
+  induction l; simpl;auto.
+Qed.
+
+Lemma Forall_app_sound : forall {A: Type} (P: A -> Prop) l,
+    Forall_app P l (Forall P l).
+Proof.
+  intros.
+  apply Forall_app_Forall.
+  auto.
+Qed.
+
+
+
 (** * Identifiers *)
 
 Definition transl_user_ident (i: ident) : ident :=

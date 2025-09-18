@@ -2610,6 +2610,19 @@ Proof.
     eapply String_leb_trans; eauto.
 Qed.
 
+Lemma nodup_NoDup : forall (l:list string),
+    MergeSort.nodup String.leb String.eqb l = true ->
+    NoDup l.
+Proof.
+  intro.
+  eapply MergeSort.nodup_NoDup with (leb:=String.leb) (eqb:=String.eqb).
+  apply leb_total. apply eqb_leb.
+  apply String.leb_antisym.
+  unfold RelationClasses.Transitive.
+  intros.
+  eapply String_leb_trans; eauto.
+Qed.
+
 Lemma eq_value_same_value : forall p t v,
     eq_value p t v ->
     same_value p (Val abs_typ_impl t v).
@@ -2619,6 +2632,18 @@ Proof.
   destruct p; auto.
 Qed.
 
+Lemma res_rel_ext_equal_eq : forall t v1 v2,
+    fo_typ t = true ->
+    v1 = v2 ->
+    res_rel (ext_equal  t)
+          v1 v2.
+Proof.
+  intros.
+  subst.
+  destruct v2.
+  constructor. apply ext_equal_refl; auto.
+  constructor.
+Qed.
 
 
 (** For each program declaration,
@@ -3151,5 +3176,60 @@ Proof.
       inv ND ; auto.
       eapply wf_env_tail; eauto.
 Qed.
+
+Lemma eval_prog_rec_app : forall arch abs_types_impl p1 p2 te ge te1 ge1 te2 ge2,
+    eval_prog_rec arch abs_types_impl te ge p1 = OK (te1, ge1) ->
+    eval_prog_rec arch abs_types_impl te1 ge1 p2 = OK (te2, ge2) ->
+    eval_prog_rec arch abs_types_impl te ge (p1++p2)%list = OK (te2, ge2).
+Proof.
+  induction p1; simpl.
+  - intros. inv H. auto.
+  - destruct a; intros.
+    + destruct (eval_def_type te i a); try discriminate.
+      simpl in H. simpl. eapply IHp1;eauto.
+    + destruct (eval_def_const abs_types_impl te ge i l b); try discriminate.
+      eapply IHp1;eauto.
+    + destruct (eval_def_fun arch abs_types_impl te ge i f); try discriminate.
+      eapply IHp1;eauto.
+    + eauto.
+    + destruct (eval_decl_const abs_types_impl te ge i b); try discriminate.
+      eauto.
+    + destruct (eval_decl_fun abs_types_impl te ge i l b); try discriminate.
+      eauto.
+Qed.
+
+Inductive globdef_kind : Type :=
+| KindType (* Declaration of types *)
+| KindDef (* Definition *)
+| KindDecl (* Declaration *).
+
+Definition kind_of_globdef (gd:globdef) :=
+  match gd with
+  | DefType _ _ | DeclType _ _ => KindType
+  | DeclConst _ _ | DeclFun _ _ _ => KindDecl
+  | DefFun _ _ | DefConst _ _  _  => KindDef
+  end.
+
+Fixpoint partition_props (prog:program) (props : list propt) :=
+  match prog with
+  | nil => match props with
+           | nil => eret (nil,nil)
+           |  _  => fail
+           end
+  | a :: prog' => match kind_of_globdef a with
+                  | KindType => partition_props prog' props
+                  | KindDecl => match props with
+                                | nil => fail
+                                | p1::props' => let* (decl,defs) := partition_props prog' props' in
+                                                eret (p1::decl,defs)
+                                end
+                  | KindDef  => match props with
+                                | nil => fail
+                                | p1::props' => let* (decl,defs) := partition_props prog' props' in
+                                                eret (decl,p1::defs)
+                                end
+                  end
+  end.
+
 
 End S.
