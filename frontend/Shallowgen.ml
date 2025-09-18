@@ -39,25 +39,25 @@ and opt_parens (ty : mtyp) : string =
 let int_to_rocq (i : Integers.Int.int) (ty : mtyp) : string =
   let si =
     match ty with
-    | MInt32 Signed -> i32_to_string i
+    | MInt32 Signed ->
+        let si = i32_to_string i in
+        if Integers.Int.lt i Integers.Int.zero then sprintf "(%s)" si else si
     | MInt32 Unsigned -> u32_to_string i
     | _ -> assert false
-  in
-  let si =
-    if Integers.Int.lt i Integers.Int.zero then sprintf "(%s)" si else si
   in
   sprintf "Int.repr %s" si
 
 let int64_to_rocq (i : Integers.Int64.int) (ty : mtyp) : string =
   let si =
     match ty with
-    | MInt64 Signed -> i64_to_string i
+    | MInt64 Signed ->
+        let si = i64_to_string i in
+        if Integers.Int64.lt i Integers.Int64.zero then sprintf "(%s)" si
+        else si
     | MInt64 Unsigned -> u64_to_string i
     | _ -> assert false
   in
-  let si =
-    if Integers.Int64.lt i Integers.Int64.zero then sprintf "(%s)" si else si
-  in
+
   sprintf "Int64.repr %s" si
 
 let cast_to_rocq (src_ty : mtyp) (dst_ty : mtyp) : string =
@@ -364,15 +364,8 @@ let rec expr_to_rocq_rec (prefix : string) (e : expr) : string =
               (list_to_string ~sep:"\n" (match_case_to_string prefix) cases)
               prefix
         | BarocqShallowgen.ShallowB -> begin
-            let _, c1 = List.hd cases in
-            let match_op =
-              match BarocqShallowgen.Monadification.typof_expr c1 with
-              | MRes _ -> "match_with_err"
-              | _ -> "match_with"
-            in
             sprintf
-              "%s %s [\n%s\n%s]"
-              match_op
+              "match_with_err %s [\n%s\n%s]"
               (opt_parens a1)
               (list_to_string
                  ~sep:";\n"

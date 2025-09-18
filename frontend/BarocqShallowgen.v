@@ -955,12 +955,12 @@ Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res 
       end
     in eret (ERet (EAtom a' (typof_atom a')) ty').
 
-  Fixpoint monadify_expr_rec (me: menv) (gx: gcontext) (lx: lcontext) (e: BNF.expr) (imp: bool) : res expr :=
+  Fixpoint monadify_expr_rec (me: menv) (gx: gcontext) (lx: lcontext) (e: BNF.expr) (mflag: bool) : res expr :=
     match e with
     | BNF.EAtom a =>
         let* a' := typecheck_atom me gx lx a in
         let ta' := typof_atom a' in
-        if imp then
+        if mflag then
           match ta' with
           | MRes _ => eret (EAtom a' ta')
           | _ => wrap_atom a'
@@ -988,7 +988,7 @@ Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res 
         let* args' := mmap (typecheck_atom me gx lx) args in
         let* (args1, t) := typecheck_call ty1 args' in
         let e' := EApp a1' args1 t in
-        if imp then
+        if mflag then
           match t with
           | MRes _ => eret e'
           | _ => eret (ERet e' (MRes t))
@@ -996,10 +996,17 @@ Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res 
         else eret e'
     | BNF.EIfThenElse a e1 e2 =>
         let* a' := typecheck_atom me gx lx a in
+        (* For ShallowB, we want to be as close as possible to the Barocq semantics, so we monadify the two branches. *)
+        let mflag :=
+          match shver with
+          | ShallowR => mflag
+          | ShallowB => true
+          end
+        in
         match (typof_atom a') with
         | MBool =>
-            let* e1' := monadify_expr_rec me gx lx e1 imp in
-            let* e2' := monadify_expr_rec me gx lx e2 imp in
+            let* e1' := monadify_expr_rec me gx lx e1 mflag in
+            let* e2' := monadify_expr_rec me gx lx e2 mflag in
             let ty1 := typof_expr e1' in
             let ty2 := typof_expr e2' in
             if mtyp_eq_dec ty1 ty2 then
@@ -1026,10 +1033,17 @@ Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res 
         end
     | BNF.EMatch a cases =>
         let* a' := typecheck_atom me gx lx a in
+        (* For ShallowB, we want to be as close as possible to the Barocq semantics, so we monadify all branches. *)
+        let mflag :=
+          match shver with
+          | ShallowR => mflag
+          | ShallowB => true
+          end
+        in
         let* ncases :=
           MapList.map_err
             (fun ec =>
-              let* nep := monadify_expr_rec me gx lx ec imp in
+              let* nep := monadify_expr_rec me gx lx ec mflag in
               eret ((nep, typof_expr nep)))
             cases
         in
@@ -1038,7 +1052,7 @@ Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res 
         (* If the result type is MRes, we re-monadify all pure branches,
            like for if-then-else expressions *)
         let* ncases :=
-          match imp with
+          match mflag with
           | false =>
               match t with
               | MRes _ =>
@@ -1052,17 +1066,6 @@ Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res 
               eret (MapList.map fst ncases)
           end
         in
-        (* If we use the Barocq encoding for enums, the pattern-matching is always a monadic operation *)
-        let t :=
-          match shver with
-          | ShallowR => t
-          | ShallowB =>
-              match t with
-              | MRes _ => t
-              | _ => MRes t
-              end
-          end
-        in
         eret (EMatch a' ncases t)
     | BNF.ELetIn x e1 e2 =>
         let* e1' := monadify_expr_rec me gx lx e1 false in
@@ -1074,13 +1077,19 @@ Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res 
             eret (ELetMon x e1' e2' (typof_expr e2'))
         | _ =>
             let* lx' := lcontext_update lx x t in
-            let* e2' := monadify_expr_rec me gx lx' e2 (imp || false) in
+            let* e2' := monadify_expr_rec me gx lx' e2 (mflag || false) in
             eret (ELetIn x e1' e2' (typof_expr e2'))
         end
     end.
   
   Definition monadify_expr (me: menv) (gx: gcontext) (lx: lcontext) (e: BNF.expr) : res expr :=
-    monadify_expr_rec me gx lx e false.
+    let mflag :=
+      match shver with
+      | ShallowR => false
+      | ShallowB => true
+      end
+    in
+    monadify_expr_rec me gx lx e mflag.
 
   Definition monadify_function (me: menv) (gx: gcontext) (f: BNF.function) : res function :=
     let params := MapList.map monadify_btyp (Syntax.fn_params f) in
@@ -1091,25 +1100,20 @@ Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res 
         (eret STree.empty)
     in
     let* body := monadify_expr me gx lx (Syntax.fn_body f) in
-    let body :=
-      let tret := typof_expr body in
-      match shver with
-      | ShallowR => body
-      | ShallowB =>
-          match tret with
-          | MRes _ => body
-          | _ =>
-              ELetIn "r"%string body
-                (ERet (EAtom (AVar "r"%string tret) tret) (MRes tret))
-                (MRes tret)
-          end
-      end
-    in
-    eret {|
+    let tret := typof_expr body in
+    let f := {|
       fn_return := typof_expr body;
       fn_params := params;
       fn_body := body
-    |}.
+    |} in
+    match shver with
+    | ShallowR => eret f
+    | ShallowB =>
+        match tret with
+        | MRes _ => eret f
+        | _ => efail (* Should be monadic! *)
+        end
+    end.
 
   Fixpoint make_absfun_tparams (tparams1: list (param_attr * btyp)) (tparams2 : list mtyp) : res (list (param_attr * mtyp)) :=
     match tparams1, tparams2 with

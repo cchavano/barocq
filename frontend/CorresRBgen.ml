@@ -425,17 +425,17 @@ module HelperTactics = struct
         ltac_fun_rewrite fid (params_of_absfun tparams) tret
 
   let print_pattern_match_corres_tac (out : out_channel) (enums : enum_def list)
-      (match_suffix : string) : unit =
+      : unit =
     let gen_enum_simpl (ed : enum_def) : string =
       let eid = ident_to_string ed.ed_name in
       sprintf
         "%s| %s_ShallowR.%s =>\n\
-         %serewrite Benum.match_with%s_eq_match_with%s2 with\n\
+         %serewrite Benum.match_with_err_eq_match_with_err2 with\n\
          %s(E_eq_dec := %s_eq_dec)\n\
          %s(econv_to := econv_%s_BtoR)\n\
          %s(econv_from := econv_%s_RtoB);\n\
          %sintros; try (apply econv_%s_inv1 || apply econv_%s_inv2);\n\
-         %scbn [Benum.match_with%s2]; rewrite econv_%s_inv1;\n\
+         %scbn [Benum.match_with_err2]; rewrite econv_%s_inv1;\n\
          %sautorewrite with corresRB_pattern_matching; simpl;\n\
          %sautorewrite with corresRB_pattern_matching;\n\
          %sdestruct E; simpl"
@@ -443,8 +443,6 @@ module HelperTactics = struct
         !coqlib
         eid
         indent3
-        match_suffix
-        match_suffix
         indent4
         eid
         indent4
@@ -455,7 +453,6 @@ module HelperTactics = struct
         eid
         eid
         indent3
-        match_suffix
         eid
         indent3
         indent3
@@ -463,8 +460,7 @@ module HelperTactics = struct
     in
     fprintf
       out
-      "Ltac pattern_match%s_corres E :=\n%smatch type of E with\n"
-      match_suffix
+      "Ltac pattern_match_err_corres E :=\n%smatch type of E with\n"
       indent;
     print_list out ~delim:("", "\n") ~sep:"\n" gen_enum_simpl enums;
     fprintf out "%send.\n" indent
@@ -520,7 +516,6 @@ module HelperTactics = struct
        reflexivity\n\
        %s\n\
        %s| Benum.enum_eq (_ ?E) _ => destruct E; try reflexivity\n\
-       %s| Benum.match_with (_ ?E) _ => pattern_match_corres E\n\
        %s| Benum.match_with_err (_ ?E) _ => pattern_match_err_corres E\n\
        %s| Barray.get ?A ?I =>\n\
        %sdestruct (Barray.get A I); simpl; try reflexivity\n\
@@ -541,7 +536,6 @@ module HelperTactics = struct
       indent
       indent
       (cast_i32_to_enum_destruct enums)
-      indent
       indent
       indent
       indent
@@ -635,9 +629,7 @@ module HelperTactics = struct
     fprintf out "\n";
     create_fun_rewrite_classes out rprog bprog;
     fprintf out "\n";
-    print_pattern_match_corres_tac out enums "";
-    fprintf out "\n";
-    print_pattern_match_corres_tac out enums "_err";
+    print_pattern_match_corres_tac out enums;
     fprintf out "\n";
     print_helper_match_tac out rprog;
     fprintf out "\n";
@@ -668,7 +660,6 @@ let print_opaque_defs (out : out_channel) (prog : program) : unit =
   fprintf
     out
     "Opaque Benum.enum.\n\
-     Opaque Benum.match_with.\n\
      Opaque Benum.match_with_err.\n\
      Opaque Brecord.record.\n\
      Opaque Brecord.project.\n\

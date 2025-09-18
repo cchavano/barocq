@@ -10,22 +10,21 @@ let ident_to_deep (id : ident) : string = sprintf "\"%s\"" (ident_to_string id)
 let int_to_deep (i : Integers.Int.int) (s : signedness) : string =
   let si =
     match s with
-    | Signed -> i32_to_string i
+    | Signed ->
+        let si = i32_to_string i in
+        if Integers.Int.lt i Integers.Int.zero then sprintf "(%s)" si else si
     | Unsigned -> u32_to_string i
-  in
-  let si =
-    if Integers.Int.lt i Integers.Int.zero then sprintf "(%s)" si else si
   in
   sprintf "Int.repr %s" si
 
-let tint64o_deep (i : Integers.Int64.int) (s : signedness) : string =
+let int64_to_deep (i : Integers.Int64.int) (s : signedness) : string =
   let si =
     match s with
-    | Signed -> i64_to_string i
+    | Signed ->
+        let si = i64_to_string i in
+        if Integers.Int64.lt i Integers.Int64.zero then sprintf "(%s)" si
+        else si
     | Unsigned -> u64_to_string i
-  in
-  let si =
-    if Integers.Int64.lt i Integers.Int64.zero then sprintf "(%s)" si else si
   in
   sprintf "Int64.repr %s" si
 
@@ -97,7 +96,7 @@ let rec expr_to_deep (prefix : string) (e : Typed.expr) : string =
     | EInt32 (i, s) ->
         sprintf "EInt32 (%s) %s" (int_to_deep i s) (signedness_to_deep s)
     | EInt64 (i, s) ->
-        sprintf "EInt64 (%s) %s" (tint64o_deep i s) (signedness_to_deep s)
+        sprintf "EInt64 (%s) %s" (int64_to_deep i s) (signedness_to_deep s)
     | EConstr (x, bt) ->
         sprintf "EConstr %s (%s)" (ident_to_deep x) (btyp_to_deep bt)
     | EVar (x, bt) -> sprintf "EVar %s (%s)" (ident_to_deep x) (btyp_to_deep bt)
@@ -232,7 +231,7 @@ let rec literal_to_deep (l : literal) : string =
   | LInt32 (i, s) ->
       sprintf "LInt32 (%s) %s" (int_to_deep i s) (signedness_to_deep s)
   | LInt64 (i, s) ->
-      sprintf "LInt64 (%s) %s" (tint64o_deep i s) (signedness_to_deep s)
+      sprintf "LInt64 (%s) %s" (int64_to_deep i s) (signedness_to_deep s)
   | LArray la -> sprintf "LArray %s" (list_to_string_bracket literal_to_deep la)
   | LRecord (ls, id) ->
       sprintf "LRecord %s %s" (fields_lit_to_deep ls) (ident_to_deep id)

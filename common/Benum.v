@@ -164,7 +164,7 @@ Inductive pattern : Type :=
   | PIdent (i: ident) : pattern
   | PWildcard : pattern.
   
-Fixpoint match_with {elems: list ident} {A: Type} (e: enum elems) (cases: list (pattern * A)) : res A :=
+(* Fixpoint match_with {elems: list ident} {A: Type} (e: enum elems) (cases: list (pattern * A)) : res A :=
   match cases with
   | nil => fail
   | (pi, ai) :: cases' =>
@@ -210,7 +210,7 @@ Proof.
         apply (IHcases' E_eq_dec econv_to econv_from INV1 INV2).
       * reflexivity.
     + reflexivity.
-Qed.
+Qed. *)
   
 Fixpoint match_with_err {elems: list ident} {A: Type} (e: enum elems) (cases: list (pattern * res A)) : res A :=
   match cases with
