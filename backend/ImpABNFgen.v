@@ -5,8 +5,8 @@ Import ListNotations.
 Fixpoint tailcomp_depth (t: ImpBNF.tailcomp) : nat :=
   match t with
   | ImpBNF.TcBegin s t1 =>
-      1 + (statement_depth s) + (tailcomp_depth t1)
-  | ImpBNF.TcComp _ => 3
+      1 + Nat.max (statement_depth s) (tailcomp_depth t1)
+  | ImpBNF.TcComp _ => 1
   | ImpBNF.TcIfThenElse _ t1 t2 =>
       let m := Nat.max 1 (tailcomp_depth t1) in
       let m := Nat.max m (tailcomp_depth t2) in
