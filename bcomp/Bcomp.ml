@@ -475,10 +475,12 @@ let () =
               (* ShallowB <-> Deep correspondence *)
               CorresBDgen.coqlib := rawname;
               let preludeBD_file = full_filename "_CorresBD_Prelude.v" in
+              let corresBD_proof = full_filename "_CorresBD_Proof.v" in
               let corresBD_file = full_filename "_CorresBD.v" in
               let preludeBD_oc = open_out preludeBD_file in
               let corresBD_oc = open_out corresBD_file in
               CorresBDgen.print_prelude preludeBD_oc !target_arch tprog bprog;
+              CorresBDgen.print_proof !target_arch corresBD_proof;
               CorresBDgen.print_corres corresBD_oc !target_arch bprog;
               close_out preludeBD_oc;
               close_out corresBD_oc;

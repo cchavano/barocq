@@ -1,7 +1,7 @@
+$MODULES
 From Coq Require Import String List Lia.
 From compcert Require Import Integers Coqlib.
 From BarocqComp Require Import Target Utils Monads Error Barray Brecord Types Barocq BarocqVC Maps2.
-From s3k Require Import s3k_Types s3k_ShallowB s3k_Deep s3k_CorresBD_Prelude.
 Import Typed.
 Open Scope list_scope.
 
@@ -57,7 +57,7 @@ Opaque upd.
 
 
 
-Theorem eval_prog_spec : exists te ge, eval_prog Ptr64 abs_types_impl abs_defs_impl s3k_Deep.prog = OK (te, ge) /\
+Theorem eval_prog_spec : exists te ge, eval_prog $ARCH abs_types_impl abs_defs_impl $PROG = OK (te, ge) /\
                                       Forall (has_property abs_types_impl ge) (List.app decl_prop def_prop).
 Proof.
   (** Proof of abs_types_impl *)
@@ -78,10 +78,10 @@ Proof.
   (* Prove that we can prove all the properties of the definitions
      assuming the properties of the declarations in the typing environment*)
   assert (EX : exists (te': Typing.tenv) (ge : genv abs_types_impl),
-    eval_prog_rec Ptr64 abs_types_impl typing_env abs_defs_impl prog_defs = OK (te', ge) /\
+    eval_prog_rec $ARCH abs_types_impl typing_env abs_defs_impl prog_defs = OK (te', ge) /\
       Forall (has_property abs_types_impl ge) def_prop).
   {
-    assert (GO :generate_obligations abs_types_impl Ptr64 typing_env decl_prop nil prog_defs def_prop = OK vc).
+    assert (GO :generate_obligations abs_types_impl $ARCH typing_env decl_prop nil prog_defs def_prop = OK vc).
     {
       reflexivity.
     }

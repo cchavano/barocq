@@ -119,6 +119,8 @@ install-dev:
 		install -d $(INSTALL_DEV_DIR)/$$d; \
 		install -m 0644 $(BUILD_DIR)/$$d/*.v $(BUILD_DIR)/$$d/*.vo $(BUILD_DIR)/$$d/*.glob $(INSTALL_DEV_DIR)/$$d/; \
 	done
+	@install -d $(INSTALL_DEV_DIR)/misc
+	@install misc/CorresBD_Proof.v $(INSTALL_DEV_DIR)/misc/CorresBD_Proof.v
 
 # Formatting
 
