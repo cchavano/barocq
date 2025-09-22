@@ -881,11 +881,11 @@ Fixpoint no_TFun (t:typ) :=
   | _  => true
   end.
 
-Fixpoint fo_typ (t:typ) :=
+Definition fo_typ (t:typ) :=
   match t with
-  | TFun l r => List.forallb no_TFun l && fo_typ r
-  | TArray t => fo_typ t
-  | TRecord _ l => List.forallb (fun x => fo_typ (snd x)) l
+  | TFun l r => List.forallb no_TFun l && no_TFun r
+  | TArray t => no_TFun t
+  | TRecord _ l => List.forallb (fun x => no_TFun (snd x)) l
   |   _         => true
   end.
 

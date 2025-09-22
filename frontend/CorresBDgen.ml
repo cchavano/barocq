@@ -287,7 +287,7 @@ let gen_fun_corres (fid : ident) (params : (ident * mtyp) list) (tret : mtyp) :
      %sexists %s_val,\n\
      %seval_def %s = OK (VAL Deeptypes.typof_%s %s_val) /\\\n\
      %s.\n\
-     Admitted."
+     Proof. BD. Qed."
     fid_shallow
     indent
     fid_shallow
@@ -471,8 +471,7 @@ module VCgen = struct
               in
               fprintf
                 out
-                "%slet needed_checked_%s : list propt := "
-                indent
+                "Definition needed_checked_%s : list propt := "
                 (ident_to_string fid);
               let delim =
                 if sdefs_needed = [] then ("[", "]")
@@ -484,12 +483,11 @@ module VCgen = struct
                 ~sep:(sprintf ";\n%s" indent2)
                 gen_def_property
                 sdefs_needed;
-              fprintf out "%sin\n" indent
+              fprintf out "%s.\n" indent
           | Barocq.Typed.DeclFun (fid, _, _) ->
               fprintf
                 out
-                "%slet needed_checked_%s : list propt := [] in\n"
-                indent
+                "Definition needed_checked_%s : list propt := [].\n"
                 (ident_to_string fid)
           | _ -> ()
         end;
@@ -506,8 +504,7 @@ module VCgen = struct
         params
     in
     sprintf
-      "%slet params_%s : list (ident * typ) := %s in"
-      indent
+      "Definition params_%s : list (ident * typ) := %s."
       (ident_to_string fid)
       params_str
 
@@ -615,9 +612,9 @@ module VCgen = struct
     let sdefs = List.filter isdef sdefs in
     fprintf out "Definition arch : Target.archi := %s.\n" (archi_to_string arch);
     fprintf out "\n";
-    fprintf out "Definition vc : list Prop :=\n";
     print_needed_checked_lists out bprog sprog.prog_defs;
     print_functions_params out sdefs;
+    fprintf out "Definition vc : list Prop :=\n";
     print_list
       out
       ~delim:(sprintf "%s[\n" indent, sprintf "\n%s]." indent)
@@ -631,7 +628,7 @@ let prelude_imports () : string =
     "From Coq Require Import String List.\n\
      From compcert Require Import Integers.\n\
      From BarocqComp Require Import Ident Error Maps2 Barray Benum Brecord \
-     Types Typing Barocq BarocqVC.\n\
+     Types Typing Barocq BarocqVC CorresBD_Tactics.\n\
      From %s Require Import %s_Types %s %s.\n\n\
      Import ListNotations.\n\n\
      Open Scope string_scope.\n"
@@ -646,12 +643,13 @@ let imports () : string =
      From compcert Require Import Integers.\n\
      From BarocqComp Require Import Target Monads Error Barray Brecord Types \
      Barocq.\n\
-     From %s Require Import %s_Types %s %s %s_CorresBD_Prelude.\n\n\
+     From %s Require Import %s_Types %s %s %s_CorresBD_Prelude %s_CorresBD_Proof.\n\n\
      Open Scope string_scope.\n"
     !coqlib
     !coqlib
     !shallowfile
     !deepfile
+    !coqlib
     !coqlib
 
 let print_prelude (out : out_channel) (arch : Target.archi)
@@ -688,6 +686,18 @@ let print_prelude (out : out_channel) (arch : Target.archi)
     VCgen.print_vc out arch bprog sprog
   end
 
+let tac =
+  "\
+Ltac BD :=\n\
+   destruct eval_prog_spec as (te & ge & EVAL & ALL);\n\
+   let h := fresh \"HASP\" in\n\
+   ltac2:(has_property ident:(HASP) @ge constr:(abs_types_impl));[ \n\
+     (eapply BarocqVC.has_property_find_err; eauto) |\n\
+     apply BarocqVC.has_property_equal with (1:= EVAL) in h;[apply h|reflexivity]\n\
+    ].\n"
+
+
+
 let print_corres (out : out_channel) (arch : Target.archi) (prog : program) :
     unit =
   shallowfile := sprintf "%s_ShallowB" !coqlib;
@@ -704,9 +714,9 @@ let print_corres (out : out_channel) (arch : Target.archi) (prog : program) :
   fprintf
     out
     "Definition eval_def := Barocq.eval_def2 %s abs_types_impl abs_defs_impl \
-     %s.prog.\n"
+     %s.prog.\n%s\n"
     arch_str
-    !deepfile;
+    !deepfile tac;
   if defs <> [] then begin
     fprintf out "\n";
     print_defs_corres out defs

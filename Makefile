@@ -6,7 +6,7 @@ COMMON=\
 
 FRONTEND=\
 	Barocq.v BarocqTransf.v BarocqBNF.v BarocqBNFgen.v\
-	BarocqShallow.v BarocqShallowgen.v BarocqVC.v
+	BarocqShallow.v BarocqShallowgen.v BarocqVC.v CorresBD_Tactics.v
 
 BACKEND=\
 	ImpBNF.v ImpBNFgen.v ImpABNF.v ImpABNFgen.v\

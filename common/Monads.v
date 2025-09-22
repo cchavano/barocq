@@ -1,7 +1,8 @@
 (** * A collection of useful monads *)
 
 From Coq Require Import String.
-From compcert Require Import AST Errors.
+From Coq Require Import RelationClasses.
+From compcert Require Import AST Errors Coqlib.
 
 Module Type MONAD.
 
@@ -41,8 +42,17 @@ Module MonError <: MONAD.
     end.
 
   Inductive res_rel {A B : Type} (R : A -> B -> Prop) : res A -> res B -> Prop :=
-    res_rel_error : forall m m', res_rel R (Error m) (Error m')
+    res_rel_error : forall m, res_rel R (Error m) (Error m)
   | res_rel_ok : forall (x : A) (y : B), R x y -> res_rel R (OK x) (OK y).
+
+  Lemma res_rel_trans : forall {A : Type} (R: A -> A -> Prop),
+      Transitive R -> Transitive (res_rel R).
+  Proof.
+    repeat intro.
+    inv H0;inv H1; try constructor.
+    eapply H; eauto.
+  Qed.
+
 
   Notation eret := ret.
 
@@ -161,7 +171,7 @@ Module MonCounter.
 
   Definition incr {A: Type} (a: A) : M A :=
     fun (s: StateCounter.t) =>
-      (a, s + 1).
+      (a, s + 1)%nat.
 
   Notation cmon := MonCounter.M.
 
@@ -173,7 +183,7 @@ Module MonCounterErr.
 
   Definition incr {A: Type} (a: A) : M A :=
     fun (s: StateCounter.t) =>
-      OK (a, s + 1).
+      OK (a, s + 1)%nat.
 
   Notation crmon := MonCounterErr.M.
 
