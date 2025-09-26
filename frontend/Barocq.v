@@ -1006,69 +1006,43 @@ Lemma typof_field_is_type :
     | _ => (fun _ => fail)
     end) v.
 
-  Fixpoint eval_app_rec (tparams: list typ) (tret: typ) (f: eval_funtyp eval_typ tparams tret) (args: DList.dlist eval_typ  tparams) :
+  Fixpoint eval_app (tparams: list typ) (tret: typ) (f: eval_funtyp eval_typ tparams (eval_typ tret)) (args: DList.dlist eval_typ  tparams) :
     res (eval_typ tret).
   Proof.
     destruct args.
-    - simpl in f. apply f.
-    - simpl in f. apply (eval_app_rec _ _ (f e) args).
+    - simpl in f. apply (f tt).
+    - simpl in f.
+      destruct l.
+      +  apply (f e).
+      + apply (eval_app _ _ (f e) args).
   Defined.
 
-  Definition eval_app (tparams : list typ) (tret :typ) : forall (v: eval_typ (TFun tparams tret))
-                                                                (args: DList.dlist eval_typ tparams) , res (eval_typ tret) :=
-    match tparams  with
-    | [] =>
-        (fun (vt1: eval_typ (TFun nil tret)) args  =>
-           match args with
-           | DList.DNIL _ => vt1 tt
-           | DList.DCONS _ v1  l0 => fail
-           end)
-    | x  => (fun f args  =>  (eval_app_rec x tret f args))
-    end.
 
 
-  Fixpoint eval_app_typ_rec (tparams: list typ) (tret: typ) (f: eval_funtyp eval_typ tparams tret) (args: DList.dlist eval_typ tparams) (ty:typ):
+  Fixpoint eval_app_typ (tparams: list typ) (tret: typ) (f: eval_funtyp eval_typ tparams (eval_typ tret)) (args: DList.dlist eval_typ tparams) (ty:typ):
     res (eval_typ ty).
   Proof.
     destruct args.
-    - simpl in f. apply (ecast_typ f ty).
-    - simpl in f. apply (eval_app_typ_rec _ _ (f e) args ty).
+    - simpl in f. apply (ecast_typ (f tt) ty).
+    - simpl in f.
+      destruct l.
+      +  apply (ecast_typ (f e) ty).
+      + apply (eval_app_typ _ _ (f e) args ty).
   Defined.
 
-  Definition eval_app_typ (tparams : list typ) (tret :typ) : forall (v: eval_typ (TFun tparams tret)) (args: DList.dlist eval_typ tparams) (ty:typ), res (eval_typ ty) :=
-    match tparams  with
-    | [] =>
-        (fun (vt1: eval_typ (TFun nil tret)) args ty  =>
-           match args with
-           | DList.DNIL _ => ecast_typ (vt1 tt) ty
-           | DList.DCONS _ v1  l0 => fail
-           end)
-    | x  => (fun f args ty =>  (eval_app_typ_rec x tret f args ty))
-    end.
 
-
-  Fixpoint eval_app_res_typ_rec (tparams: list typ) (tret: typ) (f: eval_funtyp eval_typ tparams tret)
+  Fixpoint eval_app_res (tparams: list typ) (tret: typ) (f: eval_funtyp eval_typ tparams (eval_typ tret))
     (args: DList.dlist (fun (ty:typ) => res (eval_typ ty)) tparams) (ty:typ):
     res (eval_typ ty).
   Proof.
     destruct args.
-    - simpl in f. apply (ecast_typ f ty).
-    - simpl in f. eapply bind. apply e.
-      apply (fun x => eval_app_res_typ_rec _ _ (f x) args ty).
+    - simpl in f. apply (ecast_typ (f tt) ty).
+    - simpl in f.
+      destruct l.
+      + apply (let* e' := e in ecast_typ (f e') ty).
+      + eapply bind. apply e.
+      apply (fun x => eval_app_res _ _ (f x) args ty).
   Defined.
-
-  Definition eval_app_res (tparams : list typ) (tret :typ) :
-    forall (v: eval_typ (TFun tparams tret))
-           (args: DList.dlist (fun ty => res (eval_typ ty)) tparams) (ty:typ), res (eval_typ ty):=
-    match tparams  with
-    | [] =>
-        (fun (vt1: eval_typ (TFun nil tret)) args ty  =>
-           match args with
-           | DList.DNIL _ => ecast_typ (vt1 tt) ty
-           | DList.DCONS _ v1  l0 => fail
-           end)
-    | x  => (fun f args ty =>  (eval_app_res_typ_rec x tret f args ty))
-    end.
 
 
 
@@ -1285,15 +1259,68 @@ Lemma typof_field_is_type :
           end
     end.
 
-  Fixpoint build_funval_rec_aux (te: tenv) (ge: genv) (le: lenv) (params: smaplist typ) (tret: typ) (e: expr) : eval_funtyp eval_typ (List.map (fun x => snd x) params) tret.
-    destruct params as [| (x, tx) params'].
-    - simpl.
-      apply (eval_expr te ge le  tret e).
-    - simpl. apply (fun (y: eval_typ tx) => build_funval_rec_aux te ge (lenv_update le x (Val tx y)) params' tret e).
-  Defined.
+  Section MAP'.
+    Context {A B: Type}.
+    Variable F : A -> B.
 
-  Definition build_funval_rec := Eval cbv delta [build_funval_rec_aux] zeta beta in build_funval_rec_aux.
+  Fixpoint map'  (l:list A) : list B :=
+    match l with
+    | nil => nil
+    | e:: nil => F e:: nil
+    | e::l'   => F e :: map' l'
+    end.
 
+  End MAP'.
+
+  Fixpoint build_funval_rec (te: tenv) (ge: genv) (le: lenv) (params: smaplist typ) (tret: typ) (e: expr) :
+    eval_funtyp eval_typ (List.map snd  params) (eval_typ tret) :=
+    match params  with
+    | [] => fun _ : unit => eval_expr te ge le tret e
+    | p :: l =>
+        fun y : eval_typ (snd p) =>
+          match
+            l as l0
+            return
+            (eval_funtyp eval_typ (List.map (fun x : string * typ => snd x) l0) (eval_typ tret) ->
+             let l1 := List.map snd l0 in
+             match l1 with
+             | [] => res (eval_typ tret)
+             | _ :: _ => eval_funtyp eval_typ l1 (eval_typ tret)
+           end)
+      with
+      | [] =>
+          fun _ => eval_expr te ge (lenv_update le (fst p) (Val (snd p) y)) tret e
+      | p0 :: l0 =>
+          fun
+            build_funval_rec  => build_funval_rec
+      end (build_funval_rec te ge (lenv_update le (fst p) (Val (snd p) y)) l tret e)
+  end.
+
+  Lemma build_funval_rec_rw : forall (te: tenv) (ge: genv) (le: lenv) (params: smaplist typ) (tret: typ) (e: expr),
+    build_funval_rec te ge le params tret e =
+    match params  with
+    | [] => fun _ : unit => eval_expr te ge le tret e
+    | p :: l =>
+        fun y : eval_typ (snd p) =>
+          match
+            l as l0
+            return
+            (eval_funtyp eval_typ (List.map (fun x : string * typ => snd x) l0) (eval_typ tret) ->
+             match List.map snd l0 with
+           | [] => res (eval_typ tret)
+           | _ :: _ => eval_funtyp eval_typ (List.map (fun x : string * typ => snd x) l0) (eval_typ tret)
+           end)
+      with
+      | [] =>
+          fun _ => eval_expr te ge (lenv_update le (fst p) (Val (snd p) y)) tret e
+      | p0 :: l0 =>
+          fun
+            build_funval_rec  => build_funval_rec
+      end (build_funval_rec te ge (lenv_update le (fst p) (Val (snd p) y)) l tret e)
+  end.
+  Proof.
+    destruct params;reflexivity.
+  Qed.
 
   Definition build_funval (te: tenv) (ge: genv) (params: smaplist typ) (tret: typ) (e: expr) : eval_typ (TFun (List.map (fun x => snd x) params) tret).
     destruct params as [| p params'].
@@ -1302,6 +1329,7 @@ Lemma typof_field_is_type :
       apply (eval_expr te ge STree.empty tret e).
     - apply (build_funval_rec te ge STree.empty (p :: params') tret e).
   Defined.
+
 
   Definition build_fun_value (te: tenv) (ge: genv) (params: smaplist btyp) (tret: btyp) (e: expr) : res value :=
     if MapList.nodup Ident.eq_dec params then
@@ -1331,11 +1359,10 @@ Lemma typof_field_is_type :
     end.
 
   Definition eval_def_const (te: tenv) (ge: genv) (x: ident) (l: literal) (ty: btyp) : res genv :=
-    let* vv := eval_literal te l in
-    let '(Val tv v) := vv in
     let* ty' := btyp_to_typ te ty in
-    if typ_eq_dec tv ty' then genv_update ge x vv
-    else fail.
+    let* vv := eval_literal te l in
+    let* v'  := cast_value vv ty' in
+    genv_update ge x (Val ty' v').
 
   Definition eval_def_fun (te: tenv) (ge: genv) (x: ident) (f: function) : res genv :=
     let* fv := build_fun_value te ge (fn_params f) (fn_return f) (fn_body f) in

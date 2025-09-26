@@ -114,11 +114,50 @@ Section S.
     Variable PRED : forall (t:typ), # t -> # t -> Prop.
 
     (** [ext_fun f1 f2] holds if the functions [f1] and [f2] are extentionnaly equal *)
-    Fixpoint ext_fun (tret: typ) (targs : list typ)  {struct targs}: forall (f1 f2 : eval_funtyp (eval_typ abs_typ_impl) targs tret), Prop :=
+    Fixpoint ext_fun (tret: typ) (targs : list typ)  {struct targs}:
+      forall (f1 f2 : eval_funtyp (eval_typ abs_typ_impl) targs (eval_typ abs_typ_impl tret)), Prop:=
       match targs with
-      | nil => fun f1 f2 => res_rel (PRED _) f1 f2
-      | t1::targs' => fun f1 f2 => forall v1 v2,PRED _ v1 v2 -> ext_fun tret targs' (f1 v1) (f2 v2)
+      | nil => fun f1 f2 => res_rel (PRED tret) (f1 tt) (f2 tt)
+      | t :: l =>
+      fun f1 f2 =>   forall v1 v2 : # t,
+          PRED t v1 v2 ->
+          match
+            l as l0
+            return
+            ((forall (f1 f2: eval_funtyp (eval_typ abs_typ_impl) l0 (# tret)), Prop) ->
+             (forall f1 f2 : eval_funtyp (eval_typ abs_typ_impl) (t::l0) (# tret), Prop))
+          with
+          | nil => fun _  (f3 f4 : # t -> res (# tret)) =>
+                     res_rel (PRED tret) (f3 v1) (f4 v2)
+          | t0 :: l0 => fun ext_fun f3 f4 => ext_fun (f3 v1) (f4 v2)
+          end (ext_fun tret l) f1 f2
       end.
+
+
+
+    Lemma ext_fun_rw : forall(tret: typ) (targs : list typ),
+        forall (f1 f2 : eval_funtyp (eval_typ abs_typ_impl) targs (eval_typ abs_typ_impl tret)),
+          (ext_fun tret targs f1 f2) =
+            ((      match targs with
+      | nil => fun f1 f2 => res_rel (PRED tret) (f1 tt) (f2 tt)
+      | t :: l =>
+      fun f1 f2 =>   forall v1 v2 : # t,
+          PRED t v1 v2 ->
+          match
+            l as l0
+            return
+            ((forall (f1 f2: eval_funtyp (eval_typ abs_typ_impl) l0 (# tret)), Prop) ->
+             (forall f1 f2 : eval_funtyp (eval_typ abs_typ_impl) (t::l0) (# tret), Prop))
+          with
+          | nil => fun _  (f3 f4 : # t -> res (# tret)) =>
+                     res_rel (PRED tret) (f3 v1) (f4 v2)
+          | t0 :: l0 => fun ext_fun f3 f4 => ext_fun (f3 v1) (f4 v2)
+          end (ext_fun tret l) f1 f2
+      end : eval_funtyp (eval_typ abs_typ_impl) targs (eval_typ abs_typ_impl tret) -> eval_funtyp (eval_typ abs_typ_impl) targs (eval_typ abs_typ_impl tret) -> Prop) f1 f2).
+    Proof.
+      destruct targs;auto.
+    Qed.
+
 
   End EQUAL_FUN.
 
@@ -138,11 +177,7 @@ Section S.
   (** [ext_equal v1 v2] holds if the values are equal. For function types, it uses ext_fun (but not recursively) *)
   Fixpoint ext_equal (t :typ) : forall (v1 v2 : # t), Prop :=
     match t as t0 return (# t0 -> # t0 -> Prop) with
-    | TFun l t0 =>
-        match l as l0 return (# TFun l0 t0 -> # TFun l0 t0 -> Prop) with
-        | nil =>  fun f1 f2 => res_rel (ext_equal t0)  (f1 tt) (f2 tt)
-        | t1 :: l0 => fun f1 f2 => ext_fun ext_equal t0 (t1 :: l0) f1 f2
-        end
+    | TFun l t0 => fun f1 f2 => ext_fun ext_equal t0 l f1 f2
     | TArray t1 => fun a1 a2 =>  forall x, option_rel (ext_equal t1) (nth_error a1 x) (nth_error a2 x)
     | TRecord id l => fun r1 r2 => equal_record ext_equal l r1 r2
     | _ => eq
@@ -150,20 +185,28 @@ Section S.
 
 
     (** [ext_fun_fo f1 f2] holds if the functions [f1] and [f2] are extentionnaly equal *)
-    Fixpoint ext_fun_fo (tret: typ) (targs : list typ)  {struct targs}: forall (f1 f2 : eval_funtyp (eval_typ abs_typ_impl) targs tret), Prop :=
+  Fixpoint ext_fun_fo (tret: typ) (targs : list typ)  {struct targs}: forall (f1 f2 : eval_funtyp (eval_typ abs_typ_impl) targs (#tret)), Prop :=
       match targs with
-      | nil => fun f1 f2 => f1 = f2
-      | t1::targs' => fun f1 f2 => forall v,ext_fun_fo tret targs' (f1 v) (f2 v)
+      | nil => fun f1 f2 =>  (f1 tt) = (f2 tt)
+      | t :: l =>
+      fun f1 f2 =>   forall v,
+          match
+            l as l0
+            return
+            ((forall (f1 f2: eval_funtyp (eval_typ abs_typ_impl) l0 (# tret)), Prop) ->
+             (forall f1 f2 : eval_funtyp (eval_typ abs_typ_impl) (t::l0) (# tret), Prop))
+          with
+          | nil => fun _  (f3 f4 : # t -> res (# tret)) =>
+                     (f3 v) = (f4 v)
+          | t0 :: l0 => fun ext_fun f3 f4 => ext_fun (f3 v) (f4 v)
+          end (ext_fun_fo tret l) f1 f2
       end.
 
 
   (** [ext_equal_fo v1 v2]  encodes functional extensionality of functions (it is more restricted than ext_equal) *)
   Definition ext_equal_fo (ty:typ)  : eval_typ abs_typ_impl ty -> eval_typ abs_typ_impl ty -> Prop:=
     match ty with
-    | TFun params ret => match params with
-                         | nil => fun f1 f2 =>  (f1 tt) = (f2 tt)
-                         | t1::params'   => fun f1 f2 => ext_fun_fo ret (t1::params') f1 f2
-                         end
+    | TFun params ret => fun f1 f2 => ext_fun_fo ret params f1 f2
     |  _ =>  eq
     end.
 
@@ -186,21 +229,23 @@ Section S.
         destruct H. split.
         apply ext_equal_sym;auto.
         apply IHl;auto.
-    - destruct l.
-      + simpl. intros. inv H. constructor.
-        constructor. apply ext_equal_sym; auto.
-      + unfold eval_typ; fold eval_typ.
+    -  unfold eval_typ; fold eval_typ.
         unfold ext_equal; fold ext_equal.
         intros.
-        induction (t0::l).
-        { simpl. intros. inv H. constructor.
-          constructor ;auto.
+        induction l.
+        { simpl.
+          apply res_rel_sym; auto.
         }
         { simpl.
-          intros.
-          apply IHl0.
-          apply H.
-          apply ext_equal_sym;auto.
+          destruct l.
+          + intros.
+            simpl in H.
+            apply res_rel_sym;auto.
+          + intros.
+            rewrite ext_fun_rw in H.
+            apply IHl.
+            apply H.
+            apply ext_equal_sym;auto.
         }
   Qed.
 
@@ -317,31 +362,39 @@ Section S.
         apply ext_equal_refl;auto.
         apply no_TFun_fo_typ; auto.
     - (* function *)
-      destruct l.
-      + simpl. intros. destruct (v tt). constructor ;auto.
-        apply ext_equal_refl;auto.
+      intros.
+      unfold eval_typ in v ; fold eval_typ in v.
+      unfold ext_equal; fold ext_equal.
+      unfold eval_typ ; fold eval_typ.
+      simpl in H.
+      rewrite andb_true_iff in H.
+      destruct H as (TA & TR).
+      induction l.
+      {
+        apply res_rel_refl.
+        repeat intro. apply ext_equal_refl.
         apply no_TFun_fo_typ; auto.
-        constructor.
-      + intros.
-        unfold eval_typ in v ; fold eval_typ in v.
-        unfold ext_equal; fold ext_equal.
-        simpl in H.
-        change (forallb no_TFun (t0::l) && no_TFun t = true) in H.
-        rewrite andb_true_iff in H.
-        destruct H as (TA & TR).
-        induction (t0 :: l).
-        { simpl. destruct v.
-          constructor. apply ext_equal_refl. apply no_TFun_fo_typ; auto.
-          constructor.
         }
         {
-          simpl.
-          simpl in TA. rewrite andb_true_iff in TA.
-          destruct TA.
-          intros.
-          apply no_TFun_equal in H1; auto.
-          subst.
-          eapply IHl0; auto.
+          rewrite ext_fun_rw.
+          destruct l.
+          - intros.
+            simpl in TA.
+            rewrite andb_comm in TA.
+            apply no_TFun_equal in H; auto.
+            subst.
+            apply res_rel_refl.
+            repeat intro.
+            apply ext_equal_refl.
+            apply no_TFun_fo_typ; auto.
+          - intros.
+            simpl in TA.
+            rewrite andb_true_iff in TA.
+            destruct TA as (TA & TRST).
+            apply no_TFun_equal in H; auto.
+            subst.
+            apply IHl.
+            auto.
         }
   Qed.
 
@@ -360,17 +413,11 @@ Section S.
     - intros.
       change (no_TFun (TRecord i l) = true) in FO.
       apply (no_TFun_equal _ FO). simpl. apply EQ.
-    - destruct l.
-      { simpl. intros.
-        inv EQ. reflexivity.
-        f_equal. eapply no_TFun_equal;auto.
-      }
-      {
-        unfold fo_typ.
+    -   unfold fo_typ.
         unfold eval_typ ; fold eval_typ.
         unfold ext_equal_fo.
         unfold ext_equal; fold ext_equal.
-        induction (t::l).
+        induction l.
         {
           simpl. intros.
           inv EQ. constructor.
@@ -378,18 +425,36 @@ Section S.
           eapply no_TFun_equal;auto.
         }
         {
-          simpl.
           intros.
-          rewrite! andb_true_iff in FO.
-          subst.
-          apply IHl0.
-          rewrite andb_true_iff.
-          tauto.
-          apply EQ.
-          apply ext_equal_refl.
-          apply no_TFun_fo_typ. tauto.
+          simpl.
+          destruct l.
+          + intros.
+            simpl in EQ.
+            assert (ext_equal a v v).
+            {
+              apply ext_equal_refl.
+              simpl in FO. apply no_TFun_fo_typ. rewrite andb_true_iff in FO.
+              rewrite andb_true_iff in FO. tauto.
+            }
+            apply EQ in H.
+            inv H. constructor.
+            f_equal.
+            apply no_TFun_equal; auto.
+            rewrite andb_true_iff in FO. tauto.
+          +
+            intro.
+            apply IHl.
+            simpl in FO.
+            simpl.
+            rewrite! andb_true_iff in *. tauto.
+            rewrite ext_fun_rw in EQ.
+            apply EQ.
+            apply ext_equal_refl.
+            rewrite! andb_true_iff in FO.
+            apply no_TFun_fo_typ. simpl in FO.
+            rewrite andb_true_iff in FO.
+            tauto.
         }
-      }
   Qed.
 
 
@@ -450,10 +515,12 @@ Section S.
       env_preserve_defs ge ge'.
   Proof.
     unfold eval_def_const.
-    intros. destruct (eval_literal abs_typ_impl te l); try discriminate.
-    simpl in H. destruct v.
+    intros.
     destruct (Typing.btyp_to_typ te ty); try discriminate.
-    simpl in H. destruct (typ_eq_dec t t0); try discriminate.
+    destruct (eval_literal abs_typ_impl te l); try discriminate.
+    simpl in H.
+    destruct (cast_value abs_typ_impl v t); try discriminate.
+    simpl in H.
     eapply genv_update_preserve_defs;eauto.
   Qed.
 
@@ -569,17 +636,24 @@ Section S.
     | Val _ _ v => v
     end.
 
+  Definition eq_value (vl: value abs_typ_impl) (t:typ) (v: #t) :=
+    same_value vl (Val _ t v).
+
+  Definition check_value (v: res (value abs_typ_impl)) (ty:typ) (prop : value abs_typ_impl) :=
+    match v with
+    | OK v' => match cast_value abs_typ_impl v' ty with
+               | OK v' => eq_value prop ty v'
+               |  _    => False
+               end
+    | _    => False
+    end.
+
 
   Definition generate_const_obligation (te : Typing.tenv) (x:ident) (l:Syntax.literal) (ty:btyp)
     (prop : value abs_typ_impl) : res Prop :=
     let* ty' := Typing.btyp_to_typ te ty in
-    eret (forall (u:unit),
-          match eval_literal abs_typ_impl te l with
-          | OK v =>
-              same_value v prop /\ typeof_value abs_typ_impl v = ty'
-          | _    => False
-          end
-      ).
+    eret (check_value (eval_literal abs_typ_impl te l) ty' prop).
+
 
   Definition get_prop (s:ident) (props : list propt) :=
     match props with
@@ -625,8 +699,6 @@ Section S.
     end.
 
 
-  Definition eq_value (vl: value abs_typ_impl) (t:typ) (v: #t) :=
-    same_value vl (Val _ t v).
 
 
   Fixpoint remove_params {A:Type}(l :smaplist A) (vars : STree.t unit) :=
@@ -821,37 +893,34 @@ Section S.
         eapply ext_equal_trans;eauto.
         eapply IHl with (v2:=snd v2).
         tauto. tauto.
-    - destruct l.
-      + simpl; intros.
-        eapply res_rel_trans;eauto.
-      + unfold eval_typ ; fold eval_typ.
-        unfold ext_equal; fold ext_equal.
+    - unfold eval_typ ; fold eval_typ.
+      unfold ext_equal; fold ext_equal.
+      induction l.
+      { simpl.
         intros.
-        revert  v1 v2 v3 H H0.
-        induction (t0 :: l).
-        { simpl.
-          intros.
-          inv H; inv H0; try congruence.
-          constructor.
-          constructor.
-          eapply ext_equal_trans; eauto.
+        eapply res_rel_trans;eauto.
         }
         {
-          simpl.
           intros.
-          eapply IHl0.
-          eapply H.
-          eapply ext_equal_trans.
-          apply H1.
-          apply ext_equal_sym.
-          apply H1.
-          apply H0. tauto.
+          destruct l.
+          - simpl in *.
+            intros.
+            specialize (H _ _ H1).
+            eapply res_rel_trans; eauto.
+            eapply H0.
+            eapply ext_equal_trans.
+            apply ext_equal_sym. apply H1. apply H1.
+          - rewrite ext_fun_rw.
+            rewrite ext_fun_rw in H.
+            rewrite ext_fun_rw in H0.
+            intros.
+            specialize (H _ _ H1).
+            eapply IHl;eauto.
+            apply H0.
+            eapply ext_equal_trans. apply ext_equal_sym. apply H1.
+            auto.
         }
   Qed.
-
-
-
-
 
   Lemma same_value_refl : forall x,
       fo_typ (typeof_value abs_typ_impl x) = true ->
@@ -867,6 +936,17 @@ Section S.
     unfold cast,typ_cast, eq_rect_r,eq_rect. simpl.
     apply ext_equal_refl.
   Qed.
+
+  Lemma same_value_refl' : forall x y,
+      fo_typ (typeof_value abs_typ_impl x) = true ->
+      x = y ->
+      same_value x y.
+  Proof.
+    intros. subst.
+    apply same_value_refl.
+    auto.
+  Qed.
+
 
   Lemma same_value_trans : forall v1 v2 v3,
       same_value v1 v2 -> same_value v2 v3 ->
@@ -1788,31 +1868,24 @@ Section S.
         (eval_app_res abs_typ_impl l0 t y y0 ty).
   Proof.
     intros.
-    destruct l0.
-    { simpl.
-      assert (XO : x0 = DList.DNIL Ftyp).
-      { apply DList.dlist_nil. }
-      assert (YO : y0 = DList.DNIL Ftyp).
-      { apply DList.dlist_nil. }
-      rewrite XO. rewrite YO.
-      apply ext_equal_ecast_typ.
-      apply H.
-    }
-    {
-      unfold ext_equal in H ; fold ext_equal in H.
-      unfold eval_typ in x,y; fold eval_typ in x,y.
-      unfold eval_app_res.
-      revert x y H.
+    unfold ext_equal in H ; fold ext_equal in H.
+    unfold eval_typ in x,y; fold eval_typ in x,y.
+    revert x y H.
       induction H0.
       - simpl. intros. apply ext_equal_ecast_typ;auto.
       - simpl.
-        intros.
-        unfold Pred in H.
-        inv H. constructor.
-        simpl.
-        apply IHForall2.
-        auto.
-    }
+        destruct lt.
+        + intros.
+          unfold Pred in H.
+          inv H. constructor.
+          simpl. apply ext_equal_ecast_typ.
+          apply H1. auto.
+        + intros.
+          unfold Pred in H. inv H.
+          constructor.
+          simpl.
+          apply IHForall2.
+          auto.
   Qed.
 
 
@@ -2160,13 +2233,30 @@ Section S.
       constructor.
       constructor.
       auto.
-    -  simpl.
-       intros.
-       destruct a.
-       apply IHlt; auto.
-       simpl in H1.
-       simpl in H.
+    -
+      change (map snd (a :: lt))
+        with  (snd a :: map snd lt).
+      intros.
+      rewrite ext_fun_rw.
+      destruct lt.
+      + simpl.
+        intros.
+        simpl in H. destruct a as (x,tx).
+        simpl in H1,v1,v2.
+        unfold fst,snd.
+        eapply eq_genv_eval_expr.
+        eapply eq_env_remove; auto.
+        apply eq_env_all_lenv_update; auto.
+      +
+        intros.
+        change (map snd (p :: lt)) with
+           (snd p :: map snd lt).
+        cbv beta iota.
+        rewrite build_funval_rec_rw.
+        eapply IHlt.
        apply eq_env_remove_params;auto.
+       simpl in H. destruct a,p.
+       simpl. auto.
        apply eq_env_all_lenv_update; auto.
   Qed.
 
@@ -2193,15 +2283,9 @@ Section S.
   Lemma ext_fun_trans : forall t l f1 f2 f3,
       ext_fun ext_equal t l f1 f2 -> ext_fun ext_equal t l f2 f3 -> ext_fun ext_equal t l f1 f3.
   Proof.
-    destruct l.
-    - simpl.
-      intros.
-      inv H; inv H0;
-        try constructor ; try congruence.
-      eapply ext_equal_trans ; eauto.
-    - intros.
-      change (ext_equal (TFun (t0 :: l) t) f1 f3).
-      eapply ext_equal_trans;eauto.
+    intros.
+    change (ext_equal (TFun l t) f1 f3).
+    eapply ext_equal_trans;eauto.
   Qed.
 
   Lemma genv_has_property_same : forall x ge' l acc v,
@@ -2461,6 +2545,15 @@ Section S.
     apply same_value_sym. assumption.
   Qed.
 
+  Lemma eq_value_same_value : forall p t v,
+      eq_value p t v ->
+      same_value p (Val abs_typ_impl t v).
+  Proof.
+    unfold eq_value,same_value.
+    intros.
+    destruct p; auto.
+  Qed.
+
 
   Lemma generate_const_obligation_sound :
     forall te x l ty p (P:Prop) ge
@@ -2475,22 +2568,19 @@ Section S.
     unfold eval_def_const.
     intros.
     destruct (Typing.btyp_to_typ te ty); try discriminate.
+    simpl in GEN. inv GEN.
+    unfold check_value in HOLD.
+    destruct (eval_literal abs_typ_impl te l); try tauto.
     simpl in *.
-    inv GEN.
-    specialize (HOLD tt).
-    destruct (eval_literal abs_typ_impl te l); try discriminate.
-    simpl. destruct v.
-    destruct HOLD as (SV & TV).
-    simpl in TV.
-    destruct (typ_eq_dec t0 t); try congruence.
+    destruct (cast_value abs_typ_impl v t); try tauto.
+    simpl.
     unfold genv_update.
     rewrite GET. simpl.
     eexists. split. reflexivity.
     unfold has_property. simpl. eexists.
     unfold genv_get. rewrite STree.gss.
     split. reflexivity.
-    apply same_value_sym; assumption.
-    tauto.
+    apply eq_value_same_value;auto.
   Qed.
 
   Lemma wf_checked_DefConst : forall checked x l ty prog p ,
@@ -2660,14 +2750,6 @@ Section S.
     eapply String_leb_trans; eauto.
   Qed.
 
-  Lemma eq_value_same_value : forall p t v,
-      eq_value p t v ->
-      same_value p (Val abs_typ_impl t v).
-  Proof.
-    unfold eq_value,same_value.
-    intros.
-    destruct p; auto.
-  Qed.
 
   Lemma res_rel_ext_equal_eq : forall t v1 v2,
       fo_typ t = true ->
@@ -2879,12 +2961,11 @@ Section S.
   Proof.
     unfold eval_def_const.
     intros.
-    destruct (eval_literal abs_typ_impl te l) eqn:EL; try discriminate.
-    simpl in EVAL.
-    destruct v.
     destruct (Typing.btyp_to_typ te ty); try discriminate.
     simpl in EVAL.
-    destruct (typ_eq_dec t t0); try discriminate.
+    destruct (eval_literal abs_typ_impl te l) eqn:EL; try discriminate.
+    simpl in EVAL.
+    destruct (cast_value abs_typ_impl v t); try discriminate.
     unfold wf_env in *.
     intros.
     unfold genv_update in EVAL.

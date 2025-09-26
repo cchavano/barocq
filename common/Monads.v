@@ -53,6 +53,23 @@ Module MonError <: MONAD.
     eapply H; eauto.
   Qed.
 
+  Lemma res_rel_sym : forall {A : Type} (R: A -> A -> Prop),
+      Symmetric R -> Symmetric (res_rel R).
+  Proof.
+    repeat intro.
+    inv H0; try constructor.
+    apply H; eauto.
+  Qed.
+
+  Lemma res_rel_refl : forall {A : Type} (R: A -> A -> Prop),
+      Reflexive R -> Reflexive (res_rel R).
+  Proof.
+    repeat intro.
+    destruct x. constructor; auto.
+    constructor.
+  Qed.
+
+
 
   Notation eret := ret.
 

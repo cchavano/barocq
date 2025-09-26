@@ -115,12 +115,19 @@ Section EVALTYP.
   Definition eval_recordtyp (fields: smaplist typ) : Type :=
     record (eval_fields_typ fields).
 
-  Definition eval_funtyp (tparams: list typ) (tret: typ) : Type :=
-    List.fold_right (fun tx acc => (eval_typ tx) -> acc) (res (eval_typ tret)) tparams.
+  Fixpoint eval_funtyp (tparams: list typ) (tret: Type) : Type :=
+    match tparams with
+    | nil => unit -> (res tret)
+    | tx:: tparams' => eval_typ tx -> match tparams' with
+                                      | nil => res tret
+                                      |  _  => eval_funtyp tparams' tret
+                                      end
+    end.
+
 
 End EVALTYP.
 
-Fixpoint eval_typ (am: PMap.t Type) (t: typ) : Type :=
+Fixpoint eval_typ (am: PMap.t Type) (t: typ) {struct t}: Type :=
   match t with
   | TBool => bool
   | TInt32 _ => int
@@ -128,12 +135,8 @@ Fixpoint eval_typ (am: PMap.t Type) (t: typ) : Type :=
   | TArray ta => array (eval_typ am ta)
   | TRecord _ fields => eval_recordtyp (eval_typ am) fields
   | TEnum _ elems => enum elems
-  | TFun tparams tret =>
-      match tparams with
-      | nil => unit -> res (eval_typ am tret)
-      | _ => eval_funtyp (eval_typ am) tparams tret
-      end
-  | TAbs ta => SMap.get ta am 
+  | TFun tparams tret => eval_funtyp (eval_typ am) tparams (eval_typ am tret)
+  | TAbs ta => SMap.get ta am
   end.
 
 (** ** Type cast w.r.t. type equality *)

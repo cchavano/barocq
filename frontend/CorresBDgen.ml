@@ -536,22 +536,12 @@ module VCgen = struct
           !deepfile
           cid_str
       in
-      sprintf
-        "%s forall (u:unit),match %s with\n\
-         %s| OK v => same_value abs_types_impl v (VAL Deeptypes.typof_%s %s) \
-         /\\ \n\
-         %s typeof_value abs_types_impl v = Deeptypes.typof_%s \n\
-         %s| Error _ => False\n\
-         %send"
+      sprintf "%s check_value abs_types_impl (%s) (Deeptypes.typof_%s) (VAL Deeptypes.typof_%s %s)"
         indent2
         constval_deep
-        indent3
+        cid_str
         cid_str
         constval_shallow
-        indent2
-        cid_str
-        indent3
-        indent2
 
   let gen_fun_vc (is_abs : bool) (fid : ident) (params : (ident * mtyp) list)
       (tret : mtyp) : string =

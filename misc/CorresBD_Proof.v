@@ -5,38 +5,13 @@ From BarocqComp Require Import Target Utils Monads Error Barray Brecord Types Ba
 Import Typed.
 Open Scope list_scope.
 
-Ltac ext_equal_equal :=
-  match goal with
-  | H : ext_equal ?A ?T1 ?V1 ?V2 |- _ =>
-      apply no_TFun_equal in H;[|reflexivity]
-end.
-
-
-Ltac eq_value :=
-  unfold eq_value, VAL;
-  apply ext_equal_same_value;
-  match goal with
-  | |- ext_equal ?A ?T ?V1 ?V2 =>
-      unfold T;
-      match goal with
-      | |- ext_equal ?A ?T ?V1 ?V2 =>
-          match T with
-          | TFun nil ?RET =>
-              change (forall (x:unit), ext_equal (V1 x) (V2 x))
-          | TFun  ?L ?RET =>
-              change (ext_fun A (ext_equal A) RET L V1 V2);
-              unfold ext_fun;intros;
-              repeat ext_equal_equal; subst
-          | _  => idtac
-          end
-      end
-  end.
-
 Ltac vc :=
-  (split;reflexivity) (* for litterals *)
-  ||
-  (eq_value; apply res_rel_ext_equal_eq;reflexivity) (* for functions *)
-.
+  match goal with
+  | |- @check_value  _ _ _ _ => reflexivity
+  | |- _ =>
+      unfold eq_value;
+      apply same_value_refl'; [reflexivity| apply eq_refl]
+  end.
 
 
 Definition is_ktype (d:Typed.globdef) :=
