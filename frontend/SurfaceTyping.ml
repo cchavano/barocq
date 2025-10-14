@@ -1565,6 +1565,12 @@ let typecheck_globdef (imports : ident list) (gte : gtenv) (ce : cenv)
       let bf, ty = typecheck_function imports gte gx id f in
       let gx' = gcontext_update_local gte gx id ty in
       let bid = transl_globdef_name !curr_mname id in
+      let bid_pos = Ident.to_pos bid in
+      if List.mem Inline f.fn_attribs then
+        PrintClightCe.always_inline_defs :=
+          bid_pos :: !PrintClightCe.always_inline_defs;
+      if List.mem Static f.fn_attribs then
+        PrintClightCe.static_defs := bid_pos :: !PrintClightCe.static_defs;
       (Some (Barocq.DefFun (bid, bf)), gte, ce, gx')
   | DeclType (tid, tk) ->
       let gte' = gtenv_update_local_abstracts gte tid in

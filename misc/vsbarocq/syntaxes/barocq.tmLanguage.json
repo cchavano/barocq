@@ -46,7 +46,7 @@
                 {
 					"comment": "annotation",
 					"name": "storage.modifier.barocq",
-					"match": "(@\\w+)"
+					"match": "([@#]\\w+)"
 				}
             ]
         },

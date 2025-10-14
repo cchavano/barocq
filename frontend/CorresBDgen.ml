@@ -536,7 +536,9 @@ module VCgen = struct
           !deepfile
           cid_str
       in
-      sprintf "%s check_value abs_types_impl (%s) (Deeptypes.typof_%s) (VAL Deeptypes.typof_%s %s)"
+      sprintf
+        "%s check_value abs_types_impl (%s) (Deeptypes.typof_%s) (VAL \
+         Deeptypes.typof_%s %s)"
         indent2
         constval_deep
         cid_str
@@ -634,7 +636,8 @@ let imports () : string =
      From BarocqComp Require Import Target Monads Error Barray Brecord Types \
      Barocq.\n\
      From BarocqComp Require Import CorresBD_Tactics.\n\
-     From %s Require Import %s_Types %s %s %s_CorresBD_Prelude %s_CorresBD_Proof.\n\n\
+     From %s Require Import %s_Types %s %s %s_CorresBD_Prelude \
+     %s_CorresBD_Proof.\n\n\
      Open Scope string_scope.\n"
     !coqlib
     !coqlib
@@ -680,37 +683,43 @@ let print_prelude (out : out_channel) (arch : Target.archi)
 let output_libs prefix modules =
   let buf = Buffer.create 100 in
   let output_list out l =
-    List.iter (fun s -> Printf.bprintf buf " %s_%s" prefix s) modules in
+    List.iter (fun s -> Printf.bprintf buf " %s_%s" prefix s) modules
+  in
   Printf.bprintf buf "From %s Require Import %a." prefix output_list modules;
   Buffer.contents buf
-  
 
 let print_proof arch fname =
-  let modules = ["Types";"ShallowB";"Deep"; "CorresBD_Prelude"] in
+  let modules = ["Types"; "ShallowB"; "Deep"; "CorresBD_Prelude"] in
   let modules = output_libs !coqlib modules in
-  let arch =     match arch with
+  let arch =
+    match arch with
     | Target.Ptr32 -> "Ptr32"
     | Target.Ptr64 -> "Ptr64"
   in
   let prog = Printf.sprintf "%s_Deep.prog" !coqlib in
-  let skeleton = Filename.concat Config.install_dev_dir "misc/CorresBD_Proof.v" in
-  let command = Printf.sprintf
-      "sed -e 's/$MODULES/%s/g' -e 's/$ARCH/%s/g' -e 's/$PROG/%s/g' %s > %s" modules arch prog skeleton fname in
+  let skeleton =
+    Filename.concat Config.install_dev_dir "misc/CorresBD_Proof.v"
+  in
+  let command =
+    Printf.sprintf
+      "sed -e 's/$MODULES/%s/g' -e 's/$ARCH/%s/g' -e 's/$PROG/%s/g' %s > %s"
+      modules
+      arch
+      prog
+      skeleton
+      fname
+  in
   Printf.printf "COMMAND %s\n" command;
   ignore (Sys.command command)
-      
-    
 
 let tac =
-  "\
-Ltac BD :=\n\
+  "Ltac BD :=\n\
    destruct eval_prog_spec as (te & ge & EVAL & ALL);\n\
    let h := fresh \"HASP\" in\n\
    ltac2:(has_property ident:(HASP) @ge constr:(abs_types_impl));[ \n\
-     (eapply BarocqVC.has_property_find_err; eauto) |\n\
-     apply BarocqVC.has_property_equal with (1:= EVAL) in h;[apply h|reflexivity]\n\
-    ].\n"
-
+   (eapply BarocqVC.has_property_find_err; eauto) |\n\
+   apply BarocqVC.has_property_equal with (1:= EVAL) in h;[apply h|reflexivity]\n\
+   ].\n"
 
 let print_corres (out : out_channel) (arch : Target.archi) (prog : program) :
     unit =
@@ -728,9 +737,11 @@ let print_corres (out : out_channel) (arch : Target.archi) (prog : program) :
   fprintf
     out
     "Definition eval_def := Barocq.eval_def2 %s abs_types_impl abs_defs_impl \
-     %s.prog.\n%s\n"
+     %s.prog.\n\
+     %s\n"
     arch_str
-    !deepfile tac;
+    !deepfile
+    tac;
   if defs <> [] then begin
     fprintf out "\n";
     print_defs_corres out defs

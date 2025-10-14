@@ -31,6 +31,11 @@ let print_header_globdef (p : formatter)
   | Gfun _ -> ()
   | Gvar v -> print_header_globvar p id v
 
+let print_header_globdecl (p : formatter)
+    ((id, gd) : ident * ('a, Ctypes.coq_type) globdef) : unit =
+  if List.mem id !PrintClightCe.static_defs then ()
+  else PrintClightCe.print_globdecl p (id, gd)
+
 let print_inttype_aliases (oc : out_channel) : unit =
   Printf.fprintf
     oc
@@ -45,7 +50,7 @@ let print_header (types_header : string) (hfile : string)
     fprintf p "@[<v 0>";
     List.iter (PrintCsyntax.define_composite p) prog.Ctypes.prog_types;
     List.iter (print_header_globdef p) prog.Ctypes.prog_defs;
-    List.iter (PrintClightCe.print_globdecl p) prog.Ctypes.prog_defs;
+    List.iter (print_header_globdecl p) prog.Ctypes.prog_defs;
     fprintf p "@]@."
   in
   let oc = open_out hfile in

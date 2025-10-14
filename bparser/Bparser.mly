@@ -50,6 +50,7 @@
 %token COMPUTE
 %token DEFN DECL TYPE OF
 %token AT_READONLY AT_WRITE
+%token INLINE STATIC
 %token LET AND IN MATCH WITH END
 %token IF THEN ELSE
 %token AS
@@ -103,14 +104,22 @@ globdef:
   | TYPE id = ident BIND fields = record_fields { DefType (id, TdRecord fields) }
   | TYPE id = ident OF kind = abs_type_kind { DeclType (id, kind) }
   | DEFN x = var_ident COLON ty = styp BIND c = const { DefConst (x, c, ty) }
-  | DEFN x = var_ident params = delimited(LPAREN, separated_list(COMMA, param), RPAREN)
-    COLON ty = styp BIND e = expr { DefFun (x, {fn_return = ty; fn_params = params; fn_body = e}) }
+  | DEFN x = var_ident fd = fundef { DefFun (x, fd) }
+  | attrs = nonempty_list(c_attr) DEFN x = var_ident fd = fundef { DefFun (x, {fd with fn_attribs = attrs}) }
   | DECL x = var_ident COLON ty = styp
     {
       match ty with
       | SFun (tparams, tret) -> DeclFun (x, tparams, tret)
       | _ -> DeclConst (x, ty)
     }
+
+fundef:
+  | params = delimited(LPAREN, separated_list(COMMA, param), RPAREN)
+    COLON ty = styp BIND e = expr { {fn_return = ty; fn_params = params; fn_body = e; fn_attribs = []} }
+
+c_attr:
+  | INLINE { Inline }
+  | STATIC { Static }
 
 enum_constr:
   | PIPE id = IDENT

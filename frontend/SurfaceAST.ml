@@ -45,10 +45,15 @@ type raw_expr =
 
 and expr = raw_expr Location.t
 
+type c_attr =
+  | Inline
+  | Static
+
 type func = {
   fn_return : styp;
   fn_params : (ident * styp) list;
   fn_body : expr;
+  fn_attribs : c_attr list;
 }
 
 type raw_const =
