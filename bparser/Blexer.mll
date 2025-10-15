@@ -60,6 +60,7 @@
     | "always_inline" -> ALWAYS_INLINE
     | "static" -> STATIC
     | "export" -> EXPORT
+    | "unique" -> UNIQUE
     | _ as s -> error (Printf.sprintf "unknown function attribute '%s'" s)
 
   let () =

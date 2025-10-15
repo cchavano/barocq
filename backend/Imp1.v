@@ -23,15 +23,15 @@ Inductive statement : Type :=
 
 (** ** Functions *)
 
-Definition function : Type := Syntax.function statement.
+Definition function : Type := Syntax.function statement btyp.
 
 (** ** Global definitions *)
 
-Definition globdef : Type := Syntax.globdef literal function.
+Definition globdef : Type := Syntax.globdef literal function btyp.
 
 (** ** Programs *)
 
-Definition program : Type := Syntax.program globdef.
+Definition program : Type := Syntax.program globdef btyp.
 
 Module Typed.
 
@@ -60,15 +60,15 @@ Module Typed.
 
   (** ** Functions *)
 
-  Definition function : Type := Syntax.function statement.
+  Definition function : Type := Syntax.function statement btyp.
 
   (** ** Global definitions *)
 
-  Definition globdef : Type := Syntax.globdef literal function.
+  Definition globdef : Type := Syntax.globdef literal function btyp.
 
   (** ** Programs *)
 
-  Definition program : Type := Syntax.program globdef.
+  Definition program : Type := Syntax.program globdef btyp.
 
 End Typed.
 
@@ -101,15 +101,15 @@ Module Aliasing_AST.
 
   (** ** Functions *)
 
-  Definition function : Type := Syntax.function statement.
+  Definition function : Type := Syntax.function statement btyp.
 
   (** ** Global definitions *)
 
-  Definition globdef : Type := Syntax.globdef literal function.
+  Definition globdef : Type := Syntax.globdef literal function btyp.
 
   (** ** Programs *)
 
-  Definition program : Type := Syntax.program globdef.
+  Definition program : Type := Syntax.program globdef btyp.
 
 End Aliasing_AST.
 
@@ -334,7 +334,7 @@ Module Typing.
   Definition typecheck_globdefs (be: benv) (defs: list Imp1.globdef) : res (list Imp1Typed.globdef) :=
     typecheck_globdefs_rec be STree.empty defs.
 
-  Definition build_benv (types: list type_def) : res benv :=
+  Definition build_benv (types: list (type_def btyp)) : res benv :=
     Utils.list_fold_left_err
       (fun acc_be td =>
         match td with

@@ -82,10 +82,10 @@ type type_def =
 
 type globdef =
   | DefType of ident * type_def
-  | DefConst of ident * const * styp
+  | DefConst of ident * const * styp * bool
   | DefFun of ident * func
   | DeclType of ident * Syntax.struct_or_union
-  | DeclConst of ident * styp
+  | DeclConst of ident * styp * bool
   | DeclFun of ident * (Syntax.param_attr * styp) list * styp
 
 type command =

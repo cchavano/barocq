@@ -1337,7 +1337,7 @@ let gen_fun_descr_and_ast (show_debug : bool) (re : renv) (fe : fenv)
 
 (** [renv_from_record_defs l] build the record type environment from the list of
     record definition [l]. *)
-let renv_from_record_defs (l : record_def list) : renv =
+let renv_from_record_defs (l : btyp record_def list) : renv =
   List.fold_left
     (fun acc st -> Maps2.STree.set st.rd_name st.rd_fields acc)
     Maps2.STree.empty

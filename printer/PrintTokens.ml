@@ -74,6 +74,7 @@ let token_to_string (tok : Bparser.token) : string =
   | ALWAYS_INLINE -> "ALWAYS_INLINE"
   | STATIC -> "STATIC"
   | EXPORT -> "EXPORT"
+  | UNIQUE -> "UNIQUE"
   | AS -> "AS"
   | LIT_INT32 (i, Types.Signed) -> sprintf "LIT_INT32 %ld Signed" i
   | LIT_INT32 (i, Types.Unsigned) -> sprintf "LIT_INT32 %lu Unsigned" i

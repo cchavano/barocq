@@ -37,18 +37,15 @@ Module BNF.
 
   (** ** Functions *)
 
-  Definition function : Type := Syntax.function expr.
+  Definition function : Type := Syntax.function expr btyp.
 
   (** ** Global definitions *)
 
-  Definition globdef : Type := Syntax.globdef literal function.
+  Definition globdef : Type := Syntax.globdef literal function btyp.
 
   (** ** Programs *)
 
-  Record program : Type := mk_program {
-    prog_defs : list globdef;
-    prog_types : list type_def
-  }.
+  Definition program : Type := Syntax.program globdef btyp.
 
 End BNF.
 
@@ -112,41 +109,19 @@ Module Monadic.
 
   (** ** Functions *)
 
-  Record function : Type := mk_function {
-    fn_return: mtyp;
-    fn_params: list (ident * mtyp);
-    fn_body: expr
-  }.
+  Definition function : Type := Syntax.function expr mtyp.
 
   (** ** Global definitions *)
 
-  Inductive globdef : Type :=
-    | DefConst : ident -> literal -> mtyp -> globdef
-    | DefFun : ident -> function -> globdef
-    | DeclConst : ident -> mtyp -> globdef
-    | DeclFun : ident -> list (param_attr * mtyp) -> mtyp -> globdef.
+  Definition globdef : Type := Syntax.globdef literal function mtyp.
 
   (** ** Programs *)
 
-  Record enum_def := mk_enum_def {
-    ed_name : ident;
-    ed_elems : list ident
-  }.
+  Definition record_def : Type := Syntax.record_def mtyp.
 
-  Record record_def := mk_record_def {
-    rd_name : ident;
-    rd_fields : list (ident * mtyp)
-  }.
+  Definition type_def : Type := Syntax.type_def mtyp.
 
-  Inductive type_def : Type :=
-    | TdEnum : enum_def -> type_def
-    | TdRecord : record_def -> type_def
-    | TdAbstract : ident -> struct_or_union -> type_def. 
-
-  Record program : Type := mk_program {
-    prog_defs : list globdef;
-    prog_types : list type_def
-  }.
+  Definition program : Type := Syntax.program globdef mtyp.
 
   Definition get_enum_typedefs (types: list type_def) : list enum_def :=
     List.fold_right

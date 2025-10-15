@@ -35,7 +35,7 @@ with access : Type :=
 
 (** ** Functions *)
 
-Definition function : Type := Syntax.function expr.
+Definition function : Type := Syntax.function expr btyp.
 
 (** ** Global definitions *)
 
@@ -107,7 +107,7 @@ Module Typed.
 
   (** ** Functions *)
 
-  Definition function : Type := Syntax.function expr.
+  Definition function : Type := Syntax.function expr btyp.
 
   (** ** Global definitions *)
 

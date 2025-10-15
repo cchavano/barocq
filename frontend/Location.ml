@@ -8,6 +8,9 @@ type 'a t = {
 
 let make stp edp cn = { startpos = stp; endpos = edp; content = cn }
 
+let apply (f : 'a -> 'b) (loc : 'a t) : 'b t =
+  { loc with content = f loc.content }
+
 let from_single_pos (pos : position) : string =
   let l = pos.pos_lnum in
   let c = pos.pos_cnum - pos.pos_bol + 1 in

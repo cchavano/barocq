@@ -2787,7 +2787,7 @@ Section S.
     destruct (@MergeSort.nodup string String.leb String.eqb
                 (@map (prod string btyp) string
                    (@fst string btyp)
-                   (@Syntax.fn_params expr f))
+                   (@Syntax.fn_params expr btyp f))
              ) eqn:DUP; try discriminate.
     apply nodup_eq in DUP. unfold Ident.eq_dec. rewrite DUP.
     destruct (Typing.btyp_to_typ te (Syntax.fn_return f)); try discriminate.

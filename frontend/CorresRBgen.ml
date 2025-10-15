@@ -282,7 +282,7 @@ module HelperTactics = struct
     print_list
       out
       ~sep:"\n"
-      (fun (ed : BarocqShallow.Monadic.enum_def) ->
+      (fun ed ->
         let eid = ident_to_string ed.ed_name in
         sprintf
           "Hint Rewrite cast_i32_to_%s_corres : corresRB_types.\n\
@@ -477,7 +477,7 @@ module HelperTactics = struct
     let cast_i32_to_enum_destruct (enums : enum_def list) : string =
       list_to_string
         ~sep:"\n"
-        (fun (ed : BarocqShallow.Monadic.enum_def) ->
+        (fun ed ->
           let eid = ident_to_string ed.ed_name in
           sprintf
             "%s| cast_i32_to_%s ?X =>\n\
@@ -671,7 +671,7 @@ let print_opaque_defs (out : out_channel) (prog : program) : unit =
     out
     ~delim:("", "\n")
     ~sep:"\n"
-    (fun (ed : BarocqShallow.Monadic.enum_def) ->
+    (fun ed ->
       let eid = ident_to_string ed.ed_name in
       sprintf "Opaque econv_%s_RtoB.\nOpaque econv_%s_BtoR." eid eid)
     enums

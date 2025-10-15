@@ -8,7 +8,22 @@ open SurfaceAST
 (** Name of the module being analyzed. *)
 let curr_mname : string ref = ref ""
 
+(** Current module default visibility for functions *)
 let curr_vis : c_visibility ref = ref Export
+
+(** Information about the global variable marked unique *)
+type glob_info = {
+  gi_mname : string;
+  gi_tid : string;
+  gi_vname : string;
+}
+
+let ginfo : glob_info option ref = ref None
+
+(** Locations of definition-sites of function and record type identifiers *)
+let fun_locs : (string, string Location.t) Hashtbl.t = Hashtbl.create 50
+
+let type_locs : (string, string Location.t) Hashtbl.t = Hashtbl.create 5
 
 type btyp =
   | BBool
@@ -62,6 +77,10 @@ type error_cause =
   | Redundant_pattern of string
   | Non_exhaustive_pattern_matching of string
   | Incompatible_func_visibility
+  | Unique_directive_already_used
+  | Unique_directive_unsupported_type
+  | Unique_directive_incompatible_fun_sig of string * string
+  | Unique_directive_incompatible_type_def of string * string
 
 exception Error of error_cause * unit Location.t option
 
@@ -190,6 +209,22 @@ let msg_from_failure (cause : error_cause) : string =
   | Incompatible_func_visibility ->
       sprintf
         "a function can not be marked 'static' and 'export' at the same time"
+  | Unique_directive_already_used ->
+      "A global constant is already associated with the 'unique' directive"
+  | Unique_directive_unsupported_type ->
+      "The 'unique' directive is only supported for record types"
+  | Unique_directive_incompatible_fun_sig (fid, uid) ->
+      sprintf
+        "the signature of function %s is not compatible with a unique global \
+         instance of type %s"
+        fid
+        uid
+  | Unique_directive_incompatible_type_def (tid, uid) ->
+      sprintf
+        "the definition of type %s is not compatible with a unique global \
+         instance of type %s"
+        tid
+        uid
 
 let error ?(loc : 'a Location.t option = None) (c : error_cause) =
   let loc =
@@ -445,6 +480,9 @@ let cenv_update_local (ce : cenv) (x : ident) (v : cvalue) : cenv =
 
 let cenv_empty : cenv =
   { cenv_local = IdentMap.empty; cenv_extern = IdentMap.empty }
+
+let prefix_ident (prefix : string) (x : string) : string =
+  sprintf "%s_%s" prefix x
 
 let eval_cunop (op : unary_op) (v : cvalue) : cvalue =
   match (op, v) with
@@ -899,8 +937,8 @@ let transl_var_name (imports : ident list) (gte : gtenv) (gx : gcontext)
               | None -> mname_of_ident imports gte gx x
             end
         in
-        sprintf "%s_%s" prefix x.content
-    | IdPrefixed (mname, x) -> Printf.sprintf "%s_%s" mname.content x.content
+        prefix_ident prefix x.content
+    | IdPrefixed (mname, x) -> prefix_ident mname.content x.content
   in
   PrintUtils.ident_of_string x'
 
@@ -918,8 +956,8 @@ let transl_constr_name (imports : ident list) (gte : gtenv) (gx : gcontext)
             | None -> mname_of_ident imports gte gx x
           end
         in
-        sprintf "%s_%s" prefix x.content
-    | IdPrefixed (mname, x) -> Printf.sprintf "%s_%s" mname.content x.content
+        prefix_ident prefix x.content
+    | IdPrefixed (mname, x) -> prefix_ident mname.content x.content
   in
   PrintUtils.ident_of_string x'
 
@@ -941,13 +979,13 @@ let rec transl_btyp (ty : btyp) : Types.btyp =
   | BInt64 s -> Types.BInt64 s
   | BArray ta -> Types.BArray (transl_btyp ta)
   | BEnum (mname, eid) ->
-      let eid' = PrintUtils.ident_of_string (sprintf "%s_%s" mname eid) in
+      let eid' = PrintUtils.ident_of_string (prefix_ident mname eid) in
       Types.BEnum eid'
   | BRecord (mname, rid) ->
-      let rid' = PrintUtils.ident_of_string (sprintf "%s_%s" mname rid) in
+      let rid' = PrintUtils.ident_of_string (prefix_ident mname rid) in
       Types.BRecord rid'
   | BAbs (mname, tid) ->
-      let tid' = PrintUtils.ident_of_string (sprintf "%s_%s" mname tid) in
+      let tid' = PrintUtils.ident_of_string (prefix_ident mname tid) in
       Types.BAbs tid'
   | BFun (tparams, tret) ->
       let tparams' = List.map transl_btyp tparams in
@@ -1460,7 +1498,7 @@ let typecheck_function (imports : ident list) (gte : gtenv) (gx : gcontext)
       (bf, ty)
 
 let transl_globdef_name (mname : string) (x : ident) : Syntax.ident =
-  PrintUtils.ident_of_string (sprintf "%s_%s" mname x.content)
+  PrintUtils.ident_of_string (prefix_ident mname x.content)
 
 let typecheck_abs_function (x : ident) (tparams : (param_attr * btyp) list)
     (tret : btyp) : btyp =
@@ -1543,6 +1581,7 @@ let typecheck_type_def (imports : ident list) (gte : gtenv) (ce : cenv)
               fields'
           in
           let gte' = gtenv_update_local_records gte tid fields' in
+          Hashtbl.add type_locs (prefix_ident !curr_mname tid.content) tid;
           (Some (Barocq.DefType (bid, Types.Adt_record bfields)), gte', ce, gx)
     end
   | SurfaceAST.TdAlias ty ->
@@ -1572,13 +1611,31 @@ let check_fun_visibility (fid : ident) (f : func) : bool =
   in
   vis_to_bool (check_aux f.fn_attribs None)
 
+let check_unique_directive (id : ident) (ty : btyp) (is_glob : bool) : unit =
+  if is_glob then
+    match ty with
+    | BRecord (mname, rid) -> begin
+        match !ginfo with
+        | Some _ -> error Unique_directive_already_used ~loc:(Some id)
+        | None ->
+            ginfo :=
+              Some
+                {
+                  gi_mname = mname;
+                  gi_tid = rid;
+                  gi_vname = prefix_ident !curr_mname id.content;
+                }
+      end
+    | _ -> error Unique_directive_unsupported_type ~loc:(Some id)
+
 let typecheck_globdef (imports : ident list) (gte : gtenv) (ce : cenv)
     (gx : gcontext) (def : globdef) :
     Barocq.globdef option * gtenv * cenv * gcontext =
   match def with
   | DefType (tid, td) -> typecheck_type_def imports gte ce gx tid td
-  | DefConst (id, c, sty) ->
+  | DefConst (id, c, sty, is_glob) ->
       let ty = styp_to_btyp imports gte sty in
+      check_unique_directive id ty is_glob;
       let l', _ = typecheck_const imports gte ce gx ty c in
       let gx' = gcontext_update_local gte gx id ty in
       let bid = transl_globdef_name !curr_mname id in
@@ -1592,7 +1649,6 @@ let typecheck_globdef (imports : ident list) (gte : gtenv) (ce : cenv)
       (Some (Barocq.DefConst (bid, l', bty)), gte, ce', gx')
   | DefFun (id, f) ->
       let bf, ty = typecheck_function imports gte gx id f in
-      let gx' = gcontext_update_local gte gx id ty in
       let bid = transl_globdef_name !curr_mname id in
       let bid_pos = Ident.to_pos bid in
       let attrib_present attr = List.mem attr f.fn_attribs in
@@ -1608,13 +1664,16 @@ let typecheck_globdef (imports : ident list) (gte : gtenv) (ce : cenv)
         }
       in
       Hashtbl.add PrintClightCe.decl_fun bid_pos finfo;
+      Hashtbl.add fun_locs (prefix_ident !curr_mname id.content) id;
+      let gx' = gcontext_update_local gte gx id ty in
       (Some (Barocq.DefFun (bid, bf)), gte, ce, gx')
   | DeclType (tid, tk) ->
       let gte' = gtenv_update_local_abstracts gte tid in
       let bid = transl_globdef_name !curr_mname tid in
       (Some (Barocq.DeclType (bid, tk)), gte', ce, gx)
-  | DeclConst (id, sty) ->
+  | DeclConst (id, sty, is_glob) ->
       let ty = styp_to_btyp imports gte sty in
+      check_unique_directive id ty is_glob;
       let gx' = gcontext_update_local gte gx id ty in
       let bid = transl_globdef_name !curr_mname id in
       let bty = transl_btyp ty in
@@ -1640,6 +1699,7 @@ let typecheck_globdef (imports : ident list) (gte : gtenv) (ce : cenv)
           tparams'
       in
       let btret = transl_btyp tret' in
+      Hashtbl.add fun_locs (prefix_ident !curr_mname id.content) id;
       (Some (Barocq.DeclFun (bid, btparams, btret)), gte, ce, gx')
 
 let rec typecheck_imports (imports : ident list) (gx : gcontext) : unit =
@@ -1755,7 +1815,97 @@ let sort_iprogam p =
   in
   List.stable_sort cmp_gdef p
 
-let typecheck_iprogram (iprog : iprogram) : Barocq.iprogram =
+let tenv_get_fields (mname : string) (te : tenv) (tid : string) :
+    (string * btyp) list =
+  match IdentMap.find_opt tid te.tenv_defs with
+  | Some (TdRecord fields) -> fields
+  | _ -> assert false
+
+(* let rec check_type_considering_unique (urid: string) (t: btyp) (consumed: bool) : bool * bool =
+  match t with
+  | BRecord (mname, rid) ->
+      if (urid = sprintf "%s_%s" mname rid) && consumed then (true, false) else (true, true)
+  | BArray ta -> check_type_considering_unique urid ta true
+  | BFun (tparams, _) -> assert false
+  | _ -> (consumed, true)
+
+and check_funtype_considering_unique (urid: string) (tparams: btyp list) (consumed: bool) : bool =
+  match tparams with
+  | [] -> true
+  | ti :: tparams' ->
+      let consumed, continue = check_type_considering_unique urid ti consumed in
+      if continue then
+        check_funtype_considering_unique urid tparams' consumed
+      else
+        false
+
+let check_signatures_considering_unique () : unit =
+  let rec check_aux urid fsigs =
+  match fsigs with
+  | [] -> ()
+  | (fname, s) :: fsigs' ->
+      if check_funtype_considering_unique urid s false then
+        check_aux urid fsigs'
+      else failwith "unicity error"
+  in
+  match !globinfo with
+  | Some (tid, vname) -> check_aux tid !fun_sigs
+  | None -> () *)
+
+let check_glob_rewrite_possible (gi_mname : string) (gi_tid : string)
+    (prog : Barocq.iprogram) : unit =
+  let bgid = PrintUtils.ident_of_string (prefix_ident gi_mname gi_tid) in
+  let rec check_fun_sig (tparams : Types.btyp list) (occ : int) : bool =
+    match tparams with
+    | [] -> true
+    | ti :: tparams' ->
+        let occ' = occ + check_type ti in
+        if occ' > 1 then false else check_fun_sig tparams' occ'
+  and check_type (ty : Types.btyp) : int =
+    match ty with
+    | Types.BRecord rid -> if Ident.eq_dec bgid rid then 1 else 0
+    | Types.BArray ta -> 2 * check_type ta
+    | Types.BFun (tparams, _) -> if check_fun_sig tparams 0 then 0 else 2
+    | _ -> 0
+  in
+  let check_record_fields (fields : (Ident.ident * Types.btyp) list) : bool =
+    List.for_all (fun (_, fty) -> check_type fty < 1) fields
+  in
+  let check_globdef (def : Barocq.globdef) : unit =
+    let gid =
+      if gi_mname = !curr_mname then gi_tid
+      else sprintf "%s::%s" gi_mname gi_tid
+    in
+    match def with
+    | Barocq.DefType (tid, Types.Adt_record fields) ->
+        let tid_loc = Hashtbl.find type_locs (PrintUtils.ident_to_string tid) in
+        if not (check_record_fields fields) then
+          error
+            (Unique_directive_incompatible_type_def (tid_loc.content, gid))
+            ~loc:(Some tid_loc)
+    | Barocq.DefFun (fid, f) ->
+        let fid_loc = Hashtbl.find fun_locs (PrintUtils.ident_to_string fid) in
+        if not (check_fun_sig (List.map snd f.Syntax.fn_params) 0) then
+          error
+            (Unique_directive_incompatible_fun_sig (fid_loc.content, gid))
+            ~loc:(Some fid_loc)
+    | Barocq.DeclFun (fid, tparams, _) ->
+        let fid_loc = Hashtbl.find fun_locs (PrintUtils.ident_to_string fid) in
+        if not (check_fun_sig (List.map snd tparams) 0) then
+          error
+            (Unique_directive_incompatible_fun_sig (fid_loc.content, gid))
+            ~loc:(Some fid_loc)
+    | _ -> ()
+  in
+  List.iter
+    (fun cmd ->
+      match cmd with
+      | Barocq.CmdDef d -> check_globdef d
+      | _ -> ())
+    prog
+
+let typecheck_iprogram (iprog : iprogram) :
+    Barocq.iprogram * (Ident.ident * Ident.ident) option =
   let biprog, _, _, gx =
     List.fold_left
       (fun (acc_iprog, acc_gte, acc_ce, acc_gx) md ->
@@ -1765,4 +1915,15 @@ let typecheck_iprogram (iprog : iprogram) : Barocq.iprogram =
       ([], gtenv_empty, cenv_empty, gcontext_empty)
       iprog
   in
-  sort_iprogam biprog
+  let bginfo =
+    match !ginfo with
+    | Some ginfo ->
+        check_glob_rewrite_possible ginfo.gi_mname ginfo.gi_tid biprog;
+        let tid =
+          PrintUtils.ident_of_string (prefix_ident ginfo.gi_mname ginfo.gi_tid)
+        in
+        let vname = PrintUtils.ident_of_string ginfo.gi_vname in
+        Some (tid, vname)
+    | None -> None
+  in
+  (sort_iprogam biprog, bginfo)

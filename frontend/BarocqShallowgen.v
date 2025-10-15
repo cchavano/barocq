@@ -1,6 +1,6 @@
 From Coq Require Import List String.
 From compcert Require Import Maps.
-From BarocqComp Require Import Target Monads Error Maps2 Types Utils Syntax Barray Benum Barocq BarocqTransf BarocqShallow.
+From BarocqComp Require Import Target Monads Error Maps2 Types Utils Syntax Barray Benum BarocqTransf BarocqShallow.
 Import ListNotations.
 Import MonCounterErr.
 
@@ -54,8 +54,8 @@ Module Normalization.
   Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BNF.expr :=
     let fix norm_expr_aux (e: Barocq.expr) : crmon (smaplist BNF.expr * atom) :=
       match e with
-      | ETrue => ret (nil, ATrue)
-      | EFalse => ret (nil, AFalse)
+      | Barocq.ETrue => ret (nil, ATrue)
+      | Barocq.EFalse => ret (nil, AFalse)
       | Barocq.EInt32 i s => ret (nil, AInt32 i s)
       | Barocq.EInt64 i s => ret (nil, AInt64 i s)
       | Barocq.EConstr x => ret (nil, AConstr x)
@@ -101,7 +101,7 @@ Module Normalization.
           let* (li1, a1) := norm_expr_aux e1 in
           let* (li2, a2) := norm_expr_aux e2 in
           ret (li1 ++ li2, ARecordUpdate a1 f a2)
-      | EDeepAccess _ _ => fail
+      | Barocq.EDeepAccess _ _ => fail
       | Barocq.EApp e1 args =>
           let* (li1, a1) := norm_expr_aux e1 in
           let* (l_args, a_args) :=
@@ -211,7 +211,7 @@ Module Normalization.
       fn_body := body_norm
     |}.
 
-  Fixpoint norm_program_rec (prog: Barocq.program) : res (list BarocqShallow.BNF.globdef * list type_def) :=
+  Fixpoint norm_program_rec (prog: Barocq.program) : res (list BarocqShallow.BNF.globdef * list (type_def btyp)) :=
     match prog with
     | nil => eret (nil, nil)
     | d :: prog' =>
@@ -393,7 +393,7 @@ Module Normalization2.
       fn_body := body_norm
     |}.
 
-  Fixpoint norm_program_rec (prog: Barocq.program) : res (list BarocqShallow.BNF.globdef * list type_def) :=
+  Fixpoint norm_program_rec (prog: Barocq.program) : res (list BarocqShallow.BNF.globdef * list (type_def btyp)) :=
     match prog with
     | nil => eret (nil, nil)
     | d :: prog' =>
@@ -1173,19 +1173,19 @@ Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res 
             if mtyp_eq_dec (typof_literal l') ty' then
               let* gx' := gcontext_update me gx x ty' in
               let* r := monadify_globdefs_rec me gx' defs' in
-              eret (DefConst x l' ty' :: r)
+              eret (Syntax.DefConst x l' ty' :: r)
             else efail
         | Syntax.DefFun x f =>
             let* f' := monadify_function me gx f in
             let tf := MFun (map snd (fn_params f')) (fn_return f') in
             let* gx' := gcontext_update me gx x tf in
             let* r := monadify_globdefs_rec me gx' defs' in
-            eret (DefFun x f' :: r)
+            eret (Syntax.DefFun x f' :: r)
         | Syntax.DeclConst x ty =>
             let ty' := monadify_btyp ty in
             let* gx' := gcontext_update me gx x ty' in
             let* r := monadify_globdefs_rec me gx' defs' in
-            eret (DeclConst x ty' :: r)
+            eret (Syntax.DeclConst x ty' :: r)
         | Syntax.DeclFun f tparams tret =>
             let ty' := monadify_btyp (mk_fun_btyp tparams tret) in
             let* gx' := gcontext_update me gx f ty' in
@@ -1193,7 +1193,7 @@ Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res 
             match ty' with
             | MFun tparams' tret' =>
                 let* tparams' := make_absfun_tparams tparams tparams' in
-                eret (DeclFun f tparams' tret' :: r)
+                eret (Syntax.DeclFun f tparams' tret' :: r)
             | _ => efail
             end
         end
@@ -1202,7 +1202,7 @@ Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res 
   Definition monadify_globdefs (me: menv) (defs: list BNF.globdef) : res (list globdef) :=
     monadify_globdefs_rec me STree.empty defs.
 
-  Definition monadify_type_defs (types: list Syntax.type_def) : list type_def :=
+  Definition monadify_type_defs (types: list (Syntax.type_def btyp)) : list type_def :=
     List.map
       (fun td =>
         match td with
@@ -1237,9 +1237,9 @@ Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res 
       (eret menv_empty).
 
   Definition monadify_program (prog: BNF.program) : res program :=
-    let types := monadify_type_defs (BNF.prog_types prog) in
+    let types := monadify_type_defs (prog_types prog) in
     let* me := build_menv types in
-    let* defs := monadify_globdefs me (BNF.prog_defs prog) in
+    let* defs := monadify_globdefs me (prog_defs prog) in
     eret {|
       prog_types := types;
       prog_defs := defs;

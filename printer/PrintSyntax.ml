@@ -168,34 +168,34 @@ let param_to_string (param : ident * btyp) : string =
 let param_list_to_string (params : (ident * btyp) list) : string =
   list_to_string_paren param_to_string params
 
-let function_to_string (body_to_string : 'a -> string) (f : 'a coq_function) :
-    string =
+let function_to_string (body_to_string : 'a -> string)
+    (typ_to_string : 'b -> string) (f : ('a, 'b) coq_function) : string =
   sprintf
     "%s : %s =\n%s"
     (param_list_to_string f.fn_params)
-    (btyp_to_string f.fn_return)
+    (typ_to_string f.fn_return)
     (body_to_string f.fn_body)
 
 let globdef_to_string (lit_to_string : 'a -> string)
-    (func_to_string : 'b -> string) (csep : string) (fsep : string)
-    (def : ('a, 'b) globdef) : string =
+    (func_to_string : 'b -> string) (typ_to_string : 'c -> string)
+    (csep : string) (fsep : string) (def : ('a, 'b, 'c) globdef) : string =
   match def with
   | DefConst (x, l, ty) ->
       sprintf
         "defn %s : %s = %s%s"
         (ident_to_string x)
-        (btyp_to_string ty)
+        (typ_to_string ty)
         (lit_to_string l)
         csep
   | DefFun (x, f) ->
       sprintf "defn %s%s%s" (ident_to_string x) (func_to_string f) fsep
   | DeclConst (x, ty) ->
-      sprintf "decl %s : %s%s" (ident_to_string x) (btyp_to_string ty) csep
+      sprintf "decl %s : %s%s" (ident_to_string x) (typ_to_string ty) csep
   | DeclFun (x, tparams, tret) ->
       sprintf
         "decl %s : %s%s"
         (ident_to_string x)
-        (btyp_to_string (mk_fun_btyp tparams tret))
+        (typ_to_string (mk_fun_btyp tparams tret))
         fsep
 
 let enum_def_to_string (sep : string) (ed : enum_def) : string =
@@ -208,21 +208,24 @@ let enum_def_to_string (sep : string) (ed : enum_def) : string =
        ed.ed_elems)
     sep
 
-let record_def_to_tring (sep : string) (rd : record_def) : string =
+let record_def_to_tring (sep : string) (typ_to_string : 'a -> string)
+    (rd : 'a record_def) : string =
   sprintf
     "type %s = %s%s"
     (ident_to_string rd.rd_name)
-    (recordtyp_to_string btyp_to_string rd.rd_fields)
+    (recordtyp_to_string typ_to_string rd.rd_fields)
     sep
 
-let type_def_to_string (sep : string) (td : type_def) : string =
+let type_def_to_string (sep : string) (typ_to_string : 'a -> string)
+    (td : 'a type_def) : string =
   match td with
   | TdEnum ed -> enum_def_to_string sep ed
-  | TdRecord rd -> record_def_to_tring sep rd
+  | TdRecord rd -> record_def_to_tring sep typ_to_string rd
   | TdAbstract (t, _) -> sprintf "type %s" (ident_to_string t)
 
 let print_program (out : out_channel) (tsep : string)
-    (def_to_string : 'a -> string) (prog : 'a program) : unit =
+    (def_to_string : 'a -> string) (typ_to_string : 'b -> string)
+    (prog : ('a, 'b) program) : unit =
   let defs = prog.prog_defs in
   let types = prog.prog_types in
   let s, e =
@@ -232,5 +235,10 @@ let print_program (out : out_channel) (tsep : string)
     | _ :: _, _ :: _ -> ("\n\n", "\n")
     | [], _ :: _ -> ("", "\n")
   in
-  print_list out ~delim:("", s) ~sep:"\n\n" (type_def_to_string tsep) types;
+  print_list
+    out
+    ~delim:("", s)
+    ~sep:"\n\n"
+    (type_def_to_string tsep typ_to_string)
+    types;
   print_list out ~delim:("", e) ~sep:"\n\n" def_to_string defs

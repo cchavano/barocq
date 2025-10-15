@@ -597,8 +597,7 @@ module VCgen = struct
       unit =
     let sdefs = sprog.prog_defs in
     let isdef = function
-      | BarocqShallow.Monadic.DefConst _ | BarocqShallow.Monadic.DefFun _ ->
-          true
+      | DefConst _ | DefFun _ -> true
       | _ -> false
     in
     let sdefs = List.filter isdef sdefs in

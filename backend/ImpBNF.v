@@ -1,4 +1,4 @@
-From BarocqComp Require Import Benum Syntax.
+From BarocqComp Require Import Types Benum Syntax.
 
 (** * Abstract syntax *)
 
@@ -25,12 +25,12 @@ with statement : Type :=
 
 (** ** Functions *)
 
-Definition function : Type := Syntax.function tailcomp.
+Definition function : Type := Syntax.function tailcomp btyp.
 
 (** ** Global definitions *)
 
-Definition globdef : Type := Syntax.globdef literal function.
+Definition globdef : Type := Syntax.globdef literal function btyp.
 
 (** ** Programs *)
 
-Definition program : Type := Syntax.program globdef.
+Definition program : Type := Syntax.program globdef btyp.

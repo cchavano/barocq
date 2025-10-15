@@ -44,13 +44,24 @@ let statement_to_string (s : Imp1.statement) : string =
   statement_to_string_pref PrintUtils.indent s
 
 let function_to_string (f : Imp1.coq_function) : string =
-  PrintSyntax.function_to_string statement_to_string f
+  PrintSyntax.function_to_string statement_to_string PrintTypes.btyp_to_string f
 
 let globdef_to_string (def : Imp1.globdef) : string =
-  PrintSyntax.globdef_to_string literal_to_string function_to_string ";" "" def
+  PrintSyntax.globdef_to_string
+    literal_to_string
+    function_to_string
+    PrintTypes.btyp_to_string
+    ";"
+    ""
+    def
 
 let print_program (out : out_channel) (prog : Imp1.program) : unit =
-  PrintSyntax.print_program out ";" globdef_to_string prog
+  PrintSyntax.print_program
+    out
+    ";"
+    globdef_to_string
+    PrintTypes.btyp_to_string
+    prog
 
 module Typed : sig
   val statement_to_string_pref : string -> Imp1Typed.statement -> string

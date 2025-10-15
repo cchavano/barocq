@@ -217,7 +217,7 @@ let () =
 
       SurfaceTyping.set_arr_index_btyp !target_arch;
 
-      let iprog = SurfaceTyping.typecheck_iprogram s_iprog in
+      let iprog, ginfo = SurfaceTyping.typecheck_iprogram s_iprog in
 
       if !opt_typecheck then begin
         printf "Typechecking succeeded\n";
@@ -510,7 +510,7 @@ let () =
       end;
 
       if gen_c then
-        match Compiler.compile !opt_debug_aliasing !target_arch prog with
+        match Compiler.compile !opt_debug_aliasing !target_arch ginfo prog with
         | Errors.OK prog ->
             Camlcoq.use_canonical_atoms := true;
             let ids = ClightCegen.program_idents prog in

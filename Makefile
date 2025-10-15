@@ -10,7 +10,7 @@ FRONTEND=\
 
 BACKEND=\
 	ImpBNF.v ImpBNFgen.v ImpABNF.v ImpABNFgen.v\
-	Imp1.v Imp1gen.v Imp2.v Imp2gen.v ClightCegen.v
+	Imp1.v Imp1gen.v Imp2.v Imp2gen.v GlobRewrite.v ClightCegen.v
 
 BCOMP=Compiler.v
 

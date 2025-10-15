@@ -1,4 +1,4 @@
-From BarocqComp Require Import Syntax Benum.
+From BarocqComp Require Import Types Syntax Benum.
 
 (** * Abstract syntax *)
 
@@ -26,12 +26,12 @@ Inductive expr : Type :=
 
 (** ** Functions *)
 
-Definition function : Type := Syntax.function expr.
+Definition function : Type := Syntax.function expr btyp.
 
 (** ** Global definitions *)
 
-Definition globdef : Type := Syntax.globdef literal function.
+Definition globdef : Type := Syntax.globdef literal function btyp.
 
 (** ** Programs *)
 
-Definition program : Type := Syntax.program globdef.
+Definition program : Type := Syntax.program globdef btyp.

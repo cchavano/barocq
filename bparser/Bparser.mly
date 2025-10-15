@@ -21,6 +21,13 @@
     let re = Str.regexp {|^\([_|a-z][a-zA-Z0-9_]*\)$|} in
     Str.string_match re vid 0
 
+  let mk_decl x ty is_glob =
+    match ty with
+    | SFun (tparams, tret) ->
+        if is_glob then raise Error else
+        SurfaceAST.DeclFun (x, tparams, tret)
+    | _ -> SurfaceAST.DeclConst (x, ty, is_glob)
+
   let () =
     List.iter
       (fun (s, t) -> Hashtbl.add aliases s t)
@@ -50,7 +57,7 @@
 %token COMPUTE
 %token DEFN DECL TYPE OF
 %token AT_READONLY AT_WRITE
-%token INLINE ALWAYS_INLINE STATIC EXPORT
+%token INLINE ALWAYS_INLINE STATIC EXPORT UNIQUE
 %token LET AND IN MATCH WITH END
 %token IF THEN ELSE
 %token AS
@@ -113,15 +120,12 @@ globdef:
   | TYPE id = ident BIND elems = nonempty_list(enum_constr) { DefType (id, TdEnum elems) }
   | TYPE id = ident BIND fields = record_fields { DefType (id, TdRecord fields) }
   | TYPE id = ident OF kind = abs_type_kind { DeclType (id, kind) }
-  | DEFN x = var_ident COLON ty = styp BIND c = const { DefConst (x, c, ty) }
+  | DEFN x = var_ident COLON ty = styp BIND c = const { DefConst (x, c, ty, false) }
+  | UNIQUE DEFN x = var_ident COLON ty = styp BIND c = const { DefConst (x, c, ty, true) }
   | DEFN x = var_ident fd = fundef { DefFun (x, fd) }
   | attrs = nonempty_list(c_attr) DEFN x = var_ident fd = fundef { DefFun (x, {fd with fn_attribs = attrs}) }
-  | DECL x = var_ident COLON ty = styp
-    {
-      match ty with
-      | SFun (tparams, tret) -> DeclFun (x, tparams, tret)
-      | _ -> DeclConst (x, ty)
-    }
+  | DECL x = var_ident COLON ty = styp { mk_decl x ty false }
+  | UNIQUE DECL x = var_ident COLON ty = styp { mk_decl x ty true }
 
 fundef:
   | params = delimited(LPAREN, separated_list(COMMA, param), RPAREN)

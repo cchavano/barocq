@@ -116,9 +116,9 @@ End Typed.
 
 (** ** Functions *)
 
-Record function (B: Type) : Type := mk_function {
-  fn_return : btyp;
-  fn_params : list (ident * btyp);
+Record function (B T: Type) : Type := mk_function {
+  fn_return : T;
+  fn_params : list (ident * T);
   fn_body : B
 }.
 
@@ -129,11 +129,11 @@ Inductive param_attr :=
   | AttrWrite
   | AttrNone.
 
-Inductive globdef (C F: Type) : Type :=
-  | DefConst : ident -> C -> btyp -> globdef C F
-  | DefFun : ident -> F -> globdef C F
-  | DeclConst : ident -> btyp -> globdef C F
-  | DeclFun : ident -> list (param_attr * btyp) -> btyp -> globdef C F.
+Inductive globdef (L F T: Type) : Type :=
+  | DefConst : ident -> L -> T -> globdef L F T
+  | DefFun : ident -> F -> globdef L F T
+  | DeclConst : ident -> T -> globdef L F T
+  | DeclFun : ident -> list (param_attr * T) -> T -> globdef L F T.
 
 (** ** Programs *)
 
@@ -142,26 +142,33 @@ Record enum_def := mk_enum_def {
   ed_elems : list ident
 }.
 
-Record record_def := mk_record_def {
+Record record_def (T: Type) := mk_record_def {
   rd_name : ident;
-  rd_fields : list (ident * btyp)
+  rd_fields : list (ident * T)
 }.
+
+Arguments rd_name {T}.
+Arguments rd_fields {T}.
 
 Inductive struct_or_union : Type :=
   | SU_struct
   | SU_union.
 
-Inductive type_def : Type :=
-  | TdEnum : enum_def -> type_def
-  | TdRecord : record_def -> type_def
-  | TdAbstract : ident -> struct_or_union -> type_def. 
+Inductive type_def (T: Type) : Type :=
+  | TdEnum : enum_def -> type_def T
+  | TdRecord : record_def T -> type_def T
+  | TdAbstract : ident -> struct_or_union -> type_def T. 
 
-Record program (G: Type) : Type := mk_program {
+Arguments TdEnum {T}.
+Arguments TdRecord {T}.
+Arguments TdAbstract {T}.
+
+Record program (G T: Type) : Type := mk_program {
   prog_defs : list G;
-  prog_types : list type_def;
+  prog_types : list (type_def T);
 }.
 
-Definition get_record_typedefs (types: list type_def) : list record_def :=
+Definition get_record_typedefs {T} (types: list (type_def T)) : list (record_def T) :=
   List.fold_right
     (fun td acc =>
       match td with
@@ -171,16 +178,16 @@ Definition get_record_typedefs (types: list type_def) : list record_def :=
     nil
     types.
 
-Arguments DefConst {C} {F}.
-Arguments DefFun {C} {F}.
-Arguments DeclConst {C} {F}.
-Arguments DeclFun {C} {F}.
+Arguments DefConst {L} {F} {T}.
+Arguments DefFun {L} {F} {T}.
+Arguments DeclConst {L} {F} {T}.
+Arguments DeclFun {L} {F} {T}.
 
-Arguments mk_function {B}.
-Arguments fn_return {B}.
-Arguments fn_params {B}.
-Arguments fn_body {B}.
+Arguments mk_function {B} {T}.
+Arguments fn_return {B} {T}.
+Arguments fn_params {B} {T}.
+Arguments fn_body {B} {T}.
 
-Arguments mk_program {G}.
-Arguments prog_defs {G}.
-Arguments prog_types {G}.
+Arguments mk_program {G T}.
+Arguments prog_defs {G T}.
+Arguments prog_types {G T}.

@@ -89,7 +89,7 @@ let type_def_to_rocq (td : type_def) : string =
 let print_btypes (out : out_channel) (prog : program) : unit =
   let types =
     List.filter
-      (fun (td : BarocqShallow.Monadic.type_def) ->
+      (fun td ->
         match td with
         | TdAbstract _ -> false
         | _ -> true)

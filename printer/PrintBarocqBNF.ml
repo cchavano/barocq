@@ -82,15 +82,21 @@ and match_case_to_string (prefix : string) ((p, ep) : Benum.pattern * expr) :
 let expr_to_string (e : expr) : string = expr_to_string_pref PrintUtils.indent e
 
 let function_to_string (f : BarocqBNF.coq_function) : string =
-  PrintSyntax.function_to_string expr_to_string f
+  PrintSyntax.function_to_string expr_to_string PrintTypes.btyp_to_string f
 
 let globdef_to_string (def : BarocqBNF.globdef) : string =
   PrintSyntax.globdef_to_string
     literal_to_string
     function_to_string
+    PrintTypes.btyp_to_string
     ";;"
     ";;"
     def
 
 let print_program (out : out_channel) (prog : BarocqBNF.program) : unit =
-  PrintSyntax.print_program out ";;" globdef_to_string prog
+  PrintSyntax.print_program
+    out
+    ";;"
+    globdef_to_string
+    PrintTypes.btyp_to_string
+    prog
