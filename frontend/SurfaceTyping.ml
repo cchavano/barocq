@@ -8,6 +8,8 @@ open SurfaceAST
 (** Name of the module being analyzed. *)
 let curr_mname : string ref = ref ""
 
+let curr_vis : c_visibility ref = ref Export
+
 type btyp =
   | BBool
   | BInt32 of Types.signedness
@@ -59,6 +61,7 @@ type error_cause =
   | Use_of_non_prim_glob
   | Redundant_pattern of string
   | Non_exhaustive_pattern_matching of string
+  | Incompatible_func_visibility
 
 exception Error of error_cause * unit Location.t option
 
@@ -184,6 +187,9 @@ let msg_from_failure (cause : error_cause) : string =
         "there is no enum constructor of type %s named %s"
         (btyp_to_string t)
         e
+  | Incompatible_func_visibility ->
+      sprintf
+        "a function can not be marked 'static' and 'export' at the same time"
 
 let error ?(loc : 'a Location.t option = None) (c : error_cause) =
   let loc =
@@ -1543,6 +1549,29 @@ let typecheck_type_def (imports : ident list) (gte : gtenv) (ce : cenv)
       let ty = styp_to_btyp imports gte ty in
       (None, gtenv_update_local_aliases gte tid ty, ce, gx)
 
+let check_fun_visibility (fid : ident) (f : func) : bool =
+  let vis_to_bool = function
+    | Static -> true
+    | Export -> false
+  in
+  let rec check_aux l ov =
+    match l with
+    | [] -> begin
+        match ov with
+        | Some v -> v
+        | None -> !curr_vis
+      end
+    | Vis vi :: l' -> begin
+        match ov with
+        | Some v ->
+            if v = vi then check_aux l' ov
+            else error Incompatible_func_visibility ~loc:(Some fid)
+        | None -> check_aux l' (Some vi)
+      end
+    | _ :: l' -> check_aux l' ov
+  in
+  vis_to_bool (check_aux f.fn_attribs None)
+
 let typecheck_globdef (imports : ident list) (gte : gtenv) (ce : cenv)
     (gx : gcontext) (def : globdef) :
     Barocq.globdef option * gtenv * cenv * gcontext =
@@ -1566,11 +1595,19 @@ let typecheck_globdef (imports : ident list) (gte : gtenv) (ce : cenv)
       let gx' = gcontext_update_local gte gx id ty in
       let bid = transl_globdef_name !curr_mname id in
       let bid_pos = Ident.to_pos bid in
-      if List.mem Inline f.fn_attribs then
-        PrintClightCe.always_inline_defs :=
-          bid_pos :: !PrintClightCe.always_inline_defs;
-      if List.mem Static f.fn_attribs then
-        PrintClightCe.static_defs := bid_pos :: !PrintClightCe.static_defs;
+      let attrib_present attr = List.mem attr f.fn_attribs in
+      let inlining =
+        if attrib_present AlwaysInline then PrintClightCe.Always_inline
+        else if attrib_present Inline then PrintClightCe.Inline
+        else PrintClightCe.No_specifier
+      in
+      let finfo =
+        {
+          PrintClightCe.f_inline = inlining;
+          PrintClightCe.f_static = check_fun_visibility id f;
+        }
+      in
+      Hashtbl.add PrintClightCe.decl_fun bid_pos finfo;
       (Some (Barocq.DefFun (bid, bf)), gte, ce, gx')
   | DeclType (tid, tk) ->
       let gte' = gtenv_update_local_abstracts gte tid in
@@ -1636,6 +1673,7 @@ let typecheck_imodul (gte : gtenv) (ce : cenv) (gx : gcontext) (imd : imodul) :
   | Some _ -> error (Duplicate_module mname.content) ~loc:(Some mname)
   | _ ->
       curr_mname := imd.imd_name.content;
+      curr_vis := imd.imd_vis;
       (* Initialization of gte and gtx *)
       let gte = { gte with gtenv_local = tenv_empty } in
       let gx = { gx with gx_local = IdentMap.empty } in

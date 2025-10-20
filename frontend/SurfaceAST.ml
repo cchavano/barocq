@@ -45,9 +45,14 @@ type raw_expr =
 
 and expr = raw_expr Location.t
 
+type c_visibility =
+  | Static
+  | Export
+
 type c_attr =
   | Inline
-  | Static
+  | AlwaysInline
+  | Vis of c_visibility
 
 type func = {
   fn_return : styp;
@@ -91,6 +96,7 @@ type imodul = {
   imd_name : ident;
   imd_imports : ident list;
   imd_cmds : command list;
+  imd_vis : c_visibility;
 }
 
 type iprogram = imodul list

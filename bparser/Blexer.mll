@@ -6,7 +6,7 @@
     
   let error msg = raise @@ Error msg
 
-  let keywords = Hashtbl.create 15
+  let keywords = Hashtbl.create 26
 
   let comment_lvl = ref (-1)
 
@@ -49,6 +49,18 @@
           LIT_INT32 ((Int32.of_string il), Types.Signed)
         with Failure _ ->
           error "32-bit integer overflow"
+
+  let parse_param_attrib = function
+    | "read" -> AT_READONLY
+    | "write" -> AT_WRITE
+    | _ as s -> error (Printf.sprintf "unknown parameter attribute '%s'" s)
+
+  let parse_fun_attrib = function
+    | "inline" -> INLINE
+    | "always_inline" -> ALWAYS_INLINE
+    | "static" -> STATIC
+    | "export" -> EXPORT
+    | _ as s -> error (Printf.sprintf "unknown function attribute '%s'" s)
 
   let () =
     List.iter
@@ -126,12 +138,10 @@ rule read_token = parse
       read_string lexbuf;
       LIT_STRING (Buffer.contents string_buf)
     }
-  | hex_int_lit as il { parse_int_lit il }
-  | dec_int_lit as il { parse_int_lit il }
-  | "@read"       { AT_READONLY }
-  | "@write"      { AT_WRITE }
-  | "#inline"     { INLINE }
-  | "#static"     { STATIC }
+  | hex_int_lit as il   { parse_int_lit il }
+  | dec_int_lit as il   { parse_int_lit il }
+  | '@' (ident as id)   { parse_param_attrib id }
+  | '#' (ident as id)   { parse_fun_attrib id }
   | ident as id
     {
       try (Hashtbl.find keywords id) with 

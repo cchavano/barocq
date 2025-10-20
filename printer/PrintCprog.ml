@@ -33,7 +33,7 @@ let print_header_globdef (p : formatter)
 
 let print_header_globdecl (p : formatter)
     ((id, gd) : ident * ('a, Ctypes.coq_type) globdef) : unit =
-  if List.mem id !PrintClightCe.static_defs then ()
+  if PrintClightCe.fun_is_static id then ()
   else PrintClightCe.print_globdecl p (id, gd)
 
 let print_inttype_aliases (oc : out_channel) : unit =

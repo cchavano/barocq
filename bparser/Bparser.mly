@@ -50,7 +50,7 @@
 %token COMPUTE
 %token DEFN DECL TYPE OF
 %token AT_READONLY AT_WRITE
-%token INLINE STATIC
+%token INLINE ALWAYS_INLINE STATIC EXPORT
 %token LET AND IN MATCH WITH END
 %token IF THEN ELSE
 %token AS
@@ -82,17 +82,27 @@
 imodul:
   | MODULE mname = mod_ident SEMISEMI?
     imports = list(import)
+    vis = option(visibility)
     cmds = list(command) EOF
     {
+      let vis =
+        match vis with
+        | Some Static -> Static
+        | _ -> Export
+      in
       {
         imd_name = mname;
         imd_imports = List.rev imports;
-        imd_cmds = cmds
+        imd_cmds = cmds;
+        imd_vis = vis
       } 
     }
 
 import:
   | IMPORT mname = mod_ident SEMISEMI? { mname }
+
+visibility:
+  | LBRACKET STATIC RBRACKET { Static }
 
 command:
   | def = globdef SEMISEMI? { CmdDef def }
@@ -119,7 +129,9 @@ fundef:
 
 c_attr:
   | INLINE { Inline }
-  | STATIC { Static }
+  | ALWAYS_INLINE { AlwaysInline }
+  | STATIC { Vis Static }
+  | EXPORT { Vis Export }
 
 enum_constr:
   | PIPE id = IDENT
