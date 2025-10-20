@@ -83,14 +83,6 @@ type globdef =
   | DeclConst of ident * styp
   | DeclFun of ident * (Syntax.param_attr * styp) list * styp
 
-type modul = {
-  md_name : ident;
-  md_imports : ident list;
-  md_defs : globdef list;
-}
-
-type program = modul list
-
 type command =
   | CmdDef of globdef
   | CmdExpr of expr
