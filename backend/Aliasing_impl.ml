@@ -833,7 +833,7 @@ let build_call_state (st : absstate) (args : atom list) : absstate =
       args
   in
   let stcall = proj_state st vars in
-  { stcall with st_res = LocSet.empty }
+  { stcall with st_arr_locked = LocMap.empty; st_res = LocSet.empty }
 
 (** [returnstate_inv_paths st_init inv] computes the new invalid paths that are
     due to the invalidation of the arguments of a function call. [st_init] is
@@ -878,19 +878,18 @@ let exec_set_call (show_debug : bool) (re : renv) (x : ident) (a : atom)
           - All arguments are completely valid;
           - Each non-primitive argument points to only one abstract location;
           - Each argument points to a tree-shaped part of the memory;
-          - There is no inter-aliasing between arguments
-          - There is no locked arrays passed as arguments. *)
+          - There is no inter-aliasing between arguments. *)
       let args_validity =
         List.for_all (Aliasing_check.check_atom (AbsState stcall)) args
       in
-      let no_locked_arrays = LocMap.is_empty stcall.st_arr_locked in
+      (* let no_locked_arrays = LocMap.is_empty stcall.st_arr_locked in *)
       let errmsg cause =
         sprintf "when calling function %s: %s" (ident_to_string y) cause
       in
       if not (args_pointsto_unique stcall args) then
         top (errmsg "some arguments point to multiple locations")
-      else if not no_locked_arrays then
-        top (errmsg "some arguments contain locked arrays")
+        (* else if not no_locked_arrays then
+        top (errmsg "some arguments contain locked arrays") *)
       else if not (wf_args stcall args) then
         top (errmsg "intra- or inter-argument aliasing")
       else if not args_validity then top (errmsg "some arguments are not valid")

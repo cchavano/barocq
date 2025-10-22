@@ -55,6 +55,8 @@ make install
 
 `make install` installs the binary executable `barocq` under the `bin/` folder of the current opam switch.
 
+To install the Rocq development files, call `make install-dev`.
+
 === Editor support
 
 There is a syntax-highlighting support for VSCode. Open the VSCode command palette, look for the command `Developer: Install Extension from Location...` and choose the directory `misc/vsbarocq`.
@@ -578,6 +580,6 @@ NOTE: The points-to analysis is performed on an intermediate representation call
 
 The first thing to have in mind when you write Barocq code is that you are kind of writing an imperative program with a functional syntax. Thus, in the compiled code, assignments to non-primitive values actually create aliases, and modifying an array or a record updates the memory in-place. To make a functional program compatible with those behaviors, it is strongly recommended to adopt an _affine_ programming style (a bit like Rust for those familiar with the language). This means that you should only use a non-primitive value at most once. More precisely, we adopt the following guideline: "everytime you make a modification to an object, never try to use the old version of it". This is what we do in the example above. To help following this good practice, we use variable shadowing every time we modify a variable, so that we are sure that we will only use the last reference to it.
 
-The second thing to know concerns arrays. Usually, arrays are accessed with indices whose values are not statically known. Barocq enforces a very strict policy to make sure the programmer doesn't access an array of non-primitive elements with different indices at the same time. In short, you can only access one element at a time, and you cannot feed the parameters of a function with arguments containing arrays on which you already have a reference on a element.
+The second thing to know concerns arrays. Usually, arrays are accessed with indices whose values are not statically known. Barocq enforces a very strict policy to make sure the programmer doesn't access an array of non-primitive elements with different indices at the same time. The restrictions on arrays of non-primitive elements are the following: (1) you can only access one element at a time, (2) a function cannot return array element.
 
-Finally, you will not be able to swap pointers with the actual implementation of Barocq. The modifications you can make in the memory can only correspond to updating primitive values in objects.
+Finally, you will not be able to move pointers with the actual implementation of Barocq. The modifications you can make in the memory can only correspond to updating primitive values in objects.
