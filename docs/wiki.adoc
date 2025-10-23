@@ -3,7 +3,7 @@
 
 == Preamble
 
-Barocq is a restricted functional programming language with built-in enums, records and arrays.
+Barocq is a small first-order functional programming language with built-in enums, records and arrays.
 
 The purpose of Barocq is to integrate C-like features into a functional language to easily write system code (e.g. microkernel). Barocq is compiled to Clight, an intermediate language of https://github.com/AbsInt/CompCert[CompCert]. Clight programs can be pretty-printed as compilable C files. A Barocq program can also be translated to a shallow and deep embedding in Coq/Rocq.
 
@@ -477,7 +477,56 @@ This example will bring the definitions of `Mod1` and `Mod2` in scope, so that u
 
 NOTE: Use imports with care. Referencing an external definition without its module name can make the code harder to read and understand.
 
-WARNING: When compiling with (dependent) multiple files, all the dependencies must be given in order to the compiler. The Barocq compiler does not support separate compilation (no linking phase) and does not have a dependency analyzer yet. 
+WARNING: When compiling with (dependent) multiple files, all the dependencies must be given in order to the compiler. The Barocq compiler does not support separate compilation (no linking phase) and does not have a dependency analyzer yet.
+
+== Compilation directives
+
+Barocq supports the following compilation directives:
+
+[cols="1,1,1"]
+|===
+|Directive |Associated with |Effects
+
+| `#inline`
+| A function definition
+| Produces the C `inline` attribute for the corresponding function
+
+| `#always_inline`
+| A function definition
+| Produces the C `always_inline` attribute code for the corresponding function
+
+| `#static`
+| A function definition
+| Produces the C `static` keyword for the corresponding function
+
+| `[#static]`
+| A whole module
+| Produces the C `static` keyword for all the module's functions
+
+| `#export`
+| A function definition
+| Removes the C `static` keyword for the corresponding function if the parent module was marked `[#static]`
+
+| `#unique`
+| A record-typed constant definition or declaration
+| Tells the compiler that the marked constant is the unique instance of its type
+|===
+
+=== More details about `#unique`
+
+In microkernel code, functions may operate on a (part of a) global data structure that represents the kernel state. In a functional programming language like Barocq, this global state must be passed as an argument to every function that reads from or writes to it. The `#unique` directive can be used to modify the generated code by specifying that a global variable will be the only instance of its type during a program execution. Let's say that we mark a global variable `g` of type `ty` with `#unique`, then this directive has the following effects:
+
+- For function signatures, it removes every parameter of type `ty` and transforms the return type `ty` into `void`;
+- In function bodies, if `x` and `y` are of type `ty`, then:
+  * Every variable assignement `x = y` is removed;
+  * Every record operations `x.f` and `x.f = v` are replaced by `g.f` and `g.f = v`;
+  * Every function call assignment `x = foo(a1, ..., y, ..., an)` is transformed into `foo(a1, ..., an)` to match the new signature of `foo`;
+  * Every statement `return x` is replaced by `return`.
+
+To ensure that these transformations remain correct, marking a global variable with `#unique` also restricts the set of accepted programs. If `ty` is the type of this global variable, then the following things are **forbidden**:
+
+- Record type definitions that contain a field of type `ty`;
+- Functions for which `ty` appears more than once in the parameter types (e.g. function types `(t1, ty, ..., ty) -> tr` or `(array ty, t1, t2) -> tr`` are rejected).
 
 == A small example
 
