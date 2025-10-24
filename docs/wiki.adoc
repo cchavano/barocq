@@ -7,7 +7,7 @@ Barocq is a small first-order functional programming language with built-in enum
 
 The purpose of Barocq is to integrate C-like features into a functional language to easily write system code (e.g. microkernel). Barocq is compiled to Clight, an intermediate language of https://github.com/AbsInt/CompCert[CompCert]. Clight programs can be pretty-printed as compilable C files. A Barocq program can also be translated to a shallow and deep embedding in Rocq.
 
-Even though Barocq has a purely functional semantics, the compiler transforms all record and array modifications into in-place updates in C (i.e. no copies are performed). Of course, only a really small subset of functional programs can be translated to imperative ones using in-place updates without breaking the source program's semantics. Thus, Barocq is equipped with a static analyzer that rejects the programs whose compilation would be incorrect.
+Even though Barocq has a purely functional semantics, the compiler transforms all record and array modifications into in-place updates in C (i.e. no copies are performed). Of course, only a really small subset of functional programs can be translated to imperative ones using in-place updates without breaking the source program's semantics. Thus, Barocq is equipped with a static analyzer that rejects programs whose compilation would be incorrect.
 
 == Installation guide
 
@@ -16,11 +16,11 @@ Even though Barocq has a purely functional semantics, the compiler transforms al
 The Barocq compiler depends on OCaml, Rocq and a customized version of the CompCert compiler.
 First, install the OCaml Package Manager (OPAM).
 It is recommended to create a new opam switch for building Barocq.
-Once the switch is initialized, add the Coq package repository:
+Once the switch is initialized, add the Rocq package repository:
 
 [source,bash]
 ----
-opam repo add coq-released https://coq.inria.fr/opam/released
+opam repo add rocq-released https://rocq-prover.org/opam/released
 ----
 
 Then, install the following dependencies with `opam install`:
@@ -316,7 +316,7 @@ To update multiple fields of the same record "at the same time", the following s
 
 [source]
 ----
-{ p with  x <- 2; y <- 3 }
+{ p with  x <- 2; y <- 3; }
 ----
 
 In this example, `p` should be a record variable, and `x` and `y` fields of the corresponding record type.
