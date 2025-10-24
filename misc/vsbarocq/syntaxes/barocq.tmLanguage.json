@@ -22,7 +22,7 @@
                 {
                     "comment": "other keyword",
 				    "name": "keyword.other.barocq",
-				    "match": "\\b(module|import|type|defn|decl|let|and|in|match|with|end|compute|as|of)\\b"
+				    "match": "\\b(module|import|type|defn|decl|let|in|match|with|case|end|compute|as|of)\\b"
                 }
             ]
 		},
@@ -31,7 +31,7 @@
                 {
                     "comment": "infix operator",
                     "name": "keyword.operator.barocq",
-                    "match": "<-|[.+\\-\\*/%\\^<>&\\|]|lor"
+                    "match": "<-|[.+\\-\\*/%\\^<>&\\|]"
                 },
                 {
                     "comment": "prefix operator",

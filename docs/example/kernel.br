@@ -4,10 +4,15 @@ defn nb_procs : u64 = 5UL
 
 defn quantum : u64 = 100UL
 
+type proc_status = [
+  READY,
+  RUNNING,
+]
+
 type proc = {
   pid: u64;
   regs: array u64;
-  nb_sched: u64;
+  status: proc_status;
 }
 
 type state = {
@@ -20,21 +25,21 @@ type state = {
 defn sync(ks: state) : state =
   ks.mc <- Machine::write_timecmp(ks.mc, ks.deadline)
 
-defn incr_proc_nb_sched(ks: state, pid: u64) : state =
+defn update_proc_status(ks: state, pid: u64, status: proc_status) : state =
   let procs = ks.procs in
   let proc = procs[pid] in
-  let proc = proc.nb_sched <- proc.nb_sched + 1UL in
+  let proc = proc.status <- status in
   let procs = procs[pid] <- proc in
   ks.procs <- procs
 
 defn schedule(ks: state) : state =
   if Machine::read_time(ks.mc) > ks.deadline then
-    let next_pid = (ks.curr_pid + 1UL) % nb_procs in
+    let curr_pid = ks.curr_pid in
+    let next_pid = (curr_pid + 1UL) % nb_procs in
     let next_deadline = ks.deadline + quantum in
-    let
-      ks = ks with { curr_pid <- next_pid; deadline <- next_deadline; } and
-      ks = incr_proc_nb_sched(ks, next_pid)
-    in
+    let ks = update_proc_status(ks, curr_pid, READY) in
+    let ks = update_proc_status(ks, next_pid, RUNNING) in
+    let ks = { ks with curr_pid <- next_pid; deadline <- next_deadline; } in
     sync(ks)
   else
     ks

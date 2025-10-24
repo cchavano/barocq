@@ -1203,11 +1203,7 @@ let rec typecheck_raw_expr (imports : ident list) (gte : gtenv) (gx : gcontext)
             (Barocq.EMatch (e1', cases'), t)
         | _ -> assert false
       end
-  | ELetIn (le, e) -> begin
-      match le with
-      | [] -> assert false
-      | _ -> typecheck_let_in imports gte gx lx le e
-    end
+  | ELetIn (x, e1, e2) -> typecheck_let_in imports gte gx lx x e1 e2
 
 and typecheck_expr (imports : ident list) (gte : gtenv) (gx : gcontext)
     (lx : lcontext) (e : expr) : Barocq.expr * btyp =
@@ -1310,17 +1306,12 @@ and typecheck_match (imports : ident list) (gte : gtenv) (gx : gcontext)
   | _ -> assert false
 
 and typecheck_let_in (imports : ident list) (gte : gtenv) (gx : gcontext)
-    (lx : lcontext) (le : (ident * expr) list) (e : expr) : Barocq.expr * btyp =
-  match le with
-  | [] ->
-      let e', t = typecheck_expr imports gte gx lx e in
-      (e', t)
-  | (xi, ei) :: le' ->
-      let xi' = PrintUtils.ident_of_string ("u_" ^ xi.content) in
-      let ei', ti = typecheck_expr imports gte gx lx ei in
-      let lx' = lcontext_update lx xi ti in
-      let er, tr = typecheck_let_in imports gte gx lx' le' e in
-      (Barocq.ELetIn (xi', ei', er), tr)
+    (lx : lcontext) (x : ident) (e1 : expr) (e2 : expr) : Barocq.expr * btyp =
+  let x' = PrintUtils.ident_of_string ("u_" ^ x.content) in
+  let e1', t1 = typecheck_expr imports gte gx lx e1 in
+  let lx' = lcontext_update lx x t1 in
+  let e2', t2 = typecheck_expr imports gte gx lx' e2 in
+  (Barocq.ELetIn (x', e1', e2'), t2)
 
 let cvalue_to_literal (v : cvalue) : Syntax.literal =
   match v with

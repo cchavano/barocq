@@ -9,21 +9,22 @@ A Barocq program can also be translated to a shallow and deep embedding in Coq/R
 
 # Dependencies
 
-The Barocq compiler depends on OCaml, Coq/Rocq and a customized version of the CompCert compiler.
+The Barocq compiler depends on OCaml, Rocq and a customized version of the CompCert compiler.
 First, install the OCaml Package Manager (OPAM).
 It is recommended to create a new opam switch for building Barocq.
-Once the switch is initialized, add the Coq package repository:
+Once the switch is initialized, add the Rocq package repository:
 
 ```bash
-opam repo add coq-released https://coq.inria.fr/opam/released
+opam repo add rocq-released https://rocq-prover.org/opam/released
 ```
 
 Then, install the following dependencies with `opam install`:
 
 ```text
-ocaml           (version 4.14.2)
-menhir          (version 20240715)
-coq             (version 8.20.1)
+ocaml               (version 4.14.2)
+menhir              (version 20240715)
+coq                 (version 8.20.1)
+coq-record-update   (version 0.3.6)
 ```
 
 Finally, install the modified version of CompCert:
@@ -55,7 +56,7 @@ barocq path/to/file.br
 
 Without any additionnal option, a C file will be created at `path/to/a.c`.
 
-To generate the shallow and deep embeddings, as well as the correspondence theorems, use:
+To generate the shallow and deep embeddings, as well as the correspondence proofs, use:
 
 ```bash
 barocq -gen-corres-all path/to/file.br

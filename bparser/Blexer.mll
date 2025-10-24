@@ -51,7 +51,7 @@
           error "32-bit integer overflow"
 
   let parse_param_attrib = function
-    | "read" -> AT_READONLY
+    | "read" -> AT_READ
     | "write" -> AT_WRITE
     | _ as s -> error (Printf.sprintf "unknown parameter attribute '%s'" s)
 
@@ -69,13 +69,12 @@
       [
         ("module", MODULE); ("import", IMPORT); ("compute", COMPUTE);
         ("true", TRUE); ("false", FALSE);
-        ("bool", TYP_BOOL); ("i32", TYP_INT32); ("u32", TYP_UINT32);
-        ("i64", TYP_INT64); ("u64", TYP_UINT64); ("array", TYP_ARRAY);
+        ("bool", TYP_BOOL); ("i32", TYP_I32); ("u32", TYP_U32);
+        ("i64", TYP_I64); ("u64", TYP_U64); ("array", TYP_ARRAY);
         ("type", TYPE); ("of", OF); ("defn", DEFN); ("decl", DECL);
-        ("let", LET); ("and", AND); ("in", IN);
-        ("match", MATCH); ("with", WITH); ("end", END);
-        ("as", AS); ("if", IF); ("then", THEN); ("else", ELSE);
-        ("lor", OP_ORINT)
+        ("let", LET); ("in", IN);
+        ("match", MATCH); ("with", WITH); ("case", CASE); ("end", END);
+        ("as", AS); ("if", IF); ("then", THEN); ("else", ELSE)
       ]
 }
 
@@ -94,7 +93,6 @@ rule read_token = parse
   | space+        { read_token lexbuf }
   | "(*"          { incr comment_lvl; read_comment lexbuf }
   | "*)"          { error "comment end before comment begin" }
-  | ";;"          { SEMISEMI }
   | "[|"          { LBRACKETBAR }
   | "|]"          { RBRACKETBAR }
   | "=>"          { RDARROW }
@@ -118,19 +116,19 @@ rule read_token = parse
   | "["           { LBRACKET }
   | "]"           { RBRACKET }
   | "{"           { LBRACE }
-  | "}"           { RBRACE }        
+  | "}"           { RBRACE }   
   | "+"           { OP_PLUS }
   | "-"           { OP_MINUS }
   | "*"           { OP_MUL }
   | "/"           { OP_DIV }
   | "%"           { OP_MOD }
-  | "&"           { OP_ANDINT }
-  | "|"           { PIPE }
-  | "^"           { OP_XORINT }
-  | "~"           { OP_NOTINT }
   | "<"           { OP_LT }
   | ">"           { OP_GT }
   | "!"           { OP_NOTBOOL }
+  | "&"           { OP_ANDINT }
+  | "|"           { OP_ORINT }
+  | "^"           { OP_XORINT }
+  | "~"           { OP_NOTINT }
   | "="           { BIND }
   | "_"           { UNDERSCORE }
   | "\""

@@ -5,8 +5,6 @@
   open SurfaceAST
   open Location
 
-  let aliases = Hashtbl.create 10
-
   (* A module name must begin with an uppercase letter. *)
   let valid_modul_ident mid =
     let re = Str.regexp {|^\([A-Z][a-zA-Z0-9_]*\)$|} in
@@ -27,18 +25,10 @@
         if is_glob then raise Error else
         SurfaceAST.DeclFun (x, tparams, tret)
     | _ -> SurfaceAST.DeclConst (x, ty, is_glob)
-
-  let () =
-    List.iter
-      (fun (s, t) -> Hashtbl.add aliases s t)
-      [
-        ("hey", BBool)
-      ]
 %}
 
-%token MODULE
-%token IMPORT
-%token DOT COMMA SEMICOLON COLON SEMISEMI
+%token MODULE IMPORT
+%token DOT COMMA SEMICOLON COLON
 %token LPAREN RPAREN
 %token LBRACKET RBRACKET
 %token LBRACKETBAR RBRACKETBAR
@@ -46,21 +36,22 @@
 %token RARROW
 %token RDARROW
 %token LARROW BIND
-%token PIPE UNDERSCORE
+%token UNDERSCORE
 %token OP_PLUS OP_MINUS OP_MUL OP_DIV OP_MOD
 %token OP_ANDINT OP_ORINT OP_XORINT OP_NOTINT
 %token OP_SHL OP_SHR
 %token OP_EQ OP_NEQ OP_LT OP_GT OP_LE OP_GE
-%token OP_ANDBOOL OP_ORBOOL OP_XORBOOL OP_NOTBOOL 
+%token OP_ANDBOOL OP_ORBOOL OP_XORBOOL OP_NOTBOOL
+%token AS
 %token TRUE FALSE
-%token TYP_BOOL TYP_INT32 TYP_UINT32 TYP_INT64 TYP_UINT64 TYP_ARRAY
+%token TYP_BOOL TYP_I32 TYP_U32 TYP_I64 TYP_U64 TYP_ARRAY
 %token COMPUTE
 %token DEFN DECL TYPE OF
-%token AT_READONLY AT_WRITE
+%token AT_READ AT_WRITE
 %token INLINE ALWAYS_INLINE STATIC EXPORT UNIQUE
-%token LET AND IN MATCH WITH END
+%token LET IN 
+%token MATCH WITH CASE END
 %token IF THEN ELSE
-%token AS
 %token <string> LIT_STRING
 %token <int32 * Types.signedness> LIT_INT32
 %token <int64 * Types.signedness> LIT_INT64
@@ -78,16 +69,14 @@
 %nonassoc OP_NOTBOOL OP_NOTINT
 %nonassoc LPAREN LBRACKET
 %nonassoc DOT
-// %right RARROW
 %nonassoc WITH
-// %nonassoc TYP_ARRAY
 
 %start imodul
 %type<SurfaceAST.imodul> imodul
 %%
 
 imodul:
-  | MODULE mname = mod_ident SEMISEMI?
+  | MODULE mname = mod_ident
     imports = list(import)
     vis = option(visibility)
     cmds = list(command) EOF
@@ -106,18 +95,18 @@ imodul:
     }
 
 import:
-  | IMPORT mname = mod_ident SEMISEMI? { mname }
+  | IMPORT mname = mod_ident { mname }
 
 visibility:
   | LBRACKET STATIC RBRACKET { Static }
 
 command:
-  | def = globdef SEMISEMI? { CmdDef def }
-  | COMPUTE e = expr SEMISEMI? { CmdExpr e }
+  | def = globdef { CmdDef def }
+  | COMPUTE e = expr { CmdExpr e }
 
 globdef:
   | TYPE id = ident BIND ty = styp { DefType (id, TdAlias ty) }
-  | TYPE id = ident BIND elems = nonempty_list(enum_constr) { DefType (id, TdEnum elems) }
+  | TYPE id = ident BIND elems = delimited(LBRACKET, nonempty_list(enum_constr), RBRACKET) { DefType (id, TdEnum elems) }
   | TYPE id = ident BIND fields = record_fields { DefType (id, TdRecord fields) }
   | TYPE id = ident OF kind = abs_type_kind { DeclType (id, kind) }
   | DEFN x = var_ident COLON ty = styp BIND c = const { DefConst (x, c, ty, false) }
@@ -138,7 +127,7 @@ c_attr:
   | EXPORT { Vis Export }
 
 enum_constr:
-  | PIPE id = IDENT
+  | id = IDENT COMMA
     {
       if valid_constr_ident id then
         Location.make $startpos $endpos id
@@ -178,8 +167,8 @@ raw_expr:
   | e1 = expr LBRACKET e2 = expr RBRACKET LARROW e3 = expr { EArraySet (e1, e2, e3) }
   | e1 = expr DOT key = var_ident { ERecordProj (e1, key) }
   | e1 = expr DOT key = var_ident LARROW e2 = expr { ERecordUpdate (e1, [(key, e2)]) }
-  | e1 = expr WITH le = delimited(LBRACE, nonempty_list(field_update), RBRACE) { ERecordUpdate (e1, le) }
-  | LET le = separated_nonempty_list(AND, binding) IN e = expr { ELetIn (le, e) }
+  | LBRACE e1 = expr WITH le = nonempty_list(field_update) RBRACE { ERecordUpdate (e1, le) }
+  | LET x = var_ident BIND e1 = expr IN e2 = expr { ELetIn (x, e1, e2) }
   | IF e1 = expr THEN e2 = expr ELSE e3 = expr { EIfThenElse (e1, e2, e3) }
   | MATCH e = expr WITH cases = nonempty_list(match_case) END { EMatch (e, cases) }
   | op = unary_op e = expr { EUnaryOp (op, e) }
@@ -187,7 +176,7 @@ raw_expr:
   | e = expr args = delimited(LPAREN, separated_list(COMMA, expr), RPAREN) { EApp (e, args) }
 
 match_case:
-  | PIPE cid = cident RDARROW e = expr
+  | CASE cid = cident RDARROW e = expr
     { 
       match cid with
       | IdSimple id
@@ -195,13 +184,10 @@ match_case:
           if valid_constr_ident id.content then (PIdent cid, e)
           else raise Error
     }
-  | PIPE und = underscore RDARROW e = expr { (und, e) }
+  | CASE und = underscore RDARROW e = expr { (und, e) }
 
 underscore:
   | UNDERSCORE { PWildcard (Location.make $startpos $endpos ()) }
-
-binding:
-  | x = var_ident BIND e = expr { (x, e) }
 
 var_ident:
   | id = IDENT
@@ -279,10 +265,10 @@ styp:
 
 styp_simpl:
   | TYP_BOOL { SBool }
-  | TYP_INT32 { SInt32 Signed }
-  | TYP_UINT32 { SInt32 Unsigned }
-  | TYP_INT64 { SInt64 Signed }
-  | TYP_UINT64 { SInt64 Unsigned }
+  | TYP_I32 { SInt32 Signed }
+  | TYP_U32 { SInt32 Unsigned }
+  | TYP_I64 { SInt64 Signed }
+  | TYP_U64 { SInt64 Unsigned }
   | ty = cident { SIdent ty }
 
 styp_func:
@@ -291,7 +277,7 @@ styp_func:
     { SFun (tparams, tret) }
 
 styp_func_param:
-  | AT_READONLY ty = styp { (AttrReadonly, ty) }
+  | AT_READ ty = styp { (AttrReadonly, ty) }
   | AT_WRITE ty = styp { (AttrWrite, ty) }
   | ty = styp { (AttrNone, ty) }
 

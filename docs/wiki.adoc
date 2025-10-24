@@ -5,17 +5,15 @@
 
 Barocq is a small first-order functional programming language with built-in enums, records and arrays.
 
-The purpose of Barocq is to integrate C-like features into a functional language to easily write system code (e.g. microkernel). Barocq is compiled to Clight, an intermediate language of https://github.com/AbsInt/CompCert[CompCert]. Clight programs can be pretty-printed as compilable C files. A Barocq program can also be translated to a shallow and deep embedding in Coq/Rocq.
+The purpose of Barocq is to integrate C-like features into a functional language to easily write system code (e.g. microkernel). Barocq is compiled to Clight, an intermediate language of https://github.com/AbsInt/CompCert[CompCert]. Clight programs can be pretty-printed as compilable C files. A Barocq program can also be translated to a shallow and deep embedding in Rocq.
 
 Even though Barocq has a purely functional semantics, the compiler transforms all record and array modifications into in-place updates in C (i.e. no copies are performed). Of course, only a really small subset of functional programs can be translated to imperative ones using in-place updates without breaking the source program's semantics. Thus, Barocq is equipped with a static analyzer that rejects the programs whose compilation would be incorrect.
-
-This documentation first describes the necessary steps to install the Barocq compiler. It then presents the surface syntax and the features of the language. Finally, it gives a more detailed example and the good practices to follow to avoid getting errors from the static analyzer mentioned above.
 
 == Installation guide
 
 === Dependencies
 
-The Barocq compiler depends on OCaml, Coq/Rocq and a customized version of the CompCert compiler.
+The Barocq compiler depends on OCaml, Rocq and a customized version of the CompCert compiler.
 First, install the OCaml Package Manager (OPAM).
 It is recommended to create a new opam switch for building Barocq.
 Once the switch is initialized, add the Coq package repository:
@@ -29,9 +27,10 @@ Then, install the following dependencies with `opam install`:
 
 [source,text]
 ----
-ocaml           (version 4.14.2)
-menhir          (version 20240715)
-coq             (version 8.20.1)
+ocaml               (version 4.14.2)
+menhir              (version 20240715)
+coq                 (version 8.20.1)
+coq-record-update   (version 0.3.6)
 ----
 
 Finally, install the modified version of CompCert:
@@ -71,25 +70,23 @@ Barocq supports the usual boolean and integer types.
 
 [cols="1,1"]
 |===
-|Type |Syntax
+|Type |Description
 
-|boolean
 |`bool`
+|boolean
 
-|32-bit integer
 |`i32`
+|32-bit integer
 
-|32-bit unsigned integer
 |`u32`
+|32-bit unsigned integer
 
-|64-bit integer
 |`i64`
+|64-bit integer
 
-|64-bit unsigned integer
 |`u64`
+|64-bit unsigned integer
 |===
-
-For the moment, there is no support for integers whose size depend on the architecture.
 
 ==== Enumerated types
 
@@ -97,12 +94,13 @@ Enumerated types can be created with the keyword `type`. An example an enum type
 
 [source]
 ----
-type retcode =
-    | SUCCESS
-    | ERROR
+type retcode = [
+  SUCCESS,
+  ERROR,
+]
 ----
 
-The enum constructors must begin with an uppercase letter.
+An enum constructor (like SUCCESS or ERROR) must begin with an uppercase letter.
 
 ==== Record types
 
@@ -111,13 +109,13 @@ Record types can be created with the keyword `type`. An example of two record ty
 [source]
 ----
 type point = {
-    x: i32;
-    y: i32;
+  x: i32;
+  y: i32;
 }
 
 type circle = {
-    center: point;
-    radius: u32;
+  center: point;
+  radius: u32;
 }
 ----
 
@@ -154,11 +152,11 @@ Boolean literals are `true` and `false`.
 Integer literals can be written in decimal (e.g. `123`) or hexadimal (e.g. `0xFF`) notation. By default,
 integer literals are parsed as being 32-bit signed integers. To change the signedness and size of a literal, the suffixes `U` (for unsigned), `L` (for long, i.e. 64-bit) and `UL` (for unsigned 64-bit) must be used.
 
-Record literals are written `{ f1 = l1; ...; fn = ln; }`, where `fi` is the field name and `li` the corresponding value, which is another literal.
+Record literals are written `{ f1 = l1; ...; fn = ln; }`, where `fi` are field names and `li` are the associated values that are also literals.
 
 Array literals are written `[| l1; l2; ...; ln |]` where each `li` is a literal.
 
-IMPORTANT: Array and record literals can only be used for defining global constants and cannot appear in the body of a function. This is due to the fact that Barocq does not support object allocation.
+IMPORTANT: Array and record literals can only be used for defining global constants and cannot appear in the body of a function.
 
 ==== Operators
 
@@ -240,7 +238,7 @@ The two operands of a binary operation must have the same type.
 |Bitwise AND
 |Any integer type
 
-|`lor`
+|`\|`
 |Bitwise OR
 |Any integer type
 
@@ -288,7 +286,7 @@ The following table summarizes the other expressions of the language. All identi
 |`if e1 then e2 else e3`
 |Conditional expression
 
-|`match e0 with \| p1 => e1 \| ... \| pn => en end`
+|`match e0 with case p1 => e1 ... case pn => en end`
 |Pattern-matching*
 
 |`e.f`
@@ -314,46 +312,24 @@ The following table summarizes the other expressions of the language. All identi
 
 ==== Syntactic sugar
 
-There is also syntactic sugar for let-binding sequences and multi-fields updates for records.
-
-To define multiple let-bindings without having to use `let ... in` everytime, you can use the `and` keyword. For exemple, the following code:
-
-[source]
-----
-let x = 1 in
-let y = 2 in
-let z = 3 in
-x + y + z
-----
-
-can be written:
-
-[source]
-----
-let
-  x = 1 and
-  x = 2 and
-  y = 3
-in
-x + y + z
-----
-
 To update multiple fields of the same record "at the same time", the following syntax can be used:
 
 [source]
 ----
-p with { x <- 2; y <- 3 }
+{ p with  x <- 2; y <- 3 }
 ----
 
 In this example, `p` should be a record variable, and `x` and `y` fields of the corresponding record type.
 
-IMPORTANT: This syntax is desugarged by a sequence of single-field record updates that keeps the order in which the programmer updated the fields. For example, the code snippet above is desugared as `(p.x \<- 2).y \<- 3`. Using a different order may lead to different errors raised by the compiler if side effects do occur in the update (compiled) expressions.
+IMPORTANT: This syntax is desugarged into a sequence of single-field record updates that preserves the order in which the programmer updated the fields. For example, the code snippet above is desugared as `(p.x \<- 2).y \<- 3`. Using a different order may lead to different errors raised by the compiler if side effects do occur in the update (compiled) expressions.
 
-NOTE: The type of array indexes depends on the target architecture for which you want to compile the generated C code. If the target has a 32-bit architecture, you should use `u32` indices, otherwise you should use `u64` for a 64-bit arch. By default, the compiler uses the CompCert Archi.ptr64 constant to get the target architecture. To set a different value, you can use the `-target-arch` option (cf. `barocq -help`.)
+==== Type of array indexes
+
+The type of array indexes depends on the target architecture for which you want to compile the generated C code. If the target has a 32-bit architecture, you should use `u32` indices, otherwise you should use `u64` for a 64-bit arch. By default, the compiler uses the CompCert `Archi.ptr64` constant to get the target architecture. To set a different value, you can use the `-target-arch` option (cf. `barocq -help`.)
 
 === Definitions
 
-Global constants  and functions can be defined with the keyword `defn`.
+Global constants and functions can be defined with the keyword `defn`.
 
 ==== Constants
 
@@ -392,7 +368,7 @@ defn fun_name(p1: t1, ..., pn: tn) : tr =
 
 Each parameter `pi` is associated with its type `ti`. `tr` is the return type. A function can take no parameters.
 
-NOTE: All functions are uncurried, you can not do partial application.
+NOTE: All functions are uncurried, partial application is not supported.
 
 === Foreign function interface
 
@@ -410,7 +386,6 @@ type my_type2 of "union"
 ----
 
 All references to an abstract type in the Barocq code are translated to a boxed type in the generated C file.
-The only thing that shoud be unboxed is the type definition itself.
 
 ==== Abstract definitions
 
@@ -421,8 +396,8 @@ Abstract constants and functions are declared with the keyword `decl`:
 type t1 of "struct"
 
 type rec = {
-    f1: t1;
-    f2: u32;
+  f1: t1;
+  f2: u32;
 }
 
 decl const1 : u32
@@ -436,7 +411,7 @@ decl copy_array : (@read array point, @write array point) -> array point
 
 By default, all arguments passed to an abstract function will become unsuable after the call (like in a strict linear type system.). To prevent this, you can use the annotation `@read` to specify that the function will only read data from the argument and will never modify it.
 This annotation is used in the abstract function `copy_array` for example. +
-The second existing annotation is `@write`, which means two things. First, it indicates that the function may modify the argument, and second, that the returned value is a direct alias to this argument. 
+The second existing annotation is `@write`, which means two things. First, it indicates that the function may modify the argument, and second, that the return value is a direct alias to this argument. 
 Any abstract function which returns a non-primitive value shoud have a parameter annotated with `@write` with the same type as the return type.
 
 [IMPORTANT]
@@ -520,15 +495,17 @@ In microkernel code, functions may operate on a (part of a) global data structur
 - In function bodies, if `x` and `y` are of type `ty`, then:
   * Every variable assignement `x = y` is removed;
   * Every record operations `x.f` and `x.f = v` are replaced by `g.f` and `g.f = v`;
-  * Every function call assignment `x = foo(a1, ..., y, ..., an)` is transformed into `foo(a1, ..., an)` to match the new signature of `foo`;
+  * Every function call assignment `x = foo(a1, ..., y, ..., an)` are transformed into `foo(a1, ..., an)` to match the new signature of `foo`;
   * Every statement `return x` is replaced by `return`.
 
 To ensure that these transformations remain correct, marking a global variable with `#unique` also restricts the set of accepted programs. If `ty` is the type of this global variable, then the following things are **forbidden**:
 
 - Record type definitions that contain a field of type `ty`;
-- Functions for which `ty` appears more than once in the parameter types (e.g. function types `(t1, ty, ..., ty) -> tr` or `(array ty, t1, t2) -> tr`` are rejected).
+- Functions for which `ty` appears more than once in the parameter types (e.g. function types `(t1, ty, ..., ty) -> tr` or `(array ty, t1, t2) -> tr` are rejected).
 
 == A small example
+
+=== A toy microkernel
 
 In this example, we write of what could be an excerpt of a microkernel.
 We have two source files: `kernel.br` and `machine.br`.
@@ -560,10 +537,15 @@ defn nb_procs : u64 = 5UL
 
 defn quantum : u64 = 100UL
 
+type proc_status = [
+  READY,
+  RUNNING,
+]
+
 type proc = {
   pid: u64;
   regs: array u64;
-  nb_sched: u64;
+  status: proc_status;
 }
 
 type state = {
@@ -576,41 +558,38 @@ type state = {
 defn sync(ks: state) : state =
   ks.mc <- Machine::write_timecmp(ks.mc, ks.deadline)
 
-defn incr_proc_nb_sched(ks: state, pid: u64) : state =
+defn update_proc_status(ks: state, pid: u64, status: proc_status) : state =
   let procs = ks.procs in
   let proc = procs[pid] in
-  let proc = proc.nb_sched <- proc.nb_sched + 1UL in
+  let proc = proc.status <- status in
   let procs = procs[pid] <- proc in
   ks.procs <- procs
 
 defn schedule(ks: state) : state =
   if Machine::read_time(ks.mc) > ks.deadline then
-    let next_pid = (ks.curr_pid + 1UL) % nb_procs in
+    let curr_pid = ks.curr_pid in
+    let next_pid = (curr_pid + 1UL) % nb_procs in
     let next_deadline = ks.deadline + quantum in
-    let
-      ks = ks with { curr_pid <- next_pid; deadline <- next_deadline; } and
-      ks = incr_proc_nb_sched(ks, next_pid)
-    in
+    let ks = update_proc_status(ks, curr_pid, READY) in
+    let ks = update_proc_status(ks, next_pid, RUNNING) in
+    let ks = { ks with curr_pid <- next_pid; deadline <- next_deadline; } in
     sync(ks)
   else
     ks
 ----
 
-The kernel state is composed of the current process id, the array of processes, the deadline of the current process and the machine state. A process is represented as a record containing its identifier, its set of saved registers and the number of times it has been scheduled.
+The kernel state is composed of the current process id, the array of processes, the deadline of the current process and the machine state. A process is represented as a record containing its identifier, its set of saved registers and its status.
 
 Two constants describe the kernel configuration: the number of processes `nb_procs`, and the quantum value for a round-robin scheduling `quantum`.
 
-Finally, three core functions are defined. The function `sync` is used to synchronize the kernel data with the machine state. The function `incr_proc_nb_sched` increases by one the number of times a given process has been scheduled. The function `schedule` chooses the next process to be scheduled. This function checks whether the current process has missed its deadline. If so, it selects the next process to run, increments the `nb_sched` field of this process by one and updates the machine state. Otherwise it does nothing.
+Finally, three core functions are defined. `sync` is used to synchronize the kernel data with the machine state. `update_proc_status` modifies the status of the given process. `schedule` chooses the next process to be scheduled. This function checks whether the current process has missed its deadline. If so, it selects the next process to run, updates the status of the current and next processes and synchronizes with the machine state.
 
-
-You may notice that notice that to modify the `nb_sched` field of a process, the function `incr_proc_nb_sched` contains all the steps from getting the process, updating it and updating the process table back. In fact, Barocq does *not* support _deep updates_ for the moment. If you try to write `ks.procs[next_id].nb_sched \<- v`, this instruction is interpreted as:
+You may notice that to modify the status of a process, `update_proc_status` contains all the steps from getting the process, modyfing its status and updating the process table back. In fact, Barocq does *not* support _deep updates_ for the moment. If you try to write `ks.procs[next_id].status \<- v`, this instruction is interpreted as:
 
 . < Retrieve the value from `ks.procs[next_id]` >, which returns a value of type `proc`;
-. < Update the field `nb_sched` of this value >, which also returns a value of type `proc`.
+. < Update the field `status` of this value >, which also returns a value of type `proc`.
 
 A deep update would make this instruction effectively return the new updated kernel `state`, but this is not yet supported by the compiler.
-
-If you just want make a deep access to a value without modifying it, you can use the syntax `ks.procs[next_id].nb_sched` for example.
 
 To compile those files with the Barocq compiler, we use the following command:
 
@@ -620,6 +599,21 @@ barocq -o kernel.c -gen-header -types-impl machine.h machine.br kernel.br
 ----
 
 This command will generate a C file `kernel.c` and the associated header file `kernel.h`. All definitions are grouped together in `kernel.c` and prefixed with the name of the module from which they originate. For exemple, the function `schedule` becomes `Kernel_schedule`. The option `-types-impl` allows the user to specify the location of the file containing the implemention of all abstract types. This option appends the necessary `#include` directive at the beginning of `kernel.h` and `kernel.c`. You can find the source files and the compilation artefacts of this example under the `example` directory.
+
+=== Generating Rocq files
+
+The Barocq compiler can generate a shallow and a deep embedding of a Barocq program, as well as the correspondence proofs between them.
+
+The following command generates a file `kernel_ShallowR.v` that contains the shallow embedding of the entire Barocq program:
+
+[source,bash]
+----
+barocq -orocq kernel -gen-shallow machine.br kernel.br
+----
+
+This file can be found in the `example` directory. To compile it, you need to install the Barocq Rocq development files with `make install-dev`.
+
+The correcntess of the translation to a Rocq shallow embedding is verified via an a-posteriori validation. This validation requires proving some correspondence theorems between the shallow embedding and the semantics given to the deep embedding. To generate all the files needed for the correspondence proofs, use the `-gen-corres-all` option. Compiling the correspondence proofs with Rocq can take a lot of time (several minutes) depending on the program size.
 
 == Coding good practices
 

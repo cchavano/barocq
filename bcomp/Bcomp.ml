@@ -410,13 +410,6 @@ let () =
         printf "Deep embedding generated at %s\n" (clean_filename file)
       end;
 
-      let gen_c =
-        not
-          (!opt_gen_shallow || !opt_gen_deep
-          || !opt_gen_alias_call_state_of <> ""
-          || !opt_gen_alias_return_state_of <> "")
-      in
-
       if !opt_gen_corres then begin
         let rprog =
           BarocqShallowgen.monadify_norm_program
@@ -508,6 +501,13 @@ let () =
                       (C2C.string_of_errmsg msg))
         end
       end;
+
+      let gen_c =
+        not
+          (!opt_gen_shallow || !opt_gen_deep || !opt_gen_corres
+          || !opt_gen_alias_call_state_of <> ""
+          || !opt_gen_alias_return_state_of <> "")
+      in
 
       if gen_c then
         match Compiler.compile !opt_debug_aliasing !target_arch ginfo prog with
