@@ -5,7 +5,7 @@ Import MonCounter.
 Import MonCounterErr.
 Import ListNotations.
 
-Definition cast {A B: Type} (EQ : A = B) (v: A) : B.
+Polymorphic Definition cast {A B: Type} (EQ : A = B) (v: A) : B.
   rewrite EQ in v. exact v.
 Defined.
 

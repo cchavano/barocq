@@ -36,6 +36,12 @@ Module STree.
   Definition map {A B} (f : BinNums.positive -> A -> B) (m : STree.t A) : STree.t B :=
     PTree.map f m.
 
+  Definition mem {A} (e:elt) (m: STree.t A) :=
+    match get e m with
+    | None => false
+    | Some _ => true
+    end.
+
 End STree.
 
 Arguments STree.empty {A}.
@@ -51,7 +57,7 @@ Module MapList.
 
   Variable key_eq : forall (x y: key), {x = y} + {x <> y}.
 
-  Definition t (A: Type) : Type := list (key * A).
+  Polymorphic Definition t (A: Type) : Type := list (key * A).
 
   Fixpoint add (k: key) (v: V) (l: t V) : t V :=
     match l with
@@ -110,6 +116,19 @@ Module MapList.
   Definition fold_left (A: Type) (f: A -> key -> V -> A) (l: t V) (acc: A) : A :=
     List.fold_left (fun a '(k, v) => f a k v) l acc.
 
+  Section EQDEC.
+    Variable Veq_dec  : forall (v1 v2:V),{v1 = v2} + {v1 <> v2}.
+
+    Definition eq_dec_pair (x y: key * V) : {x = y} + {x <> y}.
+    Proof.
+      decide equality;auto.
+    Defined.
+
+  
+  Definition eq_dec : forall (l1 l2: t V), {l1 = l2} +{l1 <> l2} := List.list_eq_dec eq_dec_pair.
+
+  End EQDEC.
+
   Definition empty : t V := nil.
 
   End KEY.
@@ -127,4 +146,4 @@ Module MapList.
 
 End MapList.
 
-Definition smaplist (A: Type) := MapList.t string A.
+Polymorphic Definition smaplist := MapList.t string.

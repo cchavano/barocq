@@ -761,9 +761,9 @@ Section DENOT.
 
   Import MapList.
 
-  Fixpoint exists_typeof_field (k:key) (fields : smaplist typ) :
-    forall (GP : good_proj k (eval_fields_typ eval_typ fields) = true),
-      { ty| typeof_field k (eval_fields_typ eval_typ fields) GP = eval_typ ty}.
+  Fixpoint exists_typeof_field (F: typ -> Type) (k:key) (fields : smaplist typ) :
+    forall (GP : good_proj k (eval_fields_typ F fields) = true),
+      { ty| typeof_field k (eval_fields_typ F fields) GP = F ty}.
   Proof.
     destruct fields;simpl.
     - intros. exfalso.
@@ -771,7 +771,7 @@ Section DENOT.
     - destruct p.
       simpl.
       intros.
-      change (((k =? s)%string || good_proj k (eval_fields_typ eval_typ fields)) = true) in GP.
+      change (((k =? s)%string || good_proj k (eval_fields_typ F fields)) = true) in GP.
       destruct ((k=?s)%string).
       exists t0. reflexivity.
       apply exists_typeof_field.
@@ -784,7 +784,7 @@ Section DENOT.
     value.
   Proof.
     intros.
-    destruct (exists_typeof_field _ _ GP) as (ty & EQ).
+    destruct (exists_typeof_field eval_typ _ _ GP) as (ty & EQ).
     apply (Val ty (cast EQ X)).
   Defined.
 
@@ -794,7 +794,7 @@ Section DENOT.
     destruct (good_proj k (eval_fields_typ eval_typ fields)) eqn:GP.
     - specialize (project rc k GP).
       intro.
-      destruct (exists_typeof_field _ _ GP) as (ty1 & EQ).
+      destruct (exists_typeof_field eval_typ _ _ GP) as (ty1 & EQ).
       apply (cast EQ) in X.
       exact (cast_typ X ty).
     - exact fail.

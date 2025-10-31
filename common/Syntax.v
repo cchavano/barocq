@@ -1,5 +1,6 @@
+From Coq Require Import Lia.
 From compcert Require Import Integers Ctypes.
-From BarocqComp Require Import Utils Barray Ident Types Maps2.
+From BarocqComp Require Import Utils Barray Ident Types Maps2 ExtOrdered.
 
 Definition ident := Ident.ident.
 
@@ -191,3 +192,465 @@ Arguments fn_body {B} {T}.
 Arguments mk_program {G T}.
 Arguments prog_defs {G T}.
 Arguments prog_types {G T}.
+
+Require Import OrderedType.
+Require Import Datatypes.
+Require Import ZArith.
+
+Definition comparison_dec (x y : comparison): {x = y} + {x <> y}.
+Proof.
+  decide equality.
+Defined.
+
+Module IntOrderded.
+
+  Definition compare_int (i1 i2:int) := Z.compare (Int.unsigned i1) (Int.unsigned i2).
+  Definition compare_int64 (i1 i2:int64) := Z.compare (Int64.unsigned i1) (Int64.unsigned i2).
+
+  Lemma compare_int_eq :forall i1 i2,
+      compare_int i1 i2 = Eq <-> i1 = i2.
+  Proof.
+    unfold compare_int.
+    intros.
+    split ; intro.
+    rewrite Z.compare_eq_iff in H.
+    unfold Int.unsigned in *.
+    destruct i1,i2.
+    simpl in H.
+    subst.
+    f_equal.
+    destruct intrange,intrange0.
+    f_equal.
+    apply Eqdep_dec.UIP_dec.
+    apply comparison_dec.
+    apply Eqdep_dec.UIP_dec.
+    apply comparison_dec.
+    subst.
+    apply Z.compare_refl.
+  Qed.
+
+  Lemma compare_int64_eq :forall i1 i2,
+      compare_int64 i1 i2 = Eq <-> i1 = i2.
+  Proof.
+    unfold compare_int64.
+    intros.
+    split ; intro.
+    rewrite Z.compare_eq_iff in H.
+    unfold Int64.unsigned in *.
+    destruct i1,i2.
+    simpl in H.
+    subst.
+    f_equal.
+    destruct intrange,intrange0.
+    f_equal.
+    apply Eqdep_dec.UIP_dec.
+    apply comparison_dec.
+    apply Eqdep_dec.UIP_dec.
+    apply comparison_dec.
+    subst.
+    apply Z.compare_refl.
+  Qed.
+
+  Lemma compare_int_trans : forall i i0 i1,
+    forall c : comparison, compare_int i i0 = c -> compare_int i0 i1 = c -> compare_int i i1 = c.
+  Proof.
+    unfold compare_int.
+    intros i i0 i1 c.
+    destruct c.
+    - rewrite ! Z.compare_eq_iff.
+      congruence.
+    - rewrite ! Z.compare_lt_iff.
+      lia.
+    - rewrite ! Z.compare_gt_iff.
+      lia.
+  Qed.
+
+  Lemma compare_int64_trans : forall i i0 i1,
+    forall c : comparison, compare_int64 i i0 = c -> compare_int64 i0 i1 = c -> compare_int64 i i1 = c.
+  Proof.
+    unfold compare_int64.
+    intros i i0 i1 c.
+    destruct c.
+    - rewrite ! Z.compare_eq_iff.
+      congruence.
+    - rewrite ! Z.compare_lt_iff.
+      lia.
+    - rewrite ! Z.compare_gt_iff.
+      lia.
+  Qed.
+
+  Lemma compare_int_antisym : forall i i0,
+      compare_int i i0 = CompOpp (compare_int i0 i).
+  Proof.
+    unfold compare_int.
+    intros.
+    apply Z.compare_antisym.
+  Qed.
+
+  Lemma compare_int64_antisym : forall i i0,
+      compare_int64 i i0 = CompOpp (compare_int64 i0 i).
+  Proof.
+    unfold compare_int64.
+    intros.
+    apply Z.compare_antisym.
+  Qed.
+
+
+End IntOrderded.
+
+
+Module AtomOrdered <: OrderedType.
+  Import Typed.
+  Import IntOrderded.
+
+  Definition unary_op_compare (o1 o2:unary_op) : comparison :=
+    match o1 , o2 with
+    | UopNotbool , UopNotbool => Eq
+    | UopNotbool , _ => Lt
+    | _ , UopNotbool  => Gt
+    | UopNotint , UopNotint => Eq
+    | UopNotint , _ => Lt
+    | _ , UopNotint  => Gt
+    | UopNeg , UopNeg => Eq
+    | UopNeg , _ => Lt
+    | _ , UopNeg  => Gt
+    | UopPlus , UopPlus => Eq
+    end.
+
+  Definition binary_op_positive (o:binary_op) : positive :=
+    (match o with
+    | BopAndbool => 1
+    | BopOrbool => 2
+    | BopXorbool => 3
+    | BopAdd => 4
+    | BopSub => 5
+    | BopMul => 6
+    | BopDiv => 7
+    | BopMod => 8
+    | BopAndint => 9
+    | BopOrint => 10
+    | BopXorint => 11
+    | BopShl => 12
+    | BopShr => 13
+    | BopEq => 14
+    | BopNeq => 15
+    | BopLt => 16
+    | BopGt => 17
+    | BopLe => 18
+    | BopGe => 19
+    end)%positive.
+
+  Lemma unary_op_compare_eq : forall o1 o2,
+      unary_op_compare o1 o2 = Eq <-> o1 = o2.
+  Proof.
+    destruct o1,o2; simpl ; intuition congruence.
+  Qed.
+
+  Lemma unary_op_compare_trans : forall x y z c,
+      unary_op_compare x y = c -> unary_op_compare y z = c -> unary_op_compare x z = c.
+  Proof.
+    destruct x,y,z; simpl; intuition congruence.
+  Qed.
+
+  Definition binary_op_compare (o1 o2:binary_op) : comparison :=
+    Pos.compare (binary_op_positive o1) (binary_op_positive o2).
+
+
+  Lemma binary_op_compare_eq : forall o1 o2,
+      binary_op_compare o1 o2 = Eq <-> o1 = o2.
+  Proof.
+    unfold binary_op_compare.
+    split ; intros.
+    rewrite Pos.compare_eq_iff in H.
+    destruct o1,o2 ; simpl in *; intuition congruence.
+    subst.
+    apply Pos.compare_refl.
+  Qed.
+
+  Lemma binary_op_compare_trans : forall x y z c,
+      binary_op_compare x y = c -> binary_op_compare y z = c -> binary_op_compare x z = c.
+  Proof.
+    unfold binary_op_compare.
+    intros x y z c.
+    destruct c.
+    -  rewrite! Pos.compare_eq_iff.
+       congruence.
+    -  rewrite! Pos.compare_lt_iff.
+       lia.
+    -  rewrite! Pos.compare_gt_iff.
+       lia.
+  Qed.
+
+  Lemma unary_op_compare_antisym : forall x y,
+      unary_op_compare x y = CompOpp (unary_op_compare y x).
+  Proof.
+    destruct x,y; reflexivity.
+  Qed.
+
+  Lemma binary_op_compare_antisym : forall x y,
+      binary_op_compare x y = CompOpp (binary_op_compare y x).
+  Proof.
+    destruct x,y; reflexivity.
+  Qed.
+
+  Fixpoint atom_compare (t1 t2:Typed.atom) : comparison :=
+    match t1 , t2 with
+    | ATrue bt1 , ATrue bt2 => BtypOrdered.btyp_compare bt1 bt2
+    | ATrue _   ,   _       => Lt
+    | _         , ATrue _   => Gt
+    | AFalse bt1 , AFalse bt2 => BtypOrdered.btyp_compare bt1 bt2
+    | AFalse _   ,   _       => Lt
+    | _         , AFalse _   => Gt
+    | AInt32 i1 bt1 , AInt32 i2 bt2 => pair_compare compare_int BtypOrdered.btyp_compare (i1,bt1) (i2,bt2)
+    | AInt32 _ _    , _      => Lt
+    | _             , AInt32 _ _ => Gt
+    | AInt64 i1 bt1 , AInt64 i2 bt2 => pair_compare compare_int64 BtypOrdered.btyp_compare (i1,bt1)  (i2,bt2)
+    | AInt64 _ _    , _      => Lt
+    | _             , AInt64 _ _ => Gt
+    | AConstr i1 bt1 , AConstr i2 bt2 => pair_compare String.compare BtypOrdered.btyp_compare (i1,bt1) (i2,bt2)
+    | AConstr _ _   ,  _          => Lt
+    | _             , AConstr _ _ => Gt
+    | AVar i1 bt1, AVar i2 bt2  => pair_compare String.compare BtypOrdered.btyp_compare (i1,bt1) (i2,bt2)
+    | AVar _  _  , _            => Lt
+    | _          , AVar _   _   => Gt
+    | ACast a1 bt1 , ACast a2 bt2 => pair_compare atom_compare BtypOrdered.btyp_compare (a1,bt1) (a2,bt2)
+    | ACast _  _   , _            => Lt
+    | _            , ACast _ _    => Gt
+    | AUnaryOp o1 a1 t1 , AUnaryOp o2 a2 t2 =>
+        pair_compare (pair_compare unary_op_compare atom_compare) BtypOrdered.btyp_compare ((o1,a1),t1) ((o2,a2),t2)
+    | ABinaryOp o1 a1 b1 t1, ABinaryOp o2 a2 b2 t2 =>
+        pair_compare (pair_compare binary_op_compare atom_compare)
+          (pair_compare atom_compare BtypOrdered.btyp_compare)  ((o1,a1),(b1,t1)) ((o2,a2),(b2,t2))
+    | ABinaryOp _ _ _ _ , _ => Lt
+    | _ , ABinaryOp _ _ _ _ => Gt
+    end.
+
+
+
+  Definition t := Typed.atom.
+
+  Definition eq : t -> t -> Prop := @eq t.
+
+  Definition lt : t -> t -> Prop := fun x y => atom_compare x y = Lt.
+
+  Lemma eq_refl : forall (x:t), x = x.
+  Proof. reflexivity. Qed.
+
+  Lemma eq_sym : forall (x y:t), x = y -> y = x.
+  Proof. congruence. Qed.
+
+  Lemma eq_trans : forall (x y z:t), x = y -> y = z -> x = z.
+  Proof. congruence. Qed.
+
+  Lemma atom_compare_eq : forall x y,
+      atom_compare x y = Eq <-> x = y.
+  Proof.
+    induction x.
+    - destruct y; simpl; try intuition congruence.
+      rewrite BtypOrdered.btyp_compare_eq. intuition congruence.
+    - destruct y; simpl; try intuition congruence.
+      rewrite BtypOrdered.btyp_compare_eq. intuition congruence.
+    - destruct y; simpl; try intuition congruence.
+      rewrite pair_compare_eq. intuition congruence.
+      apply compare_int_eq.
+      rewrite BtypOrdered.btyp_compare_eq. tauto.
+    - destruct y; simpl; try intuition congruence.
+      rewrite pair_compare_eq. intuition congruence.
+      apply compare_int64_eq.
+      rewrite BtypOrdered.btyp_compare_eq. tauto.
+    - destruct y; simpl; try intuition  congruence.
+      rewrite pair_compare_eq. intuition congruence.
+      rewrite string_compare_eq_iff.
+      intuition congruence.
+      rewrite BtypOrdered.btyp_compare_eq. tauto.
+    - destruct y; simpl; try intuition  congruence.
+      rewrite pair_compare_eq. intuition congruence.
+      rewrite string_compare_eq_iff.
+      intuition congruence.
+      rewrite BtypOrdered.btyp_compare_eq. tauto.
+    - destruct y; simpl; try intuition  congruence.
+      rewrite pair_compare_eq. intuition congruence.
+      rewrite IHx. tauto.
+      apply BtypOrdered.btyp_compare_eq.
+    - destruct y; simpl; try intuition  congruence.
+      rewrite pair_compare_eq. intuition congruence.
+      rewrite pair_compare_eq. intuition congruence.
+      apply unary_op_compare_eq.
+      apply IHx.
+      apply BtypOrdered.btyp_compare_eq.
+    - destruct y; simpl; try intuition  congruence.
+      rewrite pair_compare_eq.
+      intuition congruence.
+      apply pair_compare_eq.
+      apply binary_op_compare_eq.
+      apply IHx1.
+      apply pair_compare_eq.
+      apply IHx2.
+      apply BtypOrdered.btyp_compare_eq.
+  Qed.
+
+  Lemma atom_compare_refl : forall x,
+      atom_compare x x = Eq.
+  Proof.
+    intros.
+    rewrite atom_compare_eq.
+    reflexivity.
+  Qed.
+
+  Lemma atom_compare_trans : forall x y z c,
+      atom_compare x y = c -> atom_compare y z = c -> atom_compare x z = c.
+  Proof.
+    induction x.
+    - simpl.
+      destruct y,z; simpl; try intuition congruence.
+      apply BtypOrdered.btyp_compare_trans.
+    - destruct y,z; simpl; try intuition congruence.
+      apply BtypOrdered.btyp_compare_trans.
+    - destruct y,z; simpl; try intuition congruence.
+      apply pair_compare_trans.
+      apply compare_int_eq.
+      apply compare_int_trans.
+      apply BtypOrdered.btyp_compare_trans.
+    - destruct y,z; simpl; try intuition congruence.
+      apply pair_compare_trans.
+      apply compare_int64_eq.
+      apply compare_int64_trans.
+      apply BtypOrdered.btyp_compare_trans.
+    - destruct y,z; simpl; try intuition congruence.
+      apply pair_compare_trans.
+      apply string_compare_eq_iff.
+      apply string_compare_trans.
+      apply BtypOrdered.btyp_compare_trans.
+    - destruct y,z; simpl; try intuition congruence.
+      apply pair_compare_trans.
+      apply string_compare_eq_iff.
+      apply string_compare_trans.
+      apply BtypOrdered.btyp_compare_trans.
+    - destruct y,z; simpl; try intuition congruence.
+      apply pair_compare_trans.
+      apply atom_compare_eq.
+      apply IHx.
+      apply BtypOrdered.btyp_compare_trans.
+    - destruct y,z; simpl; try intuition congruence.
+      apply pair_compare_trans.
+      destruct a ,b2.
+      rewrite pair_compare_eq.
+      tauto.
+      apply unary_op_compare_eq.
+      apply atom_compare_eq.
+      intro.
+      apply pair_compare_trans.
+      apply unary_op_compare_eq.
+      apply unary_op_compare_trans.
+      apply IHx.
+      apply BtypOrdered.btyp_compare_trans.
+    - destruct y,z; simpl; try intuition congruence.
+      apply pair_compare_trans.
+      intros a b5.
+      destruct a,b5.
+      rewrite pair_compare_eq.
+      tauto.
+      apply binary_op_compare_eq.
+      apply atom_compare_eq.
+      intro.
+      apply pair_compare_trans.
+      apply binary_op_compare_eq.
+      apply binary_op_compare_trans.
+      apply IHx1.
+      apply pair_compare_trans.
+      intros a b5.
+      apply atom_compare_eq.
+      intro.
+      apply IHx2.
+      apply BtypOrdered.btyp_compare_trans.
+  Qed.
+
+  Lemma atom_antisym  : forall (x y:t), atom_compare x y = CompOpp (atom_compare y x).
+  Proof.
+    induction x.
+    - destruct y; simpl; try congruence.
+      apply BtypOrdered.btyp_antisym.
+    - destruct y ; simpl; try congruence.
+      apply BtypOrdered.btyp_antisym.
+    - destruct y ; simpl; try congruence.
+      apply pair_compare_antisym.
+      simpl.
+      apply compare_int_antisym.
+      apply BtypOrdered.btyp_antisym.
+    - destruct y ; simpl; try congruence.
+      apply pair_compare_antisym.
+      simpl.
+      apply compare_int64_antisym.
+      apply BtypOrdered.btyp_antisym.
+    - destruct y ; simpl; try congruence.
+      apply pair_compare_antisym.
+      apply String.compare_antisym.
+      apply BtypOrdered.btyp_antisym.
+    - destruct y ; simpl; try congruence.
+      apply pair_compare_antisym.
+      apply String.compare_antisym.
+      apply BtypOrdered.btyp_antisym.
+    - destruct y ; simpl; try congruence.
+      apply pair_compare_antisym.
+      apply IHx.
+      apply BtypOrdered.btyp_antisym.
+    - destruct y ; simpl; try congruence.
+      apply pair_compare_antisym.
+      simpl.
+      apply pair_compare_antisym.
+      simpl.
+      apply unary_op_compare_antisym.
+      apply IHx.
+      apply BtypOrdered.btyp_antisym.
+    - destruct y ; simpl; try congruence.
+      apply pair_compare_antisym.
+      simpl.
+      apply pair_compare_antisym.
+      simpl.
+      apply binary_op_compare_antisym.
+      apply IHx1.
+      apply pair_compare_antisym.
+      simpl.
+      apply IHx2.
+      apply BtypOrdered.btyp_antisym.
+  Qed.
+
+
+
+  Definition lt_trans  (x y z:t): lt x y -> lt y z -> lt x z.
+  Proof.
+    unfold lt.
+    apply atom_compare_trans.
+  Qed.
+
+  Lemma lt_not_eq : forall x y, lt x y -> eq x y -> False.
+  Proof.
+    unfold lt. intros.
+    unfold eq in H0. subst.
+    rewrite atom_compare_refl in H. discriminate.
+  Qed.
+
+  Definition compare : forall x y : t, Compare lt eq x y.
+  Proof.
+    intros.
+    destruct (atom_compare x y) eqn:TC.
+    - apply EQ. rewrite atom_compare_eq in TC. apply TC.
+    - apply LT;auto.
+    - apply GT.
+      rewrite atom_antisym in TC.
+      unfold lt.
+      destruct (atom_compare y x); try discriminate.
+      reflexivity.
+  Qed.
+
+  Definition eq_dec (x y:t) : {x = y} + {x <> y}.
+  Proof.
+    destruct (atom_compare x y) eqn:EQB.
+    - left. apply atom_compare_eq in EQB. auto.
+    - right. intro.
+      subst. rewrite atom_compare_refl in EQB. discriminate.
+    - right. intro.
+      subst. rewrite atom_compare_refl in EQB. discriminate.
+  Qed.
+
+End AtomOrdered.
