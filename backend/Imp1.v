@@ -69,6 +69,52 @@ Module Typed.
 
   Definition program : Type := Syntax.program globdef btyp.
 
+
+  Section TRANSF.
+    Variable trans_statement : statement -> res statement.
+
+    Definition trans_function (f:function) :=
+      let* b := trans_statement (fn_body f) in
+      OK {| fn_return := fn_return f;
+           fn_params := fn_params f;
+           fn_body   := b
+        |}.
+
+    Definition trans_globdef (gd : globdef) : res globdef :=
+      match gd with
+      | DefFun id f    => let* f' := trans_function f in
+                          OK (DefFun id f')
+      | _ => OK gd
+      end.
+
+    Definition trans_program (p:program) : res program :=
+      let* gd' :=  mmap trans_globdef (prog_defs p) in
+      OK {| prog_defs := gd' ; prog_types := prog_types p |}.
+
+  End TRANSF.
+
+  Module UnType.
+(*    Fixpoint untype_atom (a:atom) : Imp1.atom :=
+      match
+    ATrue : btyp -> Syntax.Typed.atom
+  | AFalse : btyp -> Syntax.Typed.atom
+  | AInt32 : int -> btyp -> Syntax.Typed.atom
+  | AInt64 : int64 -> btyp -> Syntax.Typed.atom
+  | AConstr : ident -> btyp -> Syntax.Typed.atom
+  | AVar : ident -> btyp -> Syntax.Typed.atom
+  | ACast : Syntax.Typed.atom -> btyp -> Syntax.Typed.atom
+  | AUnaryOp : unary_op -> Syntax.Typed.atom -> btyp -> Syntax.Typed.atom
+  | ABinaryOp : binary_op ->
+                Syntax.Typed.atom ->
+                Syntax.Typed.atom -> btyp -> Syntax.Typed.atom.
+*)
+
+  End UnType.
+
+
+  
+
+  
   Module Semantics.
     Import Typed.
 

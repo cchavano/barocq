@@ -7,8 +7,9 @@ Require Import FMapAVL.
 Require FSetAVL.
 Require Import List String.
 Import ListNotations.
-Require Import Uint63.
-From BarocqComp Require Import Error Maps2.
+Require Import Unsigned63.
+
+From BarocqComp Require Import Error Maps2 Utils Draw.
 
 Inductive cedge :=
 | MUST
@@ -251,11 +252,15 @@ Module Int <: OrderedType.
   
 End Int.
 
-
 Module IntSet := FSetAVL.Make(Int).
 
+Require FMapFacts.
+
 Module Map(O:OrderedType).
-  Include Make(O).
+  Module M := Make(O).
+  Module Facts := FMapFacts.Facts(M).
+  Include M.
+
 
   Definition merge {A: Type} (f : A -> A -> A) (e1 e2:option A) :=
     match e1 , e2 with
@@ -357,8 +362,20 @@ Module Map(O:OrderedType).
     tauto. reflexivity.
   Qed.
 
+  Lemma find_map2 : forall {A B C:Type} (f : option A -> option B -> option C)
+                           (FN : f None None = None)
+                           m1 m2 x,
+        f (find x m1) (find x m2) = find x (map2 f m1 m2).
+  Proof.
+    intros.
+    rewrite Facts.map2_1bis.
+    reflexivity.
+    auto.
+  Qed.
 
-  
+
+
+    
 End Map.  
   
 Module IntMap := Map(Int).
@@ -380,7 +397,26 @@ Module Type NodeLabelT.
 
 End NodeLabelT.
 
-Module Make(NodeLabel: NodeLabelT)(EdgeLabel:OrderedType).
+
+
+Module Type EdgeLabelT.
+  Axiom t : Type.
+  Axiom lt: t -> t -> Prop.
+  Axiom eq: t -> t -> Prop.
+  Axiom eq_refl  : forall x, eq x x.
+  Axiom eq_sym   : forall x y, eq x y -> eq y x.
+  Axiom eq_trans : forall x y z, eq x y -> eq y z -> eq x z.
+  Axiom lt_trans : forall x y z, lt x y -> lt y z -> lt x z.
+  Axiom lt_not_eq : forall x y, lt x y -> not (eq x y).
+
+  Axiom compare : forall x y : t, Compare lt eq x y.
+  Axiom eq_dec : forall (x y:t),{eq x y} + {not (eq x y)}.
+
+  Axiom pp : t -> box.
+
+End EdgeLabelT.
+
+Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
 
   (** nodes are identified by an integer [int].
       NodeLabel and EdgeLabel are indexed.
@@ -394,12 +430,48 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:OrderedType).
 
   Record t := mk
     {
+      root  : int;
       edges : Edge;
       parent : IntMap.t (EdgeLabel.t * int); (* reverse edge - remember we have a tree *)
       nodelabels :  NLMap.t (list int) ; (* nodes with a given label *)
       edgelabels :  ELMap.t (list int) ; (* nodes which edges have a given label *)
       fresh      : int; (* fresh node *)
     }.
+
+  Definition get_label (g:t) (n:int) :=
+    match IntMap.find n (edges g) with
+    | None => fail
+    | Some(n,_) => OK n
+    end.
+
+
+  Definition depth (g:t) :=
+    let* lb := get_label g (root g)  in
+    OK (NodeLabel.depth lb).
+
+  Definition get_successors (g:t) (n:int) :=
+    match IntMap.find n (edges g) with
+    | None => nil
+    | Some(_,l) => l
+    end.
+
+  Fixpoint xdraw (fuel:nat) (g:t) (n:int) :=
+    match fuel with
+    | O => Bstr (string_of_int n)
+    | S fuel =>
+        Bstack (Bstr (string_of_int n))
+          (List.fold_right
+             (fun e acc => (Bcat (Bstack (EdgeLabel.pp (fst e))
+                                    (xdraw fuel g (snd e)) Middle) acc)) (Bstr "") (get_successors g n)) Middle
+    end.
+
+  Definition pp (g:t) :=
+    let d := match depth g with
+             | OK d => d
+             | _    => O
+             end in
+    xdraw d g (root g).
+  
 
   Definition eqEN (x y : EdgeLabel.t * int) :=
     EdgeLabel.eq (fst x) (fst y) /\ (snd x = snd y).
@@ -500,8 +572,10 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:OrderedType).
                         end
     end.
 
-
-  Definition empty := mk (IntMap.empty _) (IntMap.empty _) (NLMap.empty _) (ELMap.empty _) 0.
+  Definition mkroot (lb:NodeLabel.t) :=
+    mk 0
+      (IntMap.add 0%int63 (lb,nil) (IntMap.empty _))
+      (IntMap.empty _) (NLMap.add lb (0::nil)%int63 (NLMap.empty _)) (ELMap.empty _) 1.
 
   Lemma has_edge_empty : forall o e d, has_edge o e d (IntMap.empty _)  <-> False.
   Proof.
@@ -545,98 +619,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:OrderedType).
     auto.
   Qed.
 
-
-  Lemma wf_empty : wf empty.
-  Proof.
-    constructor; intros.
-    - rewrite has_edge_empty in H.
-      tauto.
-    - rewrite has_edge_empty in H.
-      tauto.
-    - rewrite has_edge_empty.
-      rewrite has_edge_rev_empty.
-      tauto.
-    - rewrite has_node_label_empty.
-      simpl.
-      rewrite has_node_label_rev_empty.
-      tauto.
-    - simpl.
-      split; [tauto|].
-      intro H. destruct H.
-      rewrite has_edge_empty in H.
-      auto.
-    - rewrite has_node_label_empty in H.
-      tauto.
-  Qed.
-
-  Definition get_successors (g:t) (n:int) :=
-    match IntMap.find n (edges g) with
-    | None => nil
-    | Some(_,l) => l
-    end.
-
-  Definition get_label (g:t) (n:int) :=
-    match IntMap.find n (edges g) with
-    | None => fail
-    | Some(n,_) => OK n
-    end.
-
-
-  Definition int_overflow {A: Type} := Error (A:= A) (cons (MSG "fresh has reached max_int"%string) nil).
-
-  Fixpoint register_edgelabels (n:int) (l:list (EdgeLabel.t * int)) (m:ELMap.t (list int))  :=
-    match l with
-    | nil => m
-    | cons (e,_) l => ELMap.add_from_list  e n  (register_edgelabels n l m)
-    end.
-
-  Definition register_parents (n:int) (l:list (EdgeLabel.t * int)) (m: IntMap.t (EdgeLabel.t * int)) :=
-    List.fold_right (fun '(e,n') m => IntMap.add n' (e,n) m) m l.
-
-  Definition remove_parents (n:int) (l:list (EdgeLabel.t * int)) (m: IntMap.t (EdgeLabel.t * int)) :=
-    List.fold_right (fun '(e,n') m => IntMap.remove n'  m) m l.
-
-
-  (* [create_node n l g] creates a fresh node with label [n] and successors [l] *)
-
-  Definition create_node (n:NodeLabel.t) (l:list (EdgeLabel.t * int)) (g:t) : res (t* int) :=
-    let fr := fresh g in
-    if eqb fr max_int
-    then int_overflow
-    else
-      OK (mk
-              (* add the node - no successor *)
-              (IntMap.add fr (n,l) (edges g))
-              (register_parents fr l (parent g))
-              (* register the label *)
-              (NLMap.add_from_list n fr (nodelabels g))
-              (register_edgelabels fr l (edgelabels g))
-              (fr + 1),fr).
-
-  Definition swap_pair {A B:Type} (e : A * B) := (snd e, fst e).
-
-  Lemma find_register_parents :
-    forall n l m,
-      forall n',
-        IntMap.find n' (register_parents n l m) = match find_node n' l with
-                                                  | None => IntMap.find n' m
-                                                  | Some e => Some (e,n)
-                                                  end.
-  Proof.
-    unfold register_parents.
-    induction l.
-    - simpl. auto.
-    -  simpl.
-       destruct a as (e1,n1).
-       intros.
-       rewrite IntMap.find_add.
-       destruct (Int.eq_dec n' n1).
-       + subst. reflexivity.
-       + rewrite IHl.
-         reflexivity.
-  Qed.
-
-  Lemma has_edge_label : forall o e d E,
+    Lemma has_edge_label : forall o e d E,
       has_edge o e d E -> exists lb, has_node_label o lb E.
   Proof.
     intros.
@@ -645,8 +628,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:OrderedType).
     split. apply H.
     apply NodeLabel.eq_refl.
   Qed.
-
-
 
   Lemma has_edge_add :
     forall o e d1 g nl l
@@ -684,6 +665,157 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:OrderedType).
         destruct (Int.eq_dec (fresh g) (fresh g)); try congruence.
         do 2 eexists ; split ; eauto.
   Qed.
+
+  Lemma has_edge_mkroot : forall o e d1 lb,
+      has_edge o e d1 (edges (mkroot lb)) <-> False.
+  Proof.
+    intros.
+    unfold mkroot.
+    simpl.
+    unfold has_edge.
+    split ; try tauto.
+    intros (nl & l & FIND).
+    rewrite IntMap.find_add in FIND.
+    rewrite IntMap.find_empty in FIND.
+    destruct (Int.eq_dec o 0).
+    destruct FIND. inv H.
+    simpl in H0. tauto.
+    intuition congruence.
+  Qed.
+
+  Lemma has_edge_rev_mkroot : forall o e d lb,
+      has_edge_rev o e d (parent (mkroot lb)) <-> False.
+  Proof.
+    intros.
+    unfold mkroot.
+    simpl.
+    unfold has_edge_rev.
+    split ; try tauto.
+    intros (nl & FIND).
+    rewrite IntMap.find_empty in FIND.
+    intuition congruence.
+  Qed.
+
+  Lemma has_node_label_mkroot : forall o nl lb,
+      has_node_label o nl (edges (mkroot lb)) <-> o = 0%int63 /\ NodeLabel.eq nl lb.
+  Proof.
+    unfold has_node_label.
+    split ; intros.
+    - destruct H as (ed & nl1 & FIND & EQ).
+      unfold mkroot in FIND.
+      simpl in FIND.
+      rewrite IntMap.find_add in FIND.
+      destruct (Int.eq_dec o 0).
+      + subst. inv FIND.
+        tauto.
+      + rewrite IntMap.find_empty in FIND.
+        discriminate.
+    - destruct H ; subst.
+      exists nil,lb.
+      unfold mkroot ; simpl.
+      rewrite IntMap.find_add.
+      destruct (Int.eq_dec 0 0); try congruence.
+      intuition congruence.
+  Qed.
+
+  Lemma has_node_label_rev_mkroot : forall o nl lb,
+      has_node_label_rev o nl (nodelabels (mkroot lb)) <-> o = 0%int63 /\ NodeLabel.eq nl lb.
+  Proof.
+    unfold has_node_label_rev.
+    intros.
+    unfold mkroot;simpl.
+    unfold NLMap.findl.
+    rewrite NLMap.find_add.
+    destruct (NodeLabel.eq_dec nl lb).
+    - simpl. intuition congruence.
+    - rewrite NLMap.find_empty.
+      simpl. intuition congruence.
+  Qed.
+
+
+  Lemma wf_mkroot : forall lb, wf (mkroot lb).
+  Proof.
+    constructor; intros.
+    - rewrite has_edge_mkroot in H.
+      tauto.
+    - rewrite has_edge_mkroot in H.
+      tauto.
+    - rewrite has_edge_mkroot.
+      rewrite has_edge_rev_mkroot.
+      tauto.
+    - rewrite has_node_label_mkroot.
+      rewrite has_node_label_rev_mkroot.
+      tauto.
+    -  split; [simpl; tauto|].
+      intro H. destruct H.
+      rewrite has_edge_mkroot in H.
+      tauto.
+    - rewrite has_node_label_mkroot in H.
+      unfold mkroot. simpl.
+      lia.
+  Qed.
+
+
+
+
+  Definition int_overflow {A: Type} := Error (A:= A) (cons (MSG "fresh has reached max_int"%string) nil).
+
+  Fixpoint register_edgelabels (n:int) (l:list (EdgeLabel.t * int)) (m:ELMap.t (list int))  :=
+    match l with
+    | nil => m
+    | cons (e,_) l => ELMap.add_from_list  e n  (register_edgelabels n l m)
+    end.
+
+  Definition register_parents (n:int) (l:list (EdgeLabel.t * int)) (m: IntMap.t (EdgeLabel.t * int)) :=
+    List.fold_right (fun '(e,n') m => IntMap.add n' (e,n) m) m l.
+
+  Definition remove_parents (n:int) (l:list (EdgeLabel.t * int)) (m: IntMap.t (EdgeLabel.t * int)) :=
+    List.fold_right (fun '(e,n') m => IntMap.remove n'  m) m l.
+
+
+  (* [create_node n l g] creates a fresh node with label [n] and successors [l] *)
+
+  Definition create_node (n:NodeLabel.t) (l:list (EdgeLabel.t * int)) (g:t) : res (t* int) :=
+    let fr := fresh g in
+    if eqb fr max_int
+    then int_overflow
+    else
+      OK (mk
+            (root g)
+            (* add the node - no successor *)
+            (IntMap.add fr (n,l) (edges g))
+            (register_parents fr l (parent g))
+            (* register the label *)
+            (NLMap.add_from_list n fr (nodelabels g))
+            (register_edgelabels fr l (edgelabels g))
+            (fr + 1),fr).
+
+  Definition swap_pair {A B:Type} (e : A * B) := (snd e, fst e).
+
+  Lemma find_register_parents :
+    forall n l m,
+      forall n',
+        IntMap.find n' (register_parents n l m) = match find_node n' l with
+                                                  | None => IntMap.find n' m
+                                                  | Some e => Some (e,n)
+                                                  end.
+  Proof.
+    unfold register_parents.
+    induction l.
+    - simpl. auto.
+    -  simpl.
+       destruct a as (e1,n1).
+       intros.
+       rewrite IntMap.find_add.
+       destruct (Int.eq_dec n' n1).
+       + subst. reflexivity.
+       + rewrite IHl.
+         reflexivity.
+  Qed.
+
+
+
+
 
   Lemma find_node_Some : forall n l e,
       find_node n l = Some e -> In (e,n) l.
@@ -1025,7 +1157,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:OrderedType).
                            | None => nil
                            | Some l => l
                            end) in
-        OK (mk (IntMap.add n1 (nl,cons (el,n2) l) (edges g))
+        OK (mk (root g) (IntMap.add n1 (nl,cons (el,n2) l) (edges g))
                (register_parents n1 ((el,n2)::nil) (parent g))
               (nodelabels g)
                              (ELMap.add el ns (edgelabels g))
@@ -1040,7 +1172,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:OrderedType).
   Fixpoint create_path (next_label : NodeLabel.t -> EdgeLabel.t -> res NodeLabel.t)
     (n:int)  (l:list EdgeLabel.t) (g:t) : res (t * (int * NodeLabel.t)) :=
     match IntMap.find n (edges g) with
-    | None => Error (cons (MSG "create_path: origin node does not exist") nil)
+    | None => Error (MSG "create_path: origin node " ::  MSG (string_of_int n) :: MSG " does not exist" :: nil)
     | Some(nl,succs) => match l with
                         | nil => OK (g,(n,nl))
                         | e::l =>
@@ -1050,7 +1182,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:OrderedType).
                                 (* the edge does not exists *)
                                 let* lb :=  next_label nl e in
                                 let* (g',nn) := create_node lb nil g in
-                                let* g2      := add_edge n e nn g in
+                                let* g2      := add_edge n e nn g' in
                                 create_path next_label nn l g2
                             end
                         end
@@ -1065,7 +1197,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:OrderedType).
   Definition remove_node (n:int) (g:t) : t:=
     match IntMap.find n (edges g) with
     | None => g
-    | Some(nl,l) => mk (IntMap.remove n (edges g))
+    | Some(nl,l) => mk (root g) (IntMap.remove n (edges g))
                        (remove_parents n l (parent g))
                       (NLMap.remove_from_list (eqb_of_dec Int.eq_dec) nl n (nodelabels g))
                       (remove_edges n l (edgelabels g)) (fresh g)
@@ -1083,7 +1215,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:OrderedType).
     end.
 
   Definition remove_edge (o:int) (e:EdgeLabel.t) (d:int) (g:t) :=
-    mk (remove_edge_from_list o e d (edges g))
+    mk (root g) (remove_edge_from_list o e d (edges g))
        (IntMap.remove d (parent g))
       (nodelabels g)
        (remove_edges o ((e,d)::nil) (edgelabels g))
@@ -1131,12 +1263,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:OrderedType).
         OK (g2, List.app l1 l2)
     end.
 
-  Definition depth_of_node (n:int) (g:t) :=
-    match IntMap.find n (edges g) with
-    | None => O
-    | Some(nl,_) => NodeLabel.depth nl
-    end.
-
   Section UPDATE.
     Variable classify_edge : EdgeLabel.t -> EdgeLabel.t -> cedge.
 
@@ -1153,22 +1279,27 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:OrderedType).
           end
       end.
 
-    Fixpoint check_must_alias (fuel:nat) (o:int) (l:list EdgeLabel.t) (n:int) (g:t) : res (t * list int) :=
+    Fixpoint find_edge (e:EdgeLabel.t) (l:list (EdgeLabel.t * int)) : option int :=
       match l with
-      | nil => if eqb o n
-               then OK (g,nil)
+      | nil => None
+      | (e1,i) ::l1 => if EdgeLabel.eq_dec e e1 then Some i else find_edge e l1
+      end.
+
+    
+
+    Fixpoint check_must_alias (fuel:nat) (o:int) (l:list EdgeLabel.t) (n:int) (g:t) : res unit :=
+      match l with
+      | nil => if eqb o n then OK tt
                else Error (cons (MSG "check_must_alias: cannot check must alias") nil)
       | cons e l =>
           match IntMap.find o (edges g) with
           | None => Error (cons (MSG "check_must_alias: invalid node") nil)
           | Some (nl,edges) =>
-              let '((mst,may),nmay) := partition_edges e edges in
-              match mst with
-              | nil => Error (cons (MSG "check_must_alias: cannot find must alias") nil)
-              | cons (e',o') nil =>
-                  let* (g,i) := remove_successors o may g in
-                  check_must_alias fuel o' l n g
-              |  _   => Error (cons (MSG "check_must_alias: multiple must alias") nil)
+              match find_edge e edges with
+              | Some o' => check_must_alias fuel o' l n g
+              | _     =>
+                  let g := Draw.pp (Bcat (Bstr (string_of_int o)) (Bcat (pp g) (Bstr (string_of_int n))))in
+                  Error (cons (MSG "check_must_alias: cannot find must alias") (cons (MSG Draw.nl) (cons (MSG g) nil)))
               end
           end
       end.
@@ -1181,39 +1312,55 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:OrderedType).
   Definition merge_parent (e1 e2:EdgeLabel.t * int) := e1.
 
   Definition union (g1:t) (g2:t) :=
-    mk (IntMap.union merge_edge (edges g1) (edges g2))
+    mk (root g1) (IntMap.union merge_edge (edges g1) (edges g2))
        (IntMap.union merge_parent (parent g1) (parent g2))
       (NLMap.union (@List.app _) (nodelabels g1) (nodelabels g2))
       (ELMap.union (@List.app _) (edgelabels g1) (edgelabels g2))
       (max (fresh g1) (fresh g2)).
 
-  Section INTER.
-    Variable inter : int -> t -> int -> t -> res (t * int).
+  Definition interT := (t * (IntMap.t int * IntMap.t int))%type.
 
-    Fixpoint inter_list  (l1 :list (EdgeLabel.t * int)) (g1:t) (l2: list (EdgeLabel.t * int)) (g2:t) : res (t * list (EdgeLabel.t * int)):=
+  Definition rootI (x:interT) : int :=
+    let '(g,_) := x in root g.
+
+  Section INTER.
+    Variable inter : int -> t -> int -> t -> interT -> res interT.
+
+    Fixpoint inter_list  (l1 :list (EdgeLabel.t * int)) (g1:t) (l2: list (EdgeLabel.t * int)) (g2:t) (acc:interT) :
+      res ((list (EdgeLabel.t * int)) * interT) :=
       match l1 with
-      | nil => OK (empty,nil)
-      | cons (e,n) l1' => match find_label e l2 with
-                          | None => inter_list l1' g1 l2 g2
-                          | Some n' =>
-                              let* (ga,na) := inter n g1 n' g2 in
-                              let* (gb,nb) := inter_list l1' g1 l2 g2 in
-                              OK (union ga gb,cons (e,na) nb)
-                          end
+      | nil => OK (nil, acc)
+      | cons (e,n) l1' =>
+          match find_label e l2 with
+          | None => inter_list l1' g1 l2 g2 acc
+          | Some n' =>
+              let* ga := inter n g1 n' g2 acc in
+              let* (l,g) := inter_list l1' g1 l2 g2 ga in
+              OK ((e, rootI ga) :: l,g)
+          end
       end.
 
   End INTER.
 
-  Fixpoint inter (fuel:nat) (o1:int) (g1:t) (o2:int) (g2:t) : res (t*int) :=
+  Definition set_root (n:int) (g:t) :=
+    mk n (edges g) (parent g) (nodelabels g) (edgelabels g) (fresh g).
+
+  Definition create_root (n1:int) (n2:int) (lb:NodeLabel.t) (l:list (EdgeLabel.t * int)) (g:interT) :=
+    let '(g,(m1,m2)) := g in
+    let* (g,n') := create_node lb l g in
+    OK (set_root n' g, (IntMap.add n1 n' m1, IntMap.add n2 n' m2)).
+
+
+  Fixpoint inter (fuel:nat) (o1:int) (g1:t) (o2:int) (g2:t) (acc:interT) : res interT :=
     match fuel with
     | O => fail
     | S fuel => match IntMap.find o1 (edges g1), IntMap.find o2 (edges g2) with
                 | None , _ | _ , None => fail
-                | Some(n1,l1) , Some(n2,l2) =>
-                    if NodeLabel.eq_dec n1 n2
+                | Some(lb1,l1) , Some(lb2,l2) =>
+                    if NodeLabel.eq_dec lb1 lb2
                     then
-                      let* (g,l) := inter_list (inter fuel) l1 g1 l2 g2 in
-                      create_node n1 l g
+                      let* (l,g) := inter_list (inter fuel) l1 g1 l2 g2 acc in
+                      create_root o1 o2 lb1 l g
                     else fail
                 end
     end.
@@ -1230,7 +1377,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:OrderedType).
       | None => g
       | Some (nl,el) =>
           let el' := subst_edge e e' el in
-          mk (IntMap.add o (nl,el') (edges g))
+          mk (root g) (IntMap.add o (nl,el') (edges g))
              (register_parents o el' (parent g))
             (nodelabels g)
             (ELMap.add_from_list  e' o
@@ -1267,6 +1414,40 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:OrderedType).
     | OK s1   , OK s2 => IntSet.is_empty (IntSet.inter s1 s2)
     |  _      , _     => false
     end.
+
+  Fixpoint is_parent_rec (g:t) (fuel:nat) (p:int) (n:int)  :=
+    if eqb p n then OK true
+    else
+    match fuel with
+    | O => fail
+    | S fuel' =>
+        match IntMap.find n (parent g) with
+        | None => OK false
+        | Some(_,n1) => is_parent_rec g fuel' p n1
+        end
+    end.
+
+  Definition is_parent (g:t) (p:int) (n:int) :=
+    let* d:= depth g in
+    is_parent_rec g d p n.
+
+
+  Fixpoint get_upward_path_rec (fuel:nat) (g:t) (n:int) :=
+    if Int.eq_dec n (root g) then OK nil
+    else match fuel with
+         | O => fail
+         | S fuel =>
+             match IntMap.find n (parent g) with
+             | None => fail (* Should not happen *)
+             | Some(e,p) => let* path := get_upward_path_rec fuel g p in
+                            OK (e::path)
+             end
+         end.
+
+  Definition get_path (g:t) (n:int) :=
+    let* lb := get_label g (root g) in
+    let* path := get_upward_path_rec (NodeLabel.depth lb) g n in
+    OK (List.rev path).
 
   Inductive is_tree_node (g:t) : int -> Prop :=
   | Leaf : forall n,

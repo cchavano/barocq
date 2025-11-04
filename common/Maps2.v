@@ -26,6 +26,30 @@ End StringIndexed.
 
 Module SMap := IMap(StringIndexed).
 
+Module SSet.
+  Module _Set := ITree(StringIndexed).
+
+  Definition t := _Set.t unit.
+
+  Definition empty : t := _Set.empty unit.
+
+  Definition add (x:StringIndexed.t) (s:t) := _Set.set x tt s.
+
+  Definition mem (x:StringIndexed.t) (s:t) :=
+    match _Set.get x s with
+    | None => false
+    | Some _ => true
+    end.
+
+  Definition union_elt (e1 e2:option unit) :=
+    match e1 , e2 with
+    | Some x , _ | _ , Some x => Some x
+    | None , None => None
+    end.
+
+  Definition union (s1 s2:t) := _Set.combine union_elt s1 s2.
+End SSet.
+
 Module STree.
 
   Include ITree(StringIndexed).

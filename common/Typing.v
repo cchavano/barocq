@@ -124,6 +124,26 @@ Fixpoint btyp_to_typ (te: tenv) (ty: btyp) : res typ :=
   | BAbs t => ret (TAbs t)
   end.
 
+Definition tenv_update_type_def (te:tenv) (t : type_def btyp) : res tenv :=
+  match t with
+  | TdEnum {| ed_name := x ; ed_elems := l |} =>
+      tenv_update_defs te x (Adt_enum l)
+  | TdRecord {| rd_name := x ; rd_fields := l |} =>
+      let* l' := MapList.map_err (btyp_to_typ te) l in
+      tenv_update_defs te x (Adt_record l')
+  | TdAbstract id s => OK te
+  end.
+
+Fixpoint xtenv_of_type_defs (te:tenv) (tds: list (type_def btyp)) :=
+  match tds with
+  | nil => OK te
+  | t::tds => let* te' := tenv_update_type_def te t in
+              xtenv_of_type_defs te' tds
+  end.
+
+Definition tenv_of_type_defs (tds: list (type_def btyp)) :=
+  xtenv_of_type_defs tenv_empty tds.
+
 Definition typof_literal (l: literal) : btyp :=
   match l with
   | LTrue ty => ty

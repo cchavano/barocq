@@ -37,7 +37,7 @@ endif
 
 # Options.
 
-MENHIR_FLAGS = -v -la 1
+MENHIR_FLAGS = -v -la 1 #--trace
 
 # Using Menhir in --table mode requires MenhirLib.
 

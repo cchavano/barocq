@@ -1,5 +1,5 @@
 From BarocqComp Require Import Error Utils Ident Barocq BarocqBNFgen.
-From BarocqComp Require Import ImpBNFgen ImpABNFgen Imp1 Imp1gen Imp2gen GlobRewrite ClightCegen.
+From BarocqComp Require Import ImpBNFgen ImpABNFgen Imp1 Imp1gen Imp1ElimAlias Imp2gen GlobRewrite ClightCegen.
 
 Definition compile (show_debug: bool) (arch: Target.archi) (globinfo: option (ident * ident)) (prog: Barocq.program) : res ClightCe.program :=
   let* bbnf := BarocqBNFgen.norm_program arch prog in
@@ -9,6 +9,7 @@ Definition compile (show_debug: bool) (arch: Target.archi) (globinfo: option (id
   let* imp1_typed := Imp1Typing.typecheck_program arch imp1 in
   let* imp1_alias := Imp1gen.gen_aliasing_program show_debug imp1_typed in
   let* imp1_typed := Imp1gen.check_program_aliasing imp1_alias in
+  let* imp1_typed := Imp1ElimAlias.transl_program imp1_typed in
   let imp2 := Imp2gen.transl_program imp1_typed in
   let imp2_grw :=
     match globinfo with

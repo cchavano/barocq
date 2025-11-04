@@ -1,8 +1,8 @@
 -include Makefile.config
 
 COMMON=\
-	Monads.v Error.v Utils.v Barray.v Brecord.v Benum.v Maps2.v\
-	Types.v Syntax.v Typing.v Intop.v Ident.v Target.v MergeSort.v DList.v Graph.v ExtOrdered.v
+	Unsigned63.v ZifyUint63.v Monads.v Error.v Utils.v Barray.v Brecord.v Benum.v Maps2.v\
+	Types.v Syntax.v Typing.v Intop.v Ident.v Target.v MergeSort.v DList.v Graph.v ExtOrdered.v Draw.v
 
 FRONTEND=\
 	Barocq.v BarocqTransf.v BarocqBNF.v BarocqBNFgen.v\
@@ -10,7 +10,7 @@ FRONTEND=\
 
 BACKEND=\
 	ImpBNF.v ImpBNFgen.v ImpABNF.v ImpABNFgen.v\
-	Imp1.v Imp1gen.v Imp2.v Imp2gen.v GlobRewrite.v ClightCegen.v
+	Imp1.v Imp1gen.v Imp1ElimAlias.v Imp2.v Imp2gen.v GlobRewrite.v ClightCegen.v
 
 BCOMP=Compiler.v
 
@@ -24,7 +24,8 @@ VSOURCE=\
 
 VBUILD=$(addprefix $(BUILD_DIR)/, $(VSOURCE))
 
-EXTRDEP=$(BUILD_DIR)/bcomp/extractionMachdep.v
+EXTRDEP=$(BUILD_DIR)/bcomp/extractionMachdep.v 
+
 
 COQINCLUDES=$(foreach d, $(VDIRS), -R $(BUILD_DIR)/$(d) BarocqComp.$(d))
 COQC=coqc $(COQINCLUDES)
@@ -54,7 +55,8 @@ $(EXTRDEP): | builddir
 	@cp $(COMPCERT_DIR)/$(ARCH)/extractionMachdep.v $(BUILD_DIR)/bcomp/
 	@sed -i 's\Require\From compcert Require\g' $(EXTRDEP)
 
-extrdep: $(EXTRDEP)
+
+extrdep: $(EXTRDEP) 
 
 # Copy Coq source files to the build directory
 

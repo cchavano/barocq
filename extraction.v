@@ -1,5 +1,6 @@
 From Coq Require Import ExtrOcamlBasic.
 From Coq Require Import ExtrOcamlString.
+From Coq Require Import ExtrOCamlInt63.
 
 From Coq Require BinInt BinPos.
 From compcert Require Integers Floats Machregs Archi AST Memdata Csyntax Initializers Ctyping Ctypes Clight Ctypesdefs Values.
