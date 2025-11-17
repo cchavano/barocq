@@ -47,7 +47,7 @@ module PathTree = struct
       [t], then those paths are replaced by [p]. *)
   let rec add (t : t) (p : path) : t =
     match (t, p) with
-    | _, [] -> t
+    | _, [] -> Leaf
     | (Leaf | Node []), _ -> Leaf
     | Node ln, x :: p' -> Node (add_list x p' ln)
 
