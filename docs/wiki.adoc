@@ -178,7 +178,7 @@ is compiled to
 [source,c]
 ----
 struct draw {
-  point *pts;
+  struct point *pts;
   unsigned long long color;
 }
 ----
@@ -198,7 +198,7 @@ which becomes
 [source,c]
 ----
 struct draw {
-  point pts[3];
+  struct point pts[3];
   unsigned long long color;
 }
 ----
