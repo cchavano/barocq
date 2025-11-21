@@ -8,7 +8,7 @@ Import Syntax.Typed.
 (** ** Identifiers to type definitions + enum constructors to enum identifier *)
 
 Record benv := mk_benv {
-  benv_defs : STree.t (adt_definition btyp);
+  benv_defs : STree.t (adt_definition field_descr);
   benv_constr_types : STree.t ident
 }.
 
@@ -25,14 +25,14 @@ Definition benv_get_edef (be: benv) (x: ident) : res (list ident) :=
 
 Definition benv_get_rdef (be: benv) (x: ident) : res (smaplist btyp) :=
   match STree.get x be.(benv_defs) with
-  | Some (Adt_record fields) => ret fields
+  | Some (Adt_record fields) => ret (MapList.map fst fields)
   | _ => fail
   end.
 
 Definition benv_get_constr_typ (be: benv) (x: ident) : res ident :=
   err_of_opt (STree.get x be.(benv_constr_types)).
 
-Definition benv_update_defs (be: benv) (x: ident) (adt: adt_definition btyp) : res benv :=
+Definition benv_update_defs (be: benv) (x: ident) (adt: adt_definition field_descr) : res benv :=
   let types := be.(benv_defs) in
   match STree.get x types with
   | Some _ => fail
@@ -108,13 +108,13 @@ Fixpoint btyp_to_typ (te: tenv) (ty: btyp) : res typ :=
   | BBool => ret TBool
   | BInt32 s => ret (TInt32 s)
   | BInt64 s => ret (TInt64 s)
-  | BArray ta =>
+  | BArray ta _ =>
       let* ta' := btyp_to_typ te ta in 
       ret (TArray ta')
   | BEnum tn =>
       let* elems := tenv_get_edef te tn in
       ret (TEnum tn elems) 
-  | BRecord tr =>
+  | BRecord tr _ =>
       let* fields := tenv_get_rdef te tr in
       ret (TRecord tr fields)
   | BFun tparams tret =>
@@ -124,34 +124,34 @@ Fixpoint btyp_to_typ (te: tenv) (ty: btyp) : res typ :=
   | BAbs t => ret (TAbs t)
   end.
 
-Definition tenv_update_type_def (te:tenv) (t : type_def btyp) : res tenv :=
+Definition tenv_update_type_def (te:tenv) (t : type_def field_descr) : res tenv :=
   match t with
   | TdEnum {| ed_name := x ; ed_elems := l |} =>
       tenv_update_defs te x (Adt_enum l)
   | TdRecord {| rd_name := x ; rd_fields := l |} =>
-      let* l' := MapList.map_err (btyp_to_typ te) l in
+      let* l' := MapList.map_err (btyp_to_typ te) (MapList.map fst l) in
       tenv_update_defs te x (Adt_record l')
   | TdAbstract id s => OK te
   end.
 
-Fixpoint xtenv_of_type_defs (te:tenv) (tds: list (type_def btyp)) :=
+Fixpoint xtenv_of_type_defs (te:tenv) (tds: list (type_def field_descr)) :=
   match tds with
   | nil => OK te
   | t::tds => let* te' := tenv_update_type_def te t in
               xtenv_of_type_defs te' tds
   end.
 
-Definition tenv_of_type_defs (tds: list (type_def btyp)) :=
+Definition tenv_of_type_defs (tds: list (type_def field_descr)) :=
   xtenv_of_type_defs tenv_empty tds.
 
 Definition typof_literal (l: literal) : btyp :=
   match l with
-  | LTrue ty => ty
-  | LFalse ty => ty
-  | LInt32 _ ty => ty
-  | LInt64 _ ty => ty
-  | LArray _ ty => ty
-  | LRecord _ ty => ty
+  | LTrue
+  | LFalse => BBool
+  | LInt32 _ s => BInt32 s
+  | LInt64 _ s => BInt64 s
+  | LArray _ ta ly => BArray ta ly
+  | LRecord rc ub rid => BRecord rid ub
   end.
 
 Definition typof_atom (a: atom) : btyp :=
@@ -170,9 +170,9 @@ Definition typof_atom (a: atom) : btyp :=
 Definition typof_comp (c: comp) : btyp :=
   match c with
   | CpAtom _ ty
-  | CpArrayGet _ _ ty
+  | CpArrayGet _ _ ty _
   | CpArraySet _ _ _ ty
-  | CpRecordProj _ _ ty
+  | CpRecordProj _ _ ty _
   | CpRecordUpdate _ _ _ ty
   | CpDeepAccess _ _ ty
   | CpCall _ _ ty => ty
@@ -220,8 +220,8 @@ Definition typof_var (gx: gcontext) (lx: lcontext) (x: ident) : res btyp :=
   | OK ty => eret ty
   | Error _ =>
       match gcontext_get gx x with
-      | OK (BArray _)
-      | OK (BRecord _)
+      | OK (BArray _ _)
+      | OK (BRecord _ _)
       | OK (BAbs _) =>
           failwith "Typing.typof_var: the use of non-primitive global constants is not supported"
       | OK (BEnum _) =>
@@ -306,15 +306,23 @@ Definition typecheck_binary_op (op: binary_op) (ty1 ty2: btyp) : res btyp :=
 
 Definition typecheck_array_get (arch: Target.archi) (ty1 ty2: btyp) : res btyp :=    
   match ty1 with
-  | BArray ta =>
+  | BArray ta _ =>
       if btyp_eq_dec ty2 (arr_index_btyp arch) then ret ta
       else failwith "Typing.typecheck_array_get: array index type mismatch"
   | _ => failwith "Typing.typecheck_array_get: array typed expected"
   end.
 
+Definition typecheck_array_get2 (arch: Target.archi) (ty1 ty2: btyp) : res field_descr :=    
+  match ty1 with
+  | BArray ta ly =>
+      if btyp_eq_dec ty2 (arr_index_btyp arch) then ret (ta, ly)
+      else failwith "Typing.typecheck_array_get2: array index type mismatch"
+  | _ => failwith "Typing.typecheck_array_get2: array type expected"
+  end.
+
 Definition typecheck_array_set (arch: Target.archi) (ty1 ty2 ty3: btyp) : res btyp :=
   match ty1 with
-  | BArray ta =>
+  | BArray ta _ =>
       if btyp_eq_dec ty2 (arr_index_btyp arch) then
         if btyp_eq_dec ta ty3 then ret ty1
         else failwith "Typing.typecheck_array_set: type mismatch"
@@ -324,7 +332,7 @@ Definition typecheck_array_set (arch: Target.archi) (ty1 ty2 ty3: btyp) : res bt
 
 Definition typecheck_record_proj (be: benv) (ty: btyp) (x: ident) : res btyp :=
   match ty with
-  | BRecord t =>
+  | BRecord t _ =>
       let/catch fields := benv_get_rdef be t
         /> "Typing.typecheck_record_proj: unknown record type"
       in
@@ -332,9 +340,19 @@ Definition typecheck_record_proj (be: benv) (ty: btyp) (x: ident) : res btyp :=
   | _ => failwith "Typing.typecheck_record_proj: record type expected"
   end.
 
+Definition typecheck_record_proj2 (be: benv) (ty: btyp) (x: ident) : res field_descr :=
+  match ty with
+  | BRecord t _ =>
+      match STree.get t be.(benv_defs) with
+      | Some (Adt_record fields) => MapList.find_err Ident.eq_dec x fields
+      | _ => failwith "Typing.typecheck_record_proj2: unknown record type"
+      end
+  | _ => failwith "Typing.typecheck_record_proj2: record type expected"
+  end.
+
 Definition typecheck_record_update (be: benv) (ty1 ty2: btyp) (x: ident) : res btyp :=
   match ty1 with
-  | BRecord t =>
+  | BRecord t _ =>
       let/catch fields := benv_get_rdef be t
         /> "Typing.typecheck_record_proj: unknown record type"
       in
@@ -382,6 +400,21 @@ Definition typecheck_call (ty: btyp) (targs: list btyp) : res btyp :=
   | _ => failwith "Typing.typecheck_call: function type expected"
   end.
 
+(* Fixpoint btyp_eq_lit (t1 t2: btyp) : bool :=
+  match t1, t2 with
+  | BBool, BBool => true
+  | BInt32 s1, BInt32 s2
+  | BInt64 s1, BInt64 s2 =>
+      if signedness_eq_dec s1 s2 then true else false
+  | BArray ta1 _, BArray ta2 _ =>
+      btyp_eq_lit ta1 ta2
+  | BRecord r1, BRecord r2 =>
+      if Ident.eq_dec r1 r2 then true else false
+  | BEnum e1, BEnum e2 =>
+      if Ident.eq_dec e1 e2 then true else false
+  | _, _ => false
+  end. *)
+
 Fixpoint typecheck_array_lit (a: array literal) : res btyp :=
   match a with
   | nil => failwith "Typing.typecheck_array_lit: empty array"
@@ -400,6 +433,24 @@ Fixpoint typecheck_struct_lit (l1: smaplist literal) (l2: smaplist btyp) : bool 
       if btyp_eq_dec tx1 tx2 then typecheck_struct_lit l1' l2'
       else false
   | _, _ => false
+  end.
+
+Fixpoint typecheck_literal (be: benv) (l: Syntax.literal) : res literal :=
+  match l with
+  | Syntax.LTrue => ret LTrue
+  | Syntax.LFalse => ret LFalse
+  | Syntax.LInt32 i s => ret (LInt32 i s)
+  | Syntax.LInt64 i s => ret (LInt64 i s)
+  | Syntax.LArray a ta ly =>
+      let* a' := mmap (typecheck_literal be) a in
+      let* t := typecheck_array_lit a' in
+      if btyp_eq_dec ta t then ret (LArray a' t ly)
+      else fail
+  | Syntax.LRecord rc ub x =>
+      let* rc' := MapList.map_err (typecheck_literal be) rc in
+      let* t := benv_get_rdef be x in
+      if typecheck_struct_lit rc' t then ret (LRecord rc' ub x)
+      else failwith "Typing.typecheck_literal: record type mismatch"
   end.
 
 Definition typecheck_pattern (be: benv) (te: btyp) (elems: list ident) (p: pattern) (unmatched: list ident) : res (list ident) :=
@@ -441,21 +492,4 @@ Definition typecheck_match (be: benv) (ty: btyp) (cases: list (pattern * btyp)) 
       let* elems := benv_get_edef be te in
       typecheck_match_rec be ty elems elems cases
   | _ => failwith "Typing.typecheck_match: enum type expected"
-  end.
-
-Fixpoint typecheck_literal (be: benv) (l: Syntax.literal) : res literal :=
-  match l with
-  | Syntax.LTrue => ret (LTrue BBool)
-  | Syntax.LFalse => ret (LFalse BBool)
-  | Syntax.LInt32 i s => ret (LInt32 i (BInt32 s))
-  | Syntax.LInt64 i s => ret (LInt64 i (BInt64 s))
-  | Syntax.LArray a =>
-      let* a' := mmap (typecheck_literal be) a in
-      let* t := typecheck_array_lit a' in
-      ret (LArray a' (BArray t))
-  | Syntax.LRecord rc x =>
-      let* rc' := MapList.map_err (typecheck_literal be) rc in
-      let* t := benv_get_rdef be x in
-      if typecheck_struct_lit rc' t then ret (LRecord rc' (BRecord x))
-      else failwith "Typing.typecheck_literal: record type mismatch"
   end.

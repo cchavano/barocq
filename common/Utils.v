@@ -98,6 +98,9 @@ Definition list_is_empty {A: Type} (l: list A) : bool :=
   | _ => false
   end.
 
+Definition list_mem {A: Type} (EqDec: forall (x y: A), {x = y} + {x <> y}) (a: A) (l: list A) : bool :=
+  List.existsb (fun x => if EqDec x a then true else false) l.
+
 Section S.
   (** is-it already defined elsewhere? *)
   Context {A B: Type}.

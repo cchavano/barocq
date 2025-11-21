@@ -15,9 +15,29 @@ type styp =
   | SBool
   | SInt32 of Types.signedness
   | SInt64 of Types.signedness
-  | SArray of styp
+  | SArray of styp_layout
   | SIdent of cident
   | SFun of (Syntax.param_attr * styp) list * styp
+
+and raw_styp_layout =
+  | SLBoxed of styp
+  | SLUnboxed of styp * const option
+
+and styp_layout = raw_styp_layout Location.t
+
+and raw_const =
+  | CTrue
+  | CFalse
+  | CInt32 of Integers.Int.int * Types.signedness
+  | CInt64 of Integers.Int64.int * Types.signedness
+  | CVar of cident
+  | CArray of const list
+  | CRecord of (ident * const) list
+  | CUnop of unary_op * const
+  | CBinop of binary_op * const * const
+  | CCast of const * styp
+
+and const = raw_const Location.t
 
 (** Patterns for pattern-matching *)
 type pattern =
@@ -61,23 +81,9 @@ type func = {
   fn_attribs : c_attr list;
 }
 
-type raw_const =
-  | CTrue
-  | CFalse
-  | CInt32 of Integers.Int.int * Types.signedness
-  | CInt64 of Integers.Int64.int * Types.signedness
-  | CVar of cident
-  | CArray of const list
-  | CRecord of (ident * const) list
-  | CUnop of unary_op * const
-  | CBinop of binary_op * const * const
-  | CCast of const * styp
-
-and const = raw_const Location.t
-
 type type_def =
   | TdEnum of ident list
-  | TdRecord of (ident * styp) list
+  | TdRecord of (ident * styp_layout) list
   | TdAlias of styp
 
 type globdef =

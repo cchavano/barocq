@@ -17,12 +17,12 @@
 				{
 					"comment": "control keyword",
 					"name": "keyword.control.barocq",
-					"match": "\\b(if|then|else)\\b"
+					"match": "\\b(if|then|else|match|with|end)\\b"
 				},
                 {
                     "comment": "other keyword",
 				    "name": "keyword.other.barocq",
-				    "match": "\\b(module|import|type|defn|decl|let|in|match|with|case|end|compute|as|of)\\b"
+				    "match": "\\b(module|import|enum|record|type|defn|decl|let|in|compute|of)\\b"
                 }
             ]
 		},
@@ -46,7 +46,7 @@
                 {
 					"comment": "annotation",
 					"name": "storage.modifier.barocq",
-					"match": "([@#]\\w+)"
+					"match": "(@\\w+)"
 				}
             ]
         },
@@ -55,7 +55,7 @@
                 {
                     "comment": "builtin type",
                     "name": "entity.name.type.barocq",
-                    "match": "\\b(bool|i32|u32|i64|u64|array)\\b"
+                    "match": "\\b(bool|i32|u32|i64|u64)\\b"
                 }
 			]
 		},
@@ -70,6 +70,16 @@
 						"3": { "name": "keyword.operator.barocq" },
 						"4": { "name": "entity.name.type.barocq" }
 					}
+				},
+				{
+					"comment": "unboxed array size",
+					"begin": ";",
+					"end": "]",
+					"patterns": [
+						{ "include": "#identifiers" },
+						{ "include": "#literals" },
+						{ "include": "#operators" }
+					]
 				}
 			]
 		},
@@ -78,7 +88,7 @@
 				{
 					"comment": "type declaration",
 					"begin": ":\\s*",
-					"end": "((\\w+)(::))?(?!array)(\\w+)",
+					"end": "((\\w+)(::))?(\\w+)",
 					"endCaptures": {
 						"2": { "name": "entity.name.namespace.barocq" },
 						"3": { "name": "keyword.operator.barocq" },
@@ -86,6 +96,16 @@
 					},
 					"patterns": [
 						{ "include": "#types_builtin" }
+					]
+				},
+				{
+					"comment": "unboxed array size",
+					"begin": ";",
+					"end": "]",
+					"patterns": [
+						{ "include": "#identifiers" },
+						{ "include": "#literals" },
+						{ "include": "#operators" }
 					]
 				}
 			]
@@ -96,7 +116,7 @@
 					"comment": "type cast",
 					"match": "\\b(as)\\s+((\\w+)(::))?(\\w+)",
 					"captures": {
-						"1": { "name": "keyword.other.barocq" },
+						"1": { "name": "keyword.operator.barocq" },
 						"3": { "name": "entity.name.namespace.barocq" },
 						"4": { "name": "keyword.operator.barocq" },
 						"5": { "name": "entity.name.type.barocq" }
@@ -179,8 +199,21 @@
 					]
 				},
 				{
+					"comment": "enum type definition",
+					"begin": "\\b(enum)\\s+(\\w+)\\s*{",
+					"end": "}",
+					"beginCaptures": {
+						"1": { "name": "keyword.other.barocq" },
+						"2": { "name": "entity.name.type.barocq" },
+						"3": { "name": "keyword.operator.barocq" }
+					},
+					"patterns": [
+						{ "include": "#comments" }
+					]
+				},
+				{
 					"comment": "record type definition",
-					"begin": "\\b(type)\\s+(\\w+)\\s+(=)\\s*{",
+					"begin": "\\b(record)\\s+(\\w+)\\s*{",
 					"end": "}",
 					"beginCaptures": {
 						"1": { "name": "keyword.other.barocq" },
@@ -193,7 +226,7 @@
 					]
 				},
 				{
-					"comment": "type alias or enum type definition",
+					"comment": "type alias",
 					"begin": "\\b(type)\\s+(\\w+)\\s+(=)",
 					"end": "$",
 					"beginCaptures": {
@@ -230,12 +263,12 @@
                 {
                     "comment": "decimal integer literal",
                     "name": "constant.numeric.integer.barocq",
-                    "match": "\\b\\d(\\d|_)*[U]?[L]?\\b"
+                    "match": "\\b\\d(\\d|_)*(u?l?|U?L?)\\b"
                 },
                 {
                     "comment": "hexadecimal integer literal",
                     "name": "constant.numeric.integer.barocq",
-                    "match": "\\b(0x|0X)[[:xdigit:]][[:xdigit:]|_]*[U]?[L]?\\b"
+                    "match": "\\b(0x|0X)[[:xdigit:]][[:xdigit:]|_]*(u?l?|U?L?)\\b"
                 }
             ]
         },

@@ -13,9 +13,10 @@
   let string_buf = Buffer.create 10
 
   let parse_int_lit (il: string) : token =
+      let il = String.lowercase_ascii il in
       let n = String.length il in
       (* ===== u64 ===== *)
-      if String.ends_with ~suffix:"UL" il then
+      if String.ends_with ~suffix:"ul" il then
         let il =
           let n = String.sub il 0 (n - 2) in
           if String.starts_with ~prefix:"0x" il then n
@@ -26,14 +27,14 @@
         with Failure _ ->
           error "unsigned 64-bit integer overflow."
       (* ===== i64 ===== *)
-      else if String.ends_with ~suffix:"L" il then
+      else if String.ends_with ~suffix:"l" il then
         let il = String.sub il 0 (n - 1) in
         try
           LIT_INT64 ((Int64.of_string il), Types.Signed)
         with Failure _ ->
           error "64-bit integer overflow."
       (* ===== u32 ===== *)
-      else if String.ends_with ~suffix:"U" il then
+      else if String.ends_with ~suffix:"u" il then
         let il =
           let n = String.sub il 0 (n - 1) in
           if String.starts_with ~prefix:"0x" il then n
@@ -50,18 +51,16 @@
         with Failure _ ->
           error "32-bit integer overflow"
 
-  let parse_param_attrib = function
-    | "read" -> AT_READ
-    | "write" -> AT_WRITE
-    | _ as s -> error (Printf.sprintf "unknown parameter attribute '%s'" s)
-
-  let parse_fun_attrib = function
+  let parse_annotation = function
     | "inline" -> INLINE
     | "always_inline" -> ALWAYS_INLINE
     | "static" -> STATIC
+    | "all_static" -> ALL_STATIC
     | "export" -> EXPORT
     | "unique" -> UNIQUE
-    | _ as s -> error (Printf.sprintf "unknown function attribute '%s'" s)
+    | "read" -> READ
+    | "write" -> WRITE
+    | _ as s -> error (Printf.sprintf "unknown annotation '%s'" s)
 
   let () =
     List.iter
@@ -70,10 +69,11 @@
         ("module", MODULE); ("import", IMPORT); ("compute", COMPUTE);
         ("true", TRUE); ("false", FALSE);
         ("bool", TYP_BOOL); ("i32", TYP_I32); ("u32", TYP_U32);
-        ("i64", TYP_I64); ("u64", TYP_U64); ("array", TYP_ARRAY);
-        ("type", TYPE); ("of", OF); ("defn", DEFN); ("decl", DECL);
+        ("i64", TYP_I64); ("u64", TYP_U64);
+        ("enum", ENUM); ("record", RECORD); ("type", TYPE); ("of", OF);
+        ("defn", DEFN); ("decl", DECL);
         ("let", LET); ("in", IN);
-        ("match", MATCH); ("with", WITH); ("case", CASE); ("end", END);
+        ("match", MATCH); ("with", WITH); ("end", END);
         ("as", AS); ("if", IF); ("then", THEN); ("else", ELSE)
       ]
 }
@@ -83,8 +83,9 @@ let xdigit = digit | ['a'-'f''A'-'F']
 let letter = ['a'-'z''A'-'Z']
 let space = [' ''\t''\r']
 
-let dec_int_lit = digit (digit | '_')* ['U']? ['L']?
-let hex_int_lit = ("0x" | "0X") xdigit (xdigit | '_')* ['U']? ['L']?
+let int_suffix = ('u'? 'l'?) | ('U'? 'L'?)
+let dec_int_lit = digit (digit | '_')* int_suffix
+let hex_int_lit = ("0x" | "0X") xdigit (xdigit | '_')* int_suffix?
 let ident_char = (letter | digit | '_')
 let ident = letter ident_char* | '_' ident_char+
 
@@ -93,8 +94,6 @@ rule read_token = parse
   | space+        { read_token lexbuf }
   | "(*"          { incr comment_lvl; read_comment lexbuf }
   | "*)"          { error "comment end before comment begin" }
-  | "[|"          { LBRACKETBAR }
-  | "|]"          { RBRACKETBAR }
   | "=>"          { RDARROW }
   | "->"          { RARROW }
   | "<-"          { LARROW }
@@ -131,6 +130,7 @@ rule read_token = parse
   | "~"           { OP_NOTINT }
   | "="           { BIND }
   | "_"           { UNDERSCORE }
+  | "#"           { SHARP }
   | "\""
     {
       Buffer.clear string_buf;
@@ -139,8 +139,7 @@ rule read_token = parse
     }
   | hex_int_lit as il   { parse_int_lit il }
   | dec_int_lit as il   { parse_int_lit il }
-  | '@' (ident as id)   { parse_param_attrib id }
-  | '#' (ident as id)   { parse_fun_attrib id }
+  | '@' (ident as id)   { parse_annotation id }
   | ident as id
     {
       try (Hashtbl.find keywords id) with 

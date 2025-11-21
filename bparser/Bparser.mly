@@ -31,7 +31,6 @@
 %token DOT COMMA SEMICOLON COLON
 %token LPAREN RPAREN
 %token LBRACKET RBRACKET
-%token LBRACKETBAR RBRACKETBAR
 %token LBRACE RBRACE
 %token RARROW
 %token RDARROW
@@ -44,13 +43,15 @@
 %token OP_ANDBOOL OP_ORBOOL OP_XORBOOL OP_NOTBOOL
 %token AS
 %token TRUE FALSE
-%token TYP_BOOL TYP_I32 TYP_U32 TYP_I64 TYP_U64 TYP_ARRAY
+%token SHARP
+%token TYP_BOOL TYP_I32 TYP_U32 TYP_I64 TYP_U64
 %token COMPUTE
-%token DEFN DECL TYPE OF
-%token AT_READ AT_WRITE
-%token INLINE ALWAYS_INLINE STATIC EXPORT UNIQUE
-%token LET IN 
-%token MATCH WITH CASE END
+%token DEFN DECL RECORD ENUM TYPE OF
+%token READ WRITE
+%token INLINE ALWAYS_INLINE STATIC ALL_STATIC EXPORT
+%token UNIQUE
+%token LET IN
+%token MATCH WITH END
 %token IF THEN ELSE
 %token <string> LIT_STRING
 %token <int32 * Types.signedness> LIT_INT32
@@ -69,7 +70,6 @@
 %nonassoc OP_NOTBOOL OP_NOTINT
 %nonassoc LPAREN LBRACKET
 %nonassoc DOT
-%nonassoc WITH
 
 %start imodul
 %type<SurfaceAST.imodul> imodul
@@ -90,15 +90,24 @@ imodul:
         imd_name = mname;
         imd_imports = List.rev imports;
         imd_cmds = cmds;
-        imd_vis = vis
-      } 
+        imd_vis = vis;
+      }
+    }
+
+mod_ident:
+  | id = IDENT
+    {
+      if valid_modul_ident id then
+        Location.make $startpos $endpos id
+      else
+        raise Error
     }
 
 import:
   | IMPORT mname = mod_ident { mname }
 
 visibility:
-  | LBRACKET STATIC RBRACKET { Static }
+  | ALL_STATIC { Static }
 
 command:
   | def = globdef { CmdDef def }
@@ -106,25 +115,18 @@ command:
 
 globdef:
   | TYPE id = ident BIND ty = styp { DefType (id, TdAlias ty) }
-  | TYPE id = ident BIND elems = delimited(LBRACKET, nonempty_list(enum_constr), RBRACKET) { DefType (id, TdEnum elems) }
-  | TYPE id = ident BIND fields = record_fields { DefType (id, TdRecord fields) }
+  | ENUM id = ident elems = delimited(LBRACE, nonempty_list(enum_constr), RBRACE)
+    { DefType (id, TdEnum elems) }
+  | RECORD id = ident fields = record_fields { DefType (id, TdRecord fields) }
   | TYPE id = ident OF kind = abs_type_kind { DeclType (id, kind) }
   | DEFN x = var_ident COLON ty = styp BIND c = const { DefConst (x, c, ty, false) }
-  | UNIQUE DEFN x = var_ident COLON ty = styp BIND c = const { DefConst (x, c, ty, true) }
+  | UNIQUE DEFN x = var_ident COLON ty = styp BIND c = const
+    { DefConst (x, c, ty, true) }
   | DEFN x = var_ident fd = fundef { DefFun (x, fd) }
-  | attrs = nonempty_list(c_attr) DEFN x = var_ident fd = fundef { DefFun (x, {fd with fn_attribs = attrs}) }
+  | attrs = nonempty_list(c_attr) DEFN x = var_ident fd = fundef
+    { DefFun (x, {fd with fn_attribs = attrs}) }
   | DECL x = var_ident COLON ty = styp { mk_decl x ty false }
   | UNIQUE DECL x = var_ident COLON ty = styp { mk_decl x ty true }
-
-fundef:
-  | params = delimited(LPAREN, separated_list(COMMA, param), RPAREN)
-    COLON ty = styp BIND e = expr { {fn_return = ty; fn_params = params; fn_body = e; fn_attribs = []} }
-
-c_attr:
-  | INLINE { Inline }
-  | ALWAYS_INLINE { AlwaysInline }
-  | STATIC { Vis Static }
-  | EXPORT { Vis Export }
 
 enum_constr:
   | id = IDENT COMMA
@@ -135,6 +137,12 @@ enum_constr:
         raise Error
     }
 
+record_fields:
+  | fields = delimited(LBRACE, nonempty_list(field), RBRACE) { fields }
+
+field:
+  | key = var_ident COLON ty = styp_layout COMMA { (key, ty) }
+
 abs_type_kind:
   | kind = LIT_STRING
     {
@@ -144,39 +152,57 @@ abs_type_kind:
       | _ -> raise Error
     }
 
+fundef:
+  | params = delimited(LPAREN, separated_list(COMMA, param), RPAREN)
+    COLON ty = styp BIND e = expr
+    { { fn_return = ty; fn_params = params; fn_body = e; fn_attribs = [] } }
+
 param:
   | x = var_ident COLON ty = styp { (x, ty) }
+  
+c_attr:
+  | INLINE { Inline }
+  | ALWAYS_INLINE { AlwaysInline }
+  | STATIC { Vis Static }
+  | EXPORT { Vis Export }
 
 raw_expr:
   | TRUE { ETrue }
   | FALSE { EFalse }
   | i = LIT_INT32 { EInt32 (coqint_of_camlint (fst i), (snd i)) }
   | i = LIT_INT64 { EInt64 (coqint_of_camlint64 (fst i), (snd i)) }
-  | v = cident
+  | cid = cident
     {
-      match v with
+      match cid with
       | IdSimple id
       | IdPrefixed (_, id) ->
           let id = id.content in
-          if valid_var_ident id then EVar v
-          else if valid_constr_ident id then EConstr v
+          if valid_constr_ident id then EConstr cid
+          else if valid_var_ident id then EVar cid
           else raise Error
     }
   | e = expr AS ty = styp { ECast (e, ty) }
   | e1 = expr LBRACKET e2 = expr RBRACKET { EArrayGet (e1, e2) }
   | e1 = expr LBRACKET e2 = expr RBRACKET LARROW e3 = expr { EArraySet (e1, e2, e3) }
   | e1 = expr DOT key = var_ident { ERecordProj (e1, key) }
-  | e1 = expr DOT key = var_ident LARROW e2 = expr { ERecordUpdate (e1, [(key, e2)]) }
-  | LBRACE e1 = expr WITH le = nonempty_list(field_update) RBRACE { ERecordUpdate (e1, le) }
+  | e1 = expr DOT key = var_ident LARROW e2 = expr
+    { ERecordUpdate (e1, [(key, e2)]) }
+  | LBRACE e1 = expr WITH le = nonempty_list(field_update) RBRACE
+    { ERecordUpdate (e1, le) }
   | LET x = var_ident BIND e1 = expr IN e2 = expr { ELetIn (x, e1, e2) }
   | IF e1 = expr THEN e2 = expr ELSE e3 = expr { EIfThenElse (e1, e2, e3) }
   | MATCH e = expr WITH cases = nonempty_list(match_case) END { EMatch (e, cases) }
   | op = unary_op e = expr { EUnaryOp (op, e) }
   | e1 = expr op = binary_op e2 = expr { EBinaryOp (op, e1, e2) }
-  | e = expr args = delimited(LPAREN, separated_list(COMMA, expr), RPAREN) { EApp (e, args) }
+  | e = expr args = delimited(LPAREN, separated_list(COMMA, expr), RPAREN)
+    { EApp (e, args) }
+
+expr:
+  | e = raw_expr { Location.make $startpos $endpos e }
+  | e = delimited(LPAREN, expr, RPAREN) { e }
 
 match_case:
-  | CASE cid = cident RDARROW e = expr
+  | cid = cident RDARROW e = expr
     { 
       match cid with
       | IdSimple id
@@ -184,34 +210,23 @@ match_case:
           if valid_constr_ident id.content then (PIdent cid, e)
           else raise Error
     }
-  | CASE und = underscore RDARROW e = expr { (und, e) }
+  | und = underscore RDARROW e = expr { (und, e) }
 
 underscore:
   | UNDERSCORE { PWildcard (Location.make $startpos $endpos ()) }
 
-var_ident:
-  | id = IDENT
-    {
-      if valid_var_ident id then
-        Location.make $startpos $endpos id
-      else
-        raise Error
-    }
-
 field_update:
-  | x = var_ident LARROW e = expr SEMICOLON { (x, e) }
-
-expr:
-  | e = raw_expr { Location.make $startpos $endpos e }
-  | e = delimited(LPAREN, expr, RPAREN) { e }
+  | x = var_ident LARROW e = expr COMMA { (x, e) }
 
 raw_const:
   | TRUE { SurfaceAST.CTrue }
   | FALSE { SurfaceAST.CFalse }
   | i = LIT_INT32 { SurfaceAST.CInt32 (coqint_of_camlint (fst i), (snd i)) }
   | i = LIT_INT64 { SurfaceAST.CInt64 (coqint_of_camlint64 (fst i), (snd i)) }
-  | a = delimited(LBRACKETBAR, separated_list(SEMICOLON, const), RBRACKETBAR) { SurfaceAST.CArray a }
-  | rc = delimited(LBRACE, nonempty_list(const_field), RBRACE) { SurfaceAST.CRecord rc }
+  | a = delimited(LBRACKET, separated_list(COMMA, const), RBRACKET)
+    { SurfaceAST.CArray a }
+  | rc = delimited(LBRACE, nonempty_list(const_field), RBRACE)
+    { SurfaceAST.CRecord rc }
   | id = cident { SurfaceAST.CVar id }
   | op = unary_op c = const { SurfaceAST.CUnop (op, c) }
   | c1 = const op = binary_op c2 = const { SurfaceAST.CBinop (op, c1, c2) }
@@ -222,7 +237,7 @@ const:
   | c = delimited(LPAREN, const, RPAREN) { c }
 
 const_field:
-  | key = var_ident BIND l = const SEMICOLON { (key, l) }
+  | key = var_ident BIND l = const COMMA { (key, l) }
 
 %inline unary_op:
   | OP_NOTBOOL { UopNotbool }
@@ -251,48 +266,44 @@ const_field:
   | OP_LE { BopLe }
   | OP_GE { BopGe }
 
-record_fields:
-  | fields = delimited(LBRACE, nonempty_list(typ_field), RBRACE) { fields }
-
-typ_field:
-  | key = var_ident COLON ty = styp SEMICOLON { (key, ty) }
-
 styp:
-  | sty = styp_simpl { sty }
-  | TYP_ARRAY ty = styp_simpl { SArray ty }
-  | TYP_ARRAY LPAREN ty = styp RPAREN { SArray ty }
-  | ty = styp_func { ty }
-
-styp_simpl:
   | TYP_BOOL { SBool }
   | TYP_I32 { SInt32 Signed }
   | TYP_U32 { SInt32 Unsigned }
   | TYP_I64 { SInt64 Signed }
   | TYP_U64 { SInt64 Unsigned }
   | ty = cident { SIdent ty }
-
-styp_func:
+  | LBRACKET ty = styp_layout RBRACKET { SArray ty }
   | tparams = delimited(LPAREN, separated_list(COMMA, styp_func_param), RPAREN)
     RARROW tret = styp
     { SFun (tparams, tret) }
 
-styp_func_param:
-  | AT_READ ty = styp { (AttrReadonly, ty) }
-  | AT_WRITE ty = styp { (AttrWrite, ty) }
-  | ty = styp { (AttrNone, ty) }
+styp_layout:
+  | ty = raw_styp_layout { Location.make $startpos $endpos ty}
 
-mod_ident:
-  | id = IDENT
-    {
-      if valid_modul_ident id then
-        Location.make $startpos $endpos id
-      else
-        raise Error
-    }
+raw_styp_layout:
+  | ty = styp { SLBoxed ty }
+  | SHARP ty = styp { SLUnboxed (ty, None) }
+  | SHARP LBRACKET ty = styp_layout SEMICOLON sz = const RBRACKET
+    { SLUnboxed(SArray ty, Some sz) }
+
+styp_func_param:
+  | READ ty = styp { (AttrReadonly, ty) }
+  | WRITE ty = styp { (AttrWrite, ty) }
+  | ty = styp { (AttrNone, ty) }
 
 cident:
   | id = ident { IdSimple id }
   | mname = mod_ident COLON COLON id = ident { IdPrefixed (mname, id) }
+
+var_ident:
+  | id = IDENT
+    {
+      if valid_var_ident id then
+        Location.make $startpos $endpos id
+      else
+        raise Error
+    }
 
 ident:
   | id = IDENT { Location.make $startpos $endpos id }

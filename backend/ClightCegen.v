@@ -1,6 +1,7 @@
 From Coq Require Import ZArith String List FMapPositive MSetPositive.
 From compcert Require Import AST Ctypes Clight ClightCe Clightdefs Cop Maps Integers.
-From BarocqComp Require Import Ident Benum Error Maps2 Utils Syntax Imp2.
+From BarocqComp Require Import Ident Types Benum Error Maps2 Utils Syntax Imp2.
+Import ListNotations.
 Import ClightNotations.
 
 Local Open Scope clight_scope.
@@ -10,7 +11,7 @@ Section TRANSL.
 
   Variable abs_types_impl : PMap.t Ctypes.type.
 
-  Fixpoint transl_typ2 (ty: typ2) : Ctypes.type :=
+  Fixpoint transl_typ2_rec (ly: layout) (ty: typ2) : Ctypes.type :=
     match ty with
     | TVoid => Tvoid
     | TBool => tbool
@@ -18,15 +19,29 @@ Section TRANSL.
     | TInt32 Types.Unsigned => tuint
     | TInt64 Types.Signed => tlong
     | TInt64 Types.Unsigned => tulong
-    | TArray ta => tptr (transl_typ2 ta)
-    | TRecord t => tptr (Tstruct (Ident.to_pos t) noattr)
+    | TArray ta lya =>
+        let ta' := transl_typ2_rec lya ta in
+        match ly with
+        | LyBoxed => tptr ta'
+        | LyUnboxed (Some sz) => Tarray ta' sz noattr
+        | _ => Tarray ta' 0%Z noattr (* ill-typed program *)
+        end
+    | TRecord t =>
+        let tr := Tstruct (Ident.to_pos t) noattr in
+        match ly with
+        | LyBoxed => tptr tr
+        | _ => tr
+        end
     | TEnum te => Tenum (Ident.to_pos te) noattr
     | TFun tparams tret =>
-        let tparams' := List.map transl_typ2 tparams in
-        let tret' := transl_typ2 tret in
+        let tparams' := List.map (transl_typ2_rec LyBoxed) tparams in
+        let tret' := transl_typ2_rec LyBoxed tret in
         tptr (Tfunction tparams' tret' cc_default)
     | TAbs t => tptr (PMap.get (Ident.to_pos t) abs_types_impl)
     end.
+
+  Definition transl_typ2 (ty: typ2) : Ctypes.type :=
+    transl_typ2_rec LyBoxed ty.
 
   Definition transl_typ2_to_xtype (ty: typ2) : AST.xtype :=
     match ty with
@@ -35,7 +50,7 @@ Section TRANSL.
     | TInt32 _ => Xint
     | TInt64 _ => Xlong
     | TEnum _ => Xint
-    | TArray _
+    | TArray _ _
     | TRecord _
     | TFun _ _ 
     | TAbs _ => Xptr
@@ -43,25 +58,20 @@ Section TRANSL.
 
   Definition transl_typ2_lit (ty: typ2) (n: Z) : Ctypes.type :=
     match ty with
-    | TArray ta => Tarray (transl_typ2 ta) n noattr
+    | TArray ta ly => Tarray (transl_typ2_rec ly ta) n noattr
     | TRecord t => Tstruct (Ident.to_pos t) noattr
     | _ => transl_typ2 ty
     end.
 
-  Definition transl_literal_base (l: Imp2.literal_base) : AST.init_data :=
+  Fixpoint transl_literal (l: Imp2.literal) : list AST.init_data :=
     match l with
-    | LbTrue => Init_int32 Int.one
-    | LbFalse => Init_int32 Int.zero
-    | LbInt32 i => Init_int32 i
-    | LbInt64 i => Init_int64 i
-    | LbVar x => Init_addrof (Ident.to_pos x) Ptrofs.zero
-    end.
-
-  Definition transl_literal (l: Imp2.literal) : list AST.init_data :=
-    match l with
-    | Imp2.LBase b _ => transl_literal_base b :: nil
-    | Imp2.LArray a _ => map transl_literal_base a
-    | Imp2.LRecord st _ => map (fun '(_, lx) => transl_literal_base lx) st
+    | LTrue => [Init_int32 Int.one]
+    | LFalse => [Init_int32 Int.zero]
+    | LInt32 i _ => [Init_int32 i]
+    | LInt64 i _ => [Init_int64 i]
+    | LVar x _ => [Init_addrof (Ident.to_pos x) Ptrofs.zero]
+    | LArray a _ _ => List.concat (List.map transl_literal a)
+    | LRecord rc _ _ => List.concat (List.map (fun '(_, lf) => transl_literal lf) rc)
     end.
 
   Definition transl_unary_op (op: Syntax.unary_op) : res Cop.unary_operation :=
@@ -135,30 +145,37 @@ Section TRANSL.
     | nil => transl_atom globs a
     | ac :: nil =>
         match ac with
-        | AcRecordField f ty =>
+        | AcRecordField f ty ly =>
             let* e := transl_atom globs a in
             let tderef := deref_pointer (typeof e) in
-            let tfield := transl_typ2 ty in
+            let tfield := transl_typ2_rec ly ty in
             ret (Efield (Ederef e tderef) (Ident.to_pos f) tfield)
-        | AcArrayIndex ai ty =>
+        | AcArrayIndex ai ty ly =>
             let* e := transl_atom globs a in
             let* ei := transl_atom globs ai in
             let tarith := typeof e in
-            let tderef := transl_typ2 ty in
+            let tderef := transl_typ2_rec ly ty in
             ret (Ederef (Ebinop Oadd e ei tarith) tderef)
         end
     | ac :: acs' =>
         match ac with
-        | AcRecordField f ty =>
-          let* er := transl_deep_access globs a acs' in
-          let tderef := deref_pointer (typeof er) in
-          let tfield := transl_typ2 ty in
-          ret (Efield (Ederef er tderef) (Ident.to_pos f) tfield)    
-        | AcArrayIndex ai ty =>
+        | AcRecordField f ty ly =>
+            let* er := transl_deep_access globs a acs' in
+            let* er :=
+              match typeof er with
+              | Tpointer (Tstruct rid attr) _ =>
+                  ret (Ederef er (Tstruct rid attr))
+              | Tstruct rid attr => ret er
+              | _ => fail
+              end
+            in
+            let tfield := transl_typ2_rec ly ty in
+            ret (Efield er (Ident.to_pos f) tfield)
+        | AcArrayIndex ai ty ly =>
             let* er := transl_deep_access globs a acs' in
             let* ei := transl_atom globs ai in
             let tarith := typeof er in
-            let tderef := transl_typ2 ty in
+            let tderef := transl_typ2_rec ly ty in
             ret (Ederef (Ebinop Oadd er ei tarith) tderef)
         end
     end.
@@ -166,17 +183,31 @@ Section TRANSL.
   Definition transl_expr (globs: pset) (e: Imp2.expr) : res ClightCe.expr :=
     match e with
     | EAtom a _ => transl_atom globs a
-    | EArrayGet a1 a2 ty =>
+    | EArrayGet a1 a2 ty ly =>
         let* e1 := transl_atom globs a1 in
         let* e2 := transl_atom globs a2 in
         let tarith := typeof e1 in
-        let tderef := transl_typ2 ty in
-        ret (Ederef (Ebinop Oadd e1 e2 tarith) tderef)
-    | ERecordProj a f ty =>
+        let tderef := transl_typ2_rec ly ty in
+        let ederef := Ederef (Ebinop Oadd e1 e2 tarith) tderef in
+        match ly with
+        | LyBoxed
+        | LyUnboxed (Some _)
+        | LyPrim => ret ederef
+        | LyUnboxed None => ret (Eaddrof ederef (tptr tderef))
+        end
+    | ERecordProj a f ty ly =>
         let* e := transl_atom globs a in
         let tderef := deref_pointer (typeof e) in
-        let tfield := transl_typ2 ty in
-        ret (Efield (Ederef e tderef) (Ident.to_pos f) tfield)
+        let tfield := transl_typ2_rec ly ty in
+        let efield := Efield (Ederef e tderef) (Ident.to_pos f) tfield in
+        match ly, ty with
+        | (LyBoxed | LyPrim), _ => ret efield
+        | LyUnboxed _, TArray _ _ =>
+            let tfield := transl_typ2 ty in
+            ret (Efield (Ederef e tderef) (Ident.to_pos f) tfield)
+        | LyUnboxed _, TRecord _ => ret (Eaddrof efield (tptr tfield))
+        | _, _ => fail
+        end
     | EDeepAccess a acs _ => transl_deep_access globs a (List.rev' acs)
     end.
 
@@ -324,7 +355,7 @@ Section TRANSL.
 
   Definition literal_size (l: Imp2.literal) : Z :=
     match l with
-    | Imp2.LArray a _ => Z.of_nat (Barray.length a)
+    | Imp2.LArray a _ _ => Z.of_nat (Barray.length a)
     | _ => Z.of_nat 0
     end.
 
@@ -338,7 +369,7 @@ Section TRANSL.
             let t := transl_typ2_lit ty (literal_size l) in
             let (t, readonly) :=
               match ty, l with
-              | TRecord _, LBase (LbVar _) _ => (tptr t, true)
+              | TRecord _, LVar _ _ => (tptr t, true)
               | (TBool | TInt32 _ | TInt64 _ | TEnum _), _ => (t, true)
               | _, _ => (t, false)
               end
@@ -380,19 +411,19 @@ Section TRANSL.
   Definition transl_globdefs (defs: list Imp2.globdef) : res (list cglobdef) :=
     transl_globdefs_rec defs sempty.
     
-  Fixpoint transl_record_fields (fields: smaplist typ2) : Ctypes.members :=
+  Fixpoint transl_record_fields (fields: smaplist (typ2 * layout)) : Ctypes.members :=
     match fields with
     | nil => nil
-    | (x, tx) :: fields' =>
-        let tx' := transl_typ2 tx in
+    | (x, (tx, ly)) :: fields' =>
+        let tx' := transl_typ2_rec ly tx in
         let r := transl_record_fields fields' in
         (Member_plain (Ident.to_pos x) tx') :: r
     end.
 
-  Definition transl_record_btyp (x: ident) (fields: smaplist typ2) : Ctypes.composite_definition :=
+  Definition transl_record_btyp (x: ident) (fields: smaplist (typ2 * layout)) : Ctypes.composite_definition :=
     Composite (Ident.to_pos x) Struct (transl_record_fields fields) noattr.
 
-  Fixpoint transl_prog_types (types: list (type_def typ2)) : list Ctypes.composite_definition :=
+  Fixpoint transl_prog_types (types: list (type_def (typ2 * layout))) : list Ctypes.composite_definition :=
     match types with
     | nil => nil
     | td :: types' =>
@@ -422,7 +453,7 @@ Section TRANSL.
 
 End TRANSL.
 
-Fixpoint mk_abs_types_impl (types: list (type_def typ2)) : PMap.t Ctypes.type :=
+Fixpoint mk_abs_types_impl (types: list (type_def (typ2 * layout))) : PMap.t Ctypes.type :=
   match types with
   | nil => PMap.init Tvoid
   | td :: types' =>

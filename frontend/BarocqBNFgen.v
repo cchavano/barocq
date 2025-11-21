@@ -233,7 +233,7 @@ Definition norm_function (f: Barocq.function) : res BarocqBNF.function :=
     fn_body := body_norm
   |}.
 
-Fixpoint norm_program_rec (prog: Barocq.program) : res (list BarocqBNF.globdef * list (type_def btyp)) :=
+Fixpoint norm_program_rec (prog: Barocq.program) : res (list BarocqBNF.globdef * list (type_def field_descr)) :=
   match prog with
   | nil => eret (nil, nil)
   | d :: prog' =>

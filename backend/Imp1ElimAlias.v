@@ -1,4 +1,5 @@
 (** Must alias for imp1 *)
+From compcert Require Import Maps.
 Require Import Uint63.
 Require Import String FMapInterface FMapList ZArith Int ListSet.
 From BarocqComp Require Import Error Maps2 Types Imp1 Graph Typing Utils Draw.
@@ -37,9 +38,9 @@ Module Pp.
   Definition pp_comp (c:comp) :=
     match c with
     | CpAtom a _ => pp_atom a
-    | CpArrayGet a i _ => Bcat (pp_atom a )
+    | CpArrayGet a i _ _ => Bcat (pp_atom a )
                                  (array_index pp_atom i)
-    | CpRecordProj a i _ => Bcat (pp_atom a)
+    | CpRecordProj a i _ _ => Bcat (pp_atom a)
                               (Bcat (Bstr ".") (Bstr i))
     | CpRecordUpdate a f v _ => Bcat (pp_atom a)
                                 (Bcat
@@ -280,8 +281,8 @@ Definition set_pto (g:G.t) (d:domain) :=
 
 Definition edge_of_access (a:Typed.access) : EdgeLabel.t :=
   match a with
-  | AcRecordField id _ => EdgeLabel.Field id
-  | AcArrayIndex a   _ => EdgeLabel.Index a
+  | AcRecordField id _ _ => EdgeLabel.Field id
+  | AcArrayIndex a   _ _ => EdgeLabel.Index a
   end.
 
 Definition bind_path (d:domain) (o:int) (acc:list EdgeLabel.t) : res (domain * KVar) :=
@@ -478,9 +479,9 @@ Definition call (te:tenv) (env: aenv) (d:domain) (a:atom) (args:list atom) : res
 Definition eval_comp (te:tenv) (env : aenv) (d:domain) (c:comp)  : res (domain * KVar) :=
   match c with
   | CpAtom a _ => OK (d, eval_atom env (Vars d) a )
-  | CpArrayGet a i _  => array_get env d a i
+  | CpArrayGet a i _ _   => array_get env d a i
   | CpArraySet a i vl _ => array_set env d a i vl
-  | CpRecordProj a fd _ =>  record_get env d a fd
+  | CpRecordProj a fd _ _ =>  record_get env d a fd
   | CpRecordUpdate a fd vl _ => record_set env d a fd vl
   | CpDeepAccess a acc _   => deep_access env d a (List.map edge_of_access acc)
   | CpCall a args _  => call te env d a args
@@ -520,7 +521,7 @@ Definition merge_vars (m1 m2: IntMap.t int) (v1 v2 : STree.t KVar) :=
   STree.combine  (merge_ovar m1 m2) v1 v2.
 
 Definition merge_atoms (m1 m2:SMap.t (list atom)) :=
-  SMap.combine (ListSet.set_inter Syntax.AtomOrdered.eq_dec) m1 m2.
+  PMap.combine (ListSet.set_inter Syntax.AtomOrdered.eq_dec) m1 m2.
 
 Definition merge_domain (d1 d2:domain) : res domain :=
   let (v1,pt1,at1) := d1 in
@@ -664,7 +665,7 @@ Definition eval_function (te:tenv) (env:aenv) (f:function) : res afunction :=
 
 Definition literal_is_primitive (l:literal) :=
   match l with
-  | LTrue _ | LFalse _ | LInt32 _ _ | LInt64 _ _ => true
+  | LTrue | LFalse | LInt32 _ _ | LInt64 _ _ => true
   | _ => false
   end.
 

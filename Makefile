@@ -9,8 +9,8 @@ FRONTEND=\
 	BarocqShallow.v BarocqShallowgen.v BarocqVC.v CorresBD_Tactics.v
 
 BACKEND=\
-	ImpBNF.v ImpBNFgen.v ImpABNF.v ImpABNFgen.v\
-	Imp1.v Imp1gen.v Imp1ElimAlias.v Imp2.v Imp2gen.v GlobRewrite.v ClightCegen.v
+	ImpBNF.v ImpBNFgen.v ImpABNF.v ImpABNFgen.v Imp1.v Imp1gen.v Imp1ElimAlias.v\
+	Unboxing.v Imp2.v Imp2gen.v GlobRewrite.v ClightCegen.v
 
 BCOMP=Compiler.v
 
@@ -127,8 +127,9 @@ install-dev:
 # Formatting
 
 MLSOURCE=$(foreach dir,$(MLDIRS),$(wildcard $(dir)/*.ml $(dir)/*.mli))
+MLFORMAT=$(filter-out common/uint63.ml common/uint63.mli, $(MLSOURCE))
 
-format: $(MLSOURCE)
+format: $(MLFORMAT)
 	@echo OCAMLFORMAT $^
 	@$(OCAMLFORMAT) $^
 

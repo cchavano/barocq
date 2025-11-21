@@ -45,7 +45,10 @@ let rec expr_to_string_pref (prefix : string) (e : expr) : string =
         sprintf
           "match %s with\n%s\n%send"
           (atom_to_string a)
-          (list_to_string ~sep:"\n" (match_case_to_string prefix) cases)
+          (list_to_string
+             ~sep:"\n"
+             (match_case_to_string (prefix ^ indent))
+             cases)
           prefix
     | ELetIn (x, e1, e2) -> begin
         match e1 with
@@ -73,11 +76,7 @@ and match_case_to_string (prefix : string) ((p, ep) : Benum.pattern * expr) :
     | Benum.PIdent i -> ident_to_string i
     | Benum.PWildcard -> "_"
   in
-  sprintf
-    "%s| %s =>\n%s"
-    prefix
-    case
-    (expr_to_string_pref (prefix ^ make_indent 2) ep)
+  sprintf "%s%s =>\n%s" prefix case (expr_to_string_pref (prefix ^ indent) ep)
 
 let expr_to_string (e : expr) : string = expr_to_string_pref PrintUtils.indent e
 
@@ -89,14 +88,11 @@ let globdef_to_string (def : BarocqBNF.globdef) : string =
     literal_to_string
     function_to_string
     PrintTypes.btyp_to_string
-    ";;"
-    ";;"
     def
 
 let print_program (out : out_channel) (prog : BarocqBNF.program) : unit =
   PrintSyntax.print_program
     out
-    ";;"
     globdef_to_string
-    PrintTypes.btyp_to_string
+    (fun (ty, ly) -> PrintTypes.btyp_to_string_rec ly ty)
     prog

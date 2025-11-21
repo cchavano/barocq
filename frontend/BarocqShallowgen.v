@@ -221,7 +221,7 @@ Module Normalization.
             let td :=
               match adt with
               | Adt_enum elems => TdEnum {| ed_name := x; ed_elems := elems |}
-              | Adt_record fields => TdRecord {| rd_name := x; rd_fields := fields |}
+              | Adt_record fields => TdRecord {| rd_name := x; rd_fields := (MapList.map fst fields) |}
               end
             in
             eret (ndefs, td :: types)
@@ -403,7 +403,7 @@ Module Normalization2.
             let td :=
               match adt with
               | Adt_enum elems => TdEnum {| ed_name := x; ed_elems := elems |}
-              | Adt_record fields => TdRecord {| rd_name := x; rd_fields := fields |}
+              | Adt_record fields => TdRecord {| rd_name := x; rd_fields := (MapList.map fst fields) |}
               end
             in
             eret (ndefs, td :: types)
@@ -453,20 +453,20 @@ Module Monadification.
 
   Definition typof_literal (l: literal) : mtyp :=
     match l with
-    | LTrue ty
-    | LFalse ty
-    | LInt32 _ ty
-    | LInt64 _ ty
-    | LArray _ ty
-    | LRecord _ ty => ty
+    | LTrue
+    | LFalse => MBool
+    | LInt32 _ s => MInt32 s
+    | LInt64 _ s => MInt64 s
+    | LArray _ ta => MArray ta
+    | LRecord _ rid => MRecord rid
     end.
 
   Definition typof_atom (a: atom) : mtyp :=
     match a with
-    | ATrue ty
-    | AFalse ty
-    | AInt32 _ ty
-    | AInt64 _ ty
+    | ATrue
+    | AFalse => MBool
+    | AInt32 _ s => MInt32 s
+    | AInt64 _ s => MInt64 s
     | AConstr _ ty
     | AVar _ ty
     | ACast _ _ ty
@@ -838,9 +838,9 @@ Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res 
     | BBool => MBool
     | BInt32 s => MInt32 s
     | BInt64 s => MInt64 s
-    | BArray ta => MArray (monadify_btyp ta)
+    | BArray ta _ => MArray (monadify_btyp ta)
     | BEnum el => MEnum el
-    | BRecord s => MRecord s
+    | BRecord s _ => MRecord s
     | BFun tparams tret =>
         MFun (map monadify_btyp tparams) (MRes (monadify_btyp tret))
     | BAbs t => MAbs t
@@ -854,10 +854,10 @@ Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res 
 
   Fixpoint typecheck_atom (me : menv) (gx: gcontext) (lx: lcontext) (a: BNF.atom) : res atom :=
     match a with
-    | BNF.ATrue => eret (ATrue MBool)
-    | BNF.AFalse => eret (AFalse MBool)
-    | BNF.AInt32 i s => eret (AInt32 i (MInt32 s))
-    | BNF.AInt64 i s => eret (AInt64 i (MInt64 s))
+    | BNF.ATrue => eret ATrue
+    | BNF.AFalse => eret AFalse
+    | BNF.AInt32 i s => eret (AInt32 i s)
+    | BNF.AInt64 i s => eret (AInt64 i s)
     | BNF.AConstr x =>
         let* t := typof_constr me x in
         eret (AConstr x t)
@@ -936,8 +936,8 @@ Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res 
     let ty' := wrap_mtyp ty in
     let* a' :=
       match a with
-      | ATrue _
-      | AFalse _
+      | ATrue
+      | AFalse
       | AInt32 _ _
       | AInt64 _ _
       | AConstr _ _
@@ -1146,19 +1146,21 @@ Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res 
 
   Fixpoint typecheck_literal (me: menv) (l: BNF.literal) : res literal :=
     match l with
-    | Syntax.LTrue => eret (LTrue MBool)
-    | Syntax.LFalse => eret (LFalse MBool)
-    | Syntax.LInt32 i s => eret (LInt32 i (MInt32 s))
-    | Syntax.LInt64 i s => eret (LInt64 i (MInt64 s))
-    | Syntax.LArray a =>
+    | Syntax.LTrue => eret LTrue
+    | Syntax.LFalse => eret LFalse
+    | Syntax.LInt32 i s => eret (LInt32 i s)
+    | Syntax.LInt64 i s => eret (LInt64 i s)
+    | Syntax.LArray a ta _ =>
         let* a' := mmap (typecheck_literal me) a in
         let* t := typecheck_array_lit a' in
-        eret (LArray a' (MArray t))
-    | Syntax.LRecord rc rid =>
+        let ta := monadify_btyp ta in
+        if mtyp_eq_dec t ta then eret (LArray a' t)
+        else efail
+    | Syntax.LRecord rc _ rid =>
         let* rc' := MapList.map_err (typecheck_literal me) rc in
         let* t := menv_get_rdef me rid in
         if typecheck_struct_lit rc' t then
-          eret (LRecord rc' (MRecord rid))
+          eret (LRecord rc' rid)
         else efail
     end. 
 

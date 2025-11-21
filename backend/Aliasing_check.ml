@@ -69,7 +69,7 @@ let check_deep_access (d : absdom) (a : atom) (acs : access list) : bool =
   let rec aux acs =
     match acs with
     | [] -> true
-    | Syntax.Typed.AcArrayIndex (i, _) :: acs' -> check_atom d i && aux acs'
+    | Syntax.Typed.AcArrayIndex (i, _, _) :: acs' -> check_atom d i && aux acs'
     | Syntax.Typed.AcRecordField _ :: acs' -> aux acs'
   in
   match a with
@@ -79,7 +79,7 @@ let check_deep_access (d : absdom) (a : atom) (acs : access list) : bool =
 let check_comp (d : absdom) (c : comp) : comp =
   match c with
   | CpAtom (a, _) -> if check_atom d a then c else error (Invalid_atom a)
-  | CpArrayGet (a, i, _) ->
+  | CpArrayGet (a, i, _, _) ->
       if check_atom d a then
         if check_atom d i then c else error (Invalid_atom i)
       else error (Invalid_atom a)
@@ -87,7 +87,7 @@ let check_comp (d : absdom) (c : comp) : comp =
       if check_atom d i then
         if check_atom d v then c else error (Invalid_atom v)
       else error (Invalid_atom i)
-  | CpRecordProj (AVar (y, _), f, _) ->
+  | CpRecordProj (AVar (y, _), f, _, _) ->
       if AbsDom.is_valid_path d y [f] then c else error (Invalid_path (y, [f]))
   | CpRecordUpdate (_, _, v, _) ->
       if check_atom d v then c else error (Invalid_atom v)

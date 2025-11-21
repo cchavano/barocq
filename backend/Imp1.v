@@ -30,7 +30,7 @@ Definition globdef : Type := Syntax.globdef literal function btyp.
 
 (** ** Programs *)
 
-Definition program : Type := Syntax.program globdef btyp.
+Definition program : Type := Syntax.program globdef field_descr.
 
 Module Typed.
 
@@ -38,7 +38,7 @@ Module Typed.
 
   (** ** Literals *)
 
-  Definition literal : Type := Syntax.Typed.literal.
+  Definition literal : Type := Syntax.literal.
 
   (** ** Atoms *)
     
@@ -67,7 +67,7 @@ Module Typed.
 
   (** ** Programs *)
 
-  Definition program : Type := Syntax.program globdef btyp.
+  Definition program : Type := Syntax.program globdef field_descr.
 
 
   Section TRANSF.
@@ -276,7 +276,6 @@ Module Typed.
     | _         => None
     end.
 
-
   Definition eval_pval {ty:typ} (p:pval ty) : eval_typ abs_typ_impl ty :=
     match p with
     | PBool b     => b
@@ -458,16 +457,16 @@ Definition eval_record_update (m:mem) {tr:typ} (r:val tr) (k:ident) {te:typ} (v:
 
 Definition eval_access (te:tenv) (e:env) (m:mem) {ty:typ} (v:val ty) (acc:access) (tr:typ)  : res (val tr) :=
   match acc with
-  | AcRecordField id bt => eval_record_proj m v id  tr
-  | AcArrayIndex a bt   =>
+  | AcRecordField id bt _ => eval_record_proj m v id  tr
+  | AcArrayIndex a bt _ =>
       let* i := eval_atom te e (typof_index arch) a  in
       eval_array_get m v i tr
   end.
 
 Definition typeof_access (te:tenv) (a:access) : res typ :=
   match a with
-  | AcRecordField _ bt => btyp_to_typ te bt
-  | AcArrayIndex _ bt  => btyp_to_typ te bt
+  | AcRecordField _ bt _ => btyp_to_typ te bt
+  | AcArrayIndex _ bt _ => btyp_to_typ te bt
   end.
 
 Fixpoint eval_accesses (te:tenv) (e:env) (m:mem) {ty:typ} (v:val ty) (l:list access) (tr:typ) : res (val tr) :=
@@ -522,7 +521,7 @@ Definition eval_comp (te:tenv) (ge:genv) (e:env) (m:mem) (c:comp) (tr:typ) : res
   match c with
   | CpAtom a bt => let* va := eval_atom te e tr a in
                    OK (va,m)
-  | CpArrayGet a1 i bt =>
+  | CpArrayGet a1 i bt _ =>
       let* tya1 := typof_atom te a1 in
       let* v1 := eval_atom te e tya1 a1 in
       let* v2 := eval_atom te e (typof_index arch) i  in
@@ -536,7 +535,7 @@ Definition eval_comp (te:tenv) (ge:genv) (e:env) (m:mem) (c:comp) (tr:typ) : res
       let* v := eval_atom te e tr v in
       let* m := eval_array_set m a i v  in
       OK (v,m)
-  | CpRecordProj r id bt =>
+  | CpRecordProj r id bt _ =>
       let* t := typof_atom te r in
       let* r := eval_atom te e t r in
       let* v := eval_record_proj m r id tr in
@@ -695,19 +694,19 @@ Fixpoint eval_record_lit (lv: smaplist {ty:typ & val ty}) (fields: smaplist typ)
 
 Fixpoint eval_literal (te: tenv)  (l: literal)  (m:mem): res ({ty:typ & val ty} * mem) :=
   match l with
-  | LTrue _ => OK  (existT _ _ (Vprim _ (PBool true)),m)
-  | LFalse _ => OK (existT _ _ (Vprim _ (PBool false)), m)
-  | LInt32 i bt =>
-      match get_signed true bt with
+  | LTrue => OK  (existT _ _ (Vprim _ (PBool true)),m)
+  | LFalse => OK (existT _ _ (Vprim _ (PBool false)), m)
+  | LInt32 i s => OK (existT _ _  (Vprim _ (PInt32 s i)),m)
+      (* match get_signed true bt with
       | None => fail
       | Some s => OK (existT _ _  (Vprim _ (PInt32 s i)),m)
-      end
-  | LInt64 i bt =>
-      match get_signed true bt with
+      end *)
+  | LInt64 i s => OK (existT _ _ (Vprim _ (PInt64 s i)),m)
+      (* match get_signed true bt with
       | None => fail
       | Some s => OK (existT _ _ (Vprim _ (PInt64 s i)),m)
-      end
-  | LArray a bt =>
+      end *)
+  | LArray a bt _ =>
       let* ta := btyp_to_typ te bt in
       match ta with
       | TArray elt =>
@@ -719,8 +718,8 @@ Fixpoint eval_literal (te: tenv)  (l: literal)  (m:mem): res ({ty:typ & val ty} 
           OK(existT _ _ (Vptr _ ptr),m)
       |  _         => fail
       end
-  | LRecord rc bt =>
-      let* tr := btyp_to_typ te bt in
+  | LRecord rc ub rid =>
+      let* tr := btyp_to_typ te (BRecord rid ub) in
       match tr with
       | TRecord id l =>
           let* (r,m) := mmap_fold (fun x m => let* (v,m) := eval_literal te (snd x) m in
@@ -750,7 +749,7 @@ Module Aliasing_AST.
 
   (** ** Literals *)
 
-  Definition literal : Type := Syntax.Typed.literal.
+  Definition literal : Type := Syntax.literal.
 
   (** ** Atoms *)
     
@@ -779,7 +778,7 @@ Module Aliasing_AST.
 
   (** ** Programs *)
 
-  Definition program : Type := Syntax.program globdef btyp.
+  Definition program : Type := Syntax.program globdef field_descr.
 
 End Aliasing_AST.
 
@@ -831,14 +830,14 @@ Module Typing.
     | ac :: acs' =>
         match ac with
         | Syntax.AcRecordField f =>
-            let* ty' := typecheck_record_proj be ty f in
+            let* (ty', ly) := typecheck_record_proj2 be ty f in
             let* (r, lr) := typecheck_access be gx lx ty' acs' in
-            ret (r, (AcRecordField f ty') :: lr)
+            ret (r, (AcRecordField f ty' ly) :: lr)
         | Syntax.AcArrayIndex ai =>
             let* ai' := typecheck_atom be gx lx ai in
-            let* ty' := typecheck_array_get arch ty (typof_atom ai') in
+            let* (ty', ly) := typecheck_array_get2 arch ty (typof_atom ai') in
             let* (r, lr) := typecheck_access be gx lx ty' acs' in
-            ret (r, (AcArrayIndex ai' ty') :: lr)
+            ret (r, (AcArrayIndex ai' ty' ly) :: lr)
         end
     end.
 
@@ -852,8 +851,8 @@ Module Typing.
         let* a2' := typecheck_atom be gx lx a2 in
         let ty1 := typof_atom a1' in
         let ty2 := typof_atom a2' in
-        let* ty := typecheck_array_get arch ty1 ty2 in
-        ret (CpArrayGet a1' a2' ty)
+        let* (ty, ly) := typecheck_array_get2 arch ty1 ty2 in
+        ret (CpArrayGet a1' a2' ty ly)
     | Syntax.CpArraySet a1 a2 a3 =>
         let* a1' := typecheck_atom be gx lx a1 in
         let* a2' := typecheck_atom be gx lx a2 in
@@ -866,8 +865,8 @@ Module Typing.
     | Syntax.CpRecordProj a x =>
         let* a' := typecheck_atom be gx lx a in
         let tya := typof_atom a' in
-        let* ty := typecheck_record_proj be tya x in
-        ret (CpRecordProj a' x ty)
+        let* (ty, ly) := typecheck_record_proj2 be tya x in
+        ret (CpRecordProj a' x ty ly)
     | Syntax.CpRecordUpdate a1 x a2 =>
         let* a1' := typecheck_atom be gx lx a1 in
         let* a2' := typecheck_atom be gx lx a2 in
@@ -1004,7 +1003,7 @@ Module Typing.
   Definition typecheck_globdefs (be: benv) (defs: list Imp1.globdef) : res (list Imp1Typed.globdef) :=
     typecheck_globdefs_rec be STree.empty defs.
 
-  Definition build_benv (types: list (type_def btyp)) : res benv :=
+  Definition build_benv (types: list (type_def field_descr)) : res benv :=
     Utils.list_fold_left_err
       (fun acc_be td =>
         match td with

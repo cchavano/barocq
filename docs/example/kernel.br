@@ -1,25 +1,25 @@
 module Kernel
 
-defn nb_procs : u64 = 5UL
+defn nb_procs : u64 = 5ul
 
-defn quantum : u64 = 100UL
+defn quantum : u64 = 100ul
 
-type proc_status = [
+enum proc_status {
   READY,
   RUNNING,
-]
-
-type proc = {
-  pid: u64;
-  regs: array u64;
-  status: proc_status;
 }
 
-type state = {
-  curr_pid: u64;
-  procs: array proc;
-  deadline: u64;
-  mc: Machine::state;
+record proc {
+  pid: u64,
+  regs: #[u64; 32ul],
+  status: proc_status,
+}
+
+record state {
+  curr_pid: u64,
+  procs: #[#proc; nb_procs],
+  deadline: u64,
+  mc: Machine::state,
 }
 
 defn sync(ks: state) : state =
@@ -35,11 +35,11 @@ defn update_proc_status(ks: state, pid: u64, status: proc_status) : state =
 defn schedule(ks: state) : state =
   if Machine::read_time(ks.mc) > ks.deadline then
     let curr_pid = ks.curr_pid in
-    let next_pid = (curr_pid + 1UL) % nb_procs in
+    let next_pid = (curr_pid + 1ul) % nb_procs in
     let next_deadline = ks.deadline + quantum in
     let ks = update_proc_status(ks, curr_pid, READY) in
     let ks = update_proc_status(ks, next_pid, RUNNING) in
-    let ks = { ks with curr_pid <- next_pid; deadline <- next_deadline; } in
+    let ks = { ks with curr_pid <- next_pid, deadline <- next_deadline, } in
     sync(ks)
   else
     ks

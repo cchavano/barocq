@@ -90,58 +90,123 @@ Barocq supports the usual boolean and integer types.
 
 ==== Enumerated types
 
-Enumerated types can be created with the keyword `type`. An example an enum type definition:
+Enumerated types can be created with the keyword `enum`. An example an enum type definition:
 
 [source]
 ----
-type retcode = [
+enum retcode {
   SUCCESS,
   ERROR,
-]
+}
 ----
 
 An enum constructor (like SUCCESS or ERROR) must begin with an uppercase letter.
 
 ==== Record types
 
-Record types can be created with the keyword `type`. An example of two record type definitions:
+Record types can be created with the keyword `record`. An example of two record type definitions:
 
 [source]
 ----
-type point = {
-  x: i32;
-  y: i32;
+record point {
+  x: i32,
+  y: i32,
 }
 
-type circle = {
-  center: point;
-  radius: u32;
+record circle {
+  center: point,
+  radius: u32,
 }
 ----
 
 ==== Array types
 
-Array types are declared with the keyword `array`. For example, an array of `i32` is written `array i32`, an array of `point` is written `array point` and an array of an array of `u64` is written `array (array u64)`. In the last example, parentheses are mandatory.
+For any type `t`, an array of type `t` is written `[t]`.
 
-NOTE: Although arrays can be of any type, Barocq does not support polymorphism, i.e. you cannot write functions that take an array whose element type is generic.
+NOTE: Although arrays can be of any type, Barocq does not support parametric polymorphism.
 
 ==== Type aliases
 
-The following code creates a type named `int` to be an alias for `i32`, and a type named `buffer` to be an alias of `array u32`.
+The following code creates a type named `int` to be an alias for `i32`, and a type named `buffer` to be an alias of `[u32]`.
 
 [source]
 ----
 type int = i32
 
-type buffer = array u32
+type buffer = [u32]
 ----
 
 Type aliases is a front-end feature only, i.e. they will not appear in the compiled C file.
 
-==== About the compilation of types
+==== LyUnboxed values
 
 Integers, Booleans and Enums are primitive types.
-All *non-primitive* types are boxed in the generated C file, i.e. they are wrapped in a pointer.
+By default, all *non-primitive* types are boxed in the generated C file, i.e. they are wrapped in a pointer.
+
+For example, the following record definition:
+
+[source]
+----
+record draw {
+  pts: [point],
+  color: u64,
+}
+----
+
+is compiled to
+
+[source,c]
+----
+struct draw {
+  struct point **pts;
+  unsigned long long color;
+}
+----
+
+In fact, the field `pts` of record `draw` becomes a pointer to an array that itself contains pointers to values of type `point`. LyUnboxed values are introduced by the operator `#`. For example,
+
+[source]
+----
+record draw {
+  pts: [#point],
+  color: u64,
+}
+----
+
+is compiled to
+
+[source,c]
+----
+struct draw {
+  point *pts;
+  unsigned long long color;
+}
+----
+
+because the field `pts` is now just a pointer to an array of (unboxed) points. We can even go further by writing
+
+[source]
+----
+record draw {
+  pts: #[#point; 3ul],
+  color: u64,
+}
+----
+
+which becomes
+
+[source,c]
+----
+struct draw {
+  point pts[3];
+  unsigned long long color;
+}
+----
+
+In this last example, we also unboxed the array of points inside the record definition `draw`. Note that the size of an unboxed array must be specified to be compilable to C. The syntax is `#[t; size]` where `t` is any type. As for array indexes, the type of `size` depends on the target architecture. Barocq supports both unlayout arrays and records in arrays and records.
+
+IMPORTANT:
+Unboxing is a *memory layout* property. You can not directly pass unboxed values to functions, nor return them. For example, signature `(\#point) -> i32` does not have a meaning in Barocq, but `([#[point, 2ul]]) -> i32` does: the calling interface always expects pointers for non-primitive types. Thus, the access semantics for unboxed values is pointer-based. Expressions `x.f` and `y[i]` return a boxed value of type `t` if field `f` of `x` or elements of array `y` have layout `#t`. In this case, update operations `x.f <- v1` and `y[i] <- v2` are authorized only if `v1` (resp. `v2`) is a must-alias for the address of `x.f` (resp. `y[i]`): those updates actually become no-ops in the generated C code.
 
 === Expressions
 
@@ -150,11 +215,11 @@ All *non-primitive* types are boxed in the generated C file, i.e. they are wrapp
 Boolean literals are `true` and `false`.
 
 Integer literals can be written in decimal (e.g. `123`) or hexadimal (e.g. `0xFF`) notation. By default,
-integer literals are parsed as being 32-bit signed integers. To change the signedness and size of a literal, the suffixes `U` (for unsigned), `L` (for long, i.e. 64-bit) and `UL` (for unsigned 64-bit) must be used.
+integer literals are parsed as being 32-bit signed integers. To change the signedness and size of a literal, the suffixes `u`/`U` (for unsigned), `l`/`L` (for long, i.e. 64-bit) and `ul`/`UL` (for unsigned 64-bit) must be used.
 
-Record literals are written `{ f1 = l1; ...; fn = ln; }`, where `fi` are field names and `li` are the associated values that are also literals.
+Record literals are written `{ f1 = l1, ..., fn = ln, }`, where `fi` are field names and `li` are the associated values that are also literals.
 
-Array literals are written `[| l1; l2; ...; ln |]` where each `li` is a literal.
+Array literals are written `[ l1, l2, ..., ln, ]` where each `li` is a literal.
 
 IMPORTANT: Array and record literals can only be used for defining global constants and cannot appear in the body of a function.
 
@@ -286,7 +351,7 @@ The following table summarizes the other expressions of the language. All identi
 |`if e1 then e2 else e3`
 |Conditional expression
 
-|`match e0 with case p1 => e1 ... case pn => en end`
+|`match e0 with p1 => e1 ... pn => en end`
 |Pattern-matching*
 
 |`e.f`
@@ -316,7 +381,7 @@ To update multiple fields of the same record "at the same time", the following s
 
 [source]
 ----
-{ p with  x <- 2; y <- 3; }
+{ p with  x <- 2, y <- 3, }
 ----
 
 In this example, `p` should be a record variable, and `x` and `y` fields of the corresponding record type.
@@ -351,7 +416,7 @@ defn nb_elem : u32 = max_size / 2U
 
 defn x_coord_init : i32 = 6
 
-defn my_array : array point = [|{ x = x_coord_init; y = -2; };  { x = x_coord_init; y = 34; }|]
+defn my_array : array point = [{ x = x_coord_init, y = -2, },  { x = x_coord_init, y = 34, },]
 ----
 
 IMPORTANT: Only constants with an integer or boolean type can be used in function bodies. Non-primitive constants may be used by manually written C code which would be linked to Barocq generated code.
@@ -372,7 +437,7 @@ NOTE: All functions are uncurried, partial application is not supported.
 
 === Foreign function interface
 
-You may need to provide types and definitions which do not have an implementation in Barocq, but are implemented in C. Barocq supports abstract types and abstract definitions.
+You may need to provide types and definitions that do not have an implementation in Barocq, but are implemented in C. Barocq supports abstract types and abstract definitions.
 
 ==== Abstract types
 
@@ -395,9 +460,9 @@ Abstract constants and functions are declared with the keyword `decl`:
 ----
 type t1 of "struct"
 
-type rec = {
-  f1: t1;
-  f2: u32;
+record rec {
+  f1: t1,
+  f2: u32,
 }
 
 decl const1 : u32
@@ -406,22 +471,22 @@ decl const2 : rec
 
 decl rand : (i32) -> i32
 
-decl copy_array : (@read array point, @write array point) -> array point
+decl copy_array : (@read [point], @write [point]) -> [point]
 ----
 
 By default, all arguments passed to an abstract function will become unsuable after the call (like in a strict linear type system.). To prevent this, you can use the annotation `@read` to specify that the function will only read data from the argument and will never modify it.
 This annotation is used in the abstract function `copy_array` for example. +
-The second existing annotation is `@write`, which means two things. First, it indicates that the function may modify the argument, and second, that the return value is a direct alias to this argument. 
-Any abstract function which returns a non-primitive value shoud have a parameter annotated with `@write` with the same type as the return type.
+The second existing annotation is `@write`, which means two things. First, it indicates that the function may modify the argument, and second, that the return value is a must-alias to this argument. 
+Any abstract function that returns a non-primitive value must have a parameter annotated with `@write` with the same type as the return type.
 
 [IMPORTANT]
 .The contract of abstract functions
 ====
-Abstract function must respect the following contract:
+Abstract functions must respect the following contract:
 
-* The function cannot make a newly allocated object escape from the local scope;
-* The function must preserve the memory layout of the call state (e.g. pointer moves are forbidden). If changes occur in the memory, they can only be a modification of a primitive value contained in the arguments;
-* The function cannot modify an argument annotated with `@read`;
+* They cannot make a newly allocated object escape from the local scope;
+* They must preserve the memory layout of the call state (e.g. pointer moves are forbidden). If changes occur in the memory, thoses changes can only be a modification of a primitive value contained in the arguments;
+* They cannot modify an argument annotated with `@read`;
 * If the result is non-primitive, it must point to the argument annotated with `@write`.
 ====
 
@@ -462,34 +527,34 @@ Barocq supports the following compilation directives:
 |===
 |Directive |Associated with |Effects
 
-| `#inline`
+| `@inline`
 | A function definition
 | Produces the C `inline` attribute for the corresponding function
 
-| `#always_inline`
+| `@always_inline`
 | A function definition
 | Produces the C `always_inline` attribute code for the corresponding function
 
-| `#static`
+| `@static`
 | A function definition
 | Produces the C `static` keyword for the corresponding function
 
-| `[#static]`
-| A whole module
+| `@all_static`
+| A whole module (must be placed after the imports)
 | Produces the C `static` keyword for all the module's functions
 
-| `#export`
+| `@export`
 | A function definition
 | Removes the C `static` keyword for the corresponding function if the parent module was marked `[#static]`
 
-| `#unique`
+| `@unique`
 | A record-typed constant definition or declaration
 | Tells the compiler that the marked constant is the unique instance of its type
 |===
 
-=== More details about `#unique`
+=== More details about `@unique`
 
-In microkernel code, functions may operate on a (part of a) global data structure that represents the kernel state. In a functional programming language like Barocq, this global state must be passed as an argument to every function that reads from or writes to it. The `#unique` directive can be used to modify the generated code by specifying that a global variable will be the only instance of its type during a program execution. Let's say that we mark a global variable `g` of type `ty` with `#unique`, then this directive has the following effects:
+In microkernel code, functions may operate on a (part of a) global data structure that represents the kernel state. In a functional programming language like Barocq, this global state must be passed as an argument to every function that reads from or writes to it. The `@unique` directive can be used to modify the generated code by specifying that a global variable will be the only instance of its type during a program execution. Let's say that we mark a global variable `g` of type `ty` with `@unique`, then this directive has the following effects:
 
 - For function signatures, it removes every parameter of type `ty` and transforms the return type `ty` into `void`;
 - In function bodies, if `x` and `y` are of type `ty`, then:
@@ -498,10 +563,10 @@ In microkernel code, functions may operate on a (part of a) global data structur
   * Every function call assignment `x = foo(a1, ..., y, ..., an)` are transformed into `foo(a1, ..., an)` to match the new signature of `foo`;
   * Every statement `return x` is replaced by `return`.
 
-To ensure that these transformations remain correct, marking a global variable with `#unique` also restricts the set of accepted programs. If `ty` is the type of this global variable, then the following things are **forbidden**:
+To ensure that these transformations remain correct, marking a global variable with `@unique` also restricts the set of accepted programs. If `ty` is the type of this global variable, then the following things are **forbidden**:
 
 - Record type definitions that contain a field of type `ty`;
-- Functions for which `ty` appears more than once in the parameter types (e.g. function types `(t1, ty, ..., ty) -> tr` or `(array ty, t1, t2) -> tr` are rejected).
+- Functions for which `ty` appears more than once in the parameter types (e.g. function types `(t1, ty, ..., ty) -> tr` or `([ty], t1, t2) -> tr` are rejected).
 
 == A small example
 
@@ -533,26 +598,26 @@ Now, let's look at `kernel.br`.
 ----
 module Kernel
 
-defn nb_procs : u64 = 5UL
+defn nb_procs : u64 = 5ul
 
-defn quantum : u64 = 100UL
+defn quantum : u64 = 100ul
 
-type proc_status = [
+enum proc_status {
   READY,
   RUNNING,
-]
-
-type proc = {
-  pid: u64;
-  regs: array u64;
-  status: proc_status;
 }
 
-type state = {
-  curr_pid: u64;
-  procs: array proc;
-  deadline: u64;
-  mc: Machine::state;
+record proc {
+  pid: u64,
+  regs: #[u64; 32ul],
+  status: proc_status,
+}
+
+record state {
+  curr_pid: u64,
+  procs: #[#proc; nb_procs],
+  deadline: u64,
+  mc: Machine::state,
 }
 
 defn sync(ks: state) : state =
@@ -568,11 +633,11 @@ defn update_proc_status(ks: state, pid: u64, status: proc_status) : state =
 defn schedule(ks: state) : state =
   if Machine::read_time(ks.mc) > ks.deadline then
     let curr_pid = ks.curr_pid in
-    let next_pid = (curr_pid + 1UL) % nb_procs in
+    let next_pid = (curr_pid + 1ul) % nb_procs in
     let next_deadline = ks.deadline + quantum in
     let ks = update_proc_status(ks, curr_pid, READY) in
     let ks = update_proc_status(ks, next_pid, RUNNING) in
-    let ks = { ks with curr_pid <- next_pid; deadline <- next_deadline; } in
+    let ks = { ks with curr_pid <- next_pid, deadline <- next_deadline, } in
     sync(ks)
   else
     ks

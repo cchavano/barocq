@@ -69,20 +69,20 @@ Module Monadic.
   (** Literals *)
 
   Inductive literal :=
-    | LTrue : mtyp -> literal
-    | LFalse : mtyp -> literal
-    | LInt32 : int -> mtyp -> literal
-    | LInt64 : int64 -> mtyp -> literal
+    | LTrue : literal
+    | LFalse : literal
+    | LInt32 : int -> signedness -> literal
+    | LInt64 : int64 -> signedness -> literal
     | LArray : array literal -> mtyp -> literal
-    | LRecord : list (ident * literal) -> mtyp -> literal.
+    | LRecord : list (ident * literal) -> ident -> literal.
 
   (** ** Atoms *)
 
   Inductive atom :=
-    | ATrue : mtyp -> atom
-    | AFalse : mtyp -> atom
-    | AInt32 : int -> mtyp -> atom
-    | AInt64 : int64 -> mtyp -> atom
+    | ATrue : atom
+    | AFalse : atom
+    | AInt32 : int -> signedness -> atom
+    | AInt64 : int64 -> signedness -> atom
     | AConstr : ident -> mtyp -> atom
     | AVar : ident -> mtyp -> atom
     | ACast : atom -> mtyp -> mtyp -> atom

@@ -36,26 +36,24 @@ let rec mtyp_to_rocq (ty : mtyp) : string =
 and opt_parens (ty : mtyp) : string =
   PrintUtils.opt_parens is_simpl_mtyp mtyp_to_rocq ty
 
-let int_to_rocq (i : Integers.Int.int) (ty : mtyp) : string =
+let int_to_rocq (i : Integers.Int.int) (s : signedness) : string =
   let si =
-    match ty with
-    | MInt32 Signed ->
+    match s with
+    | Signed ->
         let si = i32_to_string i in
         if Integers.Int.lt i Integers.Int.zero then sprintf "(%s)" si else si
-    | MInt32 Unsigned -> u32_to_string i
-    | _ -> assert false
+    | Unsigned -> u32_to_string i
   in
   sprintf "Int.repr %s" si
 
-let int64_to_rocq (i : Integers.Int64.int) (ty : mtyp) : string =
+let int64_to_rocq (i : Integers.Int64.int) (s : signedness) : string =
   let si =
-    match ty with
-    | MInt64 Signed ->
+    match s with
+    | Signed ->
         let si = i64_to_string i in
         if Integers.Int64.lt i Integers.Int64.zero then sprintf "(%s)" si
         else si
-    | MInt64 Unsigned -> u64_to_string i
-    | _ -> assert false
+    | Unsigned -> u64_to_string i
   in
 
   sprintf "Int64.repr %s" si
@@ -180,7 +178,7 @@ let binary_op_to_rocq (ty : mtyp) (op : binary_op) : string =
 
 let is_simpl_atom (a : atom) : bool =
   match a with
-  | ATrue _ | AFalse _ | AVar _ -> true
+  | ATrue | AFalse | AVar _ -> true
   | _ -> false
 
 let field_name_prefix (ty : mtyp) : string =
@@ -192,10 +190,10 @@ let typof_atom (a : atom) : mtyp = BarocqShallowgen.Monadification.typof_atom a
 
 let rec atom_to_rocq (a : atom) : string =
   match a with
-  | ATrue _ -> "true"
-  | AFalse _ -> "false"
-  | AInt32 (i, ty) -> int_to_rocq i ty
-  | AInt64 (i, ty) -> int64_to_rocq i ty
+  | ATrue -> "true"
+  | AFalse -> "false"
+  | AInt32 (i, s) -> int_to_rocq i s
+  | AInt64 (i, s) -> int64_to_rocq i s
   | AConstr (x, _) ->
       let x = ident_to_string x in
       begin
@@ -457,21 +455,17 @@ let function_to_rocq (f : coq_function) : string =
 module SR = struct
   let is_simpl_lit (l : literal) : bool =
     match l with
-    | LTrue _ | LFalse _ -> true
+    | LTrue | LFalse -> true
     | _ -> false
 
   let rec literal_to_rocq (l : literal) : string =
     match l with
-    | LTrue _ -> "true"
-    | LFalse _ -> "false"
-    | LInt32 (i, t) -> int_to_rocq i t
-    | LInt64 (i, t) -> int64_to_rocq i t
+    | LTrue -> "true"
+    | LFalse -> "false"
+    | LInt32 (i, s) -> int_to_rocq i s
+    | LInt64 (i, s) -> int64_to_rocq i s
     | LArray (la, _) -> list_to_string_bracket literal_to_rocq la
-    | LRecord (rc, t) -> begin
-        match t with
-        | MRecord rid -> record_lit_to_rocq (ident_to_string rid) rc
-        | _ -> assert false
-      end
+    | LRecord (rc, rid) -> record_lit_to_rocq (ident_to_string rid) rc
 
   and field_lit_to_rocq (rid : string) (fl : ident * literal) : string =
     sprintf
@@ -685,21 +679,17 @@ end
 module SB = struct
   let is_simpl_lit (l : literal) : bool =
     match l with
-    | LTrue _ | LFalse _ -> true
+    | LTrue | LFalse -> true
     | _ -> false
 
   let rec literal_to_rocq (l : literal) : string =
     match l with
-    | LTrue _ -> "true"
-    | LFalse _ -> "false"
-    | LInt32 (i, t) -> int_to_rocq i t
-    | LInt64 (i, t) -> int64_to_rocq i t
+    | LTrue -> "true"
+    | LFalse -> "false"
+    | LInt32 (i, s) -> int_to_rocq i s
+    | LInt64 (i, s) -> int64_to_rocq i s
     | LArray (la, _) -> list_to_string_bracket literal_to_rocq la
-    | LRecord (rc, t) -> begin
-        match t with
-        | MRecord rid -> record_lit_to_rocq rc
-        | _ -> assert false
-      end
+    | LRecord (rc, rid) -> record_lit_to_rocq rc
 
   and record_lit_to_rocq (rc : (ident * literal) list) : string =
     List.fold_right

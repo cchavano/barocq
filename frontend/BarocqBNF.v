@@ -34,4 +34,4 @@ Definition globdef : Type := Syntax.globdef literal function btyp.
 
 (** ** Programs *)
 
-Definition program : Type := Syntax.program globdef btyp.
+Definition program : Type := Syntax.program globdef field_descr.

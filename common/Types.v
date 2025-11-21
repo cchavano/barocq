@@ -1,3 +1,4 @@
+From Coq Require Import ZArith List MSetPositive.
 From compcert Require Import Integers Maps.
 From BarocqComp Require Import Target Error Barray Brecord Benum Ident Maps2 Utils.
 From Coq Require Import Datatypes List MSetPositive Lia.
@@ -178,13 +179,95 @@ Fixpoint typ_compare (t1 t2:typ) :=
 
 (** ** Concrete types *)
 
+Inductive layout : Type :=
+  | LyPrim : layout
+  | LyBoxed : layout
+  | LyUnboxed : option Z -> layout.
+
+Definition layout_eq_dec (b1 b2: layout) : { b1 = b2 } + { b1 <> b2 }.
+Proof.
+  destruct b1; destruct b2;
+  try ((left; reflexivity) || (right; discriminate)).
+  decide equality. decide equality. apply Z.eq_dec.
+Defined.
+
+Definition layout_compare (ly1 ly2: layout) : comparison :=
+  match ly1, ly2 with
+  | LyPrim, LyPrim
+  | LyBoxed, LyBoxed => Eq
+  | LyPrim, _ => Lt
+  | _, LyPrim => Gt
+  | LyBoxed, _ => Lt
+  | _, LyBoxed => Gt
+  | LyUnboxed None, LyUnboxed None => Eq
+  | LyUnboxed None, LyUnboxed (Some _) => Lt
+  | LyUnboxed (Some _), LyUnboxed None => Gt
+  | LyUnboxed (Some z1), LyUnboxed (Some z2) => Z.compare z1 z2
+  end.
+
+Lemma layout_compare_eq :
+  forall (ly1 ly2: layout),
+  layout_compare ly1 ly2 = Eq <-> ly1 = ly2.
+Proof.
+  destruct ly1; destruct ly2; simpl;
+  try (split; (discriminate || reflexivity)).
+  - destruct o; split; discriminate.
+  - destruct o; split; discriminate.
+  - destruct o; destruct o0; try (split; discriminate).
+    intuition. apply Z.compare_eq in H. congruence.
+    inversion H. apply Z.compare_refl.
+    split; reflexivity.
+Qed.
+
+Lemma layout_compare_antisym  : forall (x y: layout), layout_compare x y = CompOpp (layout_compare y x).
+Proof.
+  destruct x; destruct y; simpl;
+  try reflexivity.
+  - destruct o; reflexivity.
+  - destruct o; reflexivity.
+  - destruct o; reflexivity.
+  - destruct o; reflexivity.
+  - destruct o; destruct o0; try reflexivity.
+    apply Z.compare_antisym.
+Qed.
+
+Require Import Lia.
+
+Lemma layout_compare_trans:
+  forall (ly1 ly2 ly3: layout) (c: comparison),
+  layout_compare ly1 ly2 = c -> layout_compare ly2 ly3 = c -> layout_compare ly1 ly3 = c.
+Proof.
+  destruct ly1; destruct ly2; destruct ly3; try congruence; intros;
+  simpl in H; simpl in H0.
+  - subst. discriminate.
+  - destruct o; simpl; congruence.
+  - destruct o; simpl; congruence.
+  - destruct o; simpl; congruence. 
+  - destruct o; destruct o0; simpl; congruence.
+  - congruence.
+  - destruct o; congruence.
+  - destruct o; congruence.
+  - destruct o; congruence.
+  - destruct o; destruct o0; simpl; congruence.
+  - destruct o; congruence.
+  - destruct o; destruct o0; simpl; congruence.
+  - destruct o; simpl; congruence.
+  - destruct o; destruct o0; congruence.
+  - destruct o; destruct o0; simpl; congruence.
+  - destruct o; destruct o0; simpl; congruence.
+  - destruct o; destruct o0; destruct o1; simpl; try congruence.
+    destruct c. apply Z.compare_eq in H. apply Z.compare_eq in H0. subst. apply Z.compare_refl.
+    apply (Zcompare_Lt_trans _ _ _ H H0).
+    apply (Zcompare_Gt_trans _ _ _ H H0).
+Qed.
+
 Inductive btyp : Type :=
   | BBool : btyp
   | BInt32 : signedness -> btyp
   | BInt64 : signedness -> btyp
-  | BArray : btyp -> btyp
+  | BArray : btyp -> layout -> btyp
   | BEnum : ident -> btyp
-  | BRecord : ident -> btyp
+  | BRecord : ident -> list ident -> btyp (* we register the list of unboxed fields *)
   | BFun : list btyp -> btyp -> btyp
   | BAbs : ident -> btyp.
 
@@ -194,19 +277,16 @@ Definition btyp_is_prim (ty: btyp) : bool :=
   | _ => false
   end.
 
-Definition signed_of_int_btyp (ty: btyp) : signedness :=
-  match ty with
-  | BInt32 s
-  | BInt64 s => s
-  | _ => Signed
-  end.
+Definition field_descr : Type := btyp * layout.
 
 Fixpoint btyp_eq_dec (t1 t2: btyp) : { t1 = t2 } + { t1 <> t2 }.
 Proof.
   decide equality.
   - apply signedness_eq_dec.
   - apply signedness_eq_dec.
+  - apply layout_eq_dec.
   - apply Ident.eq_dec.
+  - apply list_eq_dec. apply Ident.eq_dec.
   - apply Ident.eq_dec.
   - apply list_eq_dec. apply btyp_eq_dec.
   - apply Ident.eq_dec.
@@ -217,9 +297,9 @@ Fixpoint btyp_depth (t:btyp) : nat :=
   | BBool
   | BInt32 _
   | BInt64 _ => O
-  | BArray t' => S (btyp_depth t')
+  | BArray t' _ => S (btyp_depth t')
   | BEnum _ => O
-  | BRecord _ => O
+  | BRecord _ _ => O
   | BFun l t' => S (List.fold_right (fun e acc => max (btyp_depth e) acc) (btyp_depth t') l)
   | BAbs _ => O
   end.
@@ -237,9 +317,9 @@ Section BTYPIND.
 
   Variable PBAbs : forall i , P (BAbs i).
 
-  Variable PBArray : forall t, P t -> P (BArray t).
+  Variable PBArray : forall t ly, P t -> P (BArray t ly).
 
-  Variable PBRecord : forall i, P (BRecord i).
+  Variable PBRecord : forall i ub, P (BRecord i ub).
 
   Variable PBFun : forall l r, (forall x, In x l -> P x) -> P r -> P (BFun l r).
 
@@ -341,7 +421,6 @@ Section EVALTYP.
                                       |  _  => eval_funtyp tparams' tret
                                       end
     end.
-
 
 End EVALTYP.
 
@@ -611,15 +690,15 @@ Module BtypOrdered <: OrderedType.
      | BInt64 s1 , BInt64 s2 => signedness_compare s1 s2
      | BInt64 _  ,   _       => Lt
      |  _        , BInt64 _  => Gt
-     | BArray bt1 , BArray bt2 => btyp_compare bt1 bt2
-     | BArray  _  , _          => Lt
-     | _          , BArray _   => Gt
+     | BArray bt1 ly1 , BArray bt2 ly2 => pair_compare btyp_compare layout_compare (bt1, ly1) (bt2, ly2)
+     | BArray  _ _  , _          => Lt
+     | _          , BArray _ _   => Gt
      | BEnum i1 , BEnum i2     => String.compare i1 i2
      | BEnum _  , _            => Lt
      | _        , BEnum  _     => Gt
-     | BRecord i1 , BRecord i2 => String.compare i1 i2
-     | BRecord _  , _          => Lt
-     | _          , BRecord _  => Gt
+     | BRecord i1 ub1 , BRecord i2 ub2 => pair_compare String.compare (list_compare Ident.compare) (i1, ub1) (i2, ub2)
+     | BRecord _ _ , _          => Lt
+     | _          , BRecord _ _ => Gt
      | BFun l1 t1 , BFun l2 t2 => pair_compare (list_compare btyp_compare) btyp_compare (l1,t1) (l2,t2)
      | BFun _  _  , _          => Lt
      | _          , BFun _ _   => Gt
@@ -657,11 +736,16 @@ Module BtypOrdered <: OrderedType.
       rewrite string_compare_eq_iff.
       intuition congruence.
     - destruct y; simpl; try intuition  congruence.
-      rewrite IHx.
+      rewrite pair_compare_eq.
       intuition congruence.
+      exact (IHx y).
+      apply layout_compare_eq.
     - destruct y; simpl; try intuition  congruence.
-      rewrite string_compare_eq_iff.
+      rewrite pair_compare_eq.
       intuition congruence.
+      rewrite string_compare_eq_iff. tauto.
+      rewrite list_compare_eq. tauto.
+      intros. apply string_compare_eq_iff.
     - destruct y; simpl; try intuition  congruence.
       rewrite pair_compare_eq.
       intuition congruence.
@@ -692,9 +776,17 @@ Module BtypOrdered <: OrderedType.
     - destruct y,z; simpl; try intuition congruence.
       apply string_compare_trans.
     - destruct y,z; simpl; try intuition congruence.
-      apply IHx.
+      intros. erewrite pair_compare_trans with (a2 := y) (b2 := l) (c := c); eauto.
+      apply btyp_compare_eq.
+      apply layout_compare_trans.
     - destruct y,z; simpl; try intuition congruence.
+      intros. erewrite pair_compare_trans with (a2 := i0) (b2 := l) (c := c); eauto.
+      apply string_compare_eq_iff.
       apply string_compare_trans.
+      intros. erewrite ExtOrdered.list_compare_trans; eauto.
+      apply string_compare_eq_iff.
+      intros. apply (string_compare_trans _ _ _ _ H6 H7).
+      congruence.
     - destruct y,z; simpl; try intuition congruence.
       intro.
       apply pair_compare_trans.
@@ -724,8 +816,15 @@ Module BtypOrdered <: OrderedType.
     - destruct y ; simpl; try congruence.
       apply String.compare_antisym.
     - destruct y ; simpl; try congruence.
+      apply pair_compare_antisym.
+      simpl. apply IHx.
+      apply layout_compare_antisym.
     - destruct y ; simpl; try congruence.
-      apply String.compare_antisym.
+      apply pair_compare_antisym.
+      simpl. apply String.compare_antisym.
+      apply list_compare_antisym.
+      apply string_compare_eq_iff.
+      intros. apply String.compare_antisym.
     - destruct y ; simpl; try congruence.
       apply pair_compare_antisym.
       simpl.

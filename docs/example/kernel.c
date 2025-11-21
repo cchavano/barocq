@@ -9,13 +9,13 @@ enum Kernel_proc_status {
 
 struct Kernel_proc {
   unsigned long long pid;
-  unsigned long long *regs;
+  unsigned long long regs[32];
   enum Kernel_proc_status status;
 };
 
 struct Kernel_state {
   unsigned long long curr_pid;
-  struct Kernel_proc **procs;
+  struct Kernel_proc procs[5];
   unsigned long long deadline;
   struct Machine_state *mc;
 };
@@ -46,15 +46,11 @@ struct Kernel_state *Kernel_sync(struct Kernel_state *$p_ks)
 struct Kernel_state *Kernel_update_proc_status(struct Kernel_state *$p_ks, unsigned long long $p_pid, enum Kernel_proc_status $p_status)
 {
   register struct Kernel_proc *$u_proc;
-  register struct Kernel_proc **$u_procs;
+  register struct Kernel_proc *$u_procs;
   register struct Kernel_state *$i0;
   $u_procs = (*$p_ks).procs;
-  $u_proc = *($u_procs + $p_pid);
+  $u_proc = &*($u_procs + $p_pid);
   (*$u_proc).status = $p_status;
-  $u_proc = $u_proc;
-  *($u_procs + $p_pid) = $u_proc;
-  $u_procs = $u_procs;
-  (*$p_ks).procs = $u_procs;
   $i0 = $p_ks;
   return $i0;
 }

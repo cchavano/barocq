@@ -140,6 +140,9 @@ Module MapList.
   Definition fold_left (A: Type) (f: A -> key -> V -> A) (l: t V) (acc: A) : A :=
     List.fold_left (fun a '(k, v) => f a k v) l acc.
 
+  Definition filter (f: key -> V -> bool) (l: t V): t V :=
+    List.filter (fun '(k, v) => f k v) l.
+
   Section EQDEC.
     Variable Veq_dec  : forall (v1 v2:V),{v1 = v2} + {v1 <> v2}.
 
@@ -166,6 +169,7 @@ Module MapList.
   Arguments nodup {key V}.
   Arguments merge {key V}.
   Arguments fold_left {key V A}.
+  Arguments filter {key V}.
   Arguments empty {key V}.
 
 End MapList.

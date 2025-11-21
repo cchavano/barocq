@@ -222,7 +222,7 @@ let exec_set_record_proj (x : ident) (a : atom) (f : ident) (ty : btyp)
 let exec_set_record_update (re : renv) (x : ident) (a : atom) (f : ident)
     (v : atom) (st : absstate) : absstate =
   match a with
-  | AVar (y, BRecord ry) ->
+  | AVar (y, BRecord (ry, _)) ->
       let ly = IdentMap.find y st.st_env in
       (* All paths leading to all locations pointed by y, suffixed by f, are now invalid. *)
       let inv' =
@@ -297,7 +297,7 @@ let exec_set_record_update (re : renv) (x : ident) (a : atom) (f : ident)
 let exec_set_array_get (x : ident) (a : atom) (i : atom) (st : absstate) :
     absdom =
   match a with
-  | AVar (y, BArray ty) ->
+  | AVar (y, BArray (ty, _)) ->
       let ly = IdentMap.find y st.st_env in
       (* All locations in ly should be free. *)
       let all_free =
@@ -344,7 +344,7 @@ let exec_set_array_get (x : ident) (a : atom) (i : atom) (st : absstate) :
 let exec_set_array_set (x : ident) (a : atom) (i : atom) (v : atom)
     (st : absstate) : absdom =
   match a with
-  | AVar (y, BArray ty) ->
+  | AVar (y, BArray (ty, _)) ->
       let ly = IdentMap.find y st.st_env in
       (* All paths leading to all locations pointed by y, suffixed by [], are now invalid. *)
       let inv' =
@@ -606,12 +606,12 @@ let rec mem_bijection (re : renv) (edges : (ident * btyp) list) (loc1 : absloc)
           let lv2 = LocSet.choose l2 in
           let edges_e =
             match etyp with
-            | BRecord rid -> begin
+            | BRecord (rid, _) -> begin
                 match renv_get re rid with
                 | Errors.OK fields -> fields
                 | Errors.Error _ -> assert false
               end
-            | BArray ta -> [(_CONTENT, ta)]
+            | BArray (ta, _) -> [(_CONTENT, ta)]
             | BAbs _ -> []
             | _ -> assert false
           in
@@ -634,12 +634,12 @@ let locs_bijection (re : renv) (v1 : ident) (v2 : ident) (ty : btyp)
     let lv2 = LocSet.choose l2 in
     let edges =
       match ty with
-      | BRecord rid -> begin
+      | BRecord (rid, _) -> begin
           match renv_get re rid with
           | Errors.OK fields -> fields
           | Errors.Error _ -> assert false
         end
-      | BArray ta -> [(_CONTENT, ta)]
+      | BArray (ta, _) -> [(_CONTENT, ta)]
       | BAbs _ -> []
       | _ -> assert false
     in
@@ -1098,7 +1098,7 @@ let rec absexec (show_debug : bool) (re : renv) (fe : fenv) (d : absdom)
           else
             match c with
             | CpAtom (a, _) -> AbsState (exec_set_atom x a st)
-            | CpRecordProj (a, f, ty) ->
+            | CpRecordProj (a, f, ty, _) ->
                 AbsState (exec_set_record_proj x a f ty st)
             | CpRecordUpdate (a, f, v, _) ->
                 AbsState (exec_set_record_update re x a f v st)
@@ -1113,7 +1113,7 @@ let rec absexec (show_debug : bool) (re : renv) (fe : fenv) (d : absdom)
                      "Exiting function call \"%s\" ===========\n"
                      (PrintSyntax.Typed.comp_to_string c);
                 r
-            | CpArrayGet (a, i, _) -> exec_set_array_get x a i st
+            | CpArrayGet (a, i, _, _) -> exec_set_array_get x a i st
             | CpArraySet (a, i, v, _) -> exec_set_array_set x a i v st
             | CpDeepAccess (a, acs, ty) ->
                 AbsState (exec_set_deep_access x a acs ty st)
@@ -1214,8 +1214,8 @@ let add_memory_object_aux (re : renv) (st : absstate) (root : absloc)
   let rec gen_val_mem_layout (m : absmem) (root : absloc) (ty : btyp) : absmem =
     match ty with
     | BBool | BInt32 _ | BInt64 _ | BEnum _ | BAbs _ -> m
-    | BArray ta -> gen_array_mem_layout m root ta
-    | BRecord ts -> gen_record_mem_layout m root ts
+    | BArray (ta, _) -> gen_array_mem_layout m root ta
+    | BRecord (ts, _) -> gen_record_mem_layout m root ts
     | _ -> raise unsupported
   and gen_array_mem_layout (m : absmem) (root : absloc) (ta : btyp) : absmem =
     if is_prim ta then m
@@ -1336,9 +1336,10 @@ let gen_fun_descr_and_ast (show_debug : bool) (re : renv) (fe : fenv)
 
 (** [renv_from_record_defs l] build the record type environment from the list of
     record definition [l]. *)
-let renv_from_record_defs (l : btyp record_def list) : renv =
+let renv_from_record_defs (l : field_descr record_def list) : renv =
   List.fold_left
-    (fun acc st -> Maps2.STree.set st.rd_name st.rd_fields acc)
+    (fun acc st ->
+      Maps2.STree.set st.rd_name (Maps2.MapList.map fst st.rd_fields) acc)
     Maps2.STree.empty
     l
 

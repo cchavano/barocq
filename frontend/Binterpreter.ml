@@ -15,7 +15,7 @@ let rec val_to_string (ty : typ) (x : 'a) : string =
   | TInt32 Unsigned -> u32_to_string o
   | TInt64 Signed -> i64_to_string o
   | TInt64 Unsigned -> u64_to_string o
-  | TArray ta -> list_to_string_bracketbar (val_to_string ta) o
+  | TArray ta -> list_to_string_bracket ~sep:", " (val_to_string ta) o
   | TEnum (_, elems) -> ident_to_string (Benum.ident_of_constr elems o)
   | TRecord (_, fields) -> struct_to_string fields o
   | TAbs _ -> "<abs>"

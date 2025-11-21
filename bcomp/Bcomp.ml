@@ -229,7 +229,8 @@ let () =
       let tiprog =
         match Barocq.Typing.typecheck_iprogram !target_arch iprog with
         | Errors.OK p -> p
-        | Errors.Error _ -> raise @@ UnexpectedError "Barocq typing failed"
+        | Errors.Error msg ->
+            raise @@ UnexpectedError (C2C.string_of_errmsg msg)
       in
 
       let tprog = Barocq.Typing.program_of_iprogram tiprog in

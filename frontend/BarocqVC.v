@@ -545,7 +545,7 @@ Section S.
     - simpl; intros. inv EVAL. apply env_preserve_defs_refl.
     - simpl; intros.
       destruct a.
-      + destruct (eval_def_type te i a); try discriminate.
+      + destruct (eval_def_type te i (adt_remove_layout a)); try discriminate.
         simpl in EVAL.
         eapply IHprog in EVAL;eauto.
       + destruct (eval_def_const abs_typ_impl te ge i l b) eqn:EQN; try discriminate.
@@ -2475,7 +2475,7 @@ Section S.
     | a :: prog' =>
         match a with
         | DefType a adt =>
-            let* te' := obligation_def_type te a adt in
+            let* te' := obligation_def_type te a (adt_remove_layout adt) in
             generate_obligations arch  te' checked vc prog' props
         | DefConst x l ty    =>
             let* (p,props') := get_prop x props in
@@ -3145,7 +3145,7 @@ Qed.
       discriminate.
     - simpl.
       destruct a; intros.
-      + destruct (obligation_def_type te i a); try discriminate.
+      + destruct (obligation_def_type te i (adt_remove_layout a)); try discriminate.
         simpl in GEN.
         eapply IHprog; eauto.
       +  destruct (get_prop i props) eqn:GP; try discriminate.
@@ -3214,7 +3214,7 @@ Qed.
       destruct a.
       + intros.
         rewrite obligation_def_type_eq in GEN.
-        destruct (eval_def_type te i a); try discriminate.
+        destruct (eval_def_type te i (adt_remove_layout a)); try discriminate.
         simpl in *.
         eapply IHprog in GEN ; eauto.
         inv ND ; auto.
@@ -3327,7 +3327,7 @@ Qed.
     induction p1; simpl.
     - intros. inv H. auto.
     - destruct a; intros.
-      + destruct (eval_def_type te i a); try discriminate.
+      + destruct (eval_def_type te i (adt_remove_layout a)); try discriminate.
         simpl in H. simpl. eapply IHp1;eauto.
       + destruct (eval_def_const abs_types_impl te ge i l b); try discriminate.
         eapply IHp1;eauto.

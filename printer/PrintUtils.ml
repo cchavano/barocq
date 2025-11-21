@@ -41,17 +41,17 @@ let list_to_string ?(delim : string * string = ("", "")) ?(sep : string = "")
   in
   sprintf "%s%s" (fst delim) (aux l)
 
-let list_to_string_bracket (f : 'a -> string) (l : 'a list) : string =
-  list_to_string ~delim:("[", "]") ~sep:"; " f l
+let list_to_string_bracket ?(sep : string = "; ") (f : 'a -> string)
+    (l : 'a list) : string =
+  list_to_string ~delim:("[", "]") ~sep f l
 
-let list_to_string_bracketbar (f : 'a -> string) (l : 'a list) : string =
-  list_to_string ~delim:("[|", "|]") ~sep:"; " f l
+let list_to_string_braces ?(sep : string = "; ") (f : 'a -> string)
+    (args : 'a list) : string =
+  list_to_string ~delim:("{", "}") ~sep f args
 
-let list_to_string_braces (f : 'a -> string) (args : 'a list) : string =
-  list_to_string ~delim:("{", "}") ~sep:"; " f args
-
-let list_to_string_paren (f : 'a -> string) (args : 'a list) : string =
-  list_to_string ~delim:("(", ")") ~sep:", " f args
+let list_to_string_paren ?(sep : string = ", ") (f : 'a -> string)
+    (args : 'a list) : string =
+  list_to_string ~delim:("(", ")") ~sep f args
 
 let print_list (out : out_channel) ?(delim : string * string = ("", ""))
     ?(sep : string = "") (f : 'a -> string) (l : 'a list) : unit =

@@ -67,6 +67,18 @@ let is_simpl_btyp (ty : btyp) : bool =
   | BBool | BInt32 _ | BInt64 _ -> true
   | _ -> false
 
+let layout_to_deep (ly : layout) : string =
+  match ly with
+  | LyPrim -> "LyPrim"
+  | LyBoxed -> "LyBoxed"
+  | LyUnboxed sz ->
+      let suffix =
+        match sz with
+        | Some v -> sprintf "(Some %s)" (Camlcoq.Z.to_string v)
+        | None -> "None"
+      in
+      sprintf "LyUnboxed %s" suffix
+
 let rec btyp_to_deep (ty : btyp) : string =
   match ty with
   | BBool -> "tbool"
@@ -74,9 +86,14 @@ let rec btyp_to_deep (ty : btyp) : string =
   | BInt32 Unsigned -> "tuint32"
   | BInt64 Signed -> "tint64"
   | BInt64 Unsigned -> "tuint64"
-  | BArray ta -> sprintf "BArray %s" (opt_parens_btyp ta)
+  | BArray (ta, ly) ->
+      sprintf "BArray %s %s" (opt_parens_btyp ta) (layout_to_deep ly)
   | BEnum te -> sprintf "BEnum %s" (ident_to_deep te)
-  | BRecord tr -> sprintf "BRecord %s" (ident_to_deep tr)
+  | BRecord (tr, ub) ->
+      sprintf
+        "BRecord %s %s"
+        (ident_to_deep tr)
+        (list_to_string_bracket ident_to_string ub)
   | BAbs t -> sprintf "BAbs %s" (ident_to_deep t)
   | BFun (tparams, tret) ->
       sprintf
@@ -232,20 +249,34 @@ let rec literal_to_deep (l : literal) : string =
       sprintf "LInt32 (%s) %s" (int_to_deep i s) (signedness_to_deep s)
   | LInt64 (i, s) ->
       sprintf "LInt64 (%s) %s" (int64_to_deep i s) (signedness_to_deep s)
-  | LArray la -> sprintf "LArray %s" (list_to_string_bracket literal_to_deep la)
-  | LRecord (ls, id) ->
-      sprintf "LRecord %s %s" (fields_lit_to_deep ls) (ident_to_deep id)
+  | LArray (la, ta, ly) ->
+      sprintf
+        "LArray %s %s %s"
+        (list_to_string_bracket literal_to_deep la)
+        (btyp_to_deep ta)
+        (layout_to_deep ly)
+  | LRecord (ls, ub, id) ->
+      sprintf
+        "LRecord %s %s %s"
+        (fields_lit_to_deep ls)
+        (list_to_string_bracket ident_to_string ub)
+        (ident_to_deep id)
 
 and fields_lit_to_deep (fields : (ident * literal) list) : string =
   list_to_string_bracket
     (fun (id, li) -> sprintf "(%s, %s)" (ident_to_deep id) (literal_to_deep li))
     fields
 
-let fields_to_deep (fields : (ident * btyp) list) : string =
+let fields_to_deep (fields : (ident * field_descr) list) : string =
   list_to_string
     ~sep:";\n"
-    (fun (id, ty) ->
-      sprintf "%s(%s, %s)" indent2 (ident_to_deep id) (btyp_to_deep ty))
+    (fun (id, (ty, ly)) ->
+      sprintf
+        "%s(%s, (%s, %s))"
+        indent2
+        (ident_to_deep id)
+        (btyp_to_deep ty)
+        (layout_to_deep ly))
     fields
 
 let elems_to_deep (elems : ident list) : string =

@@ -13,19 +13,26 @@ Fixpoint transl_btyp (ty: btyp) : typ2 :=
   | BBool => TBool
   | BInt32 s => TInt32 s
   | BInt64 s => TInt64 s
-  | BArray ta => TArray (transl_btyp ta)
   | BEnum eid => TEnum eid
-  | BRecord rid => TRecord rid 
+  | BArray ta ly => TArray (transl_btyp ta) ly
+  | BRecord rid _ => TRecord rid
   | BFun tparams tret => TFun (List.map transl_btyp tparams) (transl_btyp tret)
   | BAbs t => TAbs t
+  end.
+
+Definition signedness_of_btyp (ty: btyp) : signedness :=
+  match ty with
+  | BInt32 s
+  | BInt64 s => s
+  | _ => Signed
   end.
 
 Fixpoint transl_atom (a: Imp1.Typed.atom) : atom :=
   match a with
   | Syntax.Typed.ATrue _ => ATrue
   | Syntax.Typed.AFalse _ => AFalse
-  | Syntax.Typed.AInt32 i ty => AInt32 i (transl_btyp ty)
-  | Syntax.Typed.AInt64 i ty => AInt64 i (transl_btyp ty)
+  | Syntax.Typed.AInt32 i ty => AInt32 i (signedness_of_btyp ty)
+  | Syntax.Typed.AInt64 i ty => AInt64 i (signedness_of_btyp ty)
   | Syntax.Typed.AConstr cid ty => AConstr cid (transl_btyp ty)
   | Syntax.Typed.AVar x ty => AVar x (transl_btyp ty)
   | Syntax.Typed.ACast a ty => ACast (transl_atom a) (transl_btyp ty)
@@ -37,35 +44,30 @@ Fixpoint transl_atom (a: Imp1.Typed.atom) : atom :=
 
 Definition transl_access (ac: Syntax.Typed.access) : Imp2.access :=
   match ac with
-  | Syntax.Typed.AcRecordField f ty =>
-      AcRecordField f (transl_btyp ty)
-  | Syntax.Typed.AcArrayIndex a ty =>
-      AcArrayIndex (transl_atom a) (transl_btyp ty)
+  | Syntax.Typed.AcRecordField f ty ly =>
+      AcRecordField f (transl_btyp ty) ly
+  | Syntax.Typed.AcArrayIndex i ty ly =>
+      AcArrayIndex (transl_atom i) (transl_btyp ty) ly
   end.
 
-Definition typof_atom (a: atom) : typ2 :=
+Definition set_or_skip (x: ident) (a: atom) : Imp2.statement :=
   match a with
-  | ATrue
-  | AFalse => TBool
-  | AInt32 _ ty
-  | AInt64 _ ty
-  | AConstr _ ty
-  | AVar _ ty
-  | ACast _ ty
-  | AUnaryOp _ _ ty
-  | ABinaryOp _ _ _ ty => ty
+  | AVar y ty =>
+      if Ident.eq_dec x y then StSkip
+      else StSetExpr x (EAtom a ty)
+  | _ => StSetExpr x (EAtom a (typof_atom a))
   end.
 
 Fixpoint transl_statement (s: Imp1Typed.statement) : Imp2.statement :=
   match s with
   | Imp1Typed.StSet x (CpAtom a ty) =>
-      StSetExpr x (EAtom (transl_atom a) (transl_btyp ty))
-  | Imp1Typed.StSet x (CpArrayGet a1 a2 ty) =>
+      set_or_skip x (transl_atom a)
+  | Imp1Typed.StSet x (CpArrayGet a1 a2 ty ly) =>
       let a1' := transl_atom a1 in
       let a2' := transl_atom a2 in
-      StSetExpr x (EArrayGet a1' a2' (transl_btyp ty))
-  | Imp1Typed.StSet x (CpRecordProj a1 f ty) =>
-      StSetExpr x (ERecordProj (transl_atom a1) f (transl_btyp ty))
+      StSetExpr x (EArrayGet a1' a2' (transl_btyp ty) ly)
+  | Imp1Typed.StSet x (CpRecordProj a1 f ty ly) =>
+      StSetExpr x (ERecordProj (transl_atom a1) f (transl_btyp ty) ly)
   | Imp1Typed.StSet x (CpDeepAccess a acs ty) =>
       let a' := transl_atom a in
       let acs' := List.map transl_access acs in
@@ -74,11 +76,11 @@ Fixpoint transl_statement (s: Imp1Typed.statement) : Imp2.statement :=
       let a1' := transl_atom a1 in
       let a2' := transl_atom a2 in
       let a3' := transl_atom a3 in
-      StSequence (StEcomp (EcArraySet a1' a2' a3')) (StSetExpr x (EAtom a1' (typof_atom a1')))
+      StSequence (StEcomp (EcArraySet a1' a2' a3')) (set_or_skip x a1')
   | Imp1Typed.StSet x (CpRecordUpdate a1 f a2 _) =>
       let a1' := transl_atom a1 in
       let a2' := transl_atom a2 in
-      StSequence (StEcomp (EcRecordUpdate a1' f a2')) (StSetExpr x (EAtom a1' (typof_atom a1')))
+      StSequence (StEcomp (EcRecordUpdate a1' f a2')) (set_or_skip x a1')
   | Imp1Typed.StSet x (CpCall a args ty) =>
       let a' := transl_atom a in
       let args' := List.map transl_atom args in
@@ -118,23 +120,24 @@ Local Open Scope state_monad_scope.
 
 Section LITTRANSL.
 
-  Variable transl_literal : Imp1Typed.literal -> smaplist Imp2.literal -> cmon (Imp2.literal_base * (smaplist Imp2.literal)).
+  Variable transl_literal : bool -> Imp1Typed.literal -> smaplist Imp2.literal -> cmon (Imp2.literal * (smaplist Imp2.literal)).
 
-  Fixpoint transl_array_lit (a: array Imp1Typed.literal) (defs: smaplist Imp2.literal) : cmon (array Imp2.literal_base * smaplist Imp2.literal) :=
+  Fixpoint transl_array_lit (ly: bool) (a: array Imp1Typed.literal) (defs: smaplist Imp2.literal) : cmon (array Imp2.literal * smaplist Imp2.literal) :=
     match a with
     | nil => ret (nil, defs)
     | lx :: a' =>
-        let* (lx', defs1) := transl_literal lx defs in
-        let* (r, defs2) := transl_array_lit a' defs1 in
+        let* (lx', defs1) := transl_literal ly lx defs in
+        let* (r, defs2) := transl_array_lit ly a' defs1 in
         ret (lx' :: r, defs2)
     end.
 
-  Fixpoint transl_record_lit (rc: smaplist Imp1Typed.literal) (defs: smaplist Imp2.literal) : cmon ((smaplist Imp2.literal_base) * smaplist Imp2.literal) :=
+  Fixpoint transl_record_lit (rc: smaplist Imp1Typed.literal) (ub: list ident) (defs: smaplist Imp2.literal) : cmon ((smaplist Imp2.literal) * smaplist Imp2.literal) :=
     match rc with
     | nil => ret (nil, defs)
     | (i, lx) :: rc' =>
-        let* (lx', defs1) := transl_literal lx defs in
-        let* (r, defs2) := transl_record_lit rc' defs1 in
+        let ly := negb (list_mem Ident.eq_dec i ub) in
+        let* (lx', defs1) := transl_literal ly lx defs in
+        let* (r, defs2) := transl_record_lit rc' ub defs1 in
         ret ((i, lx') :: r, defs2)
     end.
 
@@ -142,39 +145,47 @@ End LITTRANSL.
 
 Definition fresh_var : cmon ident := Utils.fresh_var "g".
 
-Fixpoint transl_literal_rec (l: Imp1Typed.literal) (defs: smaplist Imp2.literal) : cmon (Imp2.literal_base * smaplist Imp2.literal) :=
+Fixpoint transl_literal_rec (ly: bool) (l: Imp1Typed.literal) (defs: smaplist Imp2.literal) : cmon (Imp2.literal * smaplist Imp2.literal) :=
   match l with
-  | Syntax.Typed.LTrue ty => ret (LbTrue, defs)
-  | Syntax.Typed.LFalse ty => ret (LbFalse, defs)
-  | Syntax.Typed.LInt32 i ty => ret (LbInt32 i, defs)
-  | Syntax.Typed.LInt64 i ty => ret (LbInt64 i, defs)
-  | Syntax.Typed.LArray a ty =>
-      let* (a', defs) := transl_array_lit transl_literal_rec a defs in
-      let* x := fresh_var in
-      ret (LbVar x, (x, LArray a' (transl_btyp ty)) :: defs)
-  | Syntax.Typed.LRecord rc ty =>
-      let* (rc', defs) := transl_record_lit transl_literal_rec rc defs in
-      let* x := fresh_var in
-      ret (LbVar x, (x, LRecord rc' (transl_btyp ty)) :: defs)
+  | Syntax.LTrue => ret (LTrue, defs)
+  | Syntax.LFalse => ret (LFalse, defs)
+  | Syntax.LInt32 i s => ret (LInt32 i s, defs)
+  | Syntax.LInt64 i s => ret (LInt64 i s, defs)
+  | Syntax.LArray a ta ba =>
+      let bba := if layout_eq_dec ba LyBoxed then true else false in
+      let* (a', defs) := transl_array_lit transl_literal_rec bba a defs in
+      let ta' := transl_btyp ta in
+      if ly then
+        let* x := fresh_var in
+        ret (LVar x (TArray ta' ba), (x, LArray a' ta' ba) :: defs)
+      else
+        ret (LArray a' ta' ba, defs)
+  | Syntax.LRecord rc ub rid =>
+      let* (rc', defs) := transl_record_lit transl_literal_rec rc ub defs in
+      if ly then
+        let* x := fresh_var in
+        ret (LVar x (TRecord rid), (x, LRecord rc' ub rid) :: defs)
+      else
+        ret (LRecord rc' ub rid, defs)
   end.
 
 Definition transl_literal (l: Imp1Typed.literal) : cmon (Imp2.literal * smaplist Imp2.literal) :=
   let* (l', defs) :=
     match l with
-    | Syntax.Typed.LArray a ty =>
-        let* (a', defs) := transl_array_lit transl_literal_rec a nil in
-        ret (LArray a' (transl_btyp ty), defs)
-    | _ =>
-        let* (stb, defs) := transl_literal_rec l nil in
-        ret (LBase stb (transl_btyp (typof_literal l)), defs)
+    | Syntax.LArray _ _ _ => transl_literal_rec false l nil
+    | _ => transl_literal_rec true l nil
     end
   in ret (l', rev' defs).
 
-Definition typof_literal (l: Imp2.literal) : typ2 :=
+Definition typof_literal (l: literal) : typ2 :=
   match l with
-  | LBase _ ty => ty
-  | LRecord _ ty => ty
-  | LArray _ ty => ty
+  | LTrue
+  | LFalse => TBool
+  | LInt32 _ s => TInt32 s
+  | LInt64 _ s => TInt64 s
+  | LVar _ ty => ty
+  | LArray _ ta ly => TArray ta ly
+  | LRecord _ _ rid => TRecord rid
   end.
 
 Fixpoint transl_globdefs_rec (defs: list Imp1Typed.globdef) : cmon (list Imp2.globdef) :=
@@ -202,11 +213,12 @@ Fixpoint transl_globdefs_rec (defs: list Imp1Typed.globdef) : cmon (list Imp2.gl
 Definition transl_globdefs (defs: list Imp1Typed.globdef) : list Imp2.globdef :=
   fst (transl_globdefs_rec defs 0).
 
-Definition transl_type_def (td: type_def btyp) : type_def typ2 :=
+Definition transl_type_def (td: type_def field_descr) : type_def (typ2 * layout) :=
   match td with
   | TdEnum ed => TdEnum ed
   | TdRecord rd =>
-     TdRecord {| rd_name := rd_name rd; rd_fields := MapList.map transl_btyp (rd_fields rd) |}
+    let fields := MapList.map (fun '(ty, ly) => (transl_btyp ty, ly)) (rd_fields rd) in
+     TdRecord {| rd_name := rd_name rd; rd_fields := fields |}
   | TdAbstract tid su => TdAbstract tid su
   end.
 

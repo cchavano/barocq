@@ -36,7 +36,7 @@ Section REWRITE.
 
   Definition rewrite_expr (e: expr) : expr :=
     match e with
-    | ERecordProj a f ty => ERecordProj (rewrite_atom a) f ty
+    | ERecordProj a f ty ly => ERecordProj (rewrite_atom a) f ty ly
     | EDeepAccess a ac ty => EDeepAccess (rewrite_atom a) ac ty
     | _ => e
     end.

@@ -1,6 +1,6 @@
 From Coq Require Import Lia.
 From compcert Require Import Integers Ctypes.
-From BarocqComp Require Import Utils Barray Ident Types Maps2 ExtOrdered.
+From BarocqComp Require Import Utils Ident Types Maps2 ExtOrdered.
 
 Definition ident := Ident.ident.
 
@@ -11,8 +11,8 @@ Inductive literal :=
   | LFalse  : literal
   | LInt32 : int -> signedness -> literal
   | LInt64 : int64 -> signedness -> literal
-  | LArray : array literal -> literal
-  | LRecord : list (ident * literal) -> ident -> literal.
+  | LArray : list literal -> btyp -> layout -> literal
+  | LRecord : list (ident * literal) -> list ident -> ident -> literal.
 
 (** * Operators *)
 
@@ -79,14 +79,6 @@ Inductive comp : Type :=
 
 Module Typed.
 
-  Inductive literal :=
-    | LTrue : btyp -> literal
-    | LFalse : btyp -> literal
-    | LInt32 : int -> btyp -> literal
-    | LInt64 : int64 -> btyp -> literal
-    | LArray : array literal -> btyp -> literal
-    | LRecord : list (ident * literal) -> btyp -> literal.
-
   Inductive atom :=
     | ATrue : btyp -> atom
     | AFalse : btyp -> atom
@@ -99,14 +91,14 @@ Module Typed.
     | ABinaryOp : binary_op -> atom -> atom -> btyp -> atom.
 
   Inductive access : Type :=
-    | AcRecordField : ident -> btyp -> access
-    | AcArrayIndex : atom -> btyp -> access.
+    | AcRecordField : ident -> btyp -> layout -> access
+    | AcArrayIndex : atom -> btyp -> layout -> access.
 
   Inductive comp : Type := 
     | CpAtom : atom -> btyp -> comp
-    | CpArrayGet : atom -> atom -> btyp -> comp
+    | CpArrayGet : atom -> atom -> btyp -> layout -> comp
     | CpArraySet : atom -> atom -> atom -> btyp -> comp
-    | CpRecordProj : atom -> ident -> btyp -> comp
+    | CpRecordProj : atom -> ident -> btyp -> layout -> comp
     | CpRecordUpdate : atom -> ident -> atom -> btyp -> comp
     | CpDeepAccess : atom -> list access -> btyp -> comp
     | CpCall : atom -> list atom -> btyp -> comp.

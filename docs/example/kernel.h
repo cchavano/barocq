@@ -14,13 +14,13 @@ enum Kernel_proc_status {
 
 struct Kernel_proc {
   unsigned long long pid;
-  unsigned long long *regs;
+  unsigned long long regs[32];
   enum Kernel_proc_status status;
 };
 
 struct Kernel_state {
   unsigned long long curr_pid;
-  struct Kernel_proc **procs;
+  struct Kernel_proc procs[5];
   unsigned long long deadline;
   struct Machine_state *mc;
 };
