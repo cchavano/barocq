@@ -138,7 +138,7 @@ type buffer = [u32]
 
 Type aliases is a front-end feature only, i.e. they will not appear in the compiled C file.
 
-==== LyUnboxed values
+==== Unboxed values
 
 Integers, Booleans and Enums are primitive types.
 By default, all *non-primitive* types are boxed in the generated C file, i.e. they are wrapped in a pointer.
@@ -163,7 +163,7 @@ struct draw {
 }
 ----
 
-In fact, the field `pts` of record `draw` becomes a pointer to an array that itself contains pointers to values of type `point`. LyUnboxed values are introduced by the operator `#`. For example,
+In fact, the field `pts` of record `draw` becomes a pointer to an array that itself contains pointers to values of type `point`. Unboxed values are introduced by the operator `#`. For example,
 
 [source]
 ----
