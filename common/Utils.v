@@ -251,3 +251,24 @@ Definition string_of_Z (z:Z) : string :=
   end.
 
 Definition string_of_int (i:int) := string_of_Z (to_Z i).
+
+Section MERGE.
+  Context {A : Type}.
+  Variable merge : A -> A -> res A.
+
+  Fixpoint merge_list_rec (acc : A) (l:list (res A)) : res A :=
+  match l with
+  | nil => OK acc
+  | e::l => let* e := e in
+            let* m := merge e acc in
+            merge_list_rec m l
+  end.
+
+  Definition merge_list (l: list (res A)) : res A :=
+    match l with
+    | nil => Error (msg "")
+    | acc :: l => let* acc := acc in
+                  merge_list_rec acc l
+    end.
+
+End MERGE.

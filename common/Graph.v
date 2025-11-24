@@ -84,7 +84,7 @@ Section S.
         right. exists e'. tauto.
   Qed.
 
-  
+
   Lemma In_eq_eq : forall l e1 e2, eqA e1 e2 -> In_eq eqA e1 l -> In_eq eqA e2 l.
   Proof.
     induction l; simpl;auto.
@@ -170,6 +170,18 @@ Qed.
 
 End S.
 
+Section FORALL.
+  Context {A: Type}.
+  Variable P : A -> Prop.
+
+  Fixpoint Forall (l:list A) : Prop :=
+    match l with
+    | nil => True
+    | e::l => P e /\ Forall l
+    end.
+
+End FORALL.
+
 
 
 
@@ -184,11 +196,61 @@ Section ListREMOVE.
                  else e1 :: List_remove e l
     end.
 
+  Fixpoint List_remove_assoc {B:Type} (e:A) (l:list (A *B)) : list (A*B) :=
+    match l with
+    | nil => nil
+    | (e1,v1) :: l => if eqb e e1 then l
+                 else (e1,v1) :: List_remove_assoc e l
+    end.
+
+  Lemma In_remove_assoc_In : forall {B:Type} e e' (v:B) l ,
+    In (e, v) (List_remove_assoc e'  l) -> In (e,v) l.
+  Proof.
+    induction l; simpl; auto.
+    destruct a. destruct (eqb e' a).
+    tauto.
+    simpl ; intros.
+    tauto.
+  Qed.
+
+
+
   Fixpoint List_in (e:A) (l:list A) :=
     match l with
     | nil => False
     | e1::l => eqb e e1 = true \/ List_in e l
     end.
+
+  Lemma List_remove_not_In : forall  (k:A) l,
+    (forall x, eqb k x = false -> k <> x) ->
+      In k (List_remove k l) <-> False.
+  Proof.
+    induction l ; simpl.
+    -  tauto.
+    -  destruct (eqb k a) eqn:EQ.
+       intros.
+       rewrite IHl. tauto. auto.
+       simpl. intros.
+       apply H in EQ.
+       rewrite IHl by auto.
+       intuition congruence.
+  Qed.
+
+  Lemma List_remove_neq : forall
+      (EQ : forall x x', eqb x x' = true -> x = x')
+      (k k':A)  (NEQ : k <> k') l,
+
+      In k (List_remove k' l) <-> In k l.
+  Proof.
+    induction l ; simpl.
+    -  tauto.
+    -  destruct (eqb k' a) eqn:EQ1.
+       + apply EQ in EQ1. subst.
+       intuition congruence.
+       + simpl.
+         intuition congruence.
+  Qed.
+
 
 End ListREMOVE.
 
@@ -249,7 +311,7 @@ Module Int <: OrderedType.
       subst. rewrite eqb_refl in EQB. discriminate.
   Qed.
 
-  
+
 End Int.
 
 Module IntSet := FSetAVL.Make(Int).
@@ -373,11 +435,31 @@ Module Map(O:OrderedType).
     auto.
   Qed.
 
+  Lemma findl_remove : forall {A: Type} (eqb: A -> A -> bool) n n' k m,
+      findl n (remove_from_list eqb n' k m) =
+        if O.eq_dec n n'
+        then List_remove eqb k (findl n m)
+        else findl n m.
+  Proof.
+    intros.
+    unfold remove_from_list.
+    destruct (find  n' m) eqn:FIND.
+    unfold findl.
+    rewrite find_add.
+    destruct (O.eq_dec n n').
+    rewrite Facts.find_o with (y:= n') by auto.
+    rewrite FIND. reflexivity.
+    reflexivity.
+    destruct (O.eq_dec n n').
+    unfold findl.
+    rewrite Facts.find_o with (y:= n') by auto.
+    rewrite FIND. reflexivity.
+    auto.
+  Qed.
 
 
-    
-End Map.  
-  
+End Map.
+
 Module IntMap := Map(Int).
 
 Module Type NodeLabelT.
@@ -402,7 +484,7 @@ End NodeLabelT.
 Module Type EdgeLabelT.
   Axiom t : Type.
   Axiom lt: t -> t -> Prop.
-  Axiom eq: t -> t -> Prop.
+  Definition eq:= @eq t.
   Axiom eq_refl  : forall x, eq x x.
   Axiom eq_sym   : forall x y, eq x y -> eq y x.
   Axiom eq_trans : forall x y z, eq x y -> eq y z -> eq x z.
@@ -427,7 +509,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
 
   Definition Edge := IntMap.t (NodeLabel.t * list (EdgeLabel.t * int)).
 
-
   Record t := mk
     {
       root  : int;
@@ -437,6 +518,1001 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       edgelabels :  ELMap.t (list int) ; (* nodes which edges have a given label *)
       fresh      : int; (* fresh node *)
     }.
+
+  Definition path := list (EdgeLabel.t).
+
+  Definition is_prefix (pre:path) (p:path) :=
+    exists post, pre ++ post = p.
+
+  Lemma is_prefix_nil_l : forall p, is_prefix [] p <-> True.
+  Proof.
+    intros.
+    split; auto.
+    exists p. reflexivity.
+  Qed.
+
+  Lemma is_prefix_nil_r : forall p, is_prefix p [] <-> p = nil.
+  Proof.
+    intros.
+    split; intros.
+    destruct H.
+    apply app_eq_nil in H.
+    tauto.
+    subst.
+    apply is_prefix_nil_l.
+    tauto.
+  Qed.
+
+  Lemma is_prefix_cons : forall e1 l1 e2 l2,
+      is_prefix (e1 :: l1) (e2 :: l2) <-> (e1 = e2 /\ is_prefix l1 l2).
+  Proof.
+    unfold is_prefix ; split; intros.
+    destruct H. simpl in H.
+    inv H.
+    split; auto. exists x;auto.
+    destruct H; subst.
+    destruct H0. subst.
+    exists x;auto.
+  Qed.
+
+  Fixpoint find_edge {A: Type} (e:EdgeLabel.t) (l:list (EdgeLabel.t * A)) : option A :=
+    match l with
+    | nil => None
+    | (e1,i) ::l1 => if EdgeLabel.eq_dec e e1 then Some i else find_edge e l1
+    end.
+
+  Module PathTree.
+    (** Tree representing invalid paths in the abstract memory.
+        A path is a list of EdgeLabel.t.
+     *)
+
+    Inductive t :=
+    | Node : list (EdgeLabel.t * t) -> t.
+
+    Section IND.
+
+      Fixpoint depth (tr:t) :=
+        match tr with
+          Node l =>
+            match l with
+            | nil => O
+            | _   => S (List.fold_right (fun x acc => Nat.max (depth (snd x)) acc) O l)
+            end
+        end.
+
+      Variable P : t -> Prop.
+
+      Variable Pemp : P (Node nil).
+
+      Variable Pin : forall lt, lt <> nil -> (forall x tr, In (x,tr) lt -> P tr) -> P (Node lt).
+
+      Lemma tree_ind : forall (tr:t), P tr.
+      Proof.
+        intro.
+        remember (depth tr) as n.
+        revert tr Heqn.
+        induction n using Wf_nat.lt_wf_ind.
+        destruct n.
+        - destruct tr.
+          destruct l.
+          auto.
+          simpl. discriminate.
+        - destruct tr.
+          induction l.
+          +  auto.
+          + intros.
+            apply Pin.
+            congruence.
+            intros.
+            eapply H with (m:= depth tr).
+            { assert (depth tr < depth (Node (a::l)))%nat.
+              revert H0.
+              generalize (a::l) as l1.
+              clear.
+              induction l1; simpl.
+              tauto.
+              intros.
+              destruct H0. subst.
+              unfold snd at 1.
+              lia.
+              apply IHl1 in H.
+              simpl in H.
+              destruct l1.
+              lia.
+              lia.
+              lia.
+            }
+            reflexivity.
+      Qed.
+    End IND.
+
+    Section FLATTEN.
+      Variable flatten : t -> list path.
+
+      Fixpoint flatten_list (ln: list (EdgeLabel.t * t)) : list path :=
+        match ln with
+        | nil => nil
+        | (f,tr) :: ln' => List.app (List.map (fun p => f :: p) (flatten tr)) (flatten_list ln')
+        end.
+
+    End FLATTEN.
+
+    Fixpoint flatten (tr:t) :=
+      match tr with
+      | Node l => match l with
+                  | nil => nil::nil
+                  |  _  => flatten_list flatten l
+                  end
+      end.
+
+
+    (*    Definition has_path (p:path) (tr:t) :=
+      exists pre, In pre (flatten tr) /\ is_prefix pre p. *)
+
+    Inductive has_dpath : path -> t -> Prop :=
+    | HASP_NIL  : has_dpath nil (Node nil)
+    | HASP_CONS : forall p f tr lt1 lt2, has_dpath p tr -> has_dpath (f::p) (Node (lt1 ++ ((f,tr):: lt2))).
+
+    Lemma flatten_order : forall p l1 l2 e tr,
+        In p (flatten_list flatten (l1++(e,tr) :: l2)) <-> In p (flatten_list flatten ((e,tr)::(l1 ++ l2))).
+    Proof.
+      induction l1.
+      - simpl. tauto.
+      - simpl.
+        intros.
+        destruct a.
+        rewrite! in_app_iff.
+        rewrite IHl1.
+        simpl.
+        rewrite! in_app_iff.
+        tauto.
+    Qed.
+
+    Lemma has_dpath_flatten : forall p tr,
+        has_dpath p tr -> In p (flatten tr).
+    Proof.
+      intros.
+      induction H.
+      - simpl. tauto.
+      - destruct (lt1 ++ (f, tr) :: lt2) eqn:EQ.
+        + apply app_eq_nil in EQ.
+          intuition congruence.
+        + change (flatten (Node (p0 ::l))) with
+            (flatten_list flatten (p0 ::l)).
+          rewrite <- EQ.
+          rewrite flatten_order.
+          simpl.
+          rewrite in_app_iff.
+          left.
+          rewrite in_map_iff.
+          exists p. split; auto.
+    Qed.
+
+    Definition is_empty (tr:t) :=
+      match tr with
+      | Node l => l = nil
+      end.
+
+
+    Lemma in_nil_flatten : forall tr,
+        In [] (flatten tr) -> is_empty tr.
+    Proof.
+      destruct tr.
+      destruct l.
+      + simpl. auto.
+      +  unfold flatten at 1.
+         fold flatten.
+         generalize (p :: l) as l1.
+         intros. exfalso.
+         induction l1.
+         simpl in H. tauto.
+         simpl in H.
+         destruct a.
+         rewrite in_app_iff in H.
+         destruct H. rewrite in_map_iff in H. destruct H. intuition congruence.
+         auto.
+    Qed.
+
+    Lemma in_cons_flatten_list :forall f p l,
+        In (f :: p) (flatten_list flatten l) -> exists tr, In (f,tr) l /\ In p (flatten tr).
+    Proof.
+      induction l.
+      - simpl. tauto.
+      - simpl.
+        destruct a as (f1,tr1).
+        intros.
+        rewrite in_app_iff in H.
+        destruct H.
+        rewrite in_map_iff in H. destruct H as (p1 & EQ & IN).
+        inv EQ. exists tr1.
+        tauto.
+        apply IHl in H.
+        destruct H as (tr & IN1 & IN2).
+        exists tr. tauto.
+    Qed.
+
+
+    Lemma find_edge_some : forall {A: Type} e l (v:A),
+        find_edge e l = Some v ->
+        exists l1 l2, l = l1++(e,v)::l2.
+    Proof.
+      induction l; simpl;auto.
+      - discriminate.
+      - destruct a as (e1,v).
+        intros. destruct (EdgeLabel.eq_dec e e1).
+        + inv H. exists nil. exists l. unfold EdgeLabel.eq in e0. subst.
+        reflexivity.
+        + apply IHl in H.
+          destruct H as (l1 & l2 & EQ).
+          subst.
+          exists ((e1,v) ::l1).
+          exists l2.
+          reflexivity.
+    Qed.
+
+    Lemma find_edge_some_in : forall {A: Type} e l (v:A),
+        find_edge e l = Some v -> In (e,v) l.
+    Proof.
+      intros.
+      apply find_edge_some in H.
+      destruct H as (l1 & l2 & EQ).
+      subst.
+      rewrite in_app_iff. simpl. tauto.
+    Qed.
+
+
+
+    Lemma in_exists : forall {A: Type} (x:A) l, In x l -> exists l1 l2, l = l1 ++ x::l2.
+    Proof.
+      induction l; simpl.
+      - tauto.
+      - intros. destruct H; subst.
+        exists nil,l. reflexivity.
+        apply IHl in H as (l1 & l2 & EQ).
+        subst. exists (a::l1),l2.
+        reflexivity.
+    Qed.
+
+    Lemma has_dpath_flatten' : forall (tr:t) p ,
+        In p (flatten tr) -> has_dpath p tr.
+    Proof.
+      induction tr using tree_ind.
+      - simpl.
+        intros. destruct H; try tauto.
+        subst. constructor.
+      - intros.
+        destruct lt.
+        + congruence.
+        + destruct p.
+          apply in_nil_flatten in H1.
+          simpl in H1. discriminate.
+          change (flatten (Node (p0 ::lt))) with (flatten_list flatten (p0 ::lt)) in H1.
+          apply in_cons_flatten_list in H1.
+          destruct H1 as (tr & IN1 & IN2).
+          specialize (H0 _ _  IN1 p IN2).
+          apply in_exists in IN1.
+          destruct IN1 as (l1 & l2 & EQ).
+          rewrite EQ. econstructor.
+          auto.
+    Qed.
+
+    Definition has_path (p:path) (tr:t) :=
+      exists pre, has_dpath pre tr /\ is_prefix pre p.
+
+    Inductive has_path' : path -> t -> Prop :=
+    | HASP_NIL'  : forall p, has_path' p (Node nil)
+    | HASP_CONS' : forall p f tr l, has_path' p tr ->
+                                          In (f,tr) l ->
+                                          has_path' (f::p) (Node l).
+
+    Lemma has_path_eq : forall p tr, has_path p tr <-> has_path' p tr.
+    Proof.
+      split; intros.
+      - destruct H as (pre & P & PRE).
+      revert p PRE.
+      induction P.
+      + intros. constructor.
+      + intros.
+        destruct p0.
+        rewrite is_prefix_nil_r in PRE. discriminate.
+        rewrite is_prefix_cons in PRE.
+        destruct PRE ; subst.
+        econstructor; eauto.
+        rewrite in_app_iff; simpl; tauto.
+      - induction H.
+        exists nil.  split. constructor.
+        rewrite is_prefix_nil_l. auto.
+        destruct IHhas_path' as (pre & DP & PRE).
+        apply in_exists in H0.
+        destruct H0 as (l1 & l2 & EQ); subst.
+        eexists.
+        split.
+        econstructor. apply DP.
+        rewrite is_prefix_cons. split;auto.
+    Qed.
+
+
+    Definition get_subtree (tr:t) : list (EdgeLabel.t * t) :=
+      match tr with
+      | Node l => l
+      end.
+
+    Fixpoint wf (tr:t) :=
+      match tr with
+      | Node l => NoDup (List.map fst l) /\ Forall (fun x => wf (snd x)) l
+      end.
+
+
+
+    Lemma wf_tail : forall {a l},
+        wf (Node (a :: l)) -> wf (Node l).
+    Proof.
+      simpl.
+      intros.
+      destruct H.
+      inv H. tauto.
+    Qed.
+
+    Fixpoint create (p:path) : t :=
+      match p with
+      | nil => Node nil
+      | x :: p' => Node (cons (x, create p') nil)
+      end.
+
+    Fixpoint create_with (p:path) (sp:t) : t :=
+      match p with
+      | nil => sp
+      | x :: p' => Node (cons (x,create_with p' sp) nil)
+      end.
+
+
+    Lemma has_path_nil_r : forall p, has_path p (Node nil) <-> True.
+    Proof.
+      unfold has_path.
+      split; intros;auto.
+      exists nil.
+      split. constructor.
+      apply is_prefix_nil_l.
+      auto.
+    Qed.
+
+    Lemma has_path_nil_l : forall tr, has_path nil tr <-> is_empty tr.
+    Proof.
+      unfold has_path.
+      split; intros.
+      destruct H. destruct H. rewrite is_prefix_nil_r in H0. subst.
+      inv H. reflexivity.
+      unfold is_empty in H.
+      destruct tr. subst.
+      exists nil.
+      split. constructor.
+      apply is_prefix_nil_r.
+      reflexivity.
+    Qed.
+
+    Lemma app_elt_app : forall {A: Type} l1 (x y:A) l2, l1 ++ x :: l2 = y::nil ->
+                                                        x = y/\ l1 = nil /\ l2 = nil.
+    Proof.
+      induction l1.
+      - simpl. intros. inv H. tauto.
+      -  simpl.
+         intros.
+         inv H.
+         apply (f_equal (@List.length _)) in H2.
+         simpl in H2. rewrite length_app in H2.
+         simpl in H2. lia.
+    Qed.
+
+
+
+
+    Lemma create_correct : forall c p, has_path p (create c) <-> is_prefix c p.
+    Proof.
+      induction c; simpl.
+      - intros.
+        rewrite is_prefix_nil_l.
+        split; auto.
+        intro. apply has_path_nil_r;auto.
+      - intro.
+        destruct p.
+        rewrite is_prefix_nil_r.
+        rewrite has_path_nil_l.
+        intuition congruence.
+        rewrite is_prefix_cons.
+        rewrite <- IHc. clear IHc.
+        unfold has_path.
+        split; intros.
+        + destruct H as (pre & IN & PRE).
+          inv IN.
+          rewrite is_prefix_cons in PRE.
+          destruct PRE as (EQ & PRE).
+          subst.
+          apply app_elt_app in H.
+          destruct H  as ( E1 & E2 & E3).
+          subst.
+          split. congruence.
+          inv E1.
+          exists p0. tauto.
+        +  destruct H; subst.
+           destruct H0 as (pre & HP & PRE).
+           exists (t0::pre).
+           split.
+           change ([(t0,create c)]) with (nil++(t0,create c) ::nil).
+           constructor; auto.
+           rewrite is_prefix_cons. tauto.
+    Qed.
+
+
+    Section UNION.
+      Variable union : t -> t -> t.
+
+      Fixpoint union_list (ln1: list (EdgeLabel.t * t)) (ln2: list (EdgeLabel.t * t)) :=
+        match ln1 with
+        | nil => ln2
+        | (f1,t1) ::ln1' => match find_edge f1 ln2 with
+                            | Some t2 => (f1, union t1 t2) ::
+                                           union_list ln1' (List_remove_assoc (eqb_of_dec EdgeLabel.eq_dec) f1 ln2)
+                            | None    => (f1,t1) :: union_list ln1' ln2
+                            end
+        end.
+    End UNION.
+
+    Fixpoint union (t1 : t) (t2 : t) : t :=
+    match t1, t2 with
+    | Node [], _ | _, Node [] => Node []
+    | Node l1, Node l2 => Node (union_list union l1 l2)
+    end.
+
+    Lemma union_list_empty : forall l1 l2,
+        union_list union l1 l2 = [] ->  l1 = [] /\ l2 = nil.
+    Proof.
+      induction l1; simpl.
+      - tauto.
+      - destruct a. intros.
+        destruct (find_edge t0 l2) eqn:FIND.
+        congruence.
+        congruence.
+    Qed.
+
+
+    Lemma union_empty : forall t1 t2, is_empty (union t1 t2) -> is_empty t1 \/ is_empty t2.
+    Proof.
+      induction t1 using tree_ind.
+      - simpl.  tauto.
+      - destruct lt. congruence.
+        destruct t2. destruct l.
+        simpl. tauto.
+        intros.
+        exfalso.
+        change (union (Node (p :: lt)) (Node (p0 :: l))) with (Node (union_list union (p::lt) (p0::l))) in H1.
+        unfold is_empty in H1.
+        apply union_list_empty in H1. destruct H1 ; congruence.
+    Qed.
+
+    Lemma union_union_list : forall l1 l2,
+        (List.length l1 >= 1)%nat ->
+        (List.length l2 >= 1)%nat ->
+        union (Node l1) (Node l2) = Node (union_list union l1 l2).
+    Proof.
+      destruct l1,l2 ; simpl; try lia.
+      reflexivity.
+    Qed.
+
+    Ltac list :=
+      repeat rewrite length_app ;
+      simpl.
+
+
+    Lemma union_list_decomp_left :
+      forall f tr l1,
+        In (f,tr) l1 ->
+        forall l2,
+        exists tr', In (f,tr') (union_list union l1 l2) /\
+                      (tr' = tr \/
+                         exists tr2, In (f,tr2) l2 /\
+                                       tr' = union tr tr2).
+    Proof.
+      induction l1.
+      - simpl.
+        intros. tauto.
+      - simpl; intros.
+        destruct H; subst.
+        +
+        exists (match find_edge f l2 with
+                | Some t2 => union tr t2
+                | None    => tr
+                end).
+        destruct (find_edge f l2) eqn:FIND;
+        repeat eexists.
+        simpl. tauto.
+        apply find_edge_some_in in FIND.
+        right. exists t0; tauto.
+        simpl. tauto.
+        tauto.
+        +
+          destruct a as (f1,t1).
+          destruct (find_edge f1 l2).
+          *
+            destruct (IHl1 H (List_remove_assoc (eqb_of_dec EdgeLabel.eq_dec) f1 l2)) as (tr'& EQ & OR).
+            exists tr'.
+            simpl. split. tauto.
+            destruct OR.
+            tauto.
+            destruct H0 as (tr2 & IN & EQU).
+            apply In_remove_assoc_In in IN.
+            right. eexists. split;eauto.
+          * destruct (IHl1 H l2) as (tr'& EQ & OR).
+            exists tr'.
+            split. simpl. tauto.
+            tauto.
+    Qed.
+
+    Lemma find_edge_app : forall {B:Type} f (l1 l2: list (EdgeLabel.t * B)),
+        find_edge f (l1 ++ l2) = match find_edge f l1 with
+                                 | None => find_edge f l2
+                                 | Some v => Some v
+                                 end.
+    Proof.
+      induction l1; simpl.
+      - reflexivity.
+      - destruct a as (e1,v).
+        intros. destruct (EdgeLabel.eq_dec f e1); auto.
+    Qed.
+
+    Lemma find_remove_Some : forall {B:Type} (l1 l2:list (EdgeLabel.t * B)) x v,
+        find_edge x l1 = Some v ->
+        List_remove_assoc (eqb_of_dec EdgeLabel.eq_dec) x (l1 ++ l2) =
+          (List_remove_assoc (eqb_of_dec EdgeLabel.eq_dec) x l1) ++ l2.
+    Proof.
+      induction l1;simpl;auto.
+      - discriminate.
+      - destruct a as( e1,v1).
+        unfold eqb_of_dec.
+        intros.
+        destruct (EdgeLabel.eq_dec x e1);auto.
+        erewrite IHl1;eauto.
+    Qed.
+
+    Lemma find_remove_None : forall {B:Type} (l1 l2:list (EdgeLabel.t * B)) x,
+        find_edge x l1 = None ->
+        List_remove_assoc (eqb_of_dec EdgeLabel.eq_dec) x (l1 ++ l2) =
+          l1 ++ (List_remove_assoc (eqb_of_dec EdgeLabel.eq_dec) x l2).
+    Proof.
+      induction l1;simpl;auto.
+      - destruct a. intros.
+        unfold eqb_of_dec at 1.
+        destruct (EdgeLabel.eq_dec x t0); try discriminate.
+        rewrite IHl1; auto.
+    Qed.
+
+
+    Lemma union_list_decomp_right :
+      forall l1 l2 f tr,
+        In (f,tr) l2 ->
+        exists tr',
+          In (f,tr') (union_list union l1 l2) /\
+            (tr' = tr \/ exists tr2, In (f,tr2) l1 /\
+                                       tr' = union tr2 tr).
+    Proof.
+      induction l1.
+      - simpl.
+        intros.
+        exists tr. tauto.
+      - intros.
+        simpl.
+        destruct a as (f1,t1).
+        destruct (find_edge f1 l2) eqn:FIND.
+        assert (IN := H).
+        apply in_exists in H.
+        destruct H as (l1' & l3' & EQ).
+        rewrite EQ in FIND.
+        rewrite find_edge_app in FIND.
+        destruct (find_edge f1 l1') eqn:FIND1.
+        inv FIND.
+        erewrite find_remove_Some by eauto.
+        assert (IN2 : In (f,tr) (List_remove_assoc (eqb_of_dec EdgeLabel.eq_dec) f1 l1' ++ (f, tr) :: l3')).
+        {
+          rewrite in_app_iff.
+          simpl. tauto.
+        }
+        destruct (IHl1 _ _ _ IN2) as (tr' & EQ & EX).
+        exists tr'.
+        split;auto.
+        simpl. tauto.
+        destruct EX. tauto.
+        destruct H as (tr2 & IN3 & EQ2).
+        right. exists tr2. tauto.
+        simpl in FIND.
+        destruct (EdgeLabel.eq_dec f1 f).
+        + inv FIND.
+          unfold EdgeLabel.eq in e.
+          subst.
+          exists (union t1 t0).
+          split.
+          simpl. tauto.
+          right. exists t1. tauto.
+        + subst.
+          rewrite find_remove_None by auto.
+          simpl.
+          unfold eqb_of_dec at 1.
+          destruct (EdgeLabel.eq_dec f1 f); try tauto.
+          assert (IN2 : In (f,tr) (l1' ++ (f, tr) :: List_remove_assoc (eqb_of_dec EdgeLabel.eq_dec) f1 l3')).
+        {
+          rewrite in_app_iff.
+          simpl. tauto.
+        }
+        destruct (IHl1 _ _ _ IN2) as (tr' & EQ & EX).
+        exists tr'.
+        split;auto.
+        destruct EX. tauto.
+        destruct H as (tr2 & IN3 & EQ2).
+        right. exists tr2. tauto.
+        + destruct (IHl1 _ _ _ H) as (tr' & EQ & EX).
+          exists tr'.
+          simpl. split; try tauto.
+          destruct EX ; try tauto.
+          right.
+          destruct H0 as (tr2 & IN & EQ1).
+          exists tr2. tauto.
+    Qed.
+
+    Lemma in_length : forall {A: Type} {x:A} {l},
+        In x l -> (List.length l >= 1)%nat.
+    Proof.
+      destruct l ; simpl.
+      tauto.
+      lia.
+    Qed.
+
+
+    Lemma union_left : forall t1 t2 p,
+        has_path' p t1 -> has_path' p (union t1 t2).
+    Proof.
+      intros.
+      revert t2.
+      induction H.
+      - simpl. constructor.
+      - intro t2. destruct t2 as [l2].
+        destruct l2.
+        + simpl.
+          destruct l; constructor.
+        + assert (LEN := in_length H0).
+          rewrite union_union_list by (list ; lia).
+          destruct (union_list_decomp_left f tr l H0 (p0::l2)).
+          destruct H1.
+          destruct H2. subst.
+          econstructor ; eauto.
+          destruct H2 as (tr2 & IN & EQ).
+          subst.
+          econstructor.  apply IHhas_path'.
+          eauto.
+    Qed.
+
+    Lemma union_right : forall t1 t2 p,
+        has_path' p t2 -> has_path' p (union t1 t2).
+    Proof.
+      intros.
+      revert t1.
+      induction H; intro t1.
+      - destruct t1 as [l] ; destruct l; simpl; constructor.
+      - destruct t1 as [l1].
+        destruct l1.
+        + simpl. constructor.
+        + assert (LEN := in_length H0).
+          rewrite union_union_list by (list ; lia).
+          destruct (union_list_decomp_right (p0::l1) l _ _ H0) as (tr' & EQ & TR).
+          destruct TR.
+          subst. econstructor ;eauto.
+          destruct H1 as (tr2 & IN & EQTR).
+          subst.
+          econstructor. apply IHhas_path'.
+          apply EQ.
+    Qed.
+
+
+    Lemma has_path_cons : forall p e l,
+        l <> nil ->
+        has_path' p (Node l) ->
+        has_path' p (Node (e :: l)).
+    Proof.
+      intros. inv H0.
+      congruence.
+      econstructor;eauto.
+      simpl. tauto.
+    Qed.
+
+    Lemma union_list_decomp : forall l1 l2 f tr,
+        In (f,tr) (union_list union l1 l2) ->
+        In (f,tr) l1 \/ In (f,tr) l2 \/
+          exists tr1 tr2, In (f,tr1) l1 /\ In (f,tr2) l2 /\
+                            tr = union tr1 tr2.
+    Proof.
+      induction l1;simpl.
+      - intros. tauto.
+      - destruct a as (f1,t1).
+        intros.
+        destruct (find_edge f1 l2) eqn:FIND.
+        simpl in H.
+        destruct H.
+        + inv H.
+          right. right.
+          do 2 eexists.
+          split.
+          left ; reflexivity.
+          apply find_edge_some_in in FIND.
+          split ; eauto.
+        + apply IHl1 in H.
+          destruct H as [H| [ H | H]].
+          * tauto.
+          * apply In_remove_assoc_In in H.
+            tauto.
+          * destruct H as (tr1 & tr2 & IN1 & IN2 & EQ).
+            right. right.
+            exists tr1,tr2.
+            apply In_remove_assoc_In in IN2.
+            tauto.
+        + simpl in H.
+          destruct H.
+          inv H. tauto.
+          destruct (IHl1 _ _ _ H) as [H1 | [H1 | H1]];
+            try tauto.
+          destruct H1 as (tr1 & tr2 & IN1 & IN2 & EQ).
+          right. right.
+          exists tr1,tr2.
+          tauto.
+    Qed.
+
+
+    Lemma union_correct : forall p t1 t2,
+        has_path' p (union t1 t2) -> (has_path' p t1 \/ has_path' p t2).
+    Proof.
+      intros.
+      remember (union t1 t2) as u.
+      revert t1 t2 Hequ.
+      induction H.
+      - intros.
+        assert (EMP : is_empty (union t1 t2)).
+        { rewrite <- Hequ.
+          simpl. reflexivity.
+        }
+        apply union_empty in EMP.
+        unfold is_empty in EMP.
+        destruct t1,t2 ; destruct EMP ; subst.
+        left ; constructor.
+        right; constructor.
+      - intros.
+        destruct t1 as [l1].
+        destruct t2 as [l2].
+        assert (CL1 : (List.length l1 = O \/ List.length l1 >= 1)%nat) by lia.
+        assert (CL2 : (List.length l2 = O \/ List.length l2 >= 1)%nat) by lia.
+        destruct CL1.
+        destruct l1 ; simpl; try discriminate.
+        left ; constructor.
+        destruct CL2.
+        destruct l2 ; simpl; try discriminate.
+        right ; constructor.
+        rewrite union_union_list in Hequ by auto.
+        inv Hequ.
+        apply union_list_decomp in H0.
+        destruct H0 as [H0 | [H0 | H0]].
+        left.
+        econstructor ; eauto.
+        right.
+        econstructor ; eauto.
+        destruct H0 as (tr1 & tr2 & IN1 & IN2 & U).
+        subst.
+        destruct (IHhas_path' _ _ eq_refl).
+        left ; econstructor;eauto.
+        right ; econstructor;eauto.
+    Qed.
+
+    Fixpoint is_completely_valid_path (tr:t) (p:path) : bool :=
+      match p with
+      | nil => false
+      | f1::p' => match tr with
+                  | Node l =>
+                      match l with
+                      | nil => false
+                      | _   =>
+                          match find_edge f1 l with
+                          | Some t1 => is_completely_valid_path t1 p'
+                          | None    => true
+                          end
+                      end
+                  end
+      end.
+
+    Lemma wf_find_In : forall l,
+        wf (Node l) ->
+        forall f tr,
+        In (f, tr) l ->
+        find_edge f l = Some tr.
+    Proof.
+      intros.
+      inv H.
+      clear H2.
+      induction l ; simpl in *.
+      - tauto.
+      - destruct a as (e1,i).
+        simpl in *. inv H1.
+        destruct (EdgeLabel.eq_dec f e1).
+        +  unfold EdgeLabel.eq in e.
+           subst.
+           destruct H0. congruence.
+           exfalso.
+           apply H3. rewrite in_map_iff.
+           exists (e1,tr).
+           simpl. split; auto.
+        +  eapply IHl;eauto.
+           unfold EdgeLabel.eq in n ; intuition congruence.
+    Qed.
+
+    Lemma Forall_forall : forall {A: Type} P (l:list A),
+        Forall P l <-> (forall x, In x l -> P x).
+    Proof.
+      induction l;simpl.
+      - tauto.
+      - rewrite IHl.
+        intuition.
+        congruence.
+    Qed.
+
+
+
+    Lemma is_completely_valid_path_correct :
+      forall p q tr
+             (WF: wf tr),
+        is_completely_valid_path tr p = true ->
+        has_path' (p++q) tr -> False.
+    Proof.
+      induction p.
+      - simpl. congruence.
+      - intros.
+        simpl in H.
+        destruct tr. destruct l. congruence.
+        inv H0.
+        apply wf_find_In in H5;auto.
+        rewrite H5 in H.
+        eapply IHp with (tr:=tr);auto.
+        destruct WF.
+        rewrite Forall_forall in H1.
+        apply find_edge_some_in in H5.
+        apply H1 in H5.
+        apply H5.
+        apply H4.
+    Qed.
+
+    Fixpoint prefixed_by (tr:t) (p:path) :=
+      match p with
+      | nil => Some tr
+      | f :: p' =>
+          match tr with
+          | Node nil => Some (Node nil)
+          | Node l   => match find_edge f l with
+                        | None => None
+                        | Some tf => prefixed_by tf p'
+                        end
+          end
+      end.
+
+    Lemma prefixed_by_Some :
+      forall p tr q tr'
+             (WF : wf tr),
+        prefixed_by tr p = Some tr' -> has_path' (p ++ q) tr -> has_path' q tr'.
+    Proof.
+      induction p.
+      - simpl. intros. inv H. auto.
+      - simpl. destruct tr. destruct l.
+        + intros. inv H.
+          constructor.
+        + intros.
+          inv H0.
+          apply wf_find_In in H5; auto.
+          rewrite H5 in H.
+          eapply IHp with (tr:=tr);auto.
+          destruct WF.
+          rewrite Forall_forall in H1.
+          apply find_edge_some_in in H5.
+          apply H1 in H5.
+          apply H5.
+    Qed.
+
+    Lemma In_NoDup_same : forall {A B:Type} x v1 v2 (l:list (A * B)),
+        In (x,v1) l ->
+        In (x,v2) l ->
+        NoDup (List.map fst l) ->
+        v1 = v2.
+    Proof.
+      induction l; simpl; intros.
+      - tauto.
+      - destruct H;destruct H0; subst.
+        + congruence.
+        +  simpl in H1.
+           inv H1.
+           exfalso.
+           apply H3.
+           rewrite in_map_iff.
+           exists (x,v2).
+           simpl. tauto.
+        +  simpl in H1.
+           inv H1.
+           exfalso.
+           apply H3.
+           rewrite in_map_iff.
+           exists (x,v1).
+           simpl. tauto.
+        +  eapply IHl;eauto. inv H1; tauto.
+    Qed.
+
+    Lemma find_edge_None : forall {A:Type} x (l:list (EdgeLabel.t * A)),
+        find_edge x l = None -> forall v, In (x,v) l -> False.
+    Proof.
+      induction l; simpl; auto.
+      destruct a as (e1,i).
+      destruct (EdgeLabel.eq_dec x e1).
+      discriminate.
+      intros.
+      destruct H0 ; subst.
+      unfold EdgeLabel.eq in n. intuition congruence.
+      eapply IHl; eauto.
+    Qed.
+
+
+    
+    Lemma prefixed_by_None :
+      forall p tr
+             (WF : wf tr),
+        prefixed_by tr p = None -> forall q, has_path' (p++q) tr -> False.
+    Proof.
+      induction p.
+      - simpl. discriminate.
+      - simpl. destruct tr. destruct l.
+        + intros. discriminate.
+        + intros.
+          destruct (find_edge a (p0 :: l)) eqn:FIND.
+          apply find_edge_some_in in FIND.
+          assert (WFT0 : wf t0).
+          {  destruct WF.
+             rewrite Forall_forall in H2.
+             apply H2 in FIND.
+             apply FIND.
+          }
+          inv H0.
+          assert (t0 = tr).
+          { eapply In_NoDup_same; eauto.
+            inv WF; auto.
+          }
+          subst.
+          eapply (IHp _ WFT0 H).
+          eauto.
+          inv H0.
+          eapply find_edge_None in FIND ; eauto.
+    Qed.
+
+    Section HASPATH.
+      Variable may_edge : EdgeLabel.t -> EdgeLabel.t -> bool.
+
+      Fixpoint find_may_edge (e:EdgeLabel.t) (l:list (EdgeLabel.t * t)) : option t :=
+        match l with
+        | nil => None
+        | (e1,p1) ::l1 => if may_edge e e1
+                          then match find_may_edge e l1 with
+                               | None => Some p1
+                               | Some p2 => Some (union p1 p2)
+                               end
+                          else find_may_edge e l1
+        end.
+
+      Definition follow_path (p: t) (e:EdgeLabel.t) : option t :=
+        match p with
+        | Node nil => Some (Node nil)
+        | Node l   => find_may_edge e l
+        end.
+
+    End HASPATH.
+
+    
+  End PathTree.
 
   Definition get_label (g:t) (n:int) :=
     match IntMap.find n (edges g) with
@@ -471,7 +1547,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
              | _    => O
              end in
     xdraw d g (root g).
-  
+
 
   Definition eqEN (x y : EdgeLabel.t * int) :=
     EdgeLabel.eq (fst x) (fst y) /\ (snd x = snd y).
@@ -522,7 +1598,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       wf_fresh  : forall o  lb, has_node_label o lb (edges g) -> (ltb o (fresh g) = true)%int63
     }.
 
-
   Fixpoint find_label (lb:EdgeLabel.t) (l:list (EdgeLabel.t * int)) :=
     match l with
     | nil => None
@@ -553,7 +1628,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Qed.
 
 
-  
+
   Fixpoint find_node (n:int) (l:list (EdgeLabel.t * int)) :=
     match l with
     | nil => None
@@ -842,7 +1917,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Qed.
 
 
-  
+
   Lemma has_edge_rev_add :
     forall  g l
             (WF : wf g)
@@ -1006,7 +2081,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
         auto.
   Qed.
 
-    
+
   Lemma wf_create_node :
     forall nl l g g1 n
            (NODUP1 : NoDup_eq EdgeLabel.eq (map fst l))
@@ -1279,13 +2354,8 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
           end
       end.
 
-    Fixpoint find_edge (e:EdgeLabel.t) (l:list (EdgeLabel.t * int)) : option int :=
-      match l with
-      | nil => None
-      | (e1,i) ::l1 => if EdgeLabel.eq_dec e e1 then Some i else find_edge e l1
-      end.
 
-    
+
 
     Fixpoint check_must_alias (fuel:nat) (o:int) (l:list EdgeLabel.t) (n:int) (g:t) : res unit :=
       match l with
@@ -1414,6 +2484,9 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     | OK s1   , OK s2 => IntSet.is_empty (IntSet.inter s1 s2)
     |  _      , _     => false
     end.
+
+  Definition get_parent (n:int) (g:t) :=
+    IntMap.find n (parent g).
 
   Fixpoint is_parent_rec (g:t) (fuel:nat) (p:int) (n:int)  :=
     if eqb p n then OK true

@@ -86,6 +86,20 @@ Inductive KVar :=
 | KPrim (* Primitive type - no alias *)
 | KNode (n:int) (* Reference in the alias graph *).
 
+Definition get_node (k:KVar) : option int :=
+  match k with
+  | KNode n => Some n
+  | _       => None
+  end.
+
+Definition is_dead (k:KVar) : bool :=
+  match k with
+  | KDead => true
+  | _ => false
+  end.
+
+
+
 Module EdgeLabel <: OrderedType.
 
 Inductive edge :=
@@ -204,17 +218,240 @@ Qed.
       subst. rewrite edge_compare_refl in EQB. discriminate.
   Qed.
 
+  (** Consider edge as a (flat lattice) lattice. *)
+  Definition join (e1 e2: t) : t :=
+    match edge_compare e1 e2 with
+    | Eq => e1
+    |  _ => Top
+    end.
+
 End EdgeLabel.
 
 Module G := Make(TypOrdered)(EdgeLabel).
 
-Record domain := mkdom
+Module Vars.
+  (* Mapping and reverse mapping *)
+
+  Record t := mk
     {
       Vars : STree.t KVar;
-      Pto  : G.t;
-      Atoms: SMap.t (list atom); (* Atoms[x] = a -> x is a variable of a *)
+      RVar : IntMap.t (list ident);
     }.
 
+  Definition fold_dead {A: Type} (F : string -> A -> A) (acc:A) (vrs:t) :=
+    STree.fold (fun acc x k => if is_dead k then F x acc else acc) (Vars vrs) acc.
+
+  Definition empty := mk STree.empty (IntMap.empty _).
+
+  Definition get (x:ident) (m:t) := STree.get x (Vars m).
+
+
+  Definition of_vars (vrs: STree.t KVar) : t :=
+    let rvar :=
+      STree.fold (fun 'acc k v => match get_node v with
+                                  | None => acc
+                                  | Some n => IntMap.add_from_list n k acc
+                                  end) vrs (IntMap.empty _) in
+    mk vrs rvar.
+
+  Definition rev_add (x:ident) (v:KVar) (rm : IntMap.t (list ident)) :=
+    match v with
+    | KNode n => IntMap.add_from_list n x rm
+    | _       => rm
+    end.
+
+  Definition set (x:ident) (v:KVar) (m:t) :=
+    mk (STree.set x v (Vars m))
+       (rev_add x v
+          match STree.get x (Vars m) with
+          | None =>   (RVar m)
+          | Some v =>
+              match v with
+              | KNode n =>  (IntMap.remove_from_list String.eqb n x (RVar m))
+              |  _      =>  (RVar m)
+              end
+          end).
+
+  Record wf (m:t) :=
+    {
+      Vars_RVar : forall x n, STree.get x (Vars m) = Some (KNode n) <->
+                              In x (IntMap.findl n (RVar m));
+    }.
+
+  Lemma wf_empty : wf empty.
+  Proof.
+    constructor.
+    unfold empty.
+    simpl.
+    intros.
+    rewrite STree.gempty. intuition congruence.
+  Qed.
+
+  Lemma kvar_case : forall k, (exists n, k = KNode n) \/
+                               (forall n, k <> KNode n).
+  Proof.
+    destruct k.
+    - right;intros.
+      congruence.
+    - right;intros.
+      congruence.
+    - left. exists n; reflexivity.
+  Qed.
+
+  Lemma List_remove_eq : forall k l,
+      In k (List_remove String.eqb k l) <-> False.
+  Proof.
+    intros.
+    rewrite List_remove_not_In; try tauto.
+    repeat intro. subst.
+    rewrite String.eqb_refl in H.
+    discriminate.
+  Qed.
+
+  Lemma List_remove_neq : forall k k' l,
+      k <> k' ->
+      In k (List_remove String.eqb k' l) <-> In k l.
+  Proof.
+    intros.
+    rewrite List_remove_neq; try tauto.
+    repeat intro.
+    apply String.eqb_eq in H0.
+    auto.
+  Qed.
+
+  Lemma okvar_case : forall k, (exists n, k = Some (KNode n)) \/
+                               (forall n, k <> Some (KNode n)).
+  Proof.
+    destruct k.
+    - destruct (kvar_case k).
+      destruct H. left. exists x. congruence.
+      right. intros. specialize (H n). congruence.
+    - right.
+      congruence.
+  Qed.
+
+
+
+  Lemma wf_set : forall m v k, wf m -> wf (set k v m).
+  Proof.
+    intros.
+    destruct H.
+    constructor.
+    unfold set; simpl.
+    intros.
+    rewrite STree.gsspec.
+    unfold rev_add.
+    destruct (okvar_case (STree.get k (Vars m))).
+    - destruct H as (n1 & H).
+      rewrite H.
+      destruct (kvar_case v).
+      + destruct H0 as (n2 & H0).
+         subst.
+         destruct (Int.eq_dec n n2).
+         rewrite IntMap.findl_eq by auto.
+         rewrite IntMap.findl_remove.
+         destruct (IntMap.Facts.eq_dec n n1).
+         destruct (STree.elt_eq x k); subst.
+         simpl. intuition congruence.
+         simpl.
+         rewrite List_remove_neq by auto.
+         rewrite <- Vars_RVar0.
+         intuition congruence.
+         simpl.
+         rewrite <- Vars_RVar0.
+         destruct (STree.elt_eq x k); intuition congruence.
+         rewrite IntMap.findl_neq by auto.
+         rewrite IntMap.findl_remove.
+         destruct (IntMap.Facts.eq_dec n n1);
+           destruct (STree.elt_eq x k); subst.
+         rewrite List_remove_eq by auto.
+         intuition congruence.
+         rewrite List_remove_neq by auto.
+         rewrite <- Vars_RVar0.
+         intuition congruence.
+         rewrite <- Vars_RVar0.
+         intuition congruence.
+         rewrite <- Vars_RVar0.
+         intuition congruence.
+       +  assert (REW: match v with
+                       | KNode n0 => IntMap.add_from_list n0 k (IntMap.remove_from_list String.eqb n1 k (RVar m))
+                       | _ => IntMap.remove_from_list String.eqb n1 k (RVar m)
+                       end = IntMap.remove_from_list String.eqb n1 k (RVar m)).
+          {
+            destruct v;auto.  specialize (H0 n0). congruence.
+          }
+          change ident with string in *.
+          rewrite REW. clear REW.
+          rewrite IntMap.findl_remove.
+         destruct (IntMap.Facts.eq_dec n n1);
+           destruct (STree.elt_eq x k); subst.
+         rewrite List_remove_eq by auto.
+         intuition congruence.
+         rewrite List_remove_neq by auto.
+         rewrite <- Vars_RVar0.
+         intuition congruence.
+         rewrite <- Vars_RVar0.
+         intuition congruence.
+         rewrite <- Vars_RVar0.
+         intuition congruence.
+    -  assert (REW :  match STree.get k (Vars m) with
+             | Some (KNode n1) => IntMap.remove_from_list String.eqb n1 k (RVar m)
+             | _ => RVar m
+             end = RVar m).
+       { destruct (STree.get k (Vars m)); auto.
+         destruct k0; auto.
+         specialize (H n0) ; congruence.
+       }
+       rewrite REW ; clear REW.
+       destruct (kvar_case v).
+       + destruct H0 as (n2 & H0).
+         subst.
+         destruct (Int.eq_dec n n2).
+         rewrite IntMap.findl_eq by auto.
+         destruct (STree.elt_eq x k); subst.
+         simpl. intuition congruence.
+         simpl.
+         rewrite <- Vars_RVar0.
+         intuition congruence.
+         rewrite IntMap.findl_neq by auto.
+         rewrite <- Vars_RVar0.
+         destruct (STree.elt_eq x k); intuition congruence.
+       +  assert (REW: match v with
+                       | KNode n0 => IntMap.add_from_list n0 k (RVar m)
+                       | _ => RVar m
+                       end = RVar m ).
+          {
+            destruct v;auto.  specialize (H0 n0). congruence.
+          }
+          rewrite REW ; clear REW.
+          rewrite <- Vars_RVar0.
+          destruct (STree.elt_eq x k); intuition congruence.
+  Qed.
+
+  Definition vars_of_node (vrs:t) (n:int) := IntMap.findl n (RVar vrs).
+
+(*Maps.PTree.elements_correct:
+  forall [A : Type] (m : Maps.PTree.t A) (i : positive) [v : A], Maps.PTree.get i m = Some v -> In (i, v) (Maps.PTree.elements m)
+Maps.PTree.elements_complete:
+  forall [A : Type] (m : Maps.PTree.t A) (i : positive) (v : A), In (i, v) (Maps.PTree.elements m) -> Maps.PTree.get i m = Some v
+
+
+
+  Lemma wf_of_vars : forall vrs, wf (of_vars vrs).
+  Proof.
+    constructor.
+    unfold of_vars; simpl.
+    unfold STree.fold.
+    match goal with
+    | |- context [Maps.PTree.fold ?G] => set (F:=G)
+    end.
+    rewrite Maps.PTree.fold_spec.
+
+    Locate PTree.fold.
+*)
+
+
+  
 Definition pp_kvar (k:KVar) : box :=
     match k with
     | KDead => Bstr "dead"
@@ -222,13 +459,25 @@ Definition pp_kvar (k:KVar) : box :=
     | KNode n => Bcat (Bstr "n") (Bstr (string_of_int n))
     end.
 
-Definition pp_vars (s:STree.t KVar) : box :=
+Definition pp (s:t) : box :=
   STree.fold (fun acc k v => Bstack acc (Bcat (Bstr k)
                                            (Bcat
-                                              (Bstr "->") (pp_kvar v))) Left) s Bemp.
+                                              (Bstr "->") (pp_kvar v))) Left) (Vars s) Bemp.
+
+
+End Vars.
+
+
+Record domain := mkdom
+    {
+      Vars : Vars.t;
+      Pto  : G.t;
+      Atoms: SMap.t (list atom); (* Atoms[x] = a -> x is a variable of a *)
+    }.
+
 
 Definition pp_domain (d:domain) :=
-  Bstack (Bstr "") (Bcat (Bframe "_" "|"  (pp_vars (Vars d))) (G.pp (Pto d))) Middle.
+  Bstack (Bstr "") (Bcat (Bframe "_" "|"  (Vars.pp (Vars d))) (G.pp (Pto d))) Middle.
 
 
 
@@ -254,8 +503,9 @@ Inductive aglobdef :=
 
 Definition aenv := STree.t aglobdef.
 
+
 Definition forget_var (x:ident)  (d:domain) :=
-  mkdom (STree.set x KDead (Vars d))
+  mkdom (Vars.set x KDead (Vars d))
            (List.fold_right (fun a g => G.update_edgelabel (EdgeLabel.Index a) EdgeLabel.Top g) (Pto d) (SMap.get x (Atoms d)))
            (SMap.set x nil (Atoms d)).
 
@@ -265,16 +515,15 @@ Definition is_prim_literal (env:aenv) (x:ident) :=
   | _             => false
   end.
 
-
-Definition eval_var (env:aenv) (vars:STree.t KVar) (id:ident) (bt:btyp) :=
-  match STree.get id vars with
+Definition eval_var (env:aenv) (vars:Vars.t) (id:ident) (bt:btyp) :=
+  match Vars.get id vars with
   | Some v => OK v
   | None   => OK (if is_prim_literal env id
                   then KPrim
                   else KDead)
   end.
 
-Definition set_pto (g:G.t) (d:domain) :=
+  Definition set_pto (g:G.t) (d:domain) :=
   mkdom (Vars d) g (Atoms d).
 
 Definition bind_path (d:domain) (o:int) (acc:list EdgeLabel.t) : res (domain * KVar) :=
@@ -325,7 +574,7 @@ End EVALATOM.
 Fixpoint eval_atom (env:aenv) (d:domain) (a:atom)  :=
   match a with
   | AVar id bt    =>
-      let* v := eval_var env (Vars d) id bt in
+      let* v := eval_var env  (Vars d) id bt in
       OK (d,v)
   | AArrayGet ar i _ bt => array_get eval_atom env d ar i bt
   | ARecordProj ar fd _ bt => record_proj_get eval_atom env d ar fd bt
@@ -333,7 +582,7 @@ Fixpoint eval_atom (env:aenv) (d:domain) (a:atom)  :=
   end.
 
 Definition set_variable (v:ident) (k:KVar) (d:domain) :=
-  mkdom (STree.set v k (Vars d)) (Pto d) (Atoms d).
+  mkdom (Vars.set v k (Vars d)) (Pto d) (Atoms d).
 
 Definition edge_of_access (a:Typed.access) : EdgeLabel.t :=
   match a with
@@ -368,6 +617,29 @@ Definition classify_edge (e1 e2:EdgeLabel.t) :=
   |  _ , _ => NOTMAY
   end.
 
+
+Definition may_atom (a1 a2:atom) : bool :=
+  match a1 , a2 with
+  | ATrue, ATrue => true
+  | AFalse, AFalse => true
+  | ATrue, AFalse | AFalse, ATrue => false
+  | AInt32 i _ , AInt32 j _ => if Integers.Int.eq i j then true else false
+  | AInt64 i _ , AInt64 j _ => if Integers.Int64.eq i j then true else false
+  | AConstr i _, AConstr j _ => if String.eqb i j then true else false
+  | _ , _ => true
+  end.
+
+Definition may_edge (e1 e2:EdgeLabel.t) :=
+  match e1 , e2 with
+  | EdgeLabel.Top , EdgeLabel.Top => true
+  | EdgeLabel.Index _ , EdgeLabel.Top | EdgeLabel.Top , EdgeLabel.Index _ => true
+  | EdgeLabel.Field x , EdgeLabel.Field y => if Ident.eq_dec x y then true else false
+  | EdgeLabel.Index a1, EdgeLabel.Index a2 => may_atom a1 a2
+  | _ , _ => true (* cannot happen, don't care *)
+  end.
+
+
+
 Definition update_var (l:list int) (k:KVar)  :=
   match k with
   | KDead => KDead
@@ -375,8 +647,8 @@ Definition update_var (l:list int) (k:KVar)  :=
   | KNode n => if List.in_dec Int.eq_dec n l then KDead else KNode n
   end.
 
-Definition update_vars (d:domain) (l:list int)  :=
-  mkdom (STree.map (fun _ x => (update_var l) x) (Vars d)) (Pto d) (Atoms d).
+(*Definition update_vars (d:domain) (l:list int)  :=
+  mkdom (STree.map (fun _ x => (update_var l) x) (Vars d)) (Pto d) (Atoms d). *)
 
 Definition write (env:aenv) (d:domain) (a:atom) (l:list EdgeLabel.t) (vl:atom)  : res (domain * KVar * bool) :=
   let* (d,a) := eval_atom env d a in
@@ -454,8 +726,8 @@ Fixpoint no_alias (d:domain) (l : list (ident * KVar)) :=
                    end
   end.
 
-Definition get_function (env:aenv) (vars: STree.t KVar) (id:ident) :=
-  match STree.get id vars with
+Definition get_function (env:aenv) (vars: Vars.t) (id:ident) :=
+  match Vars.get id vars with
   | Some _ => fail
   | None   => match STree.get id env with
               | None => fail
@@ -529,12 +801,13 @@ Definition merge_var (m1: IntMap.t int) (m2:IntMap.t int) (k1 k2:KVar)  :=
   | KDead , _ | _ , KDead => KDead
   | KPrim , KPrim => KPrim
   | KPrim , _| _ , KPrim =>  KDead (* Should not happen. *)
-  | KNode n1 , KNode n2 => match IntMap.find n1 m1 , IntMap.find n2 m2 with
-                           | Some n1' , Some n2' => if Int.eq_dec n1' n2'
-                                                    then KNode n1'
-                                                    else  KDead
-                           |  _       ,  _        => KDead
-                           end
+  | KNode n1 , KNode n2 =>
+      match IntMap.find n1 m1 , IntMap.find n2 m2 with
+      | Some n1' , Some n2' =>
+          if Int.eq_dec n1' n2' then KNode n1'
+          else KDead
+      |  _       ,  _        => KDead
+      end
   end.
 
 Definition merge_ovar (m1 m2:IntMap.t int) (k1 k2 : option KVar) :=
@@ -543,6 +816,16 @@ Definition merge_ovar (m1 m2:IntMap.t int) (k1 k2 : option KVar) :=
   | None , _ | _ , None => None
   | Some k1, Some k2 => Some (merge_var m1 m2 k1 k2)
   end.
+
+(*
+  x -> v1   x -> v2
+  => KNode n1, KNode n2
+
+------------------------
+   [n1 -> n] |
+              =>
+   [n2 -> n] |
+*)
 
 
 Definition merge_vars (m1 m2: IntMap.t int) (v1 v2 : STree.t KVar) :=
@@ -555,7 +838,7 @@ Definition merge_domain (d1 d2:domain) : res domain :=
   let (v1,pt1,at1) := d1 in
   let (v2,pt2,at2) := d2 in
   let* (pto,m) := inter_pto pt1 pt2 in
-  let v := merge_vars (fst m) (snd m) v1 v2 in
+  let v := Vars.of_vars (merge_vars (fst m) (snd m) (Vars.Vars v1) (Vars.Vars v2)) in
   let atm := merge_atoms at1 at2 in
   OK (mkdom v pto atm).
 
@@ -569,20 +852,7 @@ Definition merge (v1 v2 : domain + list EdgeLabel.edge) :=
   | _ , _ => fail
   end.
 
-Fixpoint merge_list_rec (acc : domain + list EdgeLabel.edge) (l:list (res (domain + list EdgeLabel.edge))) : res (domain + list EdgeLabel.edge) :=
-  match l with
-  | nil => OK acc
-  | e::l => let* e := e in
-            let* m := merge e acc in
-            merge_list_rec m l
-  end.
 
-Definition merge_list (l: list (res (domain + list EdgeLabel.edge))) : res (domain + list EdgeLabel.edge) :=
-  match l with
-  | nil => fail
-  | acc :: l => let* acc := acc in
-                merge_list_rec acc l
-  end.
 
 
 Definition update_variable (v:ident) (d:domain) (kv:KVar) :=
@@ -602,7 +872,7 @@ Fixpoint eval_statement (te:tenv) (env: aenv) (s:statement) (d:domain) : res (do
       let* d2 := eval_statement te env s2 d in
       merge d1 d2
   | StSwitch a l => let ld := List.map (fun x => eval_statement te env (snd x) d) l in
-                    merge_list ld
+                    merge_list merge ld
   | StSequence s1 s2 => let* d1 := eval_statement te env s1 d in
                         match d1 with
                         | inr _ => Error (MSG "sequence is not well-typed" :: nil)
@@ -618,6 +888,82 @@ Fixpoint eval_statement (te:tenv) (env: aenv) (s:statement) (d:domain) : res (do
                   end
   end.
 
+
+Definition path_of_list (l:list ident) : STree.t (list EdgeLabel.t) :=
+  List.fold_right (fun e acc => STree.set e nil acc) STree.empty l.
+
+
+Fixpoint join_edges {A: Type} (e:EdgeLabel.t) (l:list (EdgeLabel.t * A)) : EdgeLabel.t  :=
+  match l with
+  | nil => e
+  | (e1,_) :: l => join_edges (EdgeLabel.join e e1) l
+  end.
+
+Fixpoint xpath_above_alias (d:domain) (fuel:nat) (n:int) :=
+  (* Direct aliases *)
+  let p := path_of_list (Vars.vars_of_node (Vars d) n) in
+  match G.get_parent n (Pto d) with
+  | None => OK p
+  | Some (e,n') =>
+      match fuel with
+      | O =>  Error (msg "Not enough fuel")
+      | S fuel => let* a := xpath_above_alias d fuel n' in
+                  let l := G.get_successors (Pto d) n' in
+                  let l := List.filter (fun x => may_edge e (fst x)) l in
+                  let e := join_edges e l in
+                  OK (STree.map (fun x p => e::p) a)
+      end
+  end.
+
+Definition path_above_alias (env:aenv) (d:domain) (a:atom) :=
+  let* (d,v) := eval_atom env d a in
+  match v with
+  | KNode n =>
+      let* f := G.depth (Pto d) in
+      xpath_above_alias d f n
+  | KPrim    => OK (STree.empty)
+  | KDead    => Error  (msg "path_above_alias: atom is dead - aliased with anything")
+  end.
+
+Fixpoint flat_map_err {A B: Type} (F : A -> res (list B)) (l:list A) : res (list B) :=
+  match l with
+  | nil => OK nil
+  | e::l' => let* le := F e in
+             let* ll' := flat_map_err F l' in
+             OK (le ++ ll')
+  end.
+
+Fixpoint xpath_below_alias (d:domain) (fuel:nat) (n:int) :=
+  let p := List.map (fun id => (nil,id)) (Vars.vars_of_node (Vars d) n) in
+  match fuel with
+  | O => Error (msg "Not enough fuel")
+  | S fuel => let l := G.get_successors (Pto d) n in
+              let* a := flat_map_err (fun '(e,n') => let* l := xpath_below_alias d fuel n' in
+                                                OK (List.map (fun '(p,v) => (e::p,v)) l)) l in
+              OK (p ++ a)
+  end.
+
+Definition path_below_alias (env:aenv) (d:domain) (a:atom) :=
+  let* (d,v) := eval_atom env  d a in
+  match v  with
+  | KNode n =>
+      let* f := G.depth (Pto d) in
+      xpath_below_alias d f n
+  | KPrim    => OK nil
+  | KDead    => Error  (msg "path_above_alias: atom is dead - aliased with anything")
+  end.
+
+Definition any_alias (env:aenv) (d:domain)  :=
+  STree.map (fun _ v => if is_dead v then true else false) (Vars.Vars (Vars d)).
+
+(*Definition may_alias (env:aenv) (d:domain) (a1 a2:atom) :=
+  match eval_atom env (Vars d) a1 , eval_atom env (Vars d) a2 with
+  | KPrim , _ | _ , KPrim => false (* primitive values are not in alias *)
+  | KDead , _ | _ , KDead => true  (* dead variables point anywhere *)
+  | KNode n1 , KNode n2   => (* not totally obvious *)
+*)
+
+
 Fixpoint assigned (s:statement) : SSet.t :=
   match s with
   | StSet id _ => SSet.add id  SSet.empty
@@ -627,17 +973,17 @@ Fixpoint assigned (s:statement) : SSet.t :=
   | StReturn _ => SSet.empty
   end.
 
-Definition bind_param (v: STree.t KVar) (g:G.t) (p:ident * typ)  :=
+Definition bind_param (v: Vars.t) (g:G.t) (p:ident * typ)  :=
   if typ_is_prim (snd p)
-  then OK (STree.set (fst p) KPrim v , g)
+  then OK (Vars.set (fst p) KPrim v , g)
   else (* add a path in the graph *)
     let* (g1,n) := G.create_path EdgeLabel.next_label (G.root g) (EdgeLabel.Field (fst p) :: nil) g in
     let (n,ty) := n in
     if typ_eq_dec ty (snd p)
-    then  OK (STree.set (fst p) (KNode n) v,g1)
+    then  OK (Vars.set (fst p) (KNode n) v,g1)
     else fail (* Cannot happen *).
 
-Fixpoint bind_params (v:STree.t KVar) (g:G.t) (l :list (ident * typ)) :=
+Fixpoint bind_params (v:Vars.t) (g:G.t) (l :list (ident * typ)) :=
   match l with
   | nil => OK(v,g)
   | p::l => let* (v,g) := bind_params v g l in
@@ -649,7 +995,7 @@ Definition init_domain (l:list (ident * typ)) :=
   let rec := TRecord "root"%string l in
   let g := G.mkroot rec in
   (* We bind each of the parameter in the graph *)
-  bind_params (STree.empty) g l.
+  bind_params (Vars.empty) g l.
 
 
 Fixpoint find_index {A: Type} (i:ident) (params : smaplist A) :=

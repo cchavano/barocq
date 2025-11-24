@@ -9,7 +9,7 @@ FRONTEND=\
 	BarocqShallow.v BarocqShallowgen.v BarocqVC.v CorresBD_Tactics.v
 
 BACKEND=\
-	ImpBNF.v ImpBNFgen.v Imp1.v Imp1gen2.v Imp1ElimAlias.v\
+	ImpBNF.v ImpBNFgen.v Imp1.v Imp1gen2.v Imp1ElimAlias.v InvAnalysis.v\
 	Unboxing.v Imp2.v Imp2gen.v GlobRewrite.v ClightCegen.v
 
 BCOMP=Compiler.v
