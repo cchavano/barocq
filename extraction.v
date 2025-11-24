@@ -4,7 +4,7 @@ From Coq Require Import ExtrOCamlInt63.
 
 From Coq Require BinInt BinPos.
 From compcert Require Integers Floats Machregs Archi AST Memdata Csyntax Initializers Ctyping Ctypes Clight Ctypesdefs Values.
-From BarocqComp Require Imp1 Imp1gen Barocq Compiler BarocqShallowgen BarocqVC.
+From BarocqComp Require Imp1 Imp1gen2 Barocq Compiler BarocqShallowgen BarocqVC.
 
 (* Extraction language *)
 Extraction Language OCaml.
@@ -25,8 +25,8 @@ Extraction Blacklist List String Int Array.
 Set Extraction Output Directory "_build/extraction".
 
 Extract Constant Imp1.Aliasing_AST.ABSDOM => "Aliasing_defs.AbsDom.t".
-Extract Constant Imp1gen.gen_aliasing_program => "Aliasing_impl.gen_aliasing_program".
-Extract Constant Imp1gen.check_program_aliasing => "Aliasing_check.check_program".
+Extract Constant Imp1gen2.gen_aliasing_program => "Aliasing_impl.gen_aliasing_program".
+Extract Constant Imp1gen2.check_program_aliasing => "Aliasing_check.check_program".
 
 Separate Extraction
   BinPos.Pos.pred
