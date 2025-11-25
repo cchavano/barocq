@@ -211,45 +211,39 @@ Module Normalization.
       fn_body := body_norm
     |}.
 
-  Fixpoint norm_program_rec (prog: Barocq.program) : res (list BarocqShallow.BNF.globdef * list (type_def btyp)) :=
+  Fixpoint norm_program (prog: Barocq.program) : res (BarocqShallow.BNF.program) :=
     match prog with
-    | nil => eret (nil, nil)
+    | nil => eret (mk_program nil nil nil)
     | d :: prog' =>
+        let* b_prog := norm_program prog' in
+        let '(mk_program b_defs b_types b_tabs) := b_prog in
         match d with
-        | Barocq.DefType x adt =>
-            let* (ndefs, types) := norm_program_rec prog' in
-            let td :=
-              match adt with
-              | Adt_enum elems => TdEnum {| ed_name := x; ed_elems := elems |}
-              | Adt_record fields => TdRecord {| rd_name := x; rd_fields := (MapList.map fst fields) |}
+        | Barocq.DefType x td =>
+            let td' :=
+              match td with
+              | TdEnum elems => TdEnum elems
+              | TdRecord fields =>
+                  TdRecord (MapList.map fst fields)
               end
             in
-            eret (ndefs, td :: types)
+            eret (mk_program b_defs ((x, td') :: b_types) b_tabs)
         | Barocq.DefConst x l ty =>
-            let* (ndefs, types) := norm_program_rec prog' in
-            eret (Syntax.DefConst x l ty :: ndefs, types)
+            let b_defs' := Syntax.DefConst x l ty :: b_defs in
+            eret (mk_program b_defs' b_types b_tabs)
         | Barocq.DefFun x f =>
             let* f' := norm_function f in
-            let* (ndefs, types):= norm_program_rec prog' in
-            eret (Syntax.DefFun x f' :: ndefs, types)
+            let b_defs' := Syntax.DefFun x f' :: b_defs in
+            eret (mk_program b_defs' b_types b_tabs)
         | Barocq.DeclType t tk =>
-            let* (ndefs, types) := norm_program_rec prog' in
-            eret (ndefs, TdAbstract t tk :: types)
+            eret (mk_program b_defs b_types ((t, tk) :: b_tabs))
         | Barocq.DeclConst x ty =>
-            let* (ndefs, types) := norm_program_rec prog' in
-            eret (Syntax.DeclConst x ty :: ndefs, types)
-        | Barocq.DeclFun f tparams tret =>
-            let* (ndefs, types) := norm_program_rec prog' in
-            eret (Syntax.DeclFun f tparams tret :: ndefs, types)
+            let b_defs' := Syntax.DeclConst x ty :: b_defs in
+            eret (mk_program b_defs' b_types b_tabs)
+        | Barocq.DeclFun x tparams tret =>
+            let b_defs' := Syntax.DeclFun x tparams tret :: b_defs in
+            eret (mk_program b_defs' b_types b_tabs)
         end
     end.
-    
-  Definition norm_program (prog: Barocq.program) : res BNF.program :=
-    let* (defs, types) := norm_program_rec prog in
-    eret {|
-      prog_defs := defs;
-      prog_types := types
-    |}.
 
 End Normalization.
 
@@ -393,45 +387,39 @@ Module Normalization2.
       fn_body := body_norm
     |}.
 
-  Fixpoint norm_program_rec (prog: Barocq.program) : res (list BarocqShallow.BNF.globdef * list (type_def btyp)) :=
+  Fixpoint norm_program (prog: Barocq.program) : res (BarocqShallow.BNF.program) :=
     match prog with
-    | nil => eret (nil, nil)
+    | nil => eret (mk_program nil nil nil)
     | d :: prog' =>
+        let* b_prog := norm_program prog' in
+        let '(mk_program b_defs b_types b_tabs) := b_prog in
         match d with
-        | Barocq.DefType x adt =>
-            let* (ndefs, types) := norm_program_rec prog' in
-            let td :=
-              match adt with
-              | Adt_enum elems => TdEnum {| ed_name := x; ed_elems := elems |}
-              | Adt_record fields => TdRecord {| rd_name := x; rd_fields := (MapList.map fst fields) |}
+        | Barocq.DefType x td =>
+            let td' :=
+              match td with
+              | TdEnum elems => TdEnum elems
+              | TdRecord fields =>
+                  TdRecord (MapList.map fst fields)
               end
             in
-            eret (ndefs, td :: types)
+            eret (mk_program b_defs ((x, td') :: b_types) b_tabs)
         | Barocq.DefConst x l ty =>
-            let* (ndefs, types) := norm_program_rec prog' in
-            eret (Syntax.DefConst x l ty :: ndefs, types)
+            let b_defs' := Syntax.DefConst x l ty :: b_defs in
+            eret (mk_program b_defs' b_types b_tabs)
         | Barocq.DefFun x f =>
             let* f' := norm_function f in
-            let* (ndefs, types):= norm_program_rec prog' in
-            eret (Syntax.DefFun x f' :: ndefs, types)
+            let b_defs' := Syntax.DefFun x f' :: b_defs in
+            eret (mk_program b_defs' b_types b_tabs)
         | Barocq.DeclType t tk =>
-            let* (ndefs, types) := norm_program_rec prog' in
-            eret (ndefs, TdAbstract t tk :: types)
+            eret (mk_program b_defs b_types ((t, tk) :: b_tabs))
         | Barocq.DeclConst x ty =>
-            let* (ndefs, types) := norm_program_rec prog' in
-            eret (Syntax.DeclConst x ty :: ndefs, types)
-        | Barocq.DeclFun f tparams tret =>
-            let* (ndefs, types) := norm_program_rec prog' in
-            eret (Syntax.DeclFun f tparams tret :: ndefs, types)
+            let b_defs' := Syntax.DeclConst x ty :: b_defs in
+            eret (mk_program b_defs' b_types b_tabs)
+        | Barocq.DeclFun x tparams tret =>
+            let b_defs' := Syntax.DeclFun x tparams tret :: b_defs in
+            eret (mk_program b_defs' b_types b_tabs)
         end
     end.
-    
-  Definition norm_program (prog: Barocq.program) : res BNF.program :=
-    let* (defs, types) := norm_program_rec prog in
-    eret {|
-      prog_defs := defs;
-      prog_types := types
-    |}.
 
 End Normalization2.
 
@@ -503,52 +491,7 @@ Module Monadification.
     - apply Ident.eq_dec.
   Defined.
 
-  Record menv := mk_menv {
-    menv_defs : STree.t (adt_definition mtyp);
-    menv_constr_types : STree.t ident
-  }.
-
-  Definition menv_empty : menv := {|
-    menv_defs := STree.empty;
-    menv_constr_types := STree.empty
-  |}.
-
-  Definition menv_get_edef (be: menv) (x: ident) : res (list ident) :=
-    match STree.get x be.(menv_defs) with
-    | Some (Adt_enum elems) => eret elems
-    | _ => efail
-    end.
-
-  Definition menv_get_rdef (be: menv) (x: ident) : res (smaplist mtyp) :=
-    match STree.get x be.(menv_defs) with
-    | Some (Adt_record fields) => eret fields
-    | _ => efail
-    end.
-
-  Definition menv_get_constr_typ (be: menv) (x: ident) : res ident :=
-    err_of_opt (STree.get x be.(menv_constr_types)).
-
-  Definition menv_update_defs (be: menv) (x: ident) (adt: adt_definition mtyp) : res menv :=
-    let types := be.(menv_defs) in
-    match STree.get x types with
-    | Some _ => efail
-    | None =>
-        eret {|
-          menv_defs := STree.set x adt types;
-          menv_constr_types := be.(menv_constr_types)
-        |}
-    end.
-
-Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res menv :=
-  let elems := be.(menv_constr_types) in
-  match STree.get elem be.(menv_constr_types) with
-  | Some _ => efail
-  | None =>
-      eret {|
-        menv_defs := be.(menv_defs);
-        menv_constr_types := STree.set elem eid elems
-      |}
-  end.
+  Definition menv := Typing.TEnv.t mtyp.
 
   Definition gcontext : Type := STree.t mtyp.
 
@@ -645,7 +588,7 @@ Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res 
     end.
 
   Definition typof_constr (me: menv) (c: ident) : res mtyp :=
-    match menv_get_constr_typ me c with
+    match Typing.TEnv.get_constr_typ me c with
     | OK eid => eret (MEnum eid)
     | Error _ => efail
     end.
@@ -771,7 +714,7 @@ Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res 
   Definition typecheck_record_proj (me: menv) (ty: mtyp) (x: ident) : res mtyp :=
     match ty with
     | MRecord t =>
-        let* fields := menv_get_rdef me t in
+        let* fields := Typing.TEnv.get_rdef me t in
         mtypof_field x fields
     | _ => efail
     end.
@@ -779,7 +722,7 @@ Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res 
   Definition typecheck_record_update (me: menv) (ty1: mtyp) (a2: atom) (x: ident) : res (atom * mtyp) :=
     match ty1 with
     | MRecord t =>
-        let* fields := menv_get_rdef me t in
+        let* fields := Typing.TEnv.get_rdef me t in
         let* tx := mtypof_field x fields in
         let* a2' := typecheck_atom_against a2 tx in
         eret (a2', ty1)
@@ -828,7 +771,7 @@ Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res 
   Definition typecheck_match (me: menv) (ty: mtyp) (cases: list (pattern * mtyp)) : res mtyp :=
     match ty with
     | MEnum te =>
-        let* elems := menv_get_edef me te in
+        let* elems := Typing.TEnv.get_edef me te in
         typecheck_match_rec me ty elems elems cases
     | _ => efail
     end.
@@ -1158,7 +1101,7 @@ Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res 
         else efail
     | Syntax.LRecord rc _ rid =>
         let* rc' := MapList.map_err (typecheck_literal me) rc in
-        let* t := menv_get_rdef me rid in
+        let* t := Typing.TEnv.get_rdef me rid in
         if typecheck_struct_lit rc' t then
           eret (LRecord rc' rid)
         else efail
@@ -1204,47 +1147,25 @@ Definition menv_update_constr_types (be: menv) (elem: ident) (eid: ident) : res 
   Definition monadify_globdefs (me: menv) (defs: list BNF.globdef) : res (list globdef) :=
     monadify_globdefs_rec me STree.empty defs.
 
-  Definition monadify_type_defs (types: list (Syntax.type_def btyp)) : list type_def :=
-    List.map
+  Definition monadify_type_defs (types: smaplist (type_def btyp)) : smaplist (type_def mtyp) :=
+    MapList.map
       (fun td =>
         match td with
-        | Syntax.TdEnum ed =>
-            TdEnum {| ed_name := Syntax.ed_name ed; ed_elems := Syntax.ed_elems ed |}
-        | Syntax.TdRecord rd =>
-            let fields := MapList.map monadify_btyp (Syntax.rd_fields rd) in
-            TdRecord {| rd_name := Syntax.rd_name rd; rd_fields := fields |}
-        | Syntax.TdAbstract t tk => TdAbstract t tk
+        | Syntax.TdEnum elems => TdEnum elems
+        | Syntax.TdRecord fields =>
+            let fields' := MapList.map monadify_btyp fields in
+            TdRecord fields'
         end)
       types.
 
-  Definition build_menv (types: list type_def) : res menv :=
-    Utils.list_fold_left_err
-      (fun acc_be td =>
-        match td with
-        | TdEnum ed =>
-            let* be' := menv_update_defs acc_be (ed_name ed) (Adt_enum (ed_elems ed)) in
-            let* be' :=
-              list_fold_left_err
-                (fun acc_be1 e => menv_update_constr_types acc_be1 e (ed_name ed))
-                (ed_elems ed)
-                (eret be')
-            in
-            eret be'
-        | TdRecord rd =>
-            let* be' := menv_update_defs acc_be (rd_name rd) (Adt_record (rd_fields rd)) in
-            eret be'
-        | TdAbstract _ _ => eret acc_be
-        end)
-      types
-      (eret menv_empty).
-
   Definition monadify_program (prog: BNF.program) : res program :=
     let types := monadify_type_defs (prog_types prog) in
-    let* me := build_menv types in
+    let* me := Typing.TEnv.build types in
     let* defs := monadify_globdefs me (prog_defs prog) in
     eret {|
-      prog_types := types;
       prog_defs := defs;
+      prog_types := types;
+      prog_tabs := (prog_tabs prog);
     |}.
 
   End MON.

@@ -40,7 +40,7 @@ Definition function : Type := Syntax.function expr btyp.
 (** ** Global definitions *)
 
 Inductive globdef : Type :=
-  | DefType (tid: ident) (adt: adt_definition field_descr) : globdef                       (* type tid = ... *)
+  | DefType (tid: ident) (td: type_def field_descr) : globdef                       (* type tid = ... *)
   | DefConst (x: ident) (l: literal) (ty: btyp) : globdef                           (* defn x : ty = l *)
   | DefFun (x: ident) (f: function) : globdef                                       (* defn x (p1: t1, ..., pn: tn) : ty = e *)
   | DeclType (tid: ident) (tkind: struct_or_union) : globdef                        (* type tid of "tkind" *)
@@ -112,7 +112,7 @@ Module Typed.
   (** ** Global definitions *)
 
   Inductive globdef : Type :=
-    | DefType : ident -> adt_definition field_descr -> globdef
+    | DefType : ident -> type_def field_descr -> globdef
     | DefConst : ident -> literal -> btyp -> globdef
     | DefFun : ident -> function -> globdef
     | DeclType : ident -> struct_or_union -> globdef
@@ -132,12 +132,6 @@ Module Typed.
 End Typed.
 
 Module BarocqTyped := Barocq.Typed.
-
-Definition adt_remove_layout (adt: adt_definition field_descr) : adt_definition btyp :=
-  match adt with
-  | Adt_enum elems => Adt_enum elems
-  | Adt_record fields => Adt_record (MapList.map fst fields)
-  end.
 
 Module Typing.
 
@@ -282,23 +276,11 @@ Module Typing.
       |}
     else failwith "Barocq.Typing.typecheck_function: return type mismatch".
 
-  Definition register_enum_elems (be: benv) (eid: ident) (elems: list ident) : res benv :=
-    list_fold_left_err
-      (fun acc e => benv_update_constr_types acc e eid)
-      elems
-      (ret be).
-
   Definition typecheck_globdef (be:benv) (gx:gcontext) (d: Barocq.globdef) : res (benv * gcontext * BarocqTyped.globdef) :=
     match d with
-    | Barocq.DefType x adt =>
-        let* be' := benv_update_defs be x adt in
-        let* be' :=
-          match adt with
-          | Adt_enum elems => register_enum_elems be' x elems
-          | _ => ret be'
-          end
-        in
-        ret (be',gx, (DefType x adt))
+    | Barocq.DefType x td =>
+        let* be' := TEnv.update_defs be x td in
+        ret (be', gx, (DefType x td))
     | Barocq.DefConst x l ty =>
         let* l' := typecheck_literal be l in
         if btyp_eq_dec ty (Typing.typof_literal l') then
@@ -333,7 +315,7 @@ Module Typing.
     end.
 
   Definition typecheck_program (prog: Barocq.program) : res BarocqTyped.program :=
-    typecheck_globdefs benv_empty STree.empty prog.
+    typecheck_globdefs TEnv.empty STree.empty prog.
 
   Definition typecheck_command (be:benv) (gx: gcontext) (cmd : Barocq.command) : res (benv * gcontext * BarocqTyped.command) :=
     match  cmd with
@@ -357,7 +339,7 @@ Module Typing.
     end.
 
   Definition typecheck_iprogram (prog: Barocq.iprogram) : res BarocqTyped.iprogram :=
-    typecheck_commands benv_empty STree.empty prog.
+    typecheck_commands TEnv.empty STree.empty prog.
 
   Fixpoint program_of_iprogram (p: BarocqTyped.iprogram) : BarocqTyped.program :=
     match p with
@@ -443,8 +425,8 @@ Section DENOT.
     end.
 
   Definition eval_constr  (te: tenv) (x: ident) (ty:typ) : res (eval_typ ty) :=
-    let* eid := tenv_get_constr_typ te x in
-    let* elems := tenv_get_edef te eid in
+    let* eid := TEnv.get_constr_typ te x in
+    let* elems := TEnv.get_edef te eid in
     match (bool_dec (existsb (String.eqb x) elems) true) with
     | left EQ =>  @cast_typ (TEnum eid elems)   (mk_enum elems x EQ) ty
     | right _ => fail
@@ -1247,7 +1229,7 @@ Lemma typof_field_is_type :
         eval_array_lit av
     | LRecord rc _ rid =>
         let* rcv := MapList.map_err (eval_literal te) rc in
-        let* fields := tenv_get_rdef te rid in
+        let* fields := TEnv.get_rdef te rid in
         eval_record_lit rid rcv fields
     end.
 
@@ -1342,21 +1324,13 @@ Lemma typof_field_is_type :
   Definition fields_btyp_to_typ (te: tenv) (fields: smaplist btyp) : res (smaplist typ) :=
     MapList.map_err (btyp_to_typ te) fields.
 
-  Definition eval_def_type (te: tenv) (x: ident) (adt: adt_definition btyp) : res tenv :=
-    match adt with
-    | Adt_enum elems =>
-        let* te' := tenv_update_defs te x (Adt_enum elems) in
-        let* te' :=
-          list_fold_left_err
-            (fun acc id => tenv_update_constr_types acc id x)
-            elems
-            (ret te')
-        in
-        ret te'
-    | Adt_record fields =>
-        let* fields' := fields_btyp_to_typ te fields in
-        let* te' := tenv_update_defs te x (Adt_record fields') in
-        ret te'
+  Definition eval_def_type (te: tenv) (tid: ident) (td: type_def field_descr) : res tenv :=
+    match td with
+    | TdEnum elems =>
+        TEnv.update_defs te tid (TdEnum elems)
+    | TdRecord fields =>
+        let* fields' := MapList.map_err (btyp_to_typ te) (MapList.map fst fields) in
+        TEnv.update_defs te tid (TdRecord fields')
     end.
 
   Definition eval_def_const (te: tenv) (ge: genv) (x: ident) (l: literal) (ty: btyp) : res genv :=
@@ -1387,9 +1361,8 @@ Lemma typof_field_is_type :
     | nil => ret nil
     | c :: xprog' =>
         match c with
-        | CmdDef (DefType x adt) =>
-            let adt' := adt_remove_layout adt in
-            let* te' := eval_def_type te x adt' in
+        | CmdDef (DefType x td) =>
+            let* te' := eval_def_type te x td in
             interpret_rec te' ge xprog'
         | CmdDef (DefConst x l ty) =>
             let* ge' := eval_def_const te ge x l ty in
@@ -1409,7 +1382,7 @@ Lemma typof_field_is_type :
     end.
 
   Definition interpret (iprog: list command) : res (list value) :=
-    interpret_rec tenv_empty STree.empty iprog.
+    interpret_rec TEnv.empty STree.empty iprog.
 
   (** Evaluation of a definition with dynamic environments *)
 
@@ -1418,9 +1391,8 @@ Lemma typof_field_is_type :
     | nil => fail
     | d :: prog' =>
         match d with
-        | DefType y adt =>
-            let adt := adt_remove_layout adt in
-            let* te' := eval_def_type te x adt in
+        | DefType y td =>
+            let* te' := eval_def_type te x td in
             eval_def_rec te' ge prog' y
         | DefConst y l ty =>
             let* ge' := eval_def_const te ge y l ty in
@@ -1445,7 +1417,7 @@ Lemma typof_field_is_type :
     end.
 
   Definition eval_def (impl: genv) (prog: program) (x: ident) : res value :=
-    eval_def_rec tenv_empty impl prog x.
+    eval_def_rec TEnv.empty impl prog x.
 
   (** Evaluation of a whole program *)
 
@@ -1454,9 +1426,8 @@ Lemma typof_field_is_type :
     | nil => ret (te,ge)
     | d :: prog' =>
         match d with
-        | DefType a adt =>
-            let adt := adt_remove_layout adt in
-            let* te' := eval_def_type te a adt in
+        | DefType a td =>
+            let* te' := eval_def_type te a td in
             eval_prog_rec te' ge prog'
         | DefConst x l ty =>
             let* ge' := eval_def_const te ge x l ty in
@@ -1475,7 +1446,7 @@ Lemma typof_field_is_type :
     end.
 
   Definition eval_prog (impl: genv) (prog: program) : res (tenv* genv) :=
-    eval_prog_rec tenv_empty impl prog.
+    eval_prog_rec TEnv.empty impl prog.
 
   (** Redefinition of eval_def by computing the whole global environment first *)
 

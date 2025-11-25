@@ -337,7 +337,7 @@ let tenv_get_constr_typ (mname : string) (te : tenv) (cname : ident) :
   | Some eid -> Some (BEnum (mname, eid))
   | _ -> None
 
-let tenv_update_defs (te : tenv) (tid : ident) (td : type_def) : tenv =
+let update_defs (te : tenv) (tid : ident) (td : type_def) : tenv =
   let tid_str = tid.content in
   match IdentMap.find_opt tid_str te.tenv_defs with
   | Some _ -> error (Already_defined_type tid_str) ~loc:(Some tid)
@@ -413,24 +413,21 @@ let gtenv_get_constr_typ (imports : ident list) (gte : gtenv) (cid : cident) :
 
 let gtenv_update_local_enums (gte : gtenv) (eid : ident) (elems : string list) :
     gtenv =
-  { gte with gtenv_local = tenv_update_defs gte.gtenv_local eid (TdEnum elems) }
+  { gte with gtenv_local = update_defs gte.gtenv_local eid (TdEnum elems) }
 
 let gtenv_update_local_records (gte : gtenv) (rid : ident)
     (fields : (string * (btyp * Types.layout)) list) : gtenv =
-  {
-    gte with
-    gtenv_local = tenv_update_defs gte.gtenv_local rid (TdRecord fields);
-  }
+  { gte with gtenv_local = update_defs gte.gtenv_local rid (TdRecord fields) }
 
 let gtenv_update_local_abstracts (gte : gtenv) (tid : ident) : gtenv =
   {
     gte with
-    gtenv_local = tenv_update_defs gte.gtenv_local tid (TdAbstract tid.content);
+    gtenv_local = update_defs gte.gtenv_local tid (TdAbstract tid.content);
   }
 
 let gtenv_update_local_aliases (gte : gtenv) (alias : ident) (ty : btyp) : gtenv
     =
-  { gte with gtenv_local = tenv_update_defs gte.gtenv_local alias (TdAlias ty) }
+  { gte with gtenv_local = update_defs gte.gtenv_local alias (TdAlias ty) }
 
 type gcontext = {
   gx_local : btyp IdentMap.t;
@@ -1651,7 +1648,7 @@ let typecheck_type_def (imports : ident list) (gte : gtenv) (ce : cenv)
           in
           let bid = transl_globdef_name !curr_mname tid in
           let belems = List.map (transl_globdef_name !curr_mname) elems in
-          (Some (Barocq.DefType (bid, Types.Adt_enum belems)), gte', ce', gx)
+          (Some (Barocq.DefType (bid, Syntax.TdEnum belems)), gte', ce', gx)
     end
   | SurfaceAST.TdRecord fields -> begin
       match find_duplicate_ident (List.map fst fields) with
@@ -1682,7 +1679,7 @@ let typecheck_type_def (imports : ident list) (gte : gtenv) (ce : cenv)
               (List.map (fun (fname, fty) -> (fname, fty)) fields')
           in
           Hashtbl.add type_locs (prefix_ident !curr_mname tid.content) tid;
-          (Some (Barocq.DefType (bid, Types.Adt_record bfields)), gte', ce, gx)
+          (Some (Barocq.DefType (bid, Syntax.TdRecord bfields)), gte', ce, gx)
     end
   | SurfaceAST.TdAlias ty ->
       let ty = styp_to_btyp imports gte ce ty in
@@ -1767,10 +1764,10 @@ let typecheck_globdef (imports : ident list) (gte : gtenv) (ce : cenv)
       Hashtbl.add fun_locs (prefix_ident !curr_mname id.content) id;
       let gx' = gcontext_update_local gte gx id ty in
       (Some (Barocq.DefFun (bid, bf)), gte, ce, gx')
-  | DeclType (tid, tk) ->
+  | DeclType (tid, su) ->
       let gte' = gtenv_update_local_abstracts gte tid in
       let bid = transl_globdef_name !curr_mname tid in
-      (Some (Barocq.DeclType (bid, tk)), gte', ce, gx)
+      (Some (Barocq.DeclType (bid, su)), gte', ce, gx)
   | DeclConst (id, sty, is_glob) ->
       let ty = styp_to_btyp imports gte ce sty in
       check_unique_directive id ty is_glob;
@@ -1947,7 +1944,7 @@ let check_glob_rewrite_possible (gi_mname : string) (gi_tid : string)
       else sprintf "%s::%s" gi_mname gi_tid
     in
     match def with
-    | Barocq.DefType (tid, Types.Adt_record fields) ->
+    | Barocq.DefType (tid, Syntax.TdRecord fields) ->
         let tid_loc = Hashtbl.find type_locs (PrintUtils.ident_to_string tid) in
         if not (check_record_fields fields) then
           error

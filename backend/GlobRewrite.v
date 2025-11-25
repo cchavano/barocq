@@ -102,7 +102,8 @@ Section REWRITE.
   Definition rewrite_program (prog: program) : program :=
     {|
       prog_defs := List.map rewrite_globdef (prog_defs prog);
-      prog_types := prog_types prog
+      prog_types := prog_types prog;
+      prog_tabs := prog_tabs prog;
     |}.
 
 End REWRITE.

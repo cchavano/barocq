@@ -545,7 +545,7 @@ Section S.
     - simpl; intros. inv EVAL. apply env_preserve_defs_refl.
     - simpl; intros.
       destruct a.
-      + destruct (eval_def_type te i (adt_remove_layout a)); try discriminate.
+      + destruct (eval_def_type te i t); try discriminate.
         simpl in EVAL.
         eapply IHprog in EVAL;eauto.
       + destruct (eval_def_const abs_typ_impl te ge i l b) eqn:EQN; try discriminate.
@@ -1900,8 +1900,8 @@ Section S.
     specialize (eq_genv_eval_expr arch te ge ge').
     destruct e; intros; simpl; try (apply res_rel_cast_typ_refl;reflexivity).
     - unfold eval_constr.
-      destruct (Typing.tenv_get_constr_typ te i); try constructor.
-      simpl. destruct (Typing.tenv_get_edef te i0); try constructor.
+      destruct (Typing.TEnv.get_constr_typ te i); try constructor.
+      simpl. destruct (Typing.TEnv.get_edef te i0); try constructor.
       simpl. destruct (bool_dec (existsb (String.eqb i) l) true);try constructor.
       apply res_rel_cast_typ_refl;reflexivity.
     - unfold eval_var.
@@ -2462,8 +2462,8 @@ Section S.
   let* fields' := fields_btyp_to_typ te fields in
   tenv_update_opt te x fields'. *)
 
-  Definition obligation_def_type (te: Typing.tenv) (x: ident) (adt: adt_definition btyp) : res Typing.tenv :=
-    eval_def_type te x adt.
+  Definition obligation_def_type (te: Typing.tenv) (x: ident) (td: Syntax.type_def field_descr) : res Typing.tenv :=
+    eval_def_type te x td.
 
   Fixpoint generate_obligations (arch:archi)  (te:Typing.tenv)
     (checked : list propt) (vc : list Prop) (p:program) (props : list propt) : res (list Prop) :=
@@ -2474,8 +2474,8 @@ Section S.
              end
     | a :: prog' =>
         match a with
-        | DefType a adt =>
-            let* te' := obligation_def_type te a (adt_remove_layout adt) in
+        | DefType a td =>
+            let* te' := obligation_def_type te a td in
             generate_obligations arch  te' checked vc prog' props
         | DefConst x l ty    =>
             let* (p,props') := get_prop x props in
@@ -3145,7 +3145,7 @@ Qed.
       discriminate.
     - simpl.
       destruct a; intros.
-      + destruct (obligation_def_type te i (adt_remove_layout a)); try discriminate.
+      + destruct (obligation_def_type te i t); try discriminate.
         simpl in GEN.
         eapply IHprog; eauto.
       +  destruct (get_prop i props) eqn:GP; try discriminate.
@@ -3186,8 +3186,8 @@ Qed.
     reflexivity.
   (* unfold obligation_def_type,eval_def_type.
   intros. destruct (fields_btyp_to_typ te fields); try reflexivity.
-  simpl. unfold tenv_update_opt, Typing.tenv_update.
-  unfold Typing.tenv_get. unfold STree.get.
+  simpl. unfold tenv_update_opt, Typing.TEnv.update.
+  unfold Typing.TEnv.get. unfold STree.get.
   destruct (te ! (StringIndexed.index tid)); simpl; auto. *)
   Qed.
 
@@ -3214,7 +3214,7 @@ Qed.
       destruct a.
       + intros.
         rewrite obligation_def_type_eq in GEN.
-        destruct (eval_def_type te i (adt_remove_layout a)); try discriminate.
+        destruct (eval_def_type te i t); try discriminate.
         simpl in *.
         eapply IHprog in GEN ; eauto.
         inv ND ; auto.
@@ -3327,7 +3327,7 @@ Qed.
     induction p1; simpl.
     - intros. inv H. auto.
     - destruct a; intros.
-      + destruct (eval_def_type te i (adt_remove_layout a)); try discriminate.
+      + destruct (eval_def_type te i t); try discriminate.
         simpl in H. simpl. eapply IHp1;eauto.
       + destruct (eval_def_const abs_types_impl te ge i l b); try discriminate.
         eapply IHp1;eauto.

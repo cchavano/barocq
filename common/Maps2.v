@@ -137,6 +137,9 @@ Module MapList.
         else (k1, v1) :: merge l1' l2
     end.
 
+  Definition fold_right (A: Type) (f: key -> V -> A -> A) (acc: A) (l: t V) : A :=
+    List.fold_right (fun '(k, v) a => f k v a) acc l.
+
   Definition fold_left (A: Type) (f: A -> key -> V -> A) (l: t V) (acc: A) : A :=
     List.fold_left (fun a '(k, v) => f a k v) l acc.
 
@@ -168,6 +171,7 @@ Module MapList.
   Arguments mem {key V}.
   Arguments nodup {key V}.
   Arguments merge {key V}.
+  Arguments fold_right {key V A}.
   Arguments fold_left {key V A}.
   Arguments filter {key V}.
   Arguments empty {key V}.

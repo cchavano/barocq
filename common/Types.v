@@ -443,15 +443,6 @@ Proof.
   subst t1. exact x.
 Defined.
 
-(** * Algebraic Data Type definitions for Barocq and typing environments  *)
-
-Inductive adt_definition (A: Type) : Type :=
-  | Adt_enum (elems: list ident) : adt_definition A
-  | Adt_record (fields: list (ident * A)) : adt_definition A.
-
-Arguments Adt_enum {A}.
-Arguments Adt_record {A}.
-
 (** Ordered Type *)
 Require Import OrderedType.
 

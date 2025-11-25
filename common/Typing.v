@@ -7,99 +7,81 @@ Import Syntax.Typed.
 
 (** ** Identifiers to type definitions + enum constructors to enum identifier *)
 
-Record benv := mk_benv {
-  benv_defs : STree.t (adt_definition field_descr);
-  benv_constr_types : STree.t ident
-}.
+Module TEnv.
 
-Definition benv_empty : benv := {|
-  benv_defs := STree.empty;
-  benv_constr_types := STree.empty
-|}.
+  Set Implicit Arguments.
 
-Definition benv_get_edef (be: benv) (x: ident) : res (list ident) :=
-  match STree.get x be.(benv_defs) with
-  | Some (Adt_enum elems) => ret elems
-  | _ => fail
+  Section TYP.
+
+  Variable typ : Type.
+
+  Record t := mk_tenv {
+    tenv_defs : STree.t (type_def typ);
+    tenv_constr_types : STree.t ident;
+  }.
+
+  Definition empty : t := {|
+    tenv_defs := STree.empty;
+    tenv_constr_types := STree.empty
+  |}.
+
+  Definition get_edef (te: t) (x: ident) : res (list ident) :=
+    match STree.get x (tenv_defs te) with
+    | Some (TdEnum elems) => ret elems
+    | _ => fail
+    end.
+
+  Definition get_rdef (te: t) (x: ident) : res (smaplist typ) :=
+    match STree.get x (tenv_defs te) with
+    | Some (TdRecord fields) => ret fields
+    | _ => fail
+    end.
+
+  Definition get_constr_typ (te: t) (x: ident) : res ident :=
+    err_of_opt (STree.get x (tenv_constr_types te)).
+
+  Definition update_constr_types (te: t) (elem: ident) (eid: ident) : res t :=
+    let elems := (tenv_constr_types te) in
+    match STree.get elem elems with
+    | Some _ => fail
+    | None =>
+        ret {|
+          tenv_defs := (tenv_defs te);
+          tenv_constr_types := STree.set elem eid elems
+        |}
   end.
 
-Definition benv_get_rdef (be: benv) (x: ident) : res (smaplist btyp) :=
-  match STree.get x be.(benv_defs) with
-  | Some (Adt_record fields) => ret (MapList.map fst fields)
-  | _ => fail
-  end.
+  Definition update_defs (te: t) (x: ident) (td: type_def typ) : res t :=
+    let types := tenv_defs te in
+    match STree.get x types with
+    | Some _ => fail
+    | None =>
+        let te' := mk_tenv (STree.set x td types) (tenv_constr_types te) in
+        match td with
+        | TdEnum elems =>
+            list_fold_left_err
+              (fun acc_te constr => update_constr_types acc_te constr x)
+              elems
+              (ret te')
+        | _ => ret te'
+        end
+    end.
 
-Definition benv_get_constr_typ (be: benv) (x: ident) : res ident :=
-  err_of_opt (STree.get x be.(benv_constr_types)).
+  Definition build (types: smaplist (type_def typ)) : res t :=
+    Utils.list_fold_left_err
+      (fun acc_be '(tid, td) => update_defs acc_be tid td)
+      types
+      (eret empty).
 
-Definition benv_update_defs (be: benv) (x: ident) (adt: adt_definition field_descr) : res benv :=
-  let types := be.(benv_defs) in
-  match STree.get x types with
-  | Some _ => fail
-  | None =>
-      ret {|
-        benv_defs := STree.set x adt types;
-        benv_constr_types := be.(benv_constr_types)
-      |}
-  end.
+  End TYP.
 
-Definition benv_update_constr_types (be: benv) (elem: ident) (eid: ident) : res benv :=
-  let elems := be.(benv_constr_types) in
-  match STree.get elem be.(benv_constr_types) with
-  | Some _ => fail
-  | None =>
-      ret {|
-        benv_defs := be.(benv_defs);
-        benv_constr_types := STree.set elem eid elems
-      |}
-  end.
+End TEnv.
 
-Record tenv := mk_tenv {
-  tenv_defs : STree.t (adt_definition typ);
-  tenv_constr_types : STree.t ident
-}.
+Arguments TEnv.empty {typ}.
 
-Definition tenv_empty : tenv := {|
-  tenv_defs := STree.empty;
-  tenv_constr_types := STree.empty
-|}.
+Definition benv := TEnv.t field_descr.
 
-Definition tenv_get_edef (be: tenv) (x: ident) : res (list ident) :=
-  match STree.get x be.(tenv_defs) with
-  | Some (Adt_enum elems) => ret elems
-  | _ => fail
-  end.
-
-Definition tenv_get_rdef (be: tenv) (x: ident) : res (smaplist typ) :=
-  match STree.get x be.(tenv_defs) with
-  | Some (Adt_record fields) => ret fields
-  | _ => fail
-  end.
-
-Definition tenv_get_constr_typ (be: tenv) (x: ident) : res ident :=
-  err_of_opt (STree.get x be.(tenv_constr_types)).
-
-Definition tenv_update_defs (be: tenv) (x: ident) (adt: adt_definition typ) : res tenv :=
-  let types := be.(tenv_defs) in
-  match STree.get x types with
-  | Some _ => fail
-  | None =>
-      ret {|
-        tenv_defs := STree.set x adt types;
-        tenv_constr_types := be.(tenv_constr_types)
-      |}
-  end.
-
-Definition tenv_update_constr_types (be: tenv) (elem: ident) (eid: ident) : res tenv :=
-  let elems := be.(tenv_constr_types) in
-  match STree.get elem be.(tenv_constr_types) with
-  | Some _ => fail
-  | None =>
-      ret {|
-        tenv_defs := be.(tenv_defs);
-        tenv_constr_types := STree.set elem eid elems
-      |}
-  end.
+Definition tenv := TEnv.t typ.
 
 (** ** Conversion of concrete types to plain types *)
 
@@ -112,10 +94,10 @@ Fixpoint btyp_to_typ (te: tenv) (ty: btyp) : res typ :=
       let* ta' := btyp_to_typ te ta in 
       ret (TArray ta')
   | BEnum tn =>
-      let* elems := tenv_get_edef te tn in
+      let* elems := TEnv.get_edef te tn in
       ret (TEnum tn elems) 
   | BRecord tr _ =>
-      let* fields := tenv_get_rdef te tr in
+      let* fields := TEnv.get_rdef te tr in
       ret (TRecord tr fields)
   | BFun tparams tret =>
       let* tparams' := mmap (btyp_to_typ te) tparams in
@@ -124,25 +106,24 @@ Fixpoint btyp_to_typ (te: tenv) (ty: btyp) : res typ :=
   | BAbs t => ret (TAbs t)
   end.
 
-Definition tenv_update_type_def (te:tenv) (t : type_def field_descr) : res tenv :=
+Definition tenv_update_type_def (te:tenv) (tid: ident) (t : type_def field_descr) : res tenv :=
   match t with
-  | TdEnum {| ed_name := x ; ed_elems := l |} =>
-      tenv_update_defs te x (Adt_enum l)
-  | TdRecord {| rd_name := x ; rd_fields := l |} =>
-      let* l' := MapList.map_err (btyp_to_typ te) (MapList.map fst l) in
-      tenv_update_defs te x (Adt_record l')
-  | TdAbstract id s => OK te
+  | TdEnum elems =>
+      TEnv.update_defs te tid (TdEnum elems)
+  | TdRecord fields =>
+      let* fields' := MapList.map_err (btyp_to_typ te) (MapList.map fst fields) in
+      TEnv.update_defs te tid (TdRecord fields')
   end.
 
-Fixpoint xtenv_of_type_defs (te:tenv) (tds: list (type_def field_descr)) :=
+Fixpoint xtenv_of_type_defs (te:tenv) (tds: smaplist (type_def field_descr)) : res tenv :=
   match tds with
   | nil => OK te
-  | t::tds => let* te' := tenv_update_type_def te t in
+  | (tid, t)::tds => let* te' := tenv_update_type_def te tid t in
               xtenv_of_type_defs te' tds
   end.
 
-Definition tenv_of_type_defs (tds: list (type_def field_descr)) :=
-  xtenv_of_type_defs tenv_empty tds.
+Definition tenv_of_type_defs (tds: smaplist (type_def field_descr)) : res tenv :=
+  xtenv_of_type_defs TEnv.empty tds.
 
 Definition typof_literal (l: literal) : btyp :=
   match l with
@@ -210,7 +191,7 @@ Definition lcontext_update (lx: lcontext) (x: ident) (ty: btyp) : res lcontext :
   end.
 
 Definition typof_constr (be: benv) (c: ident) : res btyp :=
-  match benv_get_constr_typ be c with
+  match TEnv.get_constr_typ be c with
   | OK eid => ret (BEnum eid)
   | Error _ => failwith "Typing.typof_constr: undefined enum constructor"
   end.
@@ -333,30 +314,30 @@ Definition typecheck_array_set (arch: Target.archi) (ty1 ty2 ty3: btyp) : res bt
 Definition typecheck_record_proj (be: benv) (ty: btyp) (x: ident) : res btyp :=
   match ty with
   | BRecord t _ =>
-      let/catch fields := benv_get_rdef be t
+      let/catch fields := TEnv.get_rdef be t
         /> "Typing.typecheck_record_proj: unknown record type"
       in
-      btypof_field x fields
+      btypof_field x (MapList.map fst fields)
   | _ => failwith "Typing.typecheck_record_proj: record type expected"
   end.
 
 Definition typecheck_record_proj2 (be: benv) (ty: btyp) (x: ident) : res field_descr :=
   match ty with
   | BRecord t _ =>
-      match STree.get t be.(benv_defs) with
-      | Some (Adt_record fields) => MapList.find_err Ident.eq_dec x fields
-      | _ => failwith "Typing.typecheck_record_proj2: unknown record type"
-      end
-  | _ => failwith "Typing.typecheck_record_proj2: record type expected"
+      let/catch fields := TEnv.get_rdef be t
+        /> "Typing.typecheck_record_proj: unknown record type"
+      in
+      MapList.find_err Ident.eq_dec x fields
+  | _ => failwith "Typing.typecheck_record_proj: record type expected"
   end.
 
 Definition typecheck_record_update (be: benv) (ty1 ty2: btyp) (x: ident) : res btyp :=
   match ty1 with
   | BRecord t _ =>
-      let/catch fields := benv_get_rdef be t
+      let/catch fields := TEnv.get_rdef be t
         /> "Typing.typecheck_record_proj: unknown record type"
       in
-      let* tx := btypof_field x fields in
+      let* tx := btypof_field x (MapList.map fst fields) in
       if btyp_eq_dec tx ty2 then ret ty1
       else failwith "Typing.typecheck_record_update: type mismatch"
   | _ => failwith "Typing.typecheck_record_update: record type expected"
@@ -400,21 +381,6 @@ Definition typecheck_call (ty: btyp) (targs: list btyp) : res btyp :=
   | _ => failwith "Typing.typecheck_call: function type expected"
   end.
 
-(* Fixpoint btyp_eq_lit (t1 t2: btyp) : bool :=
-  match t1, t2 with
-  | BBool, BBool => true
-  | BInt32 s1, BInt32 s2
-  | BInt64 s1, BInt64 s2 =>
-      if signedness_eq_dec s1 s2 then true else false
-  | BArray ta1 _, BArray ta2 _ =>
-      btyp_eq_lit ta1 ta2
-  | BRecord r1, BRecord r2 =>
-      if Ident.eq_dec r1 r2 then true else false
-  | BEnum e1, BEnum e2 =>
-      if Ident.eq_dec e1 e2 then true else false
-  | _, _ => false
-  end. *)
-
 Fixpoint typecheck_array_lit (a: array literal) : res btyp :=
   match a with
   | nil => failwith "Typing.typecheck_array_lit: empty array"
@@ -448,8 +414,8 @@ Fixpoint typecheck_literal (be: benv) (l: Syntax.literal) : res literal :=
       else fail
   | Syntax.LRecord rc ub x =>
       let* rc' := MapList.map_err (typecheck_literal be) rc in
-      let* t := benv_get_rdef be x in
-      if typecheck_struct_lit rc' t then ret (LRecord rc' ub x)
+      let* t := TEnv.get_rdef be x in
+      if typecheck_struct_lit rc' (MapList.map fst t) then ret (LRecord rc' ub x)
       else failwith "Typing.typecheck_literal: record type mismatch"
   end.
 
@@ -489,7 +455,7 @@ Fixpoint typecheck_match_rec (be: benv) (te: btyp) (elems: list ident) (unmatche
 Definition typecheck_match (be: benv) (ty: btyp) (cases: list (pattern * btyp)) : res btyp :=
   match ty with
   | BEnum te =>
-      let* elems := benv_get_edef be te in
+      let* elems := TEnv.get_edef be te in
       typecheck_match_rec be ty elems elems cases
   | _ => failwith "Typing.typecheck_match: enum type expected"
   end.

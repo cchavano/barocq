@@ -44,8 +44,8 @@ let rec mtyp_to_rocq (shver : BarocqShallowgen.shallow_version) (ty : mtyp) :
 and opt_parens (shver : BarocqShallowgen.shallow_version) (ty : mtyp) : string =
   PrintUtils.opt_parens is_simpl_mtyp (mtyp_to_rocq shver) ty
 
-let enum_def_to_rocq (ed : enum_def) : string =
-  let eid = ident_to_string ed.ed_name in
+let enum_def_to_rocq (ed_name : ident) (ed_elems : ident list) : string =
+  let eid = ident_to_string ed_name in
   sprintf
     "Definition elems_of_%s : list ident := [\n\
      %s\n\
@@ -55,7 +55,7 @@ let enum_def_to_rocq (ed : enum_def) : string =
     (list_to_string
        ~sep:";\n"
        (fun cid -> sprintf "%s%s" indent (Deepgen.ident_to_deep cid))
-       ed.ed_elems)
+       ed_elems)
     eid
     eid
 
@@ -65,8 +65,9 @@ let field_typ_to_rocq ((fname, fty) : ident * mtyp) : string =
     (Deepgen.ident_to_deep fname)
     (mtyp_to_rocq BarocqShallowgen.ShallowB fty)
 
-let record_def_to_rocq (rd : record_def) : string =
-  let rid = ident_to_string rd.rd_name in
+let record_def_to_rocq (rd_name : ident) (rd_fields : mtyp Maps2.smaplist) :
+    string =
+  let rid = ident_to_string rd_name in
   sprintf
     "Definition fields_of_%s : list (ident * Type) := [\n\
      %s\n\
@@ -76,29 +77,21 @@ let record_def_to_rocq (rd : record_def) : string =
     (list_to_string
        ~sep:";\n"
        (fun field -> sprintf "%s%s" indent (field_typ_to_rocq field))
-       rd.rd_fields)
+       rd_fields)
     rid
     rid
 
-let type_def_to_rocq (td : type_def) : string =
+let type_def_to_rocq ((tname, td) : ident * mtyp type_def) : string =
   match td with
-  | TdEnum ed -> enum_def_to_rocq ed
-  | TdRecord rd -> record_def_to_rocq rd
-  | TdAbstract _ -> ""
+  | TdEnum elems -> enum_def_to_rocq tname elems
+  | TdRecord fields -> record_def_to_rocq tname fields
 
 let print_btypes (out : out_channel) (prog : program) : unit =
-  let types =
-    List.filter
-      (fun td ->
-        match td with
-        | TdAbstract _ -> false
-        | _ -> true)
-      prog.prog_types
-  in
-  print_list out ~delim:("", "\n") ~sep:"\n\n" type_def_to_rocq types
+  print_list out ~delim:("", "\n") ~sep:"\n\n" type_def_to_rocq prog.prog_types
 
-let print_enum_constructors (out : out_channel) (ed : enum_def) : unit =
-  let eid = ident_to_string ed.ed_name in
+let print_enum_constructors (out : out_channel)
+    ((ed_name, ed_elems) : ident * ident list) : unit =
+  let eid = ident_to_string ed_name in
   let rec aux (elems : ident list) : unit =
     match elems with
     | [] -> ()
@@ -113,7 +106,7 @@ let print_enum_constructors (out : out_channel) (ed : enum_def) : unit =
           (Deepgen.ident_to_deep i);
         aux elems'
   in
-  aux ed.ed_elems
+  aux ed_elems
 
 type direction =
   | RtoB
@@ -187,8 +180,8 @@ module EnumConv = struct
           (Deepgen.ident_to_deep i)
           (aux elems' "inr" "")
 
-  let gen_econv_RtoB (ed : enum_def) : string =
-    let eid = ident_to_string ed.ed_name in
+  let gen_econv_RtoB ((ed_name, ed_elems) : ident * ident list) : string =
+    let eid = ident_to_string ed_name in
     sprintf
       "Definition econv_%s_RtoB (e: %s.%s) : %s :=\n%smatch e with\n%s\n%send."
       eid
@@ -196,7 +189,7 @@ module EnumConv = struct
       eid
       eid
       indent
-      (econv_elems_RtoB ed.ed_elems)
+      (econv_elems_RtoB ed_elems)
       indent
 
   let econv_elems_BtoR (elems : ident list) : string =
@@ -234,8 +227,8 @@ module EnumConv = struct
           (ident_to_string i)
           (aux elems' "inr" "")
 
-  let gen_econv_BtoR (ed : enum_def) : string =
-    let eid = ident_to_string ed.ed_name in
+  let gen_econv_BtoR ((ed_name, ed_elems) : ident * ident list) : string =
+    let eid = ident_to_string ed_name in
     sprintf
       "Definition econv_%s_BtoR (e: %s) : %s.%s :=\n%smatch e with\n%s\n%send."
       eid
@@ -243,11 +236,11 @@ module EnumConv = struct
       !shallowR_file
       eid
       indent
-      (econv_elems_BtoR ed.ed_elems)
+      (econv_elems_BtoR ed_elems)
       indent
 
-  let gen_econv_inv1_thm (ed : enum_def) : string =
-    let eid = ident_to_string ed.ed_name in
+  let gen_econv_inv1_thm ((ed_name, ed_elems) : ident * ident list) : string =
+    let eid = ident_to_string ed_name in
     sprintf
       "Theorem econv_%s_inv1 :\n\
        %sforall (e: %s.%s),\n\
@@ -264,8 +257,8 @@ module EnumConv = struct
       eid
       indent
 
-  let gen_econv_inv2_thm (ed : enum_def) : string =
-    let eid = ident_to_string ed.ed_name in
+  let gen_econv_inv2_thm ((ed_name, ed_elems) : ident * ident list) : string =
+    let eid = ident_to_string ed_name in
     sprintf
       "Theorem econv_%s_inv2 :\n\
        %sforall (e: %s),\n\
@@ -283,9 +276,9 @@ module EnumConv = struct
       indent
       indent
 
-  let gen_of_i32_corres (ed : enum_def) : string =
-    let eid = ident_to_string ed.ed_name in
-    let nb_elems = List.length ed.ed_elems in
+  let gen_of_i32_corres ((ed_name, ed_elems) : ident * ident list) : string =
+    let eid = ident_to_string ed_name in
+    let nb_elems = List.length ed_elems in
     let proof : string =
       sprintf
         "%sintro. unfold Benum.of_i32. unfold cast_i32_to_%s.\n\
@@ -324,8 +317,8 @@ module EnumConv = struct
       eid
       proof
 
-  let gen_to_32_corres (ed : enum_def) : string =
-    let eid = ident_to_string ed.ed_name in
+  let gen_to_32_corres ((ed_name, ed_elems) : ident * ident list) : string =
+    let eid = ident_to_string ed_name in
     sprintf
       "Lemma cast_%s_to_i32_corres :\n\
        %sforall (e: %s.%s),\n\
@@ -345,8 +338,8 @@ module EnumConv = struct
       eid
       indent
 
-  let gen_eq_corres (ed : enum_def) : string =
-    let eid = ident_to_string ed.ed_name in
+  let gen_eq_corres ((ed_name, ed_elems) : ident * ident list) : string =
+    let eid = ident_to_string ed_name in
     sprintf
       "Lemma enum_eq_%s_corres :\n\
        %sforall (e1 e2: %s.%s),\n\
@@ -372,9 +365,10 @@ module EnumConv = struct
       indent
       eid
 
-  let print_constructors_make (out : out_channel) (enums : enum_def list) : unit
-      =
-    let enum_def_constructors_make (ed : enum_def) : unit =
+  let print_constructors_make (out : out_channel)
+      (enums : ident list Maps2.smaplist) : unit =
+    let enum_def_constructors_make (ed_name : ident) (ed_elems : ident list) :
+        unit =
       print_list
         out
         ~delim:("", "\n")
@@ -389,21 +383,22 @@ module EnumConv = struct
              Qed."
             cid
             indent
-            (ident_to_string ed.ed_name)
+            (ident_to_string ed_name)
             (Deepgen.ident_to_deep constr)
             cid
             indent)
-        ed.ed_elems
+        ed_elems
     in
     List.iter
-      (fun ed ->
-        enum_def_constructors_make ed;
+      (fun (ed_name, ed_elems) ->
+        enum_def_constructors_make ed_name ed_elems;
         fprintf out "\n")
       enums
 
-  let print_constructors_conv_corres (out : out_channel) (enums : enum_def list)
-      : unit =
-    let enum_def_constructors_conv_corres (ed : enum_def) : unit =
+  let print_constructors_conv_corres (out : out_channel)
+      (enums : ident list Maps2.smaplist) : unit =
+    let enum_def_constructors_conv_corres (ed_name : ident)
+        (ed_elems : ident list) : unit =
       print_list
         out
         ~delim:("", "\n\n")
@@ -419,11 +414,11 @@ module EnumConv = struct
             cid
             indent
             cid
-            (ident_to_string ed.ed_name)
+            (ident_to_string ed_name)
             !shallowR_file
             cid
             indent)
-        ed.ed_elems;
+        ed_elems;
       print_list
         out
         ~delim:("", "\n")
@@ -438,34 +433,37 @@ module EnumConv = struct
              Qed."
             cid
             indent
-            (ident_to_string ed.ed_name)
+            (ident_to_string ed_name)
             cid
             !shallowR_file
             cid
             indent)
-        ed.ed_elems
+        ed_elems
     in
     List.iter
-      (fun ed ->
-        enum_def_constructors_conv_corres ed;
+      (fun (ed_name, ed_elems) ->
+        enum_def_constructors_conv_corres ed_name ed_elems;
         fprintf out "\n")
       enums
 
-  let print_conversions (out : out_channel) (enums : enum_def list) : unit =
+  let print_conversions (out : out_channel) (enums : ident list Maps2.smaplist)
+      : unit =
     fprintf out "(** * Barocq <-> Rocq enum conversions *)\n\n";
     print_list out ~delim:("", "\n\n") ~sep:"\n\n" gen_econv_RtoB enums;
     print_list out ~delim:("", "\n") ~sep:"\n\n" gen_econv_BtoR enums
 
-  let print_inversibility (out : out_channel) (enums : enum_def list) : unit =
+  let print_inversibility (out : out_channel)
+      (enums : ident list Maps2.smaplist) : unit =
     print_list out ~delim:("", "\n\n") ~sep:"\n\n" gen_econv_inv1_thm enums;
     print_list out ~delim:("", "\n") ~sep:"\n\n" gen_econv_inv2_thm enums
 
-  let print_i32_casts_corres (out : out_channel) (enums : enum_def list) : unit
-      =
+  let print_i32_casts_corres (out : out_channel)
+      (enums : ident list Maps2.smaplist) : unit =
     print_list out ~delim:("", "\n\n") ~sep:"\n\n" gen_of_i32_corres enums;
     print_list out ~delim:("", "\n") ~sep:"\n\n" gen_to_32_corres enums
 
-  let print_eq_corres (out : out_channel) (enums : enum_def list) : unit =
+  let print_eq_corres (out : out_channel) (enums : ident list Maps2.smaplist) :
+      unit =
     print_list out ~delim:("", "\n") ~sep:"\n\n" gen_eq_corres enums
 end
 
@@ -486,18 +484,17 @@ module RecordConv = struct
       (Deepgen.ident_to_deep fname)
       (conv_value_opt_parens RtoB fty v)
 
-  let rconv_RtoB (rd : record_def) (arg : string) : string =
+  let rconv_RtoB (rd_name : string) (rd_fields : mtyp Maps2.smaplist)
+      (arg : string) : string =
     List.fold_right
       (fun (fname, fty) acc ->
-        sprintf
-          "(%s, %s)"
-          (rconv_field_RtoB (ident_to_string rd.rd_name) fname fty arg)
-          acc)
-      rd.rd_fields
+        sprintf "(%s, %s)" (rconv_field_RtoB rd_name fname fty arg) acc)
+      rd_fields
       "tt"
 
-  let gen_rconv_RtoB (rd : record_def) : string =
-    let rid = ident_to_string rd.rd_name in
+  let gen_rconv_RtoB ((rd_name, rd_fields) : ident * mtyp Maps2.smaplist) :
+      string =
+    let rid = ident_to_string rd_name in
     sprintf
       "Definition rconv_%s_RtoB (r: %s.%s) : %s :=\n%s%s."
       rid
@@ -505,7 +502,7 @@ module RecordConv = struct
       rid
       rid
       indent
-      (rconv_RtoB rd "r")
+      (rconv_RtoB rid rd_fields "r")
 
   (* Barocq to Rocq *)
 
@@ -524,23 +521,23 @@ module RecordConv = struct
             v_conv
             (rconv_letmon_BtoR fields')
 
-  let rconv_BtoR (rd : record_def) : string =
+  let rconv_BtoR (rd_name : string) (rd_fields : mtyp Maps2.smaplist) : string =
     let match_case =
       List.fold_right
         (fun (fname, fty) acc ->
           sprintf "(Field _ %s, %s)" (ident_to_string fname) acc)
-        rd.rd_fields
+        rd_fields
         "tt"
     in
     let mk_record =
       sprintf
         "mk_%s %s"
-        (ident_to_string rd.rd_name)
+        rd_name
         (list_to_string
            ~sep:" "
            (fun (fname, fty) ->
              conv_value_opt_parens BtoR fty (ident_to_string fname))
-           rd.rd_fields)
+           rd_fields)
     in
     sprintf
       "%smatch r with\n%s| %s =>\n%s%s\n%send"
@@ -551,27 +548,29 @@ module RecordConv = struct
       mk_record
       indent
 
-  let gen_rconv_BtoR (rd : record_def) : string =
-    let rid = ident_to_string rd.rd_name in
+  let gen_rconv_BtoR ((rd_name, rd_fields) : ident * mtyp Maps2.smaplist) :
+      string =
+    let rid = ident_to_string rd_name in
     sprintf
       "Definition rconv_%s_BtoR (r: %s) : %s.%s :=\n%s."
       rid
       rid
       !shallowR_file
       rid
-      (rconv_BtoR rd)
+      (rconv_BtoR rid rd_fields)
 
   (* Main printing function *)
 
-  let print_conversions (out : out_channel) (records : record_def list) : unit =
+  let print_conversions (out : out_channel)
+      (records : mtyp Maps2.smaplist Maps2.smaplist) : unit =
     fprintf out "(** * Barocq <-> Rocq record conversions **)\n\n";
     print_list out ~delim:("", "\n\n") ~sep:"\n\n" gen_rconv_RtoB records;
     print_list out ~delim:("", "\n") ~sep:"\n\n" gen_rconv_BtoR records
 
   (* Correctness theorems *)
 
-  (* let gen_rconv_RtoB_correctness_thm (rd : record_def) : string =
-    let rid = ident_to_string rd.rd_name in
+  (* let gen_rconv_RtoB_correctness_thm (rd_name: ident) (rd_fields: mtyp smaplist) : string =
+    let rid = ident_to_string rd_name in
     let forall = sprintf "forall (r: %s.%s) (b: %s)," !shallowR_file rid rid in
     let conv_call = sprintf "rconv_%s_RtoB r = b" rid in
     let fields_conv =
@@ -591,7 +590,7 @@ module RecordConv = struct
             rid
             (Deepgen.ident_to_deep fname)
             rproj)
-        rd.rd_fields
+        rd_fields
     in
     let proof = sprintf "Proof.\n%sintros. subst. repeat split.\nQed." indent in
     sprintf
@@ -605,8 +604,8 @@ module RecordConv = struct
       proof *)
 
   let print_rconv_RtoB_proj_correctness_thm (out : out_channel)
-      (rd : record_def) : unit =
-    let rid = ident_to_string rd.rd_name in
+      ((rd_name, rd_fields) : ident * mtyp Maps2.smaplist) : unit =
+    let rid = ident_to_string rd_name in
     let field_proj_thm ((fid, fty) : ident * mtyp) : string =
       let rproj =
         conv_value
@@ -641,11 +640,11 @@ module RecordConv = struct
         proj_correct
         indent
     in
-    print_list out ~delim:("", "\n\n") ~sep:"\n\n" field_proj_thm rd.rd_fields
+    print_list out ~delim:("", "\n\n") ~sep:"\n\n" field_proj_thm rd_fields
 
   let print_rconv_RtoB_update_correctness_thm (out : out_channel)
-      (rd : record_def) : unit =
-    let rid = ident_to_string rd.rd_name in
+      ((rd_name, rd_fields) : ident * mtyp Maps2.smaplist) : unit =
+    let rid = ident_to_string rd_name in
     let field_update_thm ((fid, fty) : ident * mtyp) =
       let update_correct =
         sprintf
@@ -676,10 +675,11 @@ module RecordConv = struct
         update_correct
         indent
     in
-    print_list out ~delim:("", "\n\n") ~sep:"\n\n" field_update_thm rd.rd_fields
+    print_list out ~delim:("", "\n\n") ~sep:"\n\n" field_update_thm rd_fields
 
-  let gen_rconv_BtoR_correctness_thm (rd : record_def) : string =
-    let rid = ident_to_string rd.rd_name in
+  let gen_rconv_BtoR_correctness_thm
+      ((rd_name, rd_fields) : ident * mtyp Maps2.smaplist) : string =
+    let rid = ident_to_string rd_name in
     let forall = sprintf "forall (b: %s) (r: %s.%s)," rid !shallowR_file rid in
     let conv_call = sprintf "rconv_%s_BtoR b = r" rid in
     let field_conv (fname : ident) (fty : mtyp) : string =
@@ -706,7 +706,7 @@ module RecordConv = struct
       list_to_string
         ~sep:" /\\\n"
         (fun (fname, fty) -> field_conv fname fty)
-        rd.rd_fields
+        rd_fields
     in
     let proof =
       sprintf
@@ -744,17 +744,16 @@ module RecordConv = struct
         sprintf "apply rconv_%s_inv%s." (ident_to_string rid) inv_kind
     | _ -> ""
 
-  let gen_rconv_inv1_thm (rd : record_def) : string =
-    let rid = ident_to_string rd.rd_name in
+  let gen_rconv_inv1_thm ((rd_name, rd_fields) : ident * mtyp Maps2.smaplist) :
+      string =
+    let rid = ident_to_string rd_name in
     let proof =
       sprintf
         "%sintro. destruct r; simpl. f_equal.\n%s"
         indent
         (list_to_string
            (fun s -> if s <> "" then sprintf "%s- %s\n" indent s else s)
-           (List.map
-              (fun (_, fty) -> rconv_field_proof_inv "1" fty)
-              rd.rd_fields))
+           (List.map (fun (_, fty) -> rconv_field_proof_inv "1" fty) rd_fields))
     in
     sprintf
       "Theorem rconv_%s_inv1 :\n\
@@ -771,17 +770,18 @@ module RecordConv = struct
       rid
       proof
 
-  let gen_rconv_inv2_thm (rd : record_def) : string =
+  let gen_rconv_inv2_thm ((rd_name, rd_fields) : ident * mtyp Maps2.smaplist) :
+      string =
     let rec field_need_conv (fty : mtyp) : bool =
       match fty with
       | MArray ta -> field_need_conv ta
       | MEnum _ | MRecord _ -> true
       | _ -> false
     in
-    let rid = ident_to_string rd.rd_name in
+    let rid = ident_to_string rd_name in
     let proof =
       let refl_of_f_equal =
-        if List.exists (fun (_, fty) -> field_need_conv fty) rd.rd_fields then
+        if List.exists (fun (_, fty) -> field_need_conv fty) rd_fields then
           "simpl; repeat f_equal"
         else "reflexivity"
       in
@@ -793,9 +793,7 @@ module RecordConv = struct
         refl_of_f_equal
         (list_to_string
            (fun s -> if s <> "" then sprintf "%s- %s\n" indent s else s)
-           (List.map
-              (fun (_, fty) -> rconv_field_proof_inv "2" fty)
-              rd.rd_fields))
+           (List.map (fun (_, fty) -> rconv_field_proof_inv "2" fty) rd_fields))
     in
     sprintf
       "Theorem rconv_%s_inv2 :\n\
@@ -811,8 +809,8 @@ module RecordConv = struct
       rid
       proof
 
-  let print_correctness_lemmas (out : out_channel) (records : record_def list) :
-      unit =
+  let print_correctness_lemmas (out : out_channel)
+      (records : mtyp Maps2.smaplist Maps2.smaplist) : unit =
     List.iter (print_rconv_RtoB_proj_correctness_thm out) records;
     List.iter (print_rconv_RtoB_update_correctness_thm out) records;
     print_list
@@ -840,8 +838,8 @@ module RecordConv = struct
       indent
       indent
 
-  let print_inversibility (out : out_channel) (records : record_def list) : unit
-      =
+  let print_inversibility (out : out_channel)
+      (records : mtyp Maps2.smaplist Maps2.smaplist) : unit =
     print_array_conv_inversibility out;
     fprintf out "\n";
     print_list out ~delim:("", "\n\n") ~sep:"\n\n" gen_rconv_inv1_thm records;
@@ -865,8 +863,8 @@ let print (out : out_channel) (prog : program) : unit =
   shallowR_file := sprintf "%s_ShallowR" !coqlib;
   fprintf out "%s" (imports ());
   let types = prog.prog_types in
-  let abstypes = get_abstract_typedefs types in
-  if abstypes <> [] then begin
+  let tabs = prog.prog_tabs in
+  if tabs <> [] then begin
     fprintf out "\n";
     fprintf out "(** * Abstract types *)\n\n";
     print_list
@@ -878,13 +876,13 @@ let print (out : out_channel) (prog : program) : unit =
           (ident_to_string tid)
           !shallowR_file
           (ident_to_string tid))
-      abstypes
+      tabs
   end;
   fprintf out "\n";
   fprintf out "(** * Type definitions *)\n\n";
   print_btypes out prog;
-  let enums = get_enum_typedefs types in
-  let records = get_record_typedefs types in
+  let enums = Syntax.get_enum_typedefs types in
+  let records = Syntax.get_record_typedefs types in
   if enums <> [] then begin
     fprintf out "\n";
     fprintf out "(** * Enum constructors *)\n";

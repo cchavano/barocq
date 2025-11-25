@@ -1,5 +1,5 @@
 From compcert Require Import Ctypes Integers.
-From BarocqComp Require Import Barray Benum Utils Types Syntax.
+From BarocqComp Require Import Barray Benum Maps2 Utils Types Syntax.
 
 Module BNF.
 
@@ -117,40 +117,6 @@ Module Monadic.
 
   (** ** Programs *)
 
-  Definition record_def : Type := Syntax.record_def mtyp.
-
-  Definition type_def : Type := Syntax.type_def mtyp.
-
   Definition program : Type := Syntax.program globdef mtyp.
-
-  Definition get_enum_typedefs (types: list type_def) : list enum_def :=
-    List.fold_right
-      (fun td acc =>
-        match td with
-        | TdEnum ed => cons ed acc
-        | _ => acc
-        end)
-      nil
-      types.
-
-  Definition get_record_typedefs (types: list type_def) : list record_def :=
-    List.fold_right
-      (fun td acc =>
-        match td with
-        | TdRecord rd => cons rd acc
-        | _ => acc
-        end)
-      nil
-      types.
-
-  Definition get_abstract_typedefs (types: list type_def) : list (ident * struct_or_union) :=
-    List.fold_right
-      (fun td acc =>
-        match td with
-        | TdAbstract tid su => cons (tid, su) acc
-        | _ => acc
-        end)
-      nil
-      types.
 
 End Monadic.

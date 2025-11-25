@@ -233,43 +233,33 @@ Definition norm_function (f: Barocq.function) : res BarocqBNF.function :=
     fn_body := body_norm
   |}.
 
-Fixpoint norm_program_rec (prog: Barocq.program) : res (list BarocqBNF.globdef * list (type_def field_descr)) :=
+Fixpoint norm_program_rec (prog: Barocq.program) : res (BarocqBNF.program) :=
   match prog with
-  | nil => eret (nil, nil)
+  | nil => eret (mk_program nil nil nil)
   | d :: prog' =>
+      let* b_prog := norm_program_rec prog' in
+      let '(mk_program b_defs b_types b_tabs) := b_prog in
       match d with
-      | Barocq.DefType x adt =>
-          let* (ndefs, types) := norm_program_rec prog' in
-          let td :=
-            match adt with
-            | Adt_enum elems => TdEnum {| ed_name := x; ed_elems := elems |}
-            | Adt_record fields => TdRecord {| rd_name := x; rd_fields := fields |}
-            end
-          in
-          eret (ndefs,  td :: types)
+      | Barocq.DefType x td =>
+          eret (mk_program b_defs ((x, td) :: b_types) b_tabs)
       | Barocq.DefConst x l ty =>
-          let* (ndefs, types) := norm_program_rec prog' in
-          eret (Syntax.DefConst x l ty :: ndefs, types)
+          let b_defs' := Syntax.DefConst x l ty :: b_defs in
+          eret (mk_program b_defs' b_types b_tabs)
       | Barocq.DefFun x f =>
           let* f' := norm_function f in
-          let* (ndefs, types) := norm_program_rec prog' in
-          eret (Syntax.DefFun x f' :: ndefs, types)
-      | Barocq.DeclType t tk =>
-          let* (ndefs, types) := norm_program_rec prog' in
-          eret (ndefs, TdAbstract t tk :: types)
+          let b_defs' := Syntax.DefFun x f' :: b_defs in
+          eret (mk_program b_defs' b_types b_tabs)
+      | Barocq.DeclType t su =>
+          eret (mk_program b_defs b_types ((t, su) :: b_tabs))
       | Barocq.DeclConst x ty =>
-          let* (ndefs, types) := norm_program_rec prog' in
-          eret (Syntax.DeclConst x ty :: ndefs, types)
+          let b_defs' := Syntax.DeclConst x ty :: b_defs in
+          eret (mk_program b_defs' b_types b_tabs)
       | Barocq.DeclFun x tparams tret =>
-          let* (ndefs, types) := norm_program_rec prog' in
-          eret (Syntax.DeclFun x tparams tret :: ndefs, types)
+          let b_defs' := Syntax.DeclFun x tparams tret :: b_defs in
+          eret (mk_program b_defs' b_types b_tabs)
       end
   end.
 
 Definition norm_program (arch: Target.archi) (prog: Barocq.program) : res BarocqBNF.program :=
   let* prog := BarocqTransf.transf_program arch prog in
-  let* (defs, types) := norm_program_rec prog in
-  eret {|
-    Syntax.prog_defs := defs;
-    Syntax.prog_types := types
-  |}.
+  norm_program_rec prog.

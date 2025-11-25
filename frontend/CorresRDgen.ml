@@ -51,26 +51,27 @@ module Deeptypes = struct
   and opt_parens (ty : mtyp) : string =
     PrintUtils.opt_parens is_simpl_mtyp mtyp_to_typ_string ty
 
-  let typedef_to_string (indent : string) (td : type_def) : string =
+  let type_def_to_string (indent : string) ((tname, td) : ident * mtyp type_def)
+      : string =
     match td with
-    | TdEnum ed ->
-        let eid = ident_to_string ed.ed_name in
+    | TdEnum elems ->
+        let eid = ident_to_string tname in
         let elems =
           sprintf
             "%sDefinition elems_of_%s : list ident := %s.\n"
             indent
             eid
-            (list_to_string_bracket Deepgen.ident_to_deep ed.ed_elems)
+            (list_to_string_bracket Deepgen.ident_to_deep elems)
         in
         sprintf
           "%s\n%sDefinition %s : typ := TEnum %s elems_of_%s."
           elems
           indent
           eid
-          (Deepgen.ident_to_deep ed.ed_name)
+          (Deepgen.ident_to_deep tname)
           eid
-    | TdRecord rd ->
-        let rid = ident_to_string rd.rd_name in
+    | TdRecord fields ->
+        let rid = ident_to_string tname in
         let fields =
           sprintf
             "%sDefinition fields_of_%s : list (ident * typ) := %s.\n"
@@ -82,21 +83,15 @@ module Deeptypes = struct
                    "(%s, %s)"
                    (Deepgen.ident_to_deep fname)
                    (mtyp_to_typ_string fty))
-               rd.rd_fields)
+               fields)
         in
         sprintf
           "%s\n%sDefinition %s : typ := TRecord %s fields_of_%s."
           fields
           indent
-          (ident_to_string rd.rd_name)
-          (Deepgen.ident_to_deep rd.rd_name)
+          (ident_to_string tname)
+          (Deepgen.ident_to_deep tname)
           rid
-    | TdAbstract (tid, _) ->
-        sprintf
-          "%sDefinition %s : typ := TAbs %s."
-          indent
-          (ident_to_string tid)
-          (Deepgen.ident_to_deep tid)
 
   let deftype_to_string (def : globdef) : string =
     let dt =
@@ -112,12 +107,13 @@ module Deeptypes = struct
     in
     sprintf "Definition typof_%s." dt
 
-  let print_typedefs (out : out_channel) (types : type_def list) : unit =
+  let print_typedefs (out : out_channel) (types : mtyp type_def Maps2.smaplist)
+      : unit =
     print_list
       out
       ~delim:("", "\n")
       ~sep:"\n\n"
-      (fun td -> sprintf "%s" (typedef_to_string indent td))
+      (fun td -> type_def_to_string indent td)
       types
 
   let print_deftypes (out : out_channel) (defs : globdef list) : unit =
@@ -136,7 +132,7 @@ module Deeptypes = struct
     fprintf out "%s" prim_types;
     fprintf out "\n";
     if types <> [] then begin
-      print_typedefs out prog.prog_types;
+      print_typedefs out types;
       fprintf out "\n"
     end;
     if defs <> [] then begin

@@ -480,15 +480,15 @@ module SR = struct
   and opt_parens (l : literal) : string =
     PrintUtils.opt_parens is_simpl_lit literal_to_rocq l
 
-  let enum_def_to_rocq (ed : enum_def) : string =
-    let eid = ident_to_string ed.ed_name in
+  let enum_def_to_rocq (ed_name : ident) (ed_elems : ident list) : string =
+    let eid = ident_to_string ed_name in
     sprintf
       "Inductive %s :=\n%s."
       eid
       (list_to_string
          ~sep:"\n"
          (fun e -> sprintf "%s| %s" indent (ident_to_string e))
-         ed.ed_elems)
+         ed_elems)
 
   let field_typ_to_rocq (rid : string) ((fname, fty) : ident * mtyp) : string =
     sprintf
@@ -498,19 +498,19 @@ module SR = struct
       (ident_to_string fname)
       (mtyp_to_rocq fty)
 
-  let record_def_to_rocq (rd : record_def) : string =
-    let rid = ident_to_string rd.rd_name in
+  let record_def_to_rocq (rd_name : ident) (rd_fields : mtyp Maps2.smaplist) :
+      string =
+    let rid = ident_to_string rd_name in
     sprintf
       "Record %s := mk_%s {\n%s\n}."
       rid
       rid
-      (list_to_string ~sep:";\n" (field_typ_to_rocq rid) rd.rd_fields)
+      (list_to_string ~sep:";\n" (field_typ_to_rocq rid) rd_fields)
 
-  let type_def_to_rocq (td : type_def) : string =
+  let type_def_to_rocq ((tname, td) : ident * mtyp type_def) : string =
     match td with
-    | TdEnum ed -> enum_def_to_rocq ed
-    | TdRecord rd -> record_def_to_rocq rd
-    | TdAbstract (t, _) -> sprintf "Parameter %s : Type." (ident_to_string t)
+    | TdEnum elems -> enum_def_to_rocq tname elems
+    | TdRecord fields -> record_def_to_rocq tname fields
 
   let globdef_to_rocq (def : globdef) : string =
     match def with
@@ -528,13 +528,14 @@ module SR = struct
         let ty = MFun (List.map snd tparams, tret) in
         sprintf "Parameter %s : %s." (ident_to_string x) (mtyp_to_rocq ty)
 
-  let gen_record_eta_update (rd : record_def) : string =
-    let rid = ident_to_string rd.rd_name in
+  let gen_record_eta_update ((rd_name, rd_fields) : ident * mtyp Maps2.smaplist)
+      : string =
+    let rid = ident_to_string rd_name in
     let fnames =
       List.map
         (fun (fname, _) ->
           sprintf "%s_%s" (String.lowercase_ascii rid) (ident_to_string fname))
-        rd.rd_fields
+        rd_fields
     in
     sprintf
       "Instance eta_%s : Settable %s :=\n%ssettable! mk_%s <%s>."
@@ -544,8 +545,8 @@ module SR = struct
       rid
       (PrintUtils.list_to_string ~sep:"; " (fun x -> x) fnames)
 
-  let gen_enum_eq_dec (ed : enum_def) : string =
-    let eid = ident_to_string ed.ed_name in
+  let gen_enum_eq_dec ((ed_name, ed_elems) : ident * ident list) : string =
+    let eid = ident_to_string ed_name in
     let eq_dec =
       sprintf
         "Lemma %s_eq_dec :\n\
@@ -577,8 +578,8 @@ module SR = struct
     in
     sprintf "%s\n\n%s\n\n%s" eq_dec eq neq
 
-  let gen_enum_i32_cast (ed : enum_def) : string =
-    let eid = ident_to_string ed.ed_name in
+  let gen_enum_i32_cast ((ed_name, ed_elems) : ident * ident list) : string =
+    let eid = ident_to_string ed_name in
     let rec gen_elems_cast (elems : ident list) (acc : int) : string =
       match elems with
       | [] -> assert false
@@ -597,11 +598,11 @@ module SR = struct
       eid
       eid
       indent
-      (gen_elems_cast ed.ed_elems 0)
+      (gen_elems_cast ed_elems 0)
       indent
 
-  let gen_i32_enum_cast (ed : enum_def) : string =
-    let eid = ident_to_string ed.ed_name in
+  let gen_i32_enum_cast ((ed_name, ed_elems) : ident * ident list) : string =
+    let eid = ident_to_string ed_name in
     let cast_body =
       sprintf
         "%slet ni := I32.to_nat i in\n\
@@ -614,14 +615,14 @@ module SR = struct
          %sni"
         indent
         indent
-        (List.length ed.ed_elems)
+        (List.length ed_elems)
         indent
         indent2
         indent3
         (list_to_string
            ~sep:";\n"
            (fun constr -> sprintf "%s%s" indent4 (ident_to_string constr))
-           ed.ed_elems)
+           ed_elems)
         indent3
         indent3
     in
@@ -643,14 +644,25 @@ module SR = struct
   let print_program (out : out_channel) (prog : program) : unit =
     shver := BarocqShallowgen.ShallowR;
     let types = prog.prog_types in
+    let tabs = prog.prog_tabs in
     let defs = prog.prog_defs in
     fprintf out "%s" imports;
+    if tabs <> [] then begin
+      fprintf out "\n";
+      fprintf out "(** * Abstract types *)\n\n";
+      print_list
+        out
+        ~delim:("", "\n")
+        ~sep:"\n\n"
+        (fun (tid, _) -> sprintf "Parameter %s : Type." (ident_to_string tid))
+        tabs
+    end;
     if types <> [] then begin
       fprintf out "\n";
       fprintf out "(** * Type definitions *)\n\n";
       print_list out ~delim:("", "\n") ~sep:"\n\n" type_def_to_rocq types
     end;
-    let records = get_record_typedefs types in
+    let records = Syntax.get_record_typedefs types in
     if records <> [] then begin
       fprintf out "\n";
       fprintf out "(** * Setters for records *)\n\n";
@@ -658,7 +670,7 @@ module SR = struct
     end;
     fprintf out "\n";
     fprintf out "(** * Auxiliary functions *)\n";
-    let enums = get_enum_typedefs types in
+    let enums = Syntax.get_enum_typedefs types in
     if enums <> [] then begin
       fprintf out "\n";
       print_list out ~delim:("", "\n") ~sep:"\n\n" gen_enum_eq_dec enums;
@@ -705,8 +717,8 @@ module SB = struct
   and opt_parens (l : literal) : string =
     PrintUtils.opt_parens is_simpl_lit literal_to_rocq l
 
-  let enum_def_to_rocq (ed : enum_def) : string =
-    let eid = ident_to_string ed.ed_name in
+  let enum_def_to_rocq (ed_name : ident) (ed_elems : ident list) : string =
+    let eid = ident_to_string ed_name in
     sprintf
       "Definition elems_of_%s : list ident := [\n\
        %s\n\
@@ -716,7 +728,7 @@ module SB = struct
       (list_to_string
          ~sep:";\n"
          (fun cid -> sprintf "%s%s" indent (Deepgen.ident_to_deep cid))
-         ed.ed_elems)
+         ed_elems)
       eid
       eid
 
@@ -727,20 +739,15 @@ module SB = struct
       (Deepgen.ident_to_deep fname)
       (mtyp_to_rocq fty)
 
-  let record_def_to_rocq (rd : record_def) : string =
-    let rid = ident_to_string rd.rd_name in
+  let record_def_to_rocq (rd_name : ident) (rd_fields : mtyp Maps2.smaplist) :
+      string =
+    let rid = ident_to_string rd_name in
     sprintf
       "Definition %s : Type :=\n%srecord [\n%s\n%s]."
       rid
       indent
-      (list_to_string ~sep:";\n" field_typ_to_rocq rd.rd_fields)
+      (list_to_string ~sep:";\n" field_typ_to_rocq rd_fields)
       indent
-
-  let type_def_to_rocq (td : type_def) : string =
-    match td with
-    | TdEnum ed -> enum_def_to_rocq ed
-    | TdRecord rd -> record_def_to_rocq rd
-    | TdAbstract (t, _) -> sprintf "Parameter %s : Type." (ident_to_string t)
 
   let gen_ffi_fun_body (fid : ident) (tparams : mtyp list) (tret : mtyp) :
       string =
@@ -811,7 +818,14 @@ module SB = struct
     | DefFun (x, f) ->
         sprintf "Definition %s %s." (ident_to_string x) (function_to_rocq f)
     | DeclConst (x, ty) ->
-        sprintf "Parameter %s : %s." (ident_to_string x) (mtyp_to_rocq ty)
+        let x' = ident_to_string x in
+        sprintf
+          "Definition %s : %s := %s."
+          x'
+          (mtyp_to_rocq ty)
+          ((Btypesgen.conv_value Btypesgen.RtoB)
+             ty
+             (sprintf "%s_ShallowR.%s" !coqlib x'))
     | DeclFun (x, tparams, tret) -> gen_ffi_fun x tparams tret
 
   let imports () : string =

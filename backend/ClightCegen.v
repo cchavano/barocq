@@ -405,35 +405,34 @@ Section TRANSL.
       end
     end.
 
-  Definition transl_enum_btyp (x: ident) (elems: list ident) : Ctypes.composite_definition :=
-    Composite (Ident.to_pos x) Enum (List.map (fun e => Member_plain (Ident.to_pos e) tint) elems) noattr.
-
   Definition transl_globdefs (defs: list Imp2.globdef) : res (list cglobdef) :=
     transl_globdefs_rec defs sempty.
-    
-  Fixpoint transl_record_fields (fields: smaplist (typ2 * layout)) : Ctypes.members :=
-    match fields with
-    | nil => nil
-    | (x, (tx, ly)) :: fields' =>
-        let tx' := transl_typ2_rec ly tx in
-        let r := transl_record_fields fields' in
-        (Member_plain (Ident.to_pos x) tx') :: r
-    end.
 
-  Definition transl_record_btyp (x: ident) (fields: smaplist (typ2 * layout)) : Ctypes.composite_definition :=
+  Definition transl_enum_typ2 (x: ident) (elems: list ident) : Ctypes.composite_definition :=
+    Composite (Ident.to_pos x) Enum (List.map (fun e => Member_plain (Ident.to_pos e) tint) elems) noattr.
+    
+  Definition transl_record_fields (fields: smaplist (typ2 * layout)) : Ctypes.members :=
+    MapList.fold_right
+      (fun tid '(ty, ly) acc =>
+        (Member_plain (Ident.to_pos tid) (transl_typ2_rec ly ty)) :: acc)
+      nil
+      fields.
+
+  Definition transl_record_typ2 (x: ident) (fields: smaplist (typ2 * layout)) : Ctypes.composite_definition :=
     Composite (Ident.to_pos x) Struct (transl_record_fields fields) noattr.
 
-  Fixpoint transl_prog_types (types: list (type_def (typ2 * layout))) : list Ctypes.composite_definition :=
-    match types with
-    | nil => nil
-    | td :: types' =>
-      let cdr := transl_prog_types types' in
-      match td with
-      | TdEnum ed => (transl_enum_btyp (ed_name ed) (ed_elems ed)) :: cdr
-      | TdRecord rd => (transl_record_btyp (rd_name rd) (rd_fields rd)) :: cdr
-      | _ => cdr
-      end
-    end.
+  Definition transl_prog_types (types: smaplist (type_def (typ2 * layout))) : list Ctypes.composite_definition :=
+    MapList.fold_right
+      (fun tid td cds =>
+        let cd :=
+          match td with
+          | TdEnum elems => transl_enum_typ2 tid elems
+          | TdRecord fields => transl_record_typ2 tid fields
+          end
+        in
+        cd :: cds)
+      nil
+      types.
 
   Fixpoint public_idents (defs: list Imp2.globdef) : list ident :=
     match defs with
@@ -453,33 +452,31 @@ Section TRANSL.
 
 End TRANSL.
 
-Fixpoint mk_abs_types_impl (types: list (type_def (typ2 * layout))) : PMap.t Ctypes.type :=
-  match types with
-  | nil => PMap.init Tvoid
-  | td :: types' =>
-      match td with
-      | TdAbstract tid tk =>
-          let ct :=
-            match tk with
-            | SU_struct => Tstruct (Ident.to_pos tid) noattr
-            | SU_union => Tunion (Ident.to_pos tid) noattr
-            end
-          in
-          PMap.set (Ident.to_pos tid) ct (mk_abs_types_impl types')
-      | _ => mk_abs_types_impl types'
-      end
-  end.
+Definition mk_abs_types_impl (tabs: smaplist struct_or_union) : PMap.t Ctypes.type :=
+  MapList.fold_left
+    (fun acc tid su =>
+      let ptid := Ident.to_pos tid in
+      let ct :=
+        match su with
+        | SU_struct => Tstruct ptid noattr
+        | SU_union => Tunion ptid noattr
+        end
+      in
+      PMap.set ptid ct acc)
+    tabs
+    (PMap.init Tvoid).
 
 Definition transl_program (prog: Imp2.program) : res ClightCe.program :=
   let types := prog_types prog in
   let defs := prog_defs prog in
-  let abs_types_impl := mk_abs_types_impl types in
+  let abs_types_impl := mk_abs_types_impl (prog_tabs prog) in
   let ts := transl_prog_types abs_types_impl types in
   let* cdefs := transl_globdefs abs_types_impl defs in
   let public := List.map Ident.to_pos (public_idents defs) in
   let main := _main in
   match Ctypes.make_program ts cdefs public main with
   | OK prog => OK prog
+  | Error (MSG msg :: CTX id :: _) => failwith (String.append msg (string_of_ident id))
   | Error _ => failwith "ClightgenCe.transl_program: error when calling Ctypes.make_program"
   end.
 

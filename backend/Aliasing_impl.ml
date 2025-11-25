@@ -1336,12 +1336,13 @@ let gen_fun_descr_and_ast (show_debug : bool) (re : renv) (fe : fenv)
 
 (** [renv_from_record_defs l] build the record type environment from the list of
     record definition [l]. *)
-let renv_from_record_defs (l : field_descr record_def list) : renv =
-  List.fold_left
-    (fun acc st ->
-      Maps2.STree.set st.rd_name (Maps2.MapList.map fst st.rd_fields) acc)
-    Maps2.STree.empty
+let renv_from_record_defs (l : field_descr Maps2.smaplist Maps2.smaplist) : renv
+    =
+  Maps2.MapList.fold_left
+    (fun acc rd_name rd_fields ->
+      Maps2.STree.set rd_name (Maps2.MapList.map fst rd_fields) acc)
     l
+    Maps2.STree.empty
 
 (** [gen_asbfun_descr re fe tparams tret] generates the function descriptor for
     abstract function described by [tparams] and [tret]. *)
@@ -1389,7 +1390,7 @@ let gen_absfun_descr (re : renv) (fe : fenv)
     function is defined or declared with this name in the program [p]. *)
 let get_fun_descr (p : program) (fname : string) : fun_descr option =
   let fid = ident_of_string fname in
-  let re = renv_from_record_defs (get_record_typedefs p.prog_types) in
+  let re = renv_from_record_defs (Syntax.get_record_typedefs p.prog_types) in
   let rec aux fe defs =
     match defs with
     | [] -> None
@@ -1463,7 +1464,9 @@ let gen_aliasing_program (show_debug : bool) (prog : Imp1Typed.program) :
     match defs with
     | [] -> Errors.OK []
     | d :: defs' -> begin
-        let re = renv_from_record_defs (get_record_typedefs prog.prog_types) in
+        let re =
+          renv_from_record_defs (Syntax.get_record_typedefs prog.prog_types)
+        in
         match gen_aliasing_globdef re fe d show_debug with
         | Errors.OK (d', fe') -> begin
             match aux fe' defs' with
@@ -1475,7 +1478,12 @@ let gen_aliasing_program (show_debug : bool) (prog : Imp1Typed.program) :
   in
   match aux IdentMap.empty prog.prog_defs with
   | Errors.OK defs ->
-      Errors.OK { prog_types = prog.prog_types; prog_defs = defs }
+      Errors.OK
+        {
+          prog_types = prog.prog_types;
+          prog_defs = defs;
+          prog_tabs = prog.prog_tabs;
+        }
   | Errors.Error _ as err -> err
 
 module DotExport = struct

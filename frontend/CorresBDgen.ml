@@ -50,26 +50,27 @@ module Deeptypes = struct
   and opt_parens (ty : mtyp) : string =
     PrintUtils.opt_parens is_simpl_mtyp mtyp_to_typ_string ty
 
-  let typedef_to_string (indent : string) (td : type_def) : string =
+  let type_def_to_string (indent : string) ((tname, td) : ident * mtyp type_def)
+      : string =
     match td with
-    | TdEnum ed ->
-        let eid = ident_to_string ed.ed_name in
+    | TdEnum elems ->
+        let eid = ident_to_string tname in
         let elems =
           sprintf
             "%sDefinition elems_of_%s : list ident := %s.\n"
             indent
             eid
-            (list_to_string_bracket Deepgen.ident_to_deep ed.ed_elems)
+            (list_to_string_bracket Deepgen.ident_to_deep elems)
         in
         sprintf
           "%s\n%sDefinition %s : typ := TEnum %s elems_of_%s."
           elems
           indent
           eid
-          (Deepgen.ident_to_deep ed.ed_name)
+          (Deepgen.ident_to_deep tname)
           eid
-    | TdRecord rd ->
-        let rid = ident_to_string rd.rd_name in
+    | TdRecord fields ->
+        let rid = ident_to_string tname in
         let fields =
           sprintf
             "%sDefinition fields_of_%s : list (ident * typ) := %s.\n"
@@ -81,21 +82,15 @@ module Deeptypes = struct
                    "(%s, %s)"
                    (Deepgen.ident_to_deep fname)
                    (mtyp_to_typ_string fty))
-               rd.rd_fields)
+               fields)
         in
         sprintf
           "%s\n%sDefinition %s : typ := TRecord %s fields_of_%s."
           fields
           indent
-          (ident_to_string rd.rd_name)
-          (Deepgen.ident_to_deep rd.rd_name)
+          (ident_to_string tname)
+          (Deepgen.ident_to_deep tname)
           rid
-    | TdAbstract (tid, _) ->
-        sprintf
-          "%sDefinition %s : typ := TAbs %s."
-          indent
-          (ident_to_string tid)
-          (Deepgen.ident_to_deep tid)
 
   let deftype_to_string (def : globdef) : string =
     let dt =
@@ -111,12 +106,13 @@ module Deeptypes = struct
     in
     sprintf "Definition typof_%s." dt
 
-  let print_typedefs (out : out_channel) (types : type_def list) : unit =
+  let print_typedefs (out : out_channel) (types : mtyp type_def Maps2.smaplist)
+      : unit =
     print_list
       out
       ~delim:("", "\n")
       ~sep:"\n\n"
-      (fun td -> sprintf "%s" (typedef_to_string indent td))
+      (fun td -> sprintf "%s" (type_def_to_string indent td))
       types
 
   let print_deftypes (out : out_channel) (defs : globdef list) : unit =
@@ -145,18 +141,11 @@ module Deeptypes = struct
     fprintf out "End Deeptypes.\n"
 end
 
-let gen_abs_types_impl_env (types : type_def list) : string =
-  let rec lassoc (types : type_def list) : (string * string) list =
-    match types with
-    | [] -> []
-    | td :: types' ->
-        let r = lassoc types' in
-        begin
-          match td with
-          | TdAbstract (tid, _) ->
-              (Deepgen.ident_to_deep tid, ident_to_string tid) :: r
-          | _ -> r
-        end
+let gen_abs_types_impl_env (types : struct_or_union Maps2.smaplist) : string =
+  let lassoc (types : struct_or_union Maps2.smaplist) : (string * string) list =
+    List.map
+      (fun (tname, _) -> (Deepgen.ident_to_deep tname, ident_to_string tname))
+      types
   in
   let env_list prefix l =
     list_to_string
@@ -366,29 +355,29 @@ let print_properties_envs (out : out_channel) (defs : globdef list) : unit =
     gen_def_property
     defs
 
-let print_typing_env (out : out_channel) (types : type_def list) : unit =
-  let type_def_to_string (td : type_def) : string =
+let print_typing_env (out : out_channel) (types : mtyp type_def Maps2.smaplist)
+    : unit =
+  let type_def_to_string (tname : ident) (td : mtyp type_def) : string =
     match td with
-    | TdEnum ed ->
+    | TdEnum _ ->
         sprintf
-          "%s (Adt_enum Deeptypes.elems_of_%s)"
-          (Deepgen.ident_to_deep ed.ed_name)
-          (ident_to_string ed.ed_name)
-    | TdRecord rd ->
+          "%s (TdEnum Deeptypes.elems_of_%s)"
+          (Deepgen.ident_to_deep tname)
+          (ident_to_string tname)
+    | TdRecord _ ->
         sprintf
-          "%s (Adt_record Deeptypes.fields_of_%s)"
-          (Deepgen.ident_to_deep rd.rd_name)
-          (ident_to_string rd.rd_name)
-    | TdAbstract _ -> assert false
+          "%s (TdRecord Deeptypes.fields_of_%s)"
+          (Deepgen.ident_to_deep tname)
+          (ident_to_string tname)
   in
-  let rec tenv_defs_to_string (indent : string) (types : type_def list) : string
-      =
+  let rec tenv_defs_to_string (indent : string)
+      (types : mtyp type_def Maps2.smaplist) : string =
     match types with
     | [] -> "STree.empty"
-    | td :: types' ->
+    | (tname, td) :: types' ->
         sprintf
           "STree.set %s\n%s(%s)"
-          (type_def_to_string td)
+          (type_def_to_string tname td)
           indent
           (tenv_defs_to_string (indent ^ PrintUtils.indent) types')
   in
@@ -408,28 +397,18 @@ let print_typing_env (out : out_channel) (types : type_def list) : unit =
              elems'
              next)
   in
-  let rec tenv_constr_types_to_string (indent : string) (types : type_def list)
-      : string =
+  let rec tenv_constr_types_to_string (indent : string)
+      (types : mtyp type_def Maps2.smaplist) : string =
     match types with
     | [] -> "STree.empty"
-    | TdEnum ed :: types' ->
-        let indent' =
-          sprintf "%s%s" indent (make_indent (List.length ed.ed_elems))
-        in
+    | (tname, TdEnum elems) :: types' ->
+        let indent' = sprintf "%s%s" indent (make_indent (List.length elems)) in
         tenv_enum_def_constr_types
           indent
-          (Deepgen.ident_to_deep ed.ed_name)
-          ed.ed_elems
+          (Deepgen.ident_to_deep tname)
+          elems
           (tenv_constr_types_to_string indent' types')
     | _ :: types' -> tenv_constr_types_to_string indent types'
-  in
-  let types =
-    List.filter
-      (fun (td : BarocqShallow.Monadic.type_def) ->
-        match td with
-        | TdAbstract _ -> false
-        | _ -> true)
-      types
   in
   fprintf
     out
@@ -655,7 +634,7 @@ let print_prelude (out : out_channel) (arch : Target.archi)
   Deeptypes.print out sprog;
   fprintf out "\n";
   fprintf out "(** * Abstract types implementation *)\n\n";
-  fprintf out "%s" (gen_abs_types_impl_env types);
+  fprintf out "%s" (gen_abs_types_impl_env sprog.prog_tabs);
   fprintf out "\n";
   fprintf
     out

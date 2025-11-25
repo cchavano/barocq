@@ -89,7 +89,11 @@ Module Typed.
 
     Definition trans_program (p:program) : res program :=
       let* gd' :=  mmap trans_globdef (prog_defs p) in
-      OK {| prog_defs := gd' ; prog_types := prog_types p |}.
+      OK {|
+        prog_defs := gd';
+        prog_types := prog_types p;
+        prog_tabs := prog_tabs p;
+      |}.
 
   End TRANSF.
 
@@ -920,7 +924,7 @@ Module Typing.
       (cases: list (pattern * Imp1.statement)) : res (list (pattern * Imp1Typed.statement) * lcontext) :=
       match ty with
       | BEnum te =>
-          let* elems := benv_get_edef be te in
+          let* elems := TEnv.get_edef be te in
           typecheck_match_rec be gx lx ty tret elems elems cases
       | _ => failwith "Imp1.Typing.typecheck_match: enum type expected"
       end
@@ -1003,33 +1007,13 @@ Module Typing.
   Definition typecheck_globdefs (be: benv) (defs: list Imp1.globdef) : res (list Imp1Typed.globdef) :=
     typecheck_globdefs_rec be STree.empty defs.
 
-  Definition build_benv (types: list (type_def field_descr)) : res benv :=
-    Utils.list_fold_left_err
-      (fun acc_be td =>
-        match td with
-        | TdEnum ed =>
-            let* be' := benv_update_defs acc_be (ed_name ed) (Adt_enum (ed_elems ed)) in
-            let* be' :=
-              list_fold_left_err
-                (fun acc_be1 e => benv_update_constr_types acc_be1 e (ed_name ed))
-                (ed_elems ed)
-                (ret be')
-            in
-            ret be'
-        | TdRecord rd =>
-            let* be' := benv_update_defs acc_be (rd_name rd) (Adt_record (rd_fields rd)) in
-            ret be'
-        | TdAbstract _ _ => ret acc_be
-        end)
-      types
-      (ret benv_empty).
-
   Definition typecheck_program (prog: Imp1.program) : res Imp1Typed.program :=
-    let* be := build_benv (prog_types prog) in
+    let* be := TEnv.build (prog_types prog) in
     let* defs := typecheck_globdefs be (prog_defs prog) in
     ret {|
       prog_defs := defs;
       prog_types := prog_types prog;
+      prog_tabs := prog_tabs prog;
     |}.
 
   End ARCHI.

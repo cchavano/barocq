@@ -12,7 +12,7 @@ Inductive literal :=
   | LInt32 : int -> signedness -> literal
   | LInt64 : int64 -> signedness -> literal
   | LArray : list literal -> btyp -> layout -> literal
-  | LRecord : list (ident * literal) -> list ident -> ident -> literal.
+  | LRecord : smaplist literal -> list ident -> ident -> literal.
 
 (** * Operators *)
 
@@ -130,42 +130,38 @@ Inductive globdef (L F T: Type) : Type :=
 
 (** ** Programs *)
 
-Record enum_def := mk_enum_def {
-  ed_name : ident;
-  ed_elems : list ident
-}.
-
-Record record_def (T: Type) := mk_record_def {
-  rd_name : ident;
-  rd_fields : list (ident * T)
-}.
-
-Arguments rd_name {T}.
-Arguments rd_fields {T}.
-
 Inductive struct_or_union : Type :=
   | SU_struct
   | SU_union.
 
 Inductive type_def (T: Type) : Type :=
-  | TdEnum : enum_def -> type_def T
-  | TdRecord : record_def T -> type_def T
-  | TdAbstract : ident -> struct_or_union -> type_def T. 
+  | TdEnum : list ident -> type_def T
+  | TdRecord : smaplist T -> type_def T.
 
 Arguments TdEnum {T}.
 Arguments TdRecord {T}.
-Arguments TdAbstract {T}.
 
 Record program (G T: Type) : Type := mk_program {
   prog_defs : list G;
-  prog_types : list (type_def T);
+  prog_types : smaplist (type_def T);
+  prog_tabs : smaplist struct_or_union;
 }.
 
-Definition get_record_typedefs {T} (types: list (type_def T)) : list (record_def T) :=
-  List.fold_right
-    (fun td acc =>
+Definition get_enum_typedefs {T} (types: smaplist (type_def T)) : smaplist (list ident) :=
+  MapList.fold_right
+    (fun tid td acc =>
       match td with
-      | TdRecord sd => cons sd acc
+      | TdEnum elems => cons (tid, elems) acc
+      | _ => acc
+      end)
+    nil
+    types.
+
+Definition get_record_typedefs {T} (types: smaplist (type_def T)) : smaplist (smaplist T) :=
+  MapList.fold_right
+    (fun tid td acc =>
+      match td with
+      | TdRecord fields => cons (tid, fields) acc
       | _ => acc
       end)
     nil
@@ -184,6 +180,7 @@ Arguments fn_body {B} {T}.
 Arguments mk_program {G T}.
 Arguments prog_defs {G T}.
 Arguments prog_types {G T}.
+Arguments prog_tabs {G T}.
 
 Require Import OrderedType.
 Require Import Datatypes.

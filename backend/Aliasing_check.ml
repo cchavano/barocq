@@ -176,7 +176,12 @@ let check_globdef (def : globdef) : Imp1.Typed.globdef =
 let check_program (prog : program) : Imp1.Typed.program Errors.res =
   try
     let defs = List.map check_globdef prog.prog_defs in
-    Errors.OK { prog_defs = defs; prog_types = prog.prog_types }
+    Errors.OK
+      {
+        prog_defs = defs;
+        prog_types = prog.prog_types;
+        prog_tabs = prog.prog_tabs;
+      }
   with Invalid_program (cause, stmt) ->
     let stmt_str =
       match stmt with

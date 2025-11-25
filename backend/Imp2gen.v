@@ -215,15 +215,15 @@ Definition transl_globdefs (defs: list Imp1Typed.globdef) : list Imp2.globdef :=
 
 Definition transl_type_def (td: type_def field_descr) : type_def (typ2 * layout) :=
   match td with
-  | TdEnum ed => TdEnum ed
-  | TdRecord rd =>
-    let fields := MapList.map (fun '(ty, ly) => (transl_btyp ty, ly)) (rd_fields rd) in
-     TdRecord {| rd_name := rd_name rd; rd_fields := fields |}
-  | TdAbstract tid su => TdAbstract tid su
+  | TdEnum elems => TdEnum elems
+  | TdRecord fields =>
+    let fields' := MapList.map (fun '(ty, ly) => (transl_btyp ty, ly)) fields in
+    TdRecord fields'
   end.
 
 Definition transl_program (prog: Imp1Typed.program) : Imp2.program :=
   {|
     prog_defs := transl_globdefs (prog_defs prog);
-    prog_types := List.map transl_type_def (prog_types prog);
+    prog_types := MapList.map transl_type_def (prog_types prog);
+    prog_tabs := prog_tabs prog;
   |}.

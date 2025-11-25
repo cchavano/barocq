@@ -254,8 +254,8 @@ module HelperTactics = struct
        Create HintDb corresRB_pattern_matching.\n"
 
   let register_enums_constuctors_hints (out : out_channel)
-      (enums : enum_def list) : unit =
-    let register_one_enum (ed : enum_def) =
+      (enums : ident list Maps2.smaplist) : unit =
+    let register_one_enum (ed_name : ident) (ed_elems : ident list) =
       print_list
         out
         ~delim:("", "\n")
@@ -269,21 +269,21 @@ module HelperTactics = struct
             cid
             cid
             cid)
-        ed.ed_elems
+        ed_elems
     in
     List.iter
-      (fun ed ->
-        register_one_enum ed;
+      (fun (ed_name, ed_elems) ->
+        register_one_enum ed_name ed_elems;
         fprintf out "\n")
       enums
 
-  let register_enums_op_hints (out : out_channel) (enums : enum_def list) : unit
-      =
+  let register_enums_op_hints (out : out_channel)
+      (enums : ident list Maps2.smaplist) : unit =
     print_list
       out
       ~sep:"\n"
-      (fun ed ->
-        let eid = ident_to_string ed.ed_name in
+      (fun (ed_name, _) ->
+        let eid = ident_to_string ed_name in
         sprintf
           "Hint Rewrite cast_i32_to_%s_corres : corresRB_types.\n\
            Hint Rewrite cast_%s_to_i32_corres : corresRB_types.\n\
@@ -296,17 +296,17 @@ module HelperTactics = struct
           eid)
       enums
 
-  let rec register_records_hints (out : out_channel) (records : record_def list)
-      : unit =
+  let rec register_records_hints (out : out_channel)
+      (records : mtyp Maps2.smaplist Maps2.smaplist) : unit =
     match records with
     | [] -> ()
-    | rd :: records' ->
+    | (rd_name, rd_fields) :: records' ->
         print_list
           out
           ~delim:("", "\n")
           ~sep:"\n\n"
           (fun (fname, _) ->
-            let rid = ident_to_string rd.rd_name in
+            let rid = ident_to_string rd_name in
             let fid = ident_to_string fname in
             sprintf
               "Hint Rewrite rconv_%s_RtoB_proj_%s_correct : corresRB_types.\n\
@@ -315,12 +315,12 @@ module HelperTactics = struct
               fid
               rid
               fid)
-          rd.rd_fields;
+          rd_fields;
         register_records_hints out records'
 
   let register_types_hints (out : out_channel) (prog : program) : unit =
-    let enums = BarocqShallow.Monadic.get_enum_typedefs prog.prog_types in
-    let records = BarocqShallow.Monadic.get_record_typedefs prog.prog_types in
+    let enums = Syntax.get_enum_typedefs prog.prog_types in
+    let records = Syntax.get_record_typedefs prog.prog_types in
     register_enums_constuctors_hints out enums;
     register_enums_op_hints out enums;
     fprintf out "\n";
@@ -424,10 +424,10 @@ module HelperTactics = struct
     | DeclFun (fid, tparams, tret) ->
         ltac_fun_rewrite fid (params_of_absfun tparams) tret
 
-  let print_pattern_match_corres_tac (out : out_channel) (enums : enum_def list)
-      : unit =
-    let gen_enum_simpl (ed : enum_def) : string =
-      let eid = ident_to_string ed.ed_name in
+  let print_pattern_match_corres_tac (out : out_channel)
+      (enums : ident list Maps2.smaplist) : unit =
+    let gen_enum_simpl ((ed_name, ed_elems) : ident * ident list) : string =
+      let eid = ident_to_string ed_name in
       sprintf
         "%s| %s_ShallowR.%s =>\n\
          %serewrite Benum.match_with_err_eq_match_with_err2 with\n\
@@ -474,11 +474,11 @@ module HelperTactics = struct
           | _ -> false)
         prog.prog_defs
     in
-    let cast_i32_to_enum_destruct (enums : enum_def list) : string =
+    let cast_i32_to_enum_destruct (enums : ident list Maps2.smaplist) : string =
       list_to_string
         ~sep:"\n"
-        (fun ed ->
-          let eid = ident_to_string ed.ed_name in
+        (fun (ed_name, _) ->
+          let eid = ident_to_string ed_name in
           sprintf
             "%s| cast_i32_to_%s ?X =>\n\
              %sdestruct (cast_i32_to_%s X); simpl; try reflexivity"
@@ -488,7 +488,7 @@ module HelperTactics = struct
             eid)
         enums
     in
-    let enums = BarocqShallow.Monadic.get_enum_typedefs prog.prog_types in
+    let enums = Syntax.get_enum_typedefs prog.prog_types in
     fprintf
       out
       "Ltac corres_rb_match P :=\n\
@@ -620,7 +620,7 @@ module HelperTactics = struct
       !coqlib
 
   let print (out : out_channel) (rprog : program) (bprog : program) : unit =
-    let enums = BarocqShallow.Monadic.get_enum_typedefs rprog.prog_types in
+    let enums = Syntax.get_enum_typedefs rprog.prog_types in
     fprintf out "%s" (imports ());
     fprintf out "\n";
     create_databases out rprog;
@@ -666,13 +666,13 @@ let print_opaque_defs (out : out_channel) (prog : program) : unit =
      Opaque Brecord.upd.\n\
      Opaque Barray.get.\n\
      Opaque Barray.set.\n";
-  let enums = get_enum_typedefs prog.prog_types in
+  let enums = Syntax.get_enum_typedefs prog.prog_types in
   print_list
     out
     ~delim:("", "\n")
     ~sep:"\n"
-    (fun ed ->
-      let eid = ident_to_string ed.ed_name in
+    (fun (ed_name, _) ->
+      let eid = ident_to_string ed_name in
       sprintf "Opaque econv_%s_RtoB.\nOpaque econv_%s_BtoR." eid eid)
     enums
 

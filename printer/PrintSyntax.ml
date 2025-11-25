@@ -199,28 +199,27 @@ let globdef_to_string (lit_to_string : 'a -> string)
         (ident_to_string x)
         (typ_to_string (mk_fun_btyp tparams tret))
 
-let enum_def_to_string (ed : enum_def) : string =
+let enum_def_to_string (ed_name : ident) (ed_elems : ident list) : string =
   sprintf
     "enum %s {\n%s\n}"
-    (ident_to_string ed.ed_name)
+    (ident_to_string ed_name)
     (list_to_string
        ~sep:"\n"
        (fun e -> sprintf "%s%s," indent (ident_to_string e))
-       ed.ed_elems)
+       ed_elems)
 
-let record_def_to_string (typ_to_string : 'a -> string) (rd : 'a record_def) :
-    string =
+let record_def_to_string (typ_to_string : 'a -> string) (rd_name : ident)
+    (rd_fields : 'a Maps2.smaplist) : string =
   sprintf
     "record %s %s"
-    (ident_to_string rd.rd_name)
-    (recordtyp_to_string typ_to_string rd.rd_fields)
+    (ident_to_string rd_name)
+    (recordtyp_to_string typ_to_string rd_fields)
 
-let type_def_to_string (typ_to_string : 'a -> string) (td : 'a type_def) :
-    string =
+let type_def_to_string (typ_to_string : 'a -> string)
+    ((tname, td) : ident * 'a type_def) : string =
   match td with
-  | TdEnum ed -> enum_def_to_string ed
-  | TdRecord rd -> record_def_to_string typ_to_string rd
-  | TdAbstract (t, _) -> sprintf "type %s" (ident_to_string t)
+  | TdEnum elems -> enum_def_to_string tname elems
+  | TdRecord fields -> record_def_to_string typ_to_string tname fields
 
 let print_program (out : out_channel) (def_to_string : 'a -> string)
     (typ_to_string : 'b -> string) (prog : ('a, 'b) program) : unit =

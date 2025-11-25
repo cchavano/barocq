@@ -89,9 +89,10 @@ Definition norm_globdef (def: ImpBNF.globdef) : res Imp1.globdef :=
 
 Definition norm_program (prog: ImpBNF.program) : res Imp1.program :=
   let* defs := mmap norm_globdef (prog_defs prog) in
-  let prog' :={|
+  let prog' := {|
     prog_defs := defs;
     prog_types := prog_types prog;
+    prog_tabs := prog_tabs prog
   |} in
   ret prog'.
 

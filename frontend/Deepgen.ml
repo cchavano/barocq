@@ -79,6 +79,15 @@ let layout_to_deep (ly : layout) : string =
       in
       sprintf "LyUnboxed %s" suffix
 
+let opt_parens_layout (ly : layout) : string =
+  PrintUtils.opt_parens
+    (fun ly ->
+      match ly with
+      | LyPrim | LyBoxed -> true
+      | _ -> false)
+    layout_to_deep
+    ly
+
 let rec btyp_to_deep (ty : btyp) : string =
   match ty with
   | BBool -> "tbool"
@@ -87,13 +96,13 @@ let rec btyp_to_deep (ty : btyp) : string =
   | BInt64 Signed -> "tint64"
   | BInt64 Unsigned -> "tuint64"
   | BArray (ta, ly) ->
-      sprintf "BArray %s %s" (opt_parens_btyp ta) (layout_to_deep ly)
+      sprintf "BArray %s %s" (opt_parens_btyp ta) (opt_parens_layout ly)
   | BEnum te -> sprintf "BEnum %s" (ident_to_deep te)
   | BRecord (tr, ub) ->
       sprintf
         "BRecord %s %s"
         (ident_to_deep tr)
-        (list_to_string_bracket ident_to_string ub)
+        (list_to_string_bracket ident_to_deep ub)
   | BAbs t -> sprintf "BAbs %s" (ident_to_deep t)
   | BFun (tparams, tret) ->
       sprintf
@@ -289,20 +298,20 @@ let globdef_to_coqdef (def : Typed.globdef) : string =
   let typ_format = sprintf "Definition %s : %s :=\n%s%s." in
   let def_format = sprintf "Definition %s : %s := %s." in
   match def with
-  | DefType (id, adt) -> begin
-      match adt with
-      | Adt_enum elems ->
+  | DefType (id, td) -> begin
+      match td with
+      | TdEnum elems ->
           typ_format
             (sprintf "enum_%s" (ident_to_string id))
-            "adt_definition btyp"
+            "type_def field_descr"
             indent
-            (sprintf "Adt_enum [\n%s\n%s]" (elems_to_deep elems) indent)
-      | Adt_record fields ->
+            (sprintf "TdEnum [\n%s\n%s]" (elems_to_deep elems) indent)
+      | TdRecord fields ->
           typ_format
             (sprintf "record_%s" (ident_to_string id))
-            "adt_definition btyp"
+            "type_def field_descr"
             indent
-            (sprintf "Adt_record [\n%s\n%s]" (fields_to_deep fields) indent)
+            (sprintf "TdRecord [\n%s\n%s]" (fields_to_deep fields) indent)
     end
   | DefConst (id, l, _) ->
       def_format
@@ -335,11 +344,11 @@ let param_attr_to_deep (attr : param_attr) : string =
 
 let globdef_to_deep (def : Typed.globdef) : string =
   match def with
-  | DefType (id, adt) ->
+  | DefType (id, td) ->
       let kind =
-        match adt with
-        | Adt_enum _ -> "enum"
-        | Adt_record _ -> "record"
+        match td with
+        | TdEnum _ -> "enum"
+        | TdRecord _ -> "record"
       in
       sprintf "DefType %s %s_%s" (ident_to_deep id) kind (ident_to_string id)
   | DefConst (id, l, ty) ->
@@ -350,9 +359,9 @@ let globdef_to_deep (def : Typed.globdef) : string =
         (opt_parens_btyp ty)
   | DefFun (id, f) ->
       sprintf "DefFun %s fun_%s" (ident_to_deep id) (ident_to_string id)
-  | DeclType (id, tk) ->
+  | DeclType (id, su) ->
       let st_or_un =
-        match tk with
+        match su with
         | SU_struct -> "SU_struct"
         | SU_union -> "SU_union"
       in
