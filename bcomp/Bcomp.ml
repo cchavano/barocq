@@ -398,12 +398,8 @@ let () =
         let file = get_full_filename rawname "_Deep.v" in
         let oc = open_out file in
         let dprog =
-          match BarocqTransf.transf_program !target_arch prog with
-          | Errors.OK prog -> begin
-              match Barocq.Typing.typecheck_program !target_arch prog with
-              | Errors.OK prog -> prog
-              | _ -> assert false
-            end
+          match Barocq.Typing.typecheck_program !target_arch prog with
+          | Errors.OK prog -> prog
           | _ -> assert false
         in
         Deepgen.print_program oc dprog;

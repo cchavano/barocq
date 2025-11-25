@@ -5,7 +5,7 @@ COMMON=\
 	Types.v Syntax.v Typing.v Intop.v Ident.v Target.v MergeSort.v DList.v Graph.v ExtOrdered.v Draw.v
 
 FRONTEND=\
-	Barocq.v BarocqTransf.v BarocqBNF.v BarocqBNFgen.v\
+	Barocq.v BarocqBNF.v BarocqBNFgen.v\
 	BarocqShallow.v BarocqShallowgen.v BarocqVC.v CorresBD_Tactics.v
 
 BACKEND=\

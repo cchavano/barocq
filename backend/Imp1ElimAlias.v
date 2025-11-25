@@ -18,10 +18,13 @@ Module Pp.
     | e::l => append e (appendl l)
     end.
 
+  Definition array_index {A: Type} (f:A -> box) (v:A) :=
+    Bcat (Bstr "[") (Bcat (f v) (Bstr "]")).
+
   Fixpoint pp_atom (a:atom) :=
     match a with
-    | ATrue _ => Bstr "true"%string
-    | AFalse _ => Bstr "false"%string
+    | ATrue => Bstr "true"%string
+    | AFalse => Bstr "false"%string
     | AInt32 i _ => Bstr "int"%string
     | AInt64 i _ => Bstr "int64"%string
     | AConstr s  _ => Bstr s
@@ -30,18 +33,19 @@ Module Pp.
     | AUnaryOp o a _ => Bcat (Bstr "op"%string) (pp_atom a)
     | ABinaryOp o a1 a2 _ => Bcat (pp_atom a1)
                              (Bcat (Bstr "op"%string) (pp_atom a2))
+    | AArrayGet a i _ _ => Bcat (pp_atom a )
+                                 (array_index pp_atom i)
+    | ARecordProj a i _ _ => Bcat (pp_atom a)
+                              (Bcat (Bstr ".") (Bstr i))
     end.
-
-  Definition array_index {A: Type} (f:A -> box) (v:A) :=
-    Bcat (Bstr "[") (Bcat (f v) (Bstr "]")).
 
   Definition pp_comp (c:comp) :=
     match c with
     | CpAtom a _ => pp_atom a
-    | CpArrayGet a i _ _ => Bcat (pp_atom a )
+    (* | CpArrayGet a i _ _ => Bcat (pp_atom a )
                                  (array_index pp_atom i)
     | CpRecordProj a i _ _ => Bcat (pp_atom a)
-                              (Bcat (Bstr ".") (Bstr i))
+                              (Bcat (Bstr ".") (Bstr i)) *)
     | CpRecordUpdate a f v _ => Bcat (pp_atom a)
                                 (Bcat
                                    (Bcat (Bcat (Bstr "<-") (Bstr f)) (Bstr ":="))
@@ -50,8 +54,8 @@ Module Pp.
                                       (Bcat
                                          (Bcat (array_index pp_atom i)
                                             (Bstr ":=")) (pp_atom v))
-    | CpDeepAccess a l _ => Bcat (pp_atom a) (Bstr "...")
-    | CpCall a l _ => Bcat (pp_atom a) (Bcat (Bstr "(")
+    (* | CpDeepAccess a l _ => Bcat (pp_atom a) (Bstr "...") *)
+    | CpCall f _ l _ => Bcat (Bstr f) (Bcat (Bstr "(")
                                           (Bstr ")"))
   end.
 
@@ -309,10 +313,10 @@ Definition record_get (env:aenv) (d:domain) (a:atom) (fd:ident)  : res (domain *
    Also, identify injective operations
  *)
 
-Definition classify_atom (a1 a2:atom) : cedge :=
+(* Definition classify_atom (a1 a2:atom) : cedge :=
   match a1 , a2 with
-  | ATrue _ , ATrue _ => MUST
-  | AFalse _ , AFalse _ => MUST
+  | ATrue, ATrue => MUST
+  | AFalse, AFalse => MUST
   | AInt32 i _ , AInt32 j _ => if Integers.Int.eq i j then MUST else NOTMAY
   | AInt64 i _ , AInt64 j _ => if Integers.Int64.eq i j then MUST else NOTMAY
   | AConstr i _, AConstr j _ => if String.eqb i j then MUST else NOTMAY
@@ -321,7 +325,7 @@ Definition classify_atom (a1 a2:atom) : cedge :=
               | Eq => MUST
               | _  => MAY
               end
-end.
+end. *)
 
 Definition classify_edge (e1 e2:EdgeLabel.t) :=
   match e1 , e2 with
@@ -441,50 +445,51 @@ Definition get_function (env:aenv) (vars: STree.t KVar) (id:ident) :=
               end
   end.
 
-Definition call (te:tenv) (env: aenv) (d:domain) (a:atom) (args:list atom) : res (domain* KVar) :=
-  match a with
-  | AVar id bt =>
-      match get_function env (Vars d) id with
-      | OK af =>
-          let fret := fn_body af in
-          match bind_args te env d args (fn_params af) with
-          | OK params =>
-              match no_alias  d params with
-              | OK no_alias =>
-                  if no_alias
-                  then (* Apply the function summary *)
-                    match fret with
-                    | RPrim => OK (d,KPrim)
-                    | RDeep n acc =>
-                        match List.nth_error args n with
-                        | None => fail
-                        | Some a =>
-                            deep_access env d a acc
-                        end
-                    | RAny => OK(d,KDead)
+Definition call (te:tenv) (env: aenv) (d:domain) (id:ident) (bt: btyp) (args:list atom) : res (domain* KVar) :=
+  match get_function env (Vars d) id with
+  | OK af =>
+      let fret := fn_body af in
+      match bind_args te env d args (fn_params af) with
+      | OK params =>
+          match no_alias  d params with
+          | OK no_alias =>
+              if no_alias
+              then (* Apply the function summary *)
+                match fret with
+                | RPrim => OK (d,KPrim)
+                | RDeep n acc =>
+                    match List.nth_error args n with
+                    | None => fail
+                    | Some a =>
+                        deep_access env d a acc
                     end
-                  else fail
-              | Error _ => Error (MSG "function " :: MSG id :: MSG "arguments may be aliased" :: nil)
-              end
-          | Error _ =>
-              Error (MSG "function " :: MSG id :: MSG "mismatch arguments" :: nil)
+                | RAny => OK(d,KDead)
+                end
+              else fail
+          | Error _ => Error (MSG "function " :: MSG id :: MSG "arguments may be aliased" :: nil)
           end
-      | Error _ => Error (MSG "function " :: MSG id :: MSG "Not_found" :: nil)
-  end
-  | _ => Error (MSG "call is not a function identifier" :: nil)
+      | Error _ =>
+          Error (MSG "function " :: MSG id :: MSG "mismatch arguments" :: nil)
+      end
+  | Error _ => Error (MSG "function " :: MSG id :: MSG "Not_found" :: nil)
   end.
 
 
 
 Definition eval_comp (te:tenv) (env : aenv) (d:domain) (c:comp)  : res (domain * KVar) :=
   match c with
-  | CpAtom a _ => OK (d, eval_atom env (Vars d) a )
-  | CpArrayGet a i _ _   => array_get env d a i
+  | CpAtom a _ =>
+      match a with
+      | AArrayGet a i _ _ => array_get env d a i
+      | ARecordProj a fd _ _ => record_get env d a fd
+      | _ => OK (d, eval_atom env (Vars d) a )
+      end
+  (* | CpArrayGet a i _ _   => array_get env d a i *)
   | CpArraySet a i vl _ => array_set env d a i vl
-  | CpRecordProj a fd _ _ =>  record_get env d a fd
+  (* | CpRecordProj a fd _ _ =>  record_get env d a fd *)
   | CpRecordUpdate a fd vl _ => record_set env d a fd vl
-  | CpDeepAccess a acc _   => deep_access env d a (List.map edge_of_access acc)
-  | CpCall a args _  => call te env d a args
+  (* | CpDeepAccess a acc _   => deep_access env d a (List.map edge_of_access acc) *)
+  | CpCall f btf args _  => call te env d f btf args
   end.
 
 Definition inter_pto (g1 g2: G.t) : res (G.t * (IntMap.t int *  IntMap.t int)) :=

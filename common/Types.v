@@ -37,7 +37,6 @@ Definition typ_is_prim (ty: typ) : bool :=
   | _ => false
   end.
 
-
 Fixpoint typ_eq_dec (t1 t2: typ) : { t1 = t2 } + { t1 <> t2 }.
 Proof.
   decide equality.
@@ -148,6 +147,12 @@ Qed.
 Lemma signedness_compare_trans : forall s1 s2 s3,
   forall c, signedness_compare s1 s2 = c -> signedness_compare s2 s3 = c -> signedness_compare s1 s3 = c.
 Proof. destruct s1,s2,s3; simpl; congruence. Qed.
+
+Lemma signedness_compare_antisym : forall s1 s2,
+  signedness_compare s1 s2 = CompOpp (signedness_compare s2 s1).
+Proof.
+  destruct s1, s2; reflexivity.
+Qed.
 
 Fixpoint typ_compare (t1 t2:typ) :=
   match t1 , t2 with

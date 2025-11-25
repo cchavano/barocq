@@ -297,7 +297,6 @@ Module Typed.
     |  _        => (fun _ => fail)
     end.
 
-
   Definition val_of_pval {ty:typ} (pv: res (pval ty)) : res (val ty) :=
     let* v := pv in
     OK (Vprim _ v).
@@ -317,59 +316,6 @@ Module Typed.
     | OK v => OK (Vprim _ v)
     | _    => fail
     end.
-
-  Fixpoint eval_atom (te: tenv)  (e:env) (tyr:typ) (a:atom)  : res (val tyr) :=
-    match a with
-    | ATrue _ => val_of_pval (cast_pval (PBool true) tyr)
-    | AFalse _ => val_of_pval (cast_pval (PBool false) tyr)
-    | AInt32 i bt =>
-        match get_signed true bt with
-        | None => fail
-        | Some s => val_of_pval (cast_pval (PInt32 s i) tyr)
-        end
-    | AInt64 i bt  =>
-        match get_signed true bt with
-        | None => fail
-        | Some s => val_of_pval (cast_pval (PInt64 s i) tyr)
-        end
-    | AConstr s bt =>
-        let* td := btyp_to_typ te bt  in
-        match get_enum td with
-        | None => fail
-        | Some (i,l) => let* e :=  make_enum l s in
-                        val_of_pval (cast_pval (PEnum i l e) tyr)
-        end
-    | AVar v _ => let* v := e v in
-                  let (tv,vl) := v in
-                  cast_val vl tyr
-    | ACast a1 tr =>
-        let* tr := btyp_to_typ te tr in
-        let* te1 := typof_atom te a1 in
-        let* v1  := eval_atom te e te1 a1   in
-        match v1 with
-        | Vprim ty' pv =>
-            let* f := get_cast abs_typ_impl ty' tr in
-            let* v' := f (eval_pval pv)  in
-            let* pv := pval_of_typ _ v' in val_of_pval (cast_pval pv tyr)
-        | _ => fail
-        end
-    | AUnaryOp op a1 bt =>
-        let* tye := btyp_to_typ te bt in
-        let* v := eval_atom te e tye a1  in
-        let* v := eval_val v in
-        let* res := eval_unary_op abs_typ_impl op tye v tyr in
-        val_of_eval_typ res
-    | ABinaryOp op a1 a2 bt =>
-        let* tye1 := typof_atom te a1 in
-        let* tye2  := typof_atom te a2 in
-        let* v1 := eval_atom te e tye1 a1 in
-        let* v2 := eval_atom te e tye2 a2 in
-        let* v1 := eval_val v1 in
-        let* v2 := eval_val v2 in
-        let* res := eval_binary_op abs_typ_impl op tye1 tye2 v1 v2 tyr in
-        let* pv := pval_of_typ _ res in val_of_pval (cast_pval pv tyr)
-    end.
-
 
   Definition index_of_pval {ty:typ} (v:pval ty) : res int64 :=
     if arch
@@ -396,16 +342,87 @@ Module Typed.
     | _        => fail
     end.
 
-Definition eval_array_get (m:mem) {ta:typ} (v1:val ta) {ti:typ} (v2:val ti) (tr:typ) : res (val tr) :=
-  let*  i := index_of_val v2 in
-  let*  p := isptr v1 in
-  let* arr := MEM.get p m in
-  match arr with
-  | MArray _ l =>  let* v := get l i in cast_val v tr
-  | _ => fail
-  end.
+  Definition cast_typof_field ( k:ident) (fields : smaplist typ) (GP :good_proj k (eval_fields_typ val fields) = true) :
+    typeof_field k (eval_fields_typ val fields) GP ->   {ty:typ & val ty} :=
+    fun X =>
+      let s := exists_typeof_field val k fields GP in
+      let (ty, EQ) := s in
+      existT val ty (cast EQ X).
 
+  Definition eval_array_get (m:mem) {ta:typ} (v1:val ta) {ti:typ} (v2:val ti) (tr:typ) : res (val tr) :=
+    let*  i := index_of_val v2 in
+    let*  p := isptr v1 in
+    let* arr := MEM.get p m in
+    match arr with
+    | MArray _ l =>  let* v := get l i in cast_val v tr
+    | _ => fail
+    end.
 
+  Definition eval_record_proj (m:mem) {tr : typ} (pr:val tr) (k:ident) (tr:typ) : res (val tr) :=
+    let* p := isptr pr in
+    let* rc := MEM.get p m in
+    match rc with
+    | MRecord id fields r =>
+        match bool_dec  (good_proj k (eval_fields_typ val fields)) true  with
+        | left EQ => let (ty,v) := cast_typof_field k fields EQ (project r k EQ) in
+                    cast_val v tr
+        | right _ => fail
+        end
+    | _ => fail
+    end.
+
+  Fixpoint eval_atom (te: tenv) (e:env) (m: mem) (tyr:typ) (a:atom)  : res (val tyr) :=
+    match a with
+    | ATrue => val_of_pval (cast_pval (PBool true) tyr)
+    | AFalse => val_of_pval (cast_pval (PBool false) tyr)
+    | AInt32 i s => val_of_pval (cast_pval (PInt32 s i) tyr)
+    | AInt64 i s  => val_of_pval (cast_pval (PInt64 s i) tyr)
+    | AConstr s bt =>
+        let* td := btyp_to_typ te bt  in
+        match get_enum td with
+        | None => fail
+        | Some (i,l) => let* e :=  make_enum l s in
+                        val_of_pval (cast_pval (PEnum i l e) tyr)
+        end
+    | AVar v _ => let* v := e v in
+                  let (tv,vl) := v in
+                  cast_val vl tyr
+    | ACast a1 tr =>
+        let* tr := btyp_to_typ te tr in
+        let* te1 := typof_atom te a1 in
+        let* v1  := eval_atom te e m te1 a1   in
+        match v1 with
+        | Vprim ty' pv =>
+            let* f := get_cast abs_typ_impl ty' tr in
+            let* v' := f (eval_pval pv)  in
+            let* pv := pval_of_typ _ v' in val_of_pval (cast_pval pv tyr)
+        | _ => fail
+        end
+    | AUnaryOp op a1 bt =>
+        let* tye := btyp_to_typ te bt in
+        let* v := eval_atom te e m tye a1  in
+        let* v := eval_val v in
+        let* res := eval_unary_op abs_typ_impl op tye v tyr in
+        val_of_eval_typ res
+    | ABinaryOp op a1 a2 bt =>
+        let* tye1 := typof_atom te a1 in
+        let* tye2  := typof_atom te a2 in
+        let* v1 := eval_atom te e m tye1 a1 in
+        let* v2 := eval_atom te e m tye2 a2 in
+        let* v1 := eval_val v1 in
+        let* v2 := eval_val v2 in
+        let* res := eval_binary_op abs_typ_impl op tye1 tye2 v1 v2 tyr in
+        let* pv := pval_of_typ _ res in val_of_pval (cast_pval pv tyr)
+    | AArrayGet a1 i _ bt =>
+        let* tya1 := typof_atom te a1 in
+        let* v1 := eval_atom te e m tya1 a1 in
+        let* v2 := eval_atom te e m (typof_index arch) i  in
+        eval_array_get m v1 v2 tyr
+    | ARecordProj r id _ bt =>
+        let* t := typof_atom te r in
+        let* r := eval_atom te e m t r in
+        eval_record_proj m r id tyr
+    end.
 
 Definition eval_array_set (m:mem) {ta:typ} (a:val ta) {ti:typ} (i:val ti) {te:typ} (v:val te): res mem :=
   let*  i := index_of_val i in
@@ -418,27 +435,6 @@ Definition eval_array_set (m:mem) {ta:typ} (a:val ta) {ti:typ} (i:val ti) {te:ty
                       MEM.set p (cast (f_equal mval EQ) (MArray _ l'))  m
   | _ => fun _ => fail
   end eq_refl.
-
-
-Definition cast_typof_field ( k:ident) (fields : smaplist typ) (GP :good_proj k (eval_fields_typ val fields) = true) :
-  typeof_field k (eval_fields_typ val fields) GP ->   {ty:typ & val ty} :=
-  fun X =>
-    let s := exists_typeof_field val k fields GP in
-    let (ty, EQ) := s in
-    existT val ty (cast EQ X).
-
-Definition eval_record_proj (m:mem) {tr : typ} (pr:val tr) (k:ident) (tr:typ) : res (val tr) :=
-  let* p := isptr pr in
-  let* rc := MEM.get p m in
-  match rc with
-  | MRecord id fields r =>
-      match bool_dec  (good_proj k (eval_fields_typ val fields)) true  with
-      | left EQ => let (ty,v) := cast_typof_field k fields EQ (project r k EQ) in
-                   cast_val v tr
-      | right _ => fail
-      end
-  | _ => fail
-  end.
 
 Definition eval_record_update (m:mem) {tr:typ} (r:val tr) (k:ident) {te:typ} (v:val te): res mem :=
   let* p := isptr r in
@@ -459,7 +455,7 @@ Definition eval_record_update (m:mem) {tr:typ} (r:val tr) (k:ident) {te:typ} (v:
   end eq_refl.
 
 
-Definition eval_access (te:tenv) (e:env) (m:mem) {ty:typ} (v:val ty) (acc:access) (tr:typ)  : res (val tr) :=
+(* Definition eval_access (te:tenv) (e:env) (m:mem) {ty:typ} (v:val ty) (acc:access) (tr:typ)  : res (val tr) :=
   match acc with
   | AcRecordField id bt _ => eval_record_proj m v id  tr
   | AcArrayIndex a bt _ =>
@@ -480,7 +476,7 @@ Fixpoint eval_accesses (te:tenv) (e:env) (m:mem) {ty:typ} (v:val ty) (l:list acc
       let* ta := typeof_access te acc in
       let*va := eval_access te e m v acc ta in
       eval_accesses te e m va l tr
-  end.
+  end. *)
 
 Definition cast_function {a1 a2:list typ} {r1 r2:typ} (Eq : TFun a1 r1 = TFun a2 r2) (f : mem -> typ_of_fun a1 r1) :
   mem -> typ_of_fun a2 r2.
@@ -523,46 +519,46 @@ Fixpoint eval_app (tparams : list typ) (tret : typ)
 
 Definition eval_comp (te:tenv) (ge:genv) (e:env) (m:mem) (c:comp) (tr:typ) : res (val tr  * mem) :=
   match c with
-  | CpAtom a bt => let* va := eval_atom te e tr a in
+  | CpAtom a bt => let* va := eval_atom te e m tr a in
                    OK (va,m)
-  | CpArrayGet a1 i bt _ =>
+  (* | CpArrayGet a1 i bt _ =>
       let* tya1 := typof_atom te a1 in
-      let* v1 := eval_atom te e tya1 a1 in
-      let* v2 := eval_atom te e (typof_index arch) i  in
+      let* v1 := eval_atom te e m tya1 a1 in
+      let* v2 := eval_atom te e m (typof_index arch) i  in
       let* r  := eval_array_get m v1 v2 tr in
-      OK(r,m)
+      OK(r,m) *)
   | CpArraySet a i v bt =>
       let* ta := typof_atom te a in
       let* tv := typof_atom te v in
-      let* a := eval_atom te e ta a in
-      let* i := eval_atom te e (typof_index arch) i in
-      let* v := eval_atom te e tr v in
+      let* a := eval_atom te e m ta a in
+      let* i := eval_atom te e m (typof_index arch) i in
+      let* v := eval_atom te e m tr v in
       let* m := eval_array_set m a i v  in
       OK (v,m)
-  | CpRecordProj r id bt _ =>
+  (* | CpRecordProj r id bt _ =>
       let* t := typof_atom te r in
-      let* r := eval_atom te e t r in
+      let* r := eval_atom te e m t r in
       let* v := eval_record_proj m r id tr in
-      OK(v,m)
+      OK(v,m) *)
   | CpRecordUpdate r id v bt =>
       let* trec := typof_atom te r in
       let* tv   := typof_atom te v in
-      let* r := eval_atom te e tr r in
-      let* v := eval_atom te e tv v in
+      let* r := eval_atom te e m tr r in
+      let* v := eval_atom te e m tv v in
       let* m := eval_record_update m r id v in
       OK(r,m)
-  | CpDeepAccess a l bt =>
+  (* | CpDeepAccess a l bt =>
       let*  ta := typof_atom te a in
-      let* a := eval_atom te e ta a in
+      let* a := eval_atom te e m ta a in
       let* v := eval_accesses te e m a l tr in
-      OK(v,m)
-  | CpCall a args bt =>
-      let* tyf := typof_atom te a in
+      OK(v,m) *)
+  | CpCall f btf args bt =>
+      let* tyf := btyp_to_typ te btf in
       match tyf with
       | TFun tparams tret =>
-          let* f := eval_atom te e (TFun tparams tr) a in
+          let* f := eval_atom te e m (TFun tparams tr) (AVar f btf) in
           let* f := get_fun ge f in
-          let* vargs := DList.map2 _ (eval_atom te e) args tparams in
+          let* vargs := DList.map2 _ (eval_atom te e m) args tparams in
           eval_app tparams tr vargs (f m)
       | _  => fail
       end
@@ -610,11 +606,11 @@ Fixpoint eval_statement (te:tenv) (ge:genv) (e:env) (m:mem) (ty:option typ) (s:s
       | _ => fail
       end
   | StIfThenElse a s1 s2 =>
-      let* v := eval_atom te e TBool a in
+      let* v := eval_atom te e m TBool a in
       eval_statement te ge e m ty (if bool_of_valbool v then s1 else s2)
   | StSwitch a l =>
       let* ta := typof_atom te a in
-      let* va  := eval_atom te e ta a  in
+      let* va  := eval_atom te e m ta a  in
       let vcases :=  MapList.map (eval_statement te ge e m ty) l in
       eval_match ta va ty vcases
   | StSequence s1 s2 =>
@@ -624,7 +620,7 @@ Fixpoint eval_statement (te:tenv) (ge:genv) (e:env) (m:mem) (ty:option typ) (s:s
       match ty with
       | None => fail
       | Some ty =>
-          let* va := eval_atom te e ty a in
+          let* va := eval_atom te e m ty a in
           OK (va,m)
       end
   end.
@@ -800,10 +796,10 @@ Module Typing.
 
   Fixpoint typecheck_atom (be: benv) (gx: gcontext) (lx: lcontext) (a: Syntax.atom) : res Syntax.Typed.atom :=
     match a with
-    | Syntax.ATrue => ret (ATrue BBool)
-    | Syntax.AFalse => ret (AFalse BBool)
-    | Syntax.AInt32 i s => ret (AInt32 i (BInt32 s))
-    | Syntax.AInt64 i s => ret (AInt64 i (BInt64 s))
+    | Syntax.ATrue => ret ATrue
+    | Syntax.AFalse => ret AFalse
+    | Syntax.AInt32 i s => ret (AInt32 i s)
+    | Syntax.AInt64 i s => ret (AInt64 i s)
     | Syntax.AConstr x =>
         let* t := typof_constr be x in
         ret (AConstr x t)
@@ -826,9 +822,21 @@ Module Typing.
         let ty2 := typof_atom a2' in
         let* t := typecheck_binary_op op ty1 ty2 in
         ret (ABinaryOp op a1' a2' t)
+    | Syntax.AArrayGet a i =>
+        let* a' := typecheck_atom be gx lx a in
+        let* i' := typecheck_atom be gx lx i in
+        let ta := typof_atom a' in
+        let ti := typof_atom i' in
+        let* (ty, ly) := typecheck_array_get2 arch ta ti in
+        ret (AArrayGet a' i' ly ty)
+    | Syntax.ARecordProj a f =>
+        let* a' := typecheck_atom be gx lx a in
+        let ta := typof_atom a' in
+        let* (ty, ly) := typecheck_record_proj2 be ta f in
+        ret (ARecordProj a' f ly ty)
     end.
 
-  Fixpoint typecheck_access (be: benv) (gx: gcontext) (lx: lcontext) (ty: btyp) (acs: list Syntax.access) : res (btyp * list Syntax.Typed.access) :=
+  (* Fixpoint typecheck_access (be: benv) (gx: gcontext) (lx: lcontext) (ty: btyp) (acs: list Syntax.access) : res (btyp * list Syntax.Typed.access) :=
     match acs with
     | nil => ret (ty, nil)
     | ac :: acs' =>
@@ -843,20 +851,20 @@ Module Typing.
             let* (r, lr) := typecheck_access be gx lx ty' acs' in
             ret (r, (AcArrayIndex ai' ty' ly) :: lr)
         end
-    end.
+    end. *)
 
   Definition typecheck_comp (be: benv) (gx: gcontext) (lx: lcontext) (c: Syntax.comp) : res Imp1Typed.comp :=
     match c with
     | Syntax.CpAtom a =>
         let* a' := typecheck_atom be gx lx a in
         ret (CpAtom a' (typof_atom a'))
-    | Syntax.CpArrayGet a1 a2 =>
+    (* | Syntax.CpArrayGet a1 a2 =>
         let* a1' := typecheck_atom be gx lx a1 in
         let* a2' := typecheck_atom be gx lx a2 in
         let ty1 := typof_atom a1' in
         let ty2 := typof_atom a2' in
         let* (ty, ly) := typecheck_array_get2 arch ty1 ty2 in
-        ret (CpArrayGet a1' a2' ty ly)
+        ret (CpArrayGet a1' a2' ty ly) *)
     | Syntax.CpArraySet a1 a2 a3 =>
         let* a1' := typecheck_atom be gx lx a1 in
         let* a2' := typecheck_atom be gx lx a2 in
@@ -866,11 +874,11 @@ Module Typing.
         let ty3 := typof_atom a3' in
         let* ty := typecheck_array_set arch ty1 ty2 ty3 in
         ret (CpArraySet a1' a2' a3' ty)
-    | Syntax.CpRecordProj a x =>
+    (* | Syntax.CpRecordProj a x =>
         let* a' := typecheck_atom be gx lx a in
         let tya := typof_atom a' in
         let* (ty, ly) := typecheck_record_proj2 be tya x in
-        ret (CpRecordProj a' x ty ly)
+        ret (CpRecordProj a' x ty ly) *)
     | Syntax.CpRecordUpdate a1 x a2 =>
         let* a1' := typecheck_atom be gx lx a1 in
         let* a2' := typecheck_atom be gx lx a2 in
@@ -878,17 +886,16 @@ Module Typing.
         let ty2 := typof_atom a2' in
         let* ty := typecheck_record_update be ty1 ty2 x in
         ret (CpRecordUpdate a1' x a2' ty)
-    | Syntax.CpDeepAccess a acs =>
+    (* | Syntax.CpDeepAccess a acs =>
         let* a' := typecheck_atom be gx lx a in
         let* (t, acs') := typecheck_access be gx lx (typof_atom a') acs in
-        ret (CpDeepAccess a' acs' t)
-    | Syntax.CpCall a args =>
-        let* a' := typecheck_atom be gx lx a in
-        let tya := typof_atom a' in
+        ret (CpDeepAccess a' acs' t) *)
+    | Syntax.CpCall f args =>
+        let* tf := typof_var gx lx f in
         let* args' := mmap (typecheck_atom be gx lx) args in
         let targs := map typof_atom args' in
-        let* ty := typecheck_call tya targs in
-        ret (CpCall a' args' ty)
+        let* ty := typecheck_call tf targs in
+        ret (CpCall f tf args' ty)
     end.
 
   (* Should be checked if the context contains the same set of set variables. ? *)

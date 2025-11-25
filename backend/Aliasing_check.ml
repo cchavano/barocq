@@ -8,7 +8,7 @@ let curr_fun_name : string ref = ref "UNKNOWN"
 type error_cause =
   | Invalid_atom of atom
   | Invalid_path of ident * path
-  | Invalid_deep_access of atom * access list
+  (* | Invalid_deep_access of atom * access list *)
   | Invalid_retval
   | Invalid_param_at_return of ident
 
@@ -23,7 +23,7 @@ let msg_from_failure (cause : error_cause) : string =
         "path %s%s is not valid"
         (PrintUtils.ident_to_string v)
         (path_to_string p)
-  | Invalid_deep_access (a, acs) ->
+  (* | Invalid_deep_access (a, acs) ->
       let acs_str =
         PrintUtils.list_to_string
           (fun ac ->
@@ -33,7 +33,7 @@ let msg_from_failure (cause : error_cause) : string =
       Printf.sprintf
         "deep access %s%s is not valid"
         (PrintSyntax.Typed.atom_to_string a)
-        acs_str
+        acs_str *)
   | Invalid_retval -> "invalid return value"
   | Invalid_param_at_return p ->
       Printf.sprintf
@@ -56,16 +56,24 @@ let update_error_stmt (cause : error_cause) (s1 : statement option)
 (** [check_atom d a] checks wether the atom [a] is valid in [d]. If [a] contains
     variables x1, ..., xn, it checks wether paths x1, ..., xn are valid in [d].
 *)
-let rec check_atom (d : absdom) (a : atom) : bool =
+let rec check_atom (d : absdom) (a : atom) : unit =
   match a with
-  | AVar (x, _) -> AbsDom.is_valid_path d x []
+  | ATrue | AFalse | AInt32 _ | AInt64 _ | AConstr _ -> ()
+  | AVar (x, _) ->
+      if AbsDom.is_valid_path d x [] then () else error (Invalid_path (x, []))
+  | ACast (a1, _) -> check_atom d a1
   | AUnaryOp (op, a', _) -> check_atom d a'
-  | ABinaryOp (op, a1, a2, _) -> check_atom d a1 && check_atom d a2
-  | _ -> true
+  | ABinaryOp (op, a1, a2, _) ->
+      check_atom d a1;
+      check_atom d a2
+  | AArrayGet (a1, i, _, _) ->
+      check_atom d a1;
+      check_atom d i
+  | ARecordProj (a1, _, _, _) -> check_atom d a1
 
 (** [check_deep_access d a acs] checks that the deep access from [a] with access
     list [acs] is valid in [d].*)
-let check_deep_access (d : absdom) (a : atom) (acs : access list) : bool =
+(* let check_deep_access (d : absdom) (a : atom) (acs : access list) : bool =
   let rec aux acs =
     match acs with
     | [] -> true
@@ -74,32 +82,29 @@ let check_deep_access (d : absdom) (a : atom) (acs : access list) : bool =
   in
   match a with
   | AVar (x, _) -> aux acs && AbsDom.is_valid_path d x (path_of_access_list acs)
-  | _ -> assert false
+  | _ -> assert false *)
 
-let check_comp (d : absdom) (c : comp) : comp =
+let check_comp (d : absdom) (c : comp) : unit =
   match c with
-  | CpAtom (a, _) -> if check_atom d a then c else error (Invalid_atom a)
-  | CpArrayGet (a, i, _, _) ->
+  | CpAtom (a, _) -> check_atom d a
+  (* | CpArrayGet (a, i, _, _) ->
       if check_atom d a then
         if check_atom d i then c else error (Invalid_atom i)
-      else error (Invalid_atom a)
+      else error (Invalid_atom a) *)
   | CpArraySet (_, i, v, _) ->
-      if check_atom d i then
-        if check_atom d v then c else error (Invalid_atom v)
-      else error (Invalid_atom i)
-  | CpRecordProj (AVar (y, _), f, _, _) ->
-      if AbsDom.is_valid_path d y [f] then c else error (Invalid_path (y, [f]))
-  | CpRecordUpdate (_, _, v, _) ->
-      if check_atom d v then c else error (Invalid_atom v)
-  | CpCall (_, args, _) -> begin
-      match List.filter (fun a -> not (check_atom d a)) args with
+      check_atom d i;
+      check_atom d v
+  (* | CpRecordProj (AVar (y, _), f, _, _) ->
+      if AbsDom.is_valid_path d y [f] then c else error (Invalid_path (y, [f])) *)
+  | CpRecordUpdate (_, _, v, _) -> check_atom d v
+  | CpCall (_, _, args, _) -> List.iter (check_atom d) args
+(* match List.filter (fun a -> not (check_atom d a)) args with
       | [] -> c
       | a :: _ -> error (Invalid_atom a)
-    end
-  | CpDeepAccess (a, acs, _) ->
+    end *)
+(* | CpDeepAccess (a, acs, _) ->
       if check_deep_access d a acs then c
-      else error (Invalid_deep_access (a, acs))
-  | CpRecordProj _ -> assert false
+      else error (Invalid_deep_access (a, acs)) *)
 
 (** [check_params_on_return_rec st params] checks that any parameter in [params]
     is not modified if the returned locations does not match the locations
@@ -134,18 +139,18 @@ let check_statement (params : (ident * Types.btyp) list) (s : statement) :
   let rec check_rec (s : statement) : Imp1.Typed.statement =
     try
       match s with
-      | StSet (x, c, d_in, _) -> Imp1.Typed.StSet (x, check_comp d_in c)
+      | StSet (x, c, d_in, _) ->
+          check_comp d_in c;
+          Imp1.Typed.StSet (x, c)
       | StIfThenElse (a, s1, s2, d_in, _) ->
-          if check_atom d_in a then
-            let s1' = check_rec s1 in
-            let s2' = check_rec s2 in
-            Imp1.Typed.StIfThenElse (a, s1', s2')
-          else error (Invalid_atom a)
+          check_atom d_in a;
+          let s1' = check_rec s1 in
+          let s2' = check_rec s2 in
+          Imp1.Typed.StIfThenElse (a, s1', s2')
       | StSwitch (a, cases, d_in, _) ->
-          if check_atom d_in a then
-            let cases' = Maps2.MapList.map check_rec cases in
-            Imp1.Typed.StSwitch (a, cases')
-          else error (Invalid_atom a)
+          check_atom d_in a;
+          let cases' = Maps2.MapList.map check_rec cases in
+          Imp1.Typed.StSwitch (a, cases')
       | StSequence (s1, s2) ->
           let s1' = check_rec s1 in
           let s2' = check_rec s2 in

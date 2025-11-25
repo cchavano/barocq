@@ -66,7 +66,10 @@ Fixpoint norm_tailcomp (t: ImpBNF.tailcomp) : res Imp1.statement :=
       let* cases' := MapList.map_err norm_tailcomp cases in
       ret (StSwitch a cases')
   | ImpBNF.TcComp c =>
-      ret (StSequence (StSet "res" c) (StReturn (AVar "res")))
+      match c with
+      | CpAtom a => ret (StReturn a)
+      | _ => ret (StSequence (StSet "res" c) (StReturn (AVar "res")))
+      end
   end.
 
 Definition norm_function (f: ImpBNF.function) : res Imp1.function :=

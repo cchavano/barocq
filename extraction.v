@@ -74,7 +74,8 @@ Separate Extraction
   BarocqShallowgen.monadify_norm2_program
   Syntax.get_enum_typedefs
   Syntax.get_record_typedefs
-  Imp1.Aliasing_AST.program
   Syntax.get_record_typedefs
+  Types.btyp_is_prim
+  Imp1.Aliasing_AST.program
   Ident
   BarocqVC.

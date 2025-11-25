@@ -1,6 +1,6 @@
 From Coq Require Import List String.
 From compcert Require Import Maps.
-From BarocqComp Require Import Target Monads Error Maps2 Types Utils Syntax Barray Benum BarocqTransf BarocqShallow.
+From BarocqComp Require Import Target Monads Error Maps2 Types Utils Syntax Barray Benum Barocq BarocqShallow.
 Import ListNotations.
 Import MonCounterErr.
 
@@ -101,7 +101,7 @@ Module Normalization.
           let* (li1, a1) := norm_expr_aux e1 in
           let* (li2, a2) := norm_expr_aux e2 in
           ret (li1 ++ li2, ARecordUpdate a1 f a2)
-      | Barocq.EDeepAccess _ _ => fail
+      (* | Barocq.EDeepAccess _ _ => fail *)
       | Barocq.EApp e1 args =>
           let* (li1, a1) := norm_expr_aux e1 in
           let* (l_args, a_args) :=
@@ -179,7 +179,7 @@ Module Normalization.
         norm_exprlist e [e1]
     | Barocq.ERecordUpdate e1 k e2 =>
         norm_exprlist e [e1; e2]
-    | Barocq.EDeepAccess _ _ => fail
+    (* | Barocq.EDeepAccess _ _ => fail *)
     | Barocq.EApp e1 args =>
         norm_exprlist e (e1 :: args)
     | Barocq.EIfThenElse e1 e2 e3 =>
@@ -345,7 +345,7 @@ Module Normalization2.
         norm_exprlist e [e1]
     | Barocq.ERecordUpdate e1 k e2 =>
         norm_exprlist e [e1; e2]
-    | Barocq.EDeepAccess _ _ => fail
+    (* | Barocq.EDeepAccess _ _ => fail *)
     | Barocq.EApp e1 args =>
         norm_exprlist e (e1 :: args)
     | Barocq.EIfThenElse e1 e2 e3 =>

@@ -39,19 +39,21 @@ Inductive atom :=
   | AVar : ident -> typ2 -> atom
   | ACast : atom -> typ2 -> atom
   | AUnaryOp : unary_op -> atom -> typ2 -> atom
-  | ABinaryOp : binary_op -> atom -> atom -> typ2 -> atom.
+  | ABinaryOp : binary_op -> atom -> atom -> typ2 -> atom
+  | AArrayGet : atom -> atom -> layout -> typ2 -> atom
+  | ARecordProj : atom -> ident -> layout -> typ2 -> atom.
 
-Inductive access : Type :=
+(* Inductive access : Type :=
   | AcRecordField : ident -> typ2 -> layout -> access
-  | AcArrayIndex : atom -> typ2 -> layout -> access.
+  | AcArrayIndex : atom -> typ2 -> layout -> access. *)
 
 (** ** Expressions ("pure" computations) *)
 
-Inductive expr : Type :=
+(* Inductive expr : Type :=
   | EAtom : atom -> typ2 -> expr
   | EArrayGet : atom -> atom -> typ2 -> layout -> expr
   | ERecordProj : atom -> ident -> typ2 -> layout -> expr
-  | EDeepAccess : atom -> list access -> typ2 -> expr.
+  | EDeepAccess : atom -> list access -> typ2 -> expr. *)
 
 (** ** "Effectul" computations *)
 
@@ -63,9 +65,9 @@ Inductive ecomp : Type :=
 
 Inductive statement : Type :=
   | StSkip : statement
-  | StSetExpr : ident -> expr -> statement
+  | StSet : ident -> atom -> statement
   | StEcomp : ecomp -> statement
-  | StCall : option ident -> atom -> list atom -> typ2 -> statement
+  | StCall : option ident -> ident -> typ2 -> list atom -> typ2 -> statement
   | StIfThenElse : atom -> statement -> statement -> statement
   | StSwitch : atom -> list (pattern * statement) -> statement
   | StSequence : statement -> statement -> statement
@@ -98,5 +100,7 @@ Definition typof_atom (a: atom) : typ2 :=
   | AVar _ ty
   | ACast _ ty
   | AUnaryOp _ _ ty
-  | ABinaryOp _ _ _ ty => ty
+  | ABinaryOp _ _ _ ty
+  | AArrayGet _ _ _ ty
+  | ARecordProj _ _ _ ty => ty
   end.

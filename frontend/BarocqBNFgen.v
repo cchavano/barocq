@@ -1,6 +1,6 @@
 From Coq Require Import PArith String List.
 From compcert Require Import Clightdefs Integers.
-From BarocqComp Require Import Ident Error Monads Maps2 Utils Syntax Types Benum Typing Barocq BarocqTransf BarocqBNF.
+From BarocqComp Require Import Ident Error Monads Maps2 Utils Syntax Types Benum Typing Barocq BarocqBNF.
 Import ListNotations.
 Import MonCounterErr.
 
@@ -27,7 +27,7 @@ Definition bnfexpr_of_atomlist (e: Barocq.expr) (la: list atom) : res BarocqBNF.
   | Barocq.EArrayGet _ _ =>
       let* a1 := list_nth_err la 0 in
       let* a2 := list_nth_err la 1 in
-      eret (EArrayGet a1 a2)
+      eret (EAtom (AArrayGet a1 a2))
   | Barocq.EArraySet _ _ _ =>
       let* a1 := list_nth_err la 0 in
       let* a2 := list_nth_err la 1 in
@@ -35,7 +35,7 @@ Definition bnfexpr_of_atomlist (e: Barocq.expr) (la: list atom) : res BarocqBNF.
       eret (EArraySet a1 a2 a3)
   | Barocq.ERecordProj _ x =>
       let* a := list_nth_err la 0 in
-      eret (ERecordProj a x)
+      eret (EAtom (ARecordProj a x))
   | Barocq.ERecordUpdate _ x _ =>
       let* a1 := list_nth_err la 0 in
       let* a2 := list_nth_err la 1 in
@@ -86,7 +86,7 @@ Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
         let* (li1, a1) := norm_expr_aux ifc e1 in
         let* (li2, a2) := norm_expr_aux ifc e2 in
         let* x := fresh_var in
-        ret (li1 ++ li2 ++ [(x, EArrayGet a1 a2)], AVar x)
+        ret (li1 ++ li2, AArrayGet a1 a2)
     | Barocq.EArraySet e1 e2 e3 =>
         let* (li1, a1) := norm_expr_aux ifc e1 in
         let* (li2, a2) := norm_expr_aux ifc e2 in
@@ -96,7 +96,7 @@ Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
     | Barocq.ERecordProj e1 f =>
         let* (li1, a1) := norm_expr_aux ifc e1 in
         let* x := fresh_var in
-        ret (li1 ++ [(x, ERecordProj a1 f)], AVar x)
+        ret (li1, ARecordProj a1 f)
     | Barocq.ERecordUpdate e1 f e2 =>
         let* (li1, a1) := norm_expr_aux ifc e1 in
         let* (li2, a2) := norm_expr_aux ifc e2 in
@@ -143,7 +143,7 @@ Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
     let* (lx, er) := norm_exprlist_rec e [] le in
     ret (mk_norm lx er)
   in
-  let fix norm_access_list_rec (a: atom) (acs: list Barocq.access) (acs_norm: list Syntax.access)
+  (* let fix norm_access_list_rec (a: atom) (acs: list Barocq.access) (acs_norm: list Syntax.access)
     : crmon ((smaplist BarocqBNF.expr) * BarocqBNF.expr) :=
     match acs with
     | nil => 
@@ -163,7 +163,7 @@ Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
     let* (le, ba) := norm_expr_aux false e in
     let* (lacs, bacs) := norm_access_list_rec ba acs nil in
     ret (mk_norm (le ++ lacs) bacs)
-  in
+  in *)
   let fix norm_match_cases (cases: list (pattern * Barocq.expr)) : crmon (list (pattern * BarocqBNF.expr)) :=
     match cases with
     | nil => ret nil
@@ -200,8 +200,8 @@ Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
       norm_exprlist e [e1]
   | Barocq.ERecordUpdate e1 k e2 =>
       norm_exprlist e [e1; e2]
-  | Barocq.EDeepAccess e1 acs =>
-      norm_deep_access e1 acs
+  (* | Barocq.EDeepAccess e1 acs =>
+      norm_deep_access e1 acs *)
   | Barocq.EApp e1 args =>
       norm_exprlist e (e1 :: args)
   | Barocq.EIfThenElse e1 e2 e3 =>
@@ -261,5 +261,4 @@ Fixpoint norm_program_rec (prog: Barocq.program) : res (BarocqBNF.program) :=
   end.
 
 Definition norm_program (arch: Target.archi) (prog: Barocq.program) : res BarocqBNF.program :=
-  let* prog := BarocqTransf.transf_program arch prog in
   norm_program_rec prog.

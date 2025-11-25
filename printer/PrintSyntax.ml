@@ -73,91 +73,87 @@ let rec atom_to_string (a : atom) : string =
         (opt_parens a1)
         (binary_op_to_string op)
         (opt_parens a2)
+  | AArrayGet (a1, a2) ->
+      sprintf "%s[%s]" (atom_to_string a1) (atom_to_string a2)
+  | ARecordProj (a, x) -> sprintf "%s.%s" (atom_to_string a) (ident_to_string x)
 
 and opt_parens (a : atom) : string =
   PrintUtils.opt_parens is_simpl_atom atom_to_string a
 
-let access_to_string (ac : access) : string =
+(* let access_to_string (ac : access) : string =
   match ac with
   | AcRecordField f -> sprintf ".%s" (ident_to_string f)
-  | AcArrayIndex i -> sprintf "[%s]" (atom_to_string i)
+  | AcArrayIndex i -> sprintf "[%s]" (atom_to_string i) *)
 
-let access_list_to_string (acs : access list) : string =
-  list_to_string access_to_string acs
+(* let access_list_to_string (acs : access list) : string =
+  list_to_string access_to_string acs *)
 
 let comp_to_string (c : comp) : string =
   match c with
   | CpAtom a -> atom_to_string a
-  | CpArrayGet (a1, a2) ->
-      sprintf "%s[%s]" (atom_to_string a1) (atom_to_string a2)
+  (* | CpArrayGet (a1, a2) ->
+      sprintf "%s[%s]" (atom_to_string a1) (atom_to_string a2) *)
   | CpArraySet (a1, a2, a3) ->
       sprintf
         "%s[%s] <- %s"
         (atom_to_string a1)
         (atom_to_string a2)
         (opt_parens a3)
-  | CpRecordProj (a, x) ->
-      sprintf "%s.%s" (atom_to_string a) (ident_to_string x)
+  (* | CpRecordProj (a, x) ->
+      sprintf "%s.%s" (atom_to_string a) (ident_to_string x) *)
   | CpRecordUpdate (a1, x, a2) ->
       sprintf
         "%s.%s <- %s"
         (atom_to_string a1)
         (ident_to_string x)
         (opt_parens a2)
-  | CpDeepAccess (a, acs) ->
-      sprintf "%s%s" (atom_to_string a) (access_list_to_string acs)
+  (* | CpDeepAccess (a, acs) ->
+      sprintf "%s%s" (atom_to_string a) (access_list_to_string acs) *)
   | CpCall (f, args) ->
       sprintf
         "%s%s"
-        (atom_to_string f)
+        (ident_to_string f)
         (list_to_string_paren atom_to_string args)
 
 module Typed = struct
   let rec untype_atom (a : Syntax.Typed.atom) : atom =
     match a with
-    | Syntax.Typed.ATrue _ -> ATrue
-    | Syntax.Typed.AFalse _ -> AFalse
-    | Syntax.Typed.AInt32 (i, ty) -> begin
-        match ty with
-        | BInt32 Signed -> AInt32 (i, Signed)
-        | BInt32 Unsigned -> AInt32 (i, Unsigned)
-        | _ -> assert false
-      end
-    | Syntax.Typed.AInt64 (i, ty) -> begin
-        match ty with
-        | BInt64 Signed -> AInt64 (i, Signed)
-        | BInt64 Unsigned -> AInt64 (i, Unsigned)
-        | _ -> assert false
-      end
+    | Syntax.Typed.ATrue -> ATrue
+    | Syntax.Typed.AFalse -> AFalse
+    | Syntax.Typed.AInt32 (i, s) -> AInt32 (i, s)
+    | Syntax.Typed.AInt64 (i, s) -> AInt64 (i, s)
     | Syntax.Typed.AConstr (x, _) -> AConstr x
     | Syntax.Typed.AVar (x, _) -> AVar x
     | Syntax.Typed.ACast (a1, ty) -> ACast (untype_atom a1, ty)
     | Syntax.Typed.AUnaryOp (op, a', _) -> AUnaryOp (op, untype_atom a')
     | Syntax.Typed.ABinaryOp (op, a1, a2, _) ->
         ABinaryOp (op, untype_atom a1, untype_atom a2)
+    | Syntax.Typed.AArrayGet (a, i, _, _) ->
+        AArrayGet (untype_atom a, untype_atom i)
+    | Syntax.Typed.ARecordProj (a, f, _, _) -> ARecordProj (untype_atom a, f)
 
   let atom_to_string (a : Syntax.Typed.atom) : string =
     atom_to_string (untype_atom a)
 
-  let untype_access (ac : Syntax.Typed.access) : Syntax.access =
+  (* let untype_access (ac : Syntax.Typed.access) : Syntax.access =
     match ac with
     | Syntax.Typed.AcRecordField (f, _, _) -> AcRecordField f
-    | Syntax.Typed.AcArrayIndex (a, _, _) -> AcArrayIndex (untype_atom a)
+    | Syntax.Typed.AcArrayIndex (a, _, _) -> AcArrayIndex (untype_atom a) *)
 
   let untype_comp (c : Syntax.Typed.comp) : comp =
     match c with
     | Syntax.Typed.CpAtom (a, _) -> CpAtom (untype_atom a)
-    | Syntax.Typed.CpArrayGet (a1, a2, _, _) ->
-        CpArrayGet (untype_atom a1, untype_atom a2)
+    (* | Syntax.Typed.CpArrayGet (a1, a2, _, _) ->
+        CpArrayGet (untype_atom a1, untype_atom a2) *)
     | Syntax.Typed.CpArraySet (a1, a2, a3, _) ->
         CpArraySet (untype_atom a1, untype_atom a2, untype_atom a3)
-    | Syntax.Typed.CpRecordProj (a', f, _, _) -> CpRecordProj (untype_atom a', f)
+    (* | Syntax.Typed.CpRecordProj (a', f, _, _) -> CpRecordProj (untype_atom a', f) *)
     | Syntax.Typed.CpRecordUpdate (a1, f, a2, _) ->
         CpRecordUpdate (untype_atom a1, f, untype_atom a2)
-    | Syntax.Typed.CpDeepAccess (a, acs, _) ->
-        CpDeepAccess (untype_atom a, List.map untype_access acs)
-    | Syntax.Typed.CpCall (a', args, _) ->
-        CpCall (untype_atom a', List.map untype_atom args)
+    (* | Syntax.Typed.CpDeepAccess (a, acs, _) ->
+        CpDeepAccess (untype_atom a, List.map untype_access acs) *)
+    | Syntax.Typed.CpCall (f, _, args, _) ->
+        CpCall (f, List.map untype_atom args)
 
   let comp_to_string (c : Syntax.Typed.comp) : string =
     comp_to_string (untype_comp c)

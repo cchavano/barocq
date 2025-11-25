@@ -2,6 +2,7 @@ open Syntax
 open Types
 open PrintUtils
 
+(** Type representing an abstract memory path *)
 type path = ident list
 
 (** [_CONTENT] is the label given to memory edges whose source is an array (c.f.
@@ -15,14 +16,20 @@ let path_to_string (p : path) : string =
       if f = _CONTENT then fstr else Printf.sprintf ".%s" fstr)
     p
 
-(** [path_of_access_list acs] transforms the access list [acs] into a path. *)
-let rec path_of_access_list (acs : Syntax.Typed.access list) : path =
-  match acs with
-  | [] -> []
-  | Syntax.Typed.AcRecordField (f, _, _) :: acs' ->
-      f :: path_of_access_list acs'
-  | Syntax.Typed.AcArrayIndex (_, _, _) :: acs' ->
-      _CONTENT :: path_of_access_list acs'
+(** Type representing a concrete selector *)
+type selector =
+  | SelField of ident
+  | SelIndex of Typed.atom
+
+(** [path_of_access_list acs] transforms the selector list [sels] into an
+    abstract path. *)
+let path_of_selector_list (sels : selector list) : path =
+  List.map
+    (fun ac ->
+      match ac with
+      | SelIndex _ -> _CONTENT
+      | SelField f -> f)
+    sels
 
 module PathTree = struct
   (** Tree representing invalid paths in the abstract memory. A path is a

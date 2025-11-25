@@ -167,12 +167,12 @@ let rec expr_to_deep (prefix : string) (e : Typed.expr) : string =
           (ident_to_deep x)
           (expr_to_deep "" e2)
           (btyp_to_deep bt)
-    | EDeepAccess (e1, acs, bt) ->
+    (* | EDeepAccess (e1, acs, bt) ->
         sprintf
           "EDeepAccess (%s) %s (%s)"
           (expr_to_deep prefix e1)
           (list_to_string_bracket access_to_deep acs)
-          (btyp_to_deep bt)
+          (btyp_to_deep bt) *)
     | EApp (e1, args, bt) ->
         sprintf
           "EApp (%s) %s (%s)"

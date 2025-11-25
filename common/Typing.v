@@ -137,26 +137,28 @@ Definition typof_literal (l: literal) : btyp :=
 
 Definition typof_atom (a: atom) : btyp :=
   match a with
-  | ATrue ty
-  | AFalse ty
-  | AInt32 _ ty
-  | AInt64 _ ty
+  | ATrue
+  | AFalse => BBool
+  | AInt32 _ s => BInt32 s
+  | AInt64 _ s => BInt64 s
   | AConstr _ ty
   | AVar _ ty
   | ACast _ ty
   | AUnaryOp _ _ ty
-  | ABinaryOp _ _ _ ty => ty
+  | ABinaryOp _ _ _ ty
+  | AArrayGet _ _ _ ty
+  | ARecordProj _ _ _ ty => ty
   end.
 
 Definition typof_comp (c: comp) : btyp :=
   match c with
   | CpAtom _ ty
-  | CpArrayGet _ _ ty _
+  (* | CpArrayGet _ _ ty _ *)
   | CpArraySet _ _ _ ty
-  | CpRecordProj _ _ ty _
+  (* | CpRecordProj _ _ ty _ *)
   | CpRecordUpdate _ _ _ ty
-  | CpDeepAccess _ _ ty
-  | CpCall _ _ ty => ty
+  (* | CpDeepAccess _ _ ty *)
+  | CpCall _ _ _ ty => ty
   end.
 
 Definition gcontext : Type := STree.t btyp.

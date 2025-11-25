@@ -674,7 +674,7 @@ Section S.
     | EArraySet e1 e2 e3 _ => vars_of_expr (vars_of_expr (vars_of_expr vars e1) e2) e3
     | ERecordProj e _ _ => vars_of_expr vars e
     | ERecordUpdate e1 _ e2 _ => vars_of_expr (vars_of_expr vars e1) e2
-    | EDeepAccess e acc _ => vars_of_expr (List.fold_left vars_of_access acc vars) e
+    (* | EDeepAccess e acc _ => vars_of_expr (List.fold_left vars_of_access acc vars) e *)
     | EApp e l _   => List.fold_left vars_of_expr l (vars_of_expr vars e)
     | EIfThenElse e1 e2 e3 _ => vars_of_expr (vars_of_expr (vars_of_expr vars e1) e2) e3
     | EMatch e1 cases _  =>
@@ -685,12 +685,12 @@ Section S.
           | Some _ => vars_of_expr vars e2
           | None   => STree.remove x (vars_of_expr vars e2)
           end in vars_of_expr vars_e2 e1
-    end
-  with vars_of_access (vars: STree.t unit) (acc:access) : STree.t unit :=
+    end.
+  (* with vars_of_access (vars: STree.t unit) (acc:access) : STree.t unit :=
          match acc with
          | AcRecordField _ _ => vars
          | AcArrayIndex e _ => vars_of_expr vars e
-         end.
+         end. *)
 
   Definition has_var (s:string) (vars:STree.t unit) :=
     match STree.get s vars with
@@ -1458,10 +1458,10 @@ Section S.
     destruct e; simpl; auto.
     - intros. rewrite STree.gsspec.
       destruct (STree.elt_eq x i); auto.
-    - induction l; simpl; auto.
+    (* - induction l; simpl; auto.
       intros.
       apply IHl.
-      destruct a; simpl;auto.
+      destruct a; simpl;auto. *)
     - intros.
       apply get_var_of_expr_acc with (e:=e) in H.
       revert H.
@@ -1538,7 +1538,7 @@ Section S.
       rewrite get_var_of_expr_case.
       rewrite (get_var_of_expr_case x e2 (vars_of_expr STree.empty e1)).
       tauto.
-    - intros.
+    (* - intros.
       rewrite get_var_of_expr_case.
       symmetry. rewrite get_var_of_expr_case.
       symmetry.
@@ -1559,7 +1559,7 @@ Section S.
         intuition congruence.
         rewrite (get_var_of_expr_case x e0 acc).
         intuition congruence.
-      + tauto.
+      + tauto. *)
     - intros.
       assert (forall acc',
                  STree.get x (fold_left vars_of_expr l acc') = Some tt <->
@@ -1639,7 +1639,7 @@ Section S.
 
 
 
-  Lemma get_vars_of_access : forall acs acc,
+  (* Lemma get_vars_of_access : forall acs acc,
     forall x, STree.get x (fold_left vars_of_access  acs acc ) = Some tt <->
                 (STree.get x (fold_left vars_of_access acs STree.empty) = Some tt
                  \/ STree.get x acc = Some tt).
@@ -1659,7 +1659,7 @@ Section S.
       symmetry.
       rewrite get_var_of_expr_case.
       tauto.
-  Qed.
+  Qed. *)
 
   Definition eq_env_vars_of_expr_acc (e:expr) : forall acc le le' ge ge',
       eq_env (vars_of_expr acc e) le le' ge ge' ->
@@ -1700,7 +1700,7 @@ Section S.
   Qed.
 
 
-  Lemma eq_env_of_access : forall acs acc le le' ge ge',
+  (* Lemma eq_env_of_access : forall acs acc le le' ge ge',
       eq_env (fold_left vars_of_access  acs acc ) le le' ge ge' ->
       eq_env (fold_left vars_of_access acs STree.empty) le le' ge ge' /\
         eq_env acc le le' ge ge'.
@@ -1713,7 +1713,7 @@ Section S.
     apply H;auto.
     rewrite get_vars_of_access.
     tauto.
-  Qed.
+  Qed. *)
 
   Lemma get_fold_vars_of_expr : forall x args acc,
       STree.get x (fold_left vars_of_expr args acc) = Some tt <->
@@ -1998,7 +1998,7 @@ Section S.
       simpl. inv E2 ; try constructor.
       simpl.
       apply ext_equal_eval_record_update; auto.
-    - simpl in H.
+    (* - simpl in H.
       apply eq_env_split in H as (EQ1 & EQ2).
       destruct (typof_expr te e);try constructor.
       simpl.
@@ -2053,7 +2053,7 @@ Section S.
           simpl.
           apply IHALL.
           apply ext_equal_array_get. auto.
-          auto.
+          auto. *)
     -
       simpl in H.
       destruct (typof_expr te e); try constructor.

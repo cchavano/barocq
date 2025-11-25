@@ -20,19 +20,12 @@ Fixpoint transl_btyp (ty: btyp) : typ2 :=
   | BAbs t => TAbs t
   end.
 
-Definition signedness_of_btyp (ty: btyp) : signedness :=
-  match ty with
-  | BInt32 s
-  | BInt64 s => s
-  | _ => Signed
-  end.
-
 Fixpoint transl_atom (a: Imp1.Typed.atom) : atom :=
   match a with
-  | Syntax.Typed.ATrue _ => ATrue
-  | Syntax.Typed.AFalse _ => AFalse
-  | Syntax.Typed.AInt32 i ty => AInt32 i (signedness_of_btyp ty)
-  | Syntax.Typed.AInt64 i ty => AInt64 i (signedness_of_btyp ty)
+  | Syntax.Typed.ATrue => ATrue
+  | Syntax.Typed.AFalse => AFalse
+  | Syntax.Typed.AInt32 i s => AInt32 i s
+  | Syntax.Typed.AInt64 i s => AInt64 i s
   | Syntax.Typed.AConstr cid ty => AConstr cid (transl_btyp ty)
   | Syntax.Typed.AVar x ty => AVar x (transl_btyp ty)
   | Syntax.Typed.ACast a ty => ACast (transl_atom a) (transl_btyp ty)
@@ -40,38 +33,42 @@ Fixpoint transl_atom (a: Imp1.Typed.atom) : atom :=
       AUnaryOp op (transl_atom a) (transl_btyp ty)
   | Syntax.Typed.ABinaryOp op a1 a2 ty =>
       ABinaryOp op (transl_atom a1) (transl_atom a2) (transl_btyp ty)
+  | Syntax.Typed.AArrayGet a i ly ty =>
+      AArrayGet (transl_atom a) (transl_atom i) ly (transl_btyp ty)
+  | Syntax.Typed.ARecordProj a f ly ty =>
+      ARecordProj (transl_atom a) f ly (transl_btyp ty)
   end.
 
-Definition transl_access (ac: Syntax.Typed.access) : Imp2.access :=
+(* Definition transl_access (ac: Syntax.Typed.access) : Imp2.access :=
   match ac with
   | Syntax.Typed.AcRecordField f ty ly =>
       AcRecordField f (transl_btyp ty) ly
   | Syntax.Typed.AcArrayIndex i ty ly =>
       AcArrayIndex (transl_atom i) (transl_btyp ty) ly
-  end.
+  end. *)
 
 Definition set_or_skip (x: ident) (a: atom) : Imp2.statement :=
   match a with
   | AVar y ty =>
       if Ident.eq_dec x y then StSkip
-      else StSetExpr x (EAtom a ty)
-  | _ => StSetExpr x (EAtom a (typof_atom a))
+      else StSet x a
+  | _ => StSet x a
   end.
 
 Fixpoint transl_statement (s: Imp1Typed.statement) : Imp2.statement :=
   match s with
   | Imp1Typed.StSet x (CpAtom a ty) =>
       set_or_skip x (transl_atom a)
-  | Imp1Typed.StSet x (CpArrayGet a1 a2 ty ly) =>
+  (* | Imp1Typed.StSet x (CpArrayGet a1 a2 ty ly) =>
       let a1' := transl_atom a1 in
       let a2' := transl_atom a2 in
-      StSetExpr x (EArrayGet a1' a2' (transl_btyp ty) ly)
-  | Imp1Typed.StSet x (CpRecordProj a1 f ty ly) =>
+      StSetExpr x (EArrayGet a1' a2' (transl_btyp ty) ly) *)
+  (* | Imp1Typed.StSet x (CpRecordProj a1 f ty ly) =>
       StSetExpr x (ERecordProj (transl_atom a1) f (transl_btyp ty) ly)
   | Imp1Typed.StSet x (CpDeepAccess a acs ty) =>
       let a' := transl_atom a in
       let acs' := List.map transl_access acs in
-      StSetExpr x (EDeepAccess a' acs' (transl_btyp ty))
+      StSetExpr x (EDeepAccess a' acs' (transl_btyp ty)) *)
   | Imp1Typed.StSet x (CpArraySet a1 a2 a3 _) =>
       let a1' := transl_atom a1 in
       let a2' := transl_atom a2 in
@@ -81,10 +78,9 @@ Fixpoint transl_statement (s: Imp1Typed.statement) : Imp2.statement :=
       let a1' := transl_atom a1 in
       let a2' := transl_atom a2 in
       StSequence (StEcomp (EcRecordUpdate a1' f a2')) (set_or_skip x a1')
-  | Imp1Typed.StSet x (CpCall a args ty) =>
-      let a' := transl_atom a in
+  | Imp1Typed.StSet x (CpCall f tf args ty) =>
       let args' := List.map transl_atom args in
-      StCall (Some x) a' args' (transl_btyp ty)
+      StCall (Some x) f (transl_btyp tf) args' (transl_btyp ty)
   | Imp1Typed.StIfThenElse a s1 s2 =>
       StIfThenElse (transl_atom a) (transl_statement s1) (transl_statement s2)
   | Imp1Typed.StSwitch a cases =>

@@ -100,22 +100,36 @@ let invalid_paths_with_prefix (inv : path_map) (x : ident) (p : path) :
   | Some t -> PathTree.prefixed_by t p
   | None -> None
 
-(** [invalid_paths_of_atom inv a] returns the invalid paths of all variables
-    contained in [a]. *)
-let rec invalid_paths_of_atom (inv : path_map) (a : atom) : path_tree option =
-  match a with
-  | AVar (v, _) -> invalid_paths_with_prefix inv v []
-  | AUnaryOp (op, a', _) -> invalid_paths_of_atom inv a'
-  | ABinaryOp (op, a1, a2, _) -> begin
-      let iv1 = invalid_paths_of_atom inv a1 in
-      let iv2 = invalid_paths_of_atom inv a2 in
-      match (iv1, iv2) with
-      | Some t1, Some t2 -> Some (PathTree.union t1 t2)
-      | Some t1, None -> Some t1
-      | None, Some t2 -> Some t2
-      | _, _ -> None
-    end
-  | _ -> None
+(** [invalid_paths_of_atom inv a] returns the invalid paths associate with atoms
+    a. *)
+let invalid_paths_of_atom (inv : path_map) (a : atom) : path_tree option =
+  let rec aux p a =
+    match a with
+    | Syntax.Typed.ATrue
+    | Syntax.Typed.AFalse
+    | Syntax.Typed.AInt32 _
+    | Syntax.Typed.AInt64 _
+    | Syntax.Typed.AConstr _ -> None
+    | Syntax.Typed.AVar (v, _) -> invalid_paths_with_prefix inv v (List.rev p)
+    | Syntax.Typed.ACast (a1, _) -> aux [] a1
+    | Syntax.Typed.AUnaryOp (op, a', _) -> aux [] a'
+    | Syntax.Typed.ABinaryOp (op, a1, a2, _) -> begin
+        let iv1 = aux [] a1 in
+        let iv2 = aux [] a2 in
+        match (iv1, iv2) with
+        | Some t1, Some t2 -> Some (PathTree.union t1 t2)
+        | Some t1, None -> Some t1
+        | None, Some t2 -> Some t2
+        | _, _ -> None
+      end
+    | Syntax.Typed.AArrayGet (a1, i, _, _) -> begin
+        match aux [] i with
+        | Some _ -> Some Leaf
+        | None -> aux (_CONTENT :: p) a1
+      end
+    | Syntax.Typed.ARecordProj (a1, f, _, _) -> aux (f :: p) a1
+  in
+  aux [] a
 
 (** [dfs_mem m root] computes a DSF algorithm on the memory m and returns the
     visited nodes. *)
@@ -147,9 +161,55 @@ let invalidate_mem_from_locs (st : absstate) (roots : LocSet.t) : path_map =
     all_locs
     IdentMap.empty
 
+let atom_to_selector_list (a : Syntax.Typed.atom) :
+    (ident * selector list) option =
+  let rec aux p a =
+    match a with
+    | Syntax.Typed.AVar (x, ty) -> if is_prim ty then None else Some (x, p)
+    | Syntax.Typed.AArrayGet (a1, i, _, _) -> aux (SelIndex i :: p) a1
+    | Syntax.Typed.ARecordProj (a1, f, _, _) -> aux (SelField f :: p) a1
+    | _ -> None
+  in
+  aux [] a
+
+let eval_mem_read (st : absstate) (v : ident) (sels : selector list)
+    (do_lock : bool) : absdom * pointsto_set =
+  let rec aux (st : absstate) (pointsto : pointsto_set) (sels : selector list)
+      (root : absloc) (do_lock : bool) : absdom * pointsto_set =
+    match sels with
+    | [] -> (AbsState st, LocSet.add root pointsto)
+    | se :: sels' -> begin
+        match se with
+        | SelIndex i ->
+            if LocMap.find_opt root st.st_arr_locked = None then
+              let adjacents = mem_get st.st_mem root _CONTENT in
+              let st' =
+                if do_lock then
+                  { st with st_arr_locked = LocMap.add root i st.st_arr_locked }
+                else st
+              in
+              aux_adjacents st' pointsto sels' adjacents do_lock
+            else (top "the access path contains locked array(s)", LocSet.empty)
+        | SelField f ->
+            let adjacents = mem_get st.st_mem root f in
+            aux_adjacents st pointsto sels' adjacents do_lock
+      end
+  and aux_adjacents st pts sels adjs dl =
+    LocSet.fold
+      (fun l (acc_d, acc_pts) ->
+        match acc_d with
+        | AbsState acc_st -> aux acc_st acc_pts sels l dl
+        | Top msg -> (Top msg, acc_pts))
+      adjs
+      (AbsState st, pts)
+  in
+  match IdentMap.find_opt v st.st_env with
+  | Some locs -> aux_adjacents st LocSet.empty sels locs do_lock
+  | None -> (AbsState st, LocSet.empty)
+
 (** [exec_set_atom x a st] computes the transfer function for the statement
     [set x := a] on [st]. *)
-let exec_set_atom (x : ident) (a : atom) (st : absstate) : absstate =
+(* let exec_set_atom (x : ident) (a : atom) (st : absstate) : absstate =
   let a_inv = invalid_paths_of_atom st.st_inv a in
   let st' =
     match a with
@@ -167,7 +227,30 @@ let exec_set_atom (x : ident) (a : atom) (st : absstate) : absstate =
       inv_add st' x t
   | None ->
       (* If variable shadowing occurs, removes x from the map of invalid paths. *)
-      { st' with st_inv = IdentMap.remove x st'.st_inv }
+      { st' with st_inv = IdentMap.remove x st'.st_inv } *)
+
+let exec_set_atom (x : ident) (a : atom) (st : absstate) : absdom =
+  let a_inv = invalid_paths_of_atom st.st_inv a in
+  let* st' =
+    match atom_to_selector_list a with
+    | Some (y, sels) ->
+        let do_lock = if is_prim (typof_atom a) then false else true in
+        let d_read, ly_sels = eval_mem_read st y sels do_lock in
+        let* st_read = d_read in
+        if LocSet.is_empty ly_sels then AbsState st
+        else AbsState (env_add st_read x ly_sels)
+    | None -> AbsState st
+  in
+  let str =
+    match a_inv with
+    | Some t ->
+        (* x inherits the invalid paths from a. *)
+        inv_add st' x t
+    | None ->
+        (* If variable shadowing occurs, removes x from the map of invalid paths. *)
+        { st' with st_inv = IdentMap.remove x st'.st_inv }
+  in
+  AbsState str
 
 (** [vars_aliased_to_loc rev loc] returns the variable set that may point to
     [loc]. If no variable points to [loc], it returns an empty set. *)
@@ -187,7 +270,7 @@ let vars_aliased_to_locs (rev : rev_absenv) (locs : pointsto_set) : var_set =
 (** [exec_set_record_proj x a f ty st] computes the transfer function for the
     statement [set x := a.f] on [st]. [ty] is the type of the field [f] in the
     record [a]. *)
-let exec_set_record_proj (x : ident) (a : atom) (f : ident) (ty : btyp)
+(* let exec_set_record_proj (x : ident) (a : atom) (f : ident) (ty : btyp)
     (st : absstate) : absstate =
   match a with
   | AVar (y, _) ->
@@ -215,7 +298,7 @@ let exec_set_record_proj (x : ident) (a : atom) (f : ident) (ty : btyp)
             (* If variable shadowing occurs, removes x from the map of invalid paths. *)
             { st' with st_inv = IdentMap.remove x st'.st_inv }
       end
-  | _ -> assert false
+  | _ -> assert false *)
 
 (** [exec_set_record_update  x a f v st] computes the transfer function for the
     statement [set x := y.f <- v] on [st]. *)
@@ -437,7 +520,7 @@ let exec_set_array_set (x : ident) (a : atom) (i : atom) (v : atom)
 (** [exec_set_deep_access x a acs ty st] executes the transfer function for the
     statement [set x := a acs] on [st]. [ty] is the type of the value returned
     by the deep access. *)
-let exec_set_deep_access (x : ident) (a : atom) (acs : access list) (ty : btyp)
+(* let exec_set_deep_access (x : ident) (a : atom) (acs : access list) (ty : btyp)
     (st : absstate) : absstate =
   match a with
   | AVar (y, _) ->
@@ -452,7 +535,7 @@ let exec_set_deep_access (x : ident) (a : atom) (acs : access list) (ty : btyp)
             (* if variable shadowing occurs, removex x from the map of invalid paths. *)
             { st with st_inv = IdentMap.remove x st.st_inv }
       else assert false
-  | _ -> assert false
+  | _ -> assert false *)
 
 (** [pointsto_unique st x] checks wether the variable [x] points to only one
     abstract location in [st]. *)
@@ -543,32 +626,6 @@ let wf_args (st : absstate) (args : atom list) : bool =
       args
   in
   is_forest_locs st.st_mem arg_roots
-
-(** [follow_path_from_loc m p root] returns the set of locations reachable from
-    [root] via [p] in the memory [m]. *)
-let rec follow_path_from_loc (m : absmem) (p : path) (root : absloc) :
-    pointsto_set =
-  match p with
-  | [] -> LocSet.singleton root
-  | f :: [] -> mem_get m root f
-  | f :: p' ->
-      let adjacents = mem_get m root f in
-      LocSet.fold
-        (fun l acc -> LocSet.union (follow_path_from_loc m p' l) acc)
-        adjacents
-        LocSet.empty
-
-(** [follow_path_from_var ev m v p] returns the set of locations reachable from
-    [v] via [p] in the memory [m] and environment [ev]. *)
-let follow_path_from_var (ev : absenv) (m : absmem) (v : ident) (p : path) :
-    pointsto_set =
-  match IdentMap.find_opt v ev with
-  | Some locs ->
-      LocSet.fold
-        (fun l acc -> LocSet.union (follow_path_from_loc m p l) acc)
-        locs
-        LocSet.empty
-  | None -> LocSet.empty
 
 (** [args_bjection params args] computes the bijection map from from parameters
     to arguments. It binds each parameter x to its corresponding argument y if y
@@ -835,13 +892,39 @@ let build_call_state (st : absstate) (args : atom list) : absstate =
   let stcall = proj_state st vars in
   { stcall with st_arr_locked = LocMap.empty; st_res = LocSet.empty }
 
+(** [follow_path_from_loc m p root] returns the set of locations pointed to by
+    from [p] from [root] in the memory [m]. *)
+let rec follow_path_from_loc (m : absmem) (p : path) (root : absloc) :
+    pointsto_set =
+  match p with
+  | [] -> LocSet.singleton root
+  | f :: [] -> mem_get m root f
+  | f :: p' ->
+      let adjacents = mem_get m root f in
+      LocSet.fold
+        (fun l acc -> LocSet.union (follow_path_from_loc m p' l) acc)
+        adjacents
+        LocSet.empty
+
+(** [follow_path_from_var ev m v p] returns the set of locations pointed to by
+    path ([v], [p]) in the memory [m] and environment [ev]. *)
+let follow_path_from_var (ev : absenv) (m : absmem) (v : ident) (p : path) :
+    pointsto_set =
+  match IdentMap.find_opt v ev with
+  | Some locs ->
+      LocSet.fold
+        (fun l acc -> LocSet.union (follow_path_from_loc m p l) acc)
+        locs
+        LocSet.empty
+  | None -> LocSet.empty
+
 (** [returnstate_inv_paths st_init inv] computes the new invalid paths that are
     due to the invalidation of the arguments of a function call. [st_init] is
     the state before the function call. [inv] is the invalid paths that concern
     the arguments. *)
 let returnstate_inv_paths (st_init : absstate) (inv : path_map) : path_map =
   let inv_flat : path list IdentMap.t = IdentMap.map PathTree.flatten inv in
-  (* roots collects all locations reachable from every path contained in inv *)
+  (* roots collects all locations pointed to by every path contained in inv *)
   let roots =
     IdentMap.fold
       (fun var pl accF ->
@@ -860,51 +943,52 @@ let returnstate_inv_paths (st_init : absstate) (inv : path_map) : path_map =
 (** [exec_set_call x a args ty fe st nctr] computes the transfer function for
     the statement [set x = a (args)] on [st]. [fe] is the function descriptor
     environment. [ty] is the type of the return value. *)
-let exec_set_call (show_debug : bool) (re : renv) (x : ident) (a : atom)
+let exec_set_call (show_debug : bool) (re : renv) (x : ident) (y : ident)
     (args : atom list) (ty : btyp) (fe : fenv) (st : absstate) : absdom =
-  match a with
-  | AVar (y, _) ->
-      let fd_params, fd_callstate, fd_returnstate =
-        match IdentMap.find_opt y fe with
-        | Some fdescr ->
-            (fdescr.fd_params, fdescr.fd_callstate, fdescr.fd_returnstate)
-        | None -> raise unsupported
-      in
-      let* fd_returnstate = fd_returnstate in
+  let fd_params, fd_callstate, fd_returnstate =
+    match IdentMap.find_opt y fe with
+    | Some fdescr ->
+        (fdescr.fd_params, fdescr.fd_callstate, fdescr.fd_returnstate)
+    | None -> raise unsupported
+  in
+  let* fd_returnstate = fd_returnstate in
 
-      let stcall = build_call_state st args in
+  let stcall = build_call_state st args in
 
-      (* Before calling the function, we must check the following properties: 
+  (* Before calling the function, we must check the following properties: 
           - All arguments are completely valid;
           - Each non-primitive argument points to only one abstract location;
           - Each argument points to a tree-shaped part of the memory;
           - There is no inter-aliasing between arguments. *)
-      let args_validity =
-        List.for_all (Aliasing_check.check_atom (AbsState stcall)) args
-      in
-      (* let no_locked_arrays = LocMap.is_empty stcall.st_arr_locked in *)
-      let errmsg cause =
-        sprintf "when calling function %s: %s" (ident_to_string y) cause
-      in
-      if not (args_pointsto_unique stcall args) then
-        top (errmsg "some arguments point to multiple locations")
-        (* else if not no_locked_arrays then
+  let args_validity =
+    try
+      List.iter (Aliasing_check.check_atom (AbsState stcall)) args;
+      true
+    with Aliasing_check.Invalid_program _ -> false
+  in
+  (* let no_locked_arrays = LocMap.is_empty stcall.st_arr_locked in *)
+  let errmsg cause =
+    sprintf "when calling function %s: %s" (ident_to_string y) cause
+  in
+  if not (args_pointsto_unique stcall args) then
+    top (errmsg "some arguments point to multiple locations")
+    (* else if not no_locked_arrays then
         top (errmsg "some arguments contain locked arrays") *)
-      else if not (wf_args stcall args) then
-        top (errmsg "intra- or inter-argument aliasing")
-      else if not args_validity then top (errmsg "some arguments are not valid")
-      else
-        (* We build the bijections for the variables and the locations between the current call state,
+  else if not (wf_args stcall args) then
+    top (errmsg "intra- or inter-argument aliasing")
+  else if not args_validity then top (errmsg "some arguments are not valid")
+  else
+    (* We build the bijections for the variables and the locations between the current call state,
             and the pre-requisite call state of the callee. *)
-        let vars_bij, locs_bij =
-          funcall_bijection show_debug re fd_params args fd_callstate stcall
-        in
+    let vars_bij, locs_bij =
+      funcall_bijection show_debug re fd_params args fd_callstate stcall
+    in
 
-        (* The return state is the one given by the function descriptor on which we apply the bijection. *)
-        let stret =
-          apply_state_bijection vars_bij locs_bij st.st_next_loc fd_returnstate
-        in
-        (* The state before the call "st" and the return state "stret" must be merged.
+    (* The return state is the one given by the function descriptor on which we apply the bijection. *)
+    let stret =
+      apply_state_bijection vars_bij locs_bij st.st_next_loc fd_returnstate
+    in
+    (* The state before the call "st" and the return state "stret" must be merged.
             The merge operation is the following:
             - The new environment is the one of the inital state + the new binding for x that points to
               the result locations of the return state (stret.st_res). 
@@ -923,45 +1007,44 @@ let exec_set_call (show_debug : bool) (re : renv) (x : ident) (a : atom)
             - The locked arrays are the one of the initial state because we
               forbid returning a sub-element of an array contained in the arguments.
             - The next fresh location is the one of the initial state. *)
-        let st' = if is_prim ty then st else env_add st x stret.st_res in
-        let m_ret =
-          LIPairMap.merge
-            (fun _ ls1 ls2 ->
-              match (ls1, ls2) with
-              | Some ls1, _ -> Some ls1
-              | None, Some ls2 -> Some ls2
-              | None, None -> None)
-            stret.st_mem
-            st.st_mem
-        in
-        let rm_ret = mem_reverse m_ret in
-        let inv_ret =
-          let iv_args_alias =
-            IdentMap.remove x (returnstate_inv_paths st stret.st_inv)
-          in
-          let iv_init = IdentMap.remove x st.st_inv in
-          let iv_ret = IdentMap.remove x stret.st_inv in
-          let iv =
-            match stret.st_inv_res with
-            | Some t -> IdentMap.add x t iv_ret
-            | None -> iv_ret
-          in
-          inv_union (inv_union iv_init iv) iv_args_alias
-        in
-        let inv_res_ret = st.st_inv_res in
-        let arr_locked_ret = st.st_arr_locked in
-        let next_loc = st.st_next_loc in
-        AbsState
-          {
-            st' with
-            st_mem = m_ret;
-            st_rev_mem = rm_ret;
-            st_inv = inv_ret;
-            st_inv_res = inv_res_ret;
-            st_arr_locked = arr_locked_ret;
-            st_next_loc = next_loc;
-          }
-  | _ -> assert false
+    let st' = if is_prim ty then st else env_add st x stret.st_res in
+    let m_ret =
+      LIPairMap.merge
+        (fun _ ls1 ls2 ->
+          match (ls1, ls2) with
+          | Some ls1, _ -> Some ls1
+          | None, Some ls2 -> Some ls2
+          | None, None -> None)
+        stret.st_mem
+        st.st_mem
+    in
+    let rm_ret = mem_reverse m_ret in
+    let inv_ret =
+      let iv_args_alias =
+        IdentMap.remove x (returnstate_inv_paths st stret.st_inv)
+      in
+      let iv_init = IdentMap.remove x st.st_inv in
+      let iv_ret = IdentMap.remove x stret.st_inv in
+      let iv =
+        match stret.st_inv_res with
+        | Some t -> IdentMap.add x t iv_ret
+        | None -> iv_ret
+      in
+      inv_union (inv_union iv_init iv) iv_args_alias
+    in
+    let inv_res_ret = st.st_inv_res in
+    let arr_locked_ret = st.st_arr_locked in
+    let next_loc = st.st_next_loc in
+    AbsState
+      {
+        st' with
+        st_mem = m_ret;
+        st_rev_mem = rm_ret;
+        st_inv = inv_ret;
+        st_inv_res = inv_res_ret;
+        st_arr_locked = arr_locked_ret;
+        st_next_loc = next_loc;
+      }
 
 (** [is_loc_array_subelem rm loc visited] checks whether the location [loc] is a
     (sub-)element of an array, i.e. exploring the reverse memory [rm] from [loc]
@@ -1097,26 +1180,26 @@ let rec absexec (show_debug : bool) (re : renv) (fe : fenv) (d : absdom)
                forbidden"
           else
             match c with
-            | CpAtom (a, _) -> AbsState (exec_set_atom x a st)
-            | CpRecordProj (a, f, ty, _) ->
-                AbsState (exec_set_record_proj x a f ty st)
+            | CpAtom (a, _) -> exec_set_atom x a st
+            (* | CpRecordProj (a, f, ty, _) ->
+                AbsState (exec_set_record_proj x a f ty st) *)
             | CpRecordUpdate (a, f, v, _) ->
                 AbsState (exec_set_record_update re x a f v st)
-            | CpCall (a, args, ty) ->
+            | CpCall (f, _, args, ty) ->
                 debug_info show_debug
                 @@ sprintf
                      "Entering function call \"%s\" ==========\n"
                      (PrintSyntax.Typed.comp_to_string c);
-                let r = exec_set_call show_debug re x a args ty fe st in
+                let r = exec_set_call show_debug re x f args ty fe st in
                 debug_info show_debug
                 @@ sprintf
                      "Exiting function call \"%s\" ===========\n"
                      (PrintSyntax.Typed.comp_to_string c);
                 r
-            | CpArrayGet (a, i, _, _) -> exec_set_array_get x a i st
+            (* | CpArrayGet (a, i, _, _) -> exec_set_array_get x a i st *)
             | CpArraySet (a, i, v, _) -> exec_set_array_set x a i v st
-            | CpDeepAccess (a, acs, ty) ->
-                AbsState (exec_set_deep_access x a acs ty st)
+          (* | CpDeepAccess (a, acs, ty) ->
+                AbsState (exec_set_deep_access x a acs ty st) *)
         in
         let s', d' = (Imp1.Aliasing_AST.StSet (x, c, d_in, d'), d') in
         debug_info show_debug

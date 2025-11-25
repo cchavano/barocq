@@ -43,6 +43,18 @@ Section TRANSL.
   Definition transl_typ2 (ty: typ2) : Ctypes.type :=
     transl_typ2_rec LyBoxed ty.
 
+  Definition deref_pointer (ty: type) : Ctypes.type :=
+    match ty with
+    | Tpointer t _ => t
+    | _ => ty
+    end.
+
+  Definition transl_typ2_fun (ty: typ2) : Ctypes.type :=
+    match ty with
+    | TFun _ _ => deref_pointer (transl_typ2 ty)
+    | _ => transl_typ2 ty
+    end.
+
   Definition transl_typ2_to_xtype (ty: typ2) : AST.xtype :=
     match ty with
     | TVoid => Xvoid
@@ -132,15 +144,34 @@ Section TRANSL.
         let t := transl_typ2 ty in
         let* op' := transl_binary_op op in
         ret (Ebinop op' e1 e2 t)
+    | AArrayGet a1 a2 ly ty =>
+        let* e1 := transl_atom globs a1 in
+        let* e2 := transl_atom globs a2 in
+        let tarith := typeof e1 in
+        let tderef := transl_typ2_rec ly ty in
+        let ederef := Ederef (Ebinop Oadd e1 e2 tarith) tderef in
+        match ly with
+        | LyBoxed
+        | LyUnboxed (Some _)
+        | LyPrim => ret ederef
+        | LyUnboxed None => ret (Eaddrof ederef (tptr tderef))
+        end
+    | ARecordProj a f ly ty =>
+        let* e := transl_atom globs a in
+        let tderef := deref_pointer (typeof e) in
+        let tfield := transl_typ2_rec ly ty in
+        let efield := Efield (Ederef e tderef) (Ident.to_pos f) tfield in
+        match ly, ty with
+        | (LyBoxed | LyPrim), _ => ret efield
+        | LyUnboxed _, TArray _ _ =>
+            let tfield := transl_typ2 ty in
+            ret (Efield (Ederef e tderef) (Ident.to_pos f) tfield)
+        | LyUnboxed _, TRecord _ => ret (Eaddrof efield (tptr tfield))
+        | _, _ => fail
+        end
     end.
 
-  Definition deref_pointer (ty: type) : type :=
-    match ty with
-    | Tpointer t _ => t
-    | _ => ty
-    end.
-
-  Fixpoint transl_deep_access (globs: pset) (a: atom) (acs: list access) : res ClightCe.expr :=
+  (* Fixpoint transl_deep_access (globs: pset) (a: atom) (acs: list access) : res ClightCe.expr :=
     match acs with
     | nil => transl_atom globs a
     | ac :: nil =>
@@ -178,9 +209,9 @@ Section TRANSL.
             let tderef := transl_typ2_rec ly ty in
             ret (Ederef (Ebinop Oadd er ei tarith) tderef)
         end
-    end.
+    end. *)
 
-  Definition transl_expr (globs: pset) (e: Imp2.expr) : res ClightCe.expr :=
+  (* Definition transl_expr (globs: pset) (e: Imp2.expr) : res ClightCe.expr :=
     match e with
     | EAtom a _ => transl_atom globs a
     | EArrayGet a1 a2 ty ly =>
@@ -209,7 +240,7 @@ Section TRANSL.
         | _, _ => fail
         end
     | EDeepAccess a acs _ => transl_deep_access globs a (List.rev' acs)
-    end.
+    end. *)
 
   Definition transl_ecomp (globs: pset) (ec: Imp2.ecomp) : res ClightCe.statement :=
     match ec with
@@ -282,20 +313,19 @@ Section TRANSL.
     in
     match s with
     | StSkip => ret Sskip
-    | StSetExpr x e =>
-        let* e' := transl_expr globs e in
-        ret (Sset (Ident.to_pos x) e')
+    | StSet x a =>
+        let* a' := transl_atom globs a in
+        ret (Sset (Ident.to_pos x) a')
     | StEcomp ec => transl_ecomp globs ec
-    | StCall x a args _ =>
+    | StCall x f tf args _ =>
         let x' :=
           match x with
           | Some x => Some (Ident.to_pos x)
           | _ => None
           end
         in
-        let* e := transl_atom globs a in
         let* args' := mmap (transl_atom globs) args in
-        ret (Scall x' e args')
+        ret (Scall x' (Evar (Ident.to_pos f) (transl_typ2_fun tf)) args')
     | StIfThenElse a s1 s2 =>
         let* e := transl_cond_atom globs a in
         let* s1' := transl_statement globs s1 tret in

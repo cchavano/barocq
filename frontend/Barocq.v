@@ -23,7 +23,7 @@ Inductive expr : Type :=
   | EArraySet (a i e: expr) : expr                           (* a[i] <- e *)
   | ERecordProj (st: expr) (f: ident) : expr                 (* st.f *)
   | ERecordUpdate (st: expr) (f: ident) (e: expr) : expr     (* st.f <- e *)
-  | EDeepAccess (e: expr) (acs: list access) : expr          (* eX1X2....Xn where Xi = .fi or [ei] *)
+  (*| EDeepAccess (e: expr) (acs: list access) : expr        (* eX1X2....Xn where Xi = .fi or [ei] *) *)
   | EApp (e: expr) (args: list expr) : expr                  (* e(args) *)
   | EIfThenElse (e1 e2 e3: expr) : expr                      (* if e1 then e2 else e3 *)
   | EMatch (e: expr) (cases: list (pattern * expr)) : expr   (* match e with V1 -> e1 ... | Vn -> en end *)    
@@ -92,7 +92,7 @@ Module Typed.
     | EArraySet : expr -> expr -> expr -> btyp -> expr
     | ERecordProj : expr -> ident -> btyp -> expr
     | ERecordUpdate : expr -> ident -> expr -> btyp -> expr
-    | EDeepAccess : expr -> list access -> btyp -> expr
+    (* | EDeepAccess : expr -> list access -> btyp -> expr *)
     | EApp : expr -> list expr -> btyp -> expr
     | EIfThenElse : expr -> expr -> expr -> btyp -> expr
     | EMatch : expr -> list (pattern * expr) -> btyp -> expr
@@ -155,14 +155,14 @@ Module Typing.
     | EArraySet _ _ _ ty
     | ERecordProj _ _ ty
     | ERecordUpdate _ _ _ ty
-    | EDeepAccess _ _ ty
+    (* | EDeepAccess _ _ ty *)
     | EMatch _ _ ty 
     | EApp _ _ ty
     | EIfThenElse _ _ _ ty
     | ELetIn _ _ _ ty => ty
     end.
 
-  Fixpoint typecheck_deep_access (typecheck_expr : benv -> gcontext -> lcontext -> Barocq.expr -> res BarocqTyped.expr)
+  (* Fixpoint typecheck_deep_access (typecheck_expr : benv -> gcontext -> lcontext -> Barocq.expr -> res BarocqTyped.expr)
     (be: benv) (gx: gcontext) (lx: lcontext) (ty: btyp) (acs: list Barocq.access) : res (btyp * list Barocq.Typed.access) :=
     match acs with
     | nil => ret (ty, nil)
@@ -178,7 +178,7 @@ Module Typing.
             let* (r, lr) := typecheck_deep_access typecheck_expr be gx lx ty' acs' in
             ret (r, (AcArrayIndex ei' ty') :: lr)
         end
-    end.
+    end. *)
 
   Fixpoint typecheck_expr (be: benv) (gx: gcontext) (lx: lcontext) (e: Barocq.expr) : res BarocqTyped.expr :=
     match e with
@@ -225,10 +225,10 @@ Module Typing.
         let* e2' := typecheck_expr be gx lx e2 in
         let* t := typecheck_record_update be (typof_expr e1') (typof_expr e2') x in
         ret (ERecordUpdate e1' x e2' t)
-    | Barocq.EDeepAccess e1 acs =>
+    (* | Barocq.EDeepAccess e1 acs =>
         let* e1' := typecheck_expr be gx lx e1 in
         let* (t, acs') := typecheck_deep_access typecheck_expr be gx lx (typof_expr e1') acs in
-        ret (EDeepAccess e1' acs' t)
+        ret (EDeepAccess e1' acs' t) *)
     | Barocq.EApp e1 args =>
         let* e1' := typecheck_expr be gx lx e1 in
         let* args' := mmap (typecheck_expr be gx lx) args in
@@ -934,7 +934,7 @@ Lemma typof_field_is_type :
     end.
 
 
-  Fixpoint eval_access_list (ty:typ) (v: res (eval_typ ty)) (acs: list access_value) (tyr : typ) {struct acs} : res (eval_typ tyr) :=
+  (* Fixpoint eval_access_list (ty:typ) (v: res (eval_typ ty)) (acs: list access_value) (tyr : typ) {struct acs} : res (eval_typ tyr) :=
     match acs with
     | nil => ecast_typ v tyr
     | ac :: acs' =>
@@ -951,7 +951,7 @@ Lemma typof_field_is_type :
             let v' := eval_array_get _ v typof_index i te in
             eval_access_list te v' acs' tyr
         end
-    end.
+    end. *)
 
   Definition res_eq_typ (v1 v2 : res value) : bool :=
     match v1 , v2 with
@@ -1092,11 +1092,11 @@ Lemma typof_field_is_type :
         let* v1 := eval_expr te ge le te1 e1 in
         let* v2 := eval_expr te ge le te2 e2 in
         eval_record_update te1 v1 k te2 v2 ty
-    | EDeepAccess e1 acs _ =>
+    (* | EDeepAccess e1 acs _ =>
         let* tye1 := typof_expr te e1 in
         let v1 := eval_expr te ge le tye1 e1 in
         let vacs := List.map (eval_access_expr te ge le) acs in
-        eval_access_list tye1 v1 vacs ty
+        eval_access_list tye1 v1 vacs ty *)
     | EApp v args _ =>
         let* tyf := typof_expr te v in
         match tyf with
@@ -1123,15 +1123,15 @@ Lemma typof_field_is_type :
         let* v1 := eval_expr te ge le te1 e1 in
         let le' := lenv_update le x (Val te1 v1) in
         eval_expr te ge le' ty e2
-    end
+    end.
 
-  with eval_access_expr (te: tenv) (ge: genv) (le: lenv) (ac: access) : access_value :=
+  (* with eval_access_expr (te: tenv) (ge: genv) (le: lenv) (ac: access) : access_value :=
     match ac with
     | AcRecordField f _ => (AcvalRecordField f)
     | AcArrayIndex e _ =>
         let v := eval_expr te ge le typof_index e  in
         AcvalArrayIndex v
-    end.
+    end. *)
 
 
   Lemma eval_expr_rew : forall (te: tenv) (ge: genv) (le: lenv) (ty:typ) (e: expr),
@@ -1182,11 +1182,11 @@ Lemma typof_field_is_type :
         let* v1 := eval_expr te ge le te1 e1 in
         let* v2 := eval_expr te ge le te2 e2 in
         eval_record_update te1 v1 k te2 v2 ty
-    | EDeepAccess e1 acs _ =>
+    (* | EDeepAccess e1 acs _ =>
         let* tye1 := typof_expr te e1 in
         let v1 := eval_expr te ge le tye1 e1 in
         let vacs := List.map (eval_access_expr te ge le) acs in
-        eval_access_list tye1 v1 vacs ty
+        eval_access_list tye1 v1 vacs ty *)
     | EApp v args _ =>
         let* tyf := typof_expr te v in
         match tyf with
