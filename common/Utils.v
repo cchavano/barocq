@@ -1,4 +1,4 @@
-From Coq Require Import PArith ZArith String DecimalString List MSetPositive.
+From Coq Require Import PArith ZArith String DecimalString List Bool MSetPositive.
 From compcert Require Import Ctypesdefs Maps Integers.
 From BarocqComp Require Import Error Monads Ident.
 Import MonCounter.
@@ -216,6 +216,21 @@ Proof.
   - destruct n. congruence.
   - reflexivity.
 Qed.
+
+Fixpoint forall_err {A: Type} (P : A -> res bool) (l:list A) : res bool :=
+  match l with
+  | nil => OK true
+  | e::l => let* b := P e in
+            let* b1 := forall_err P l in
+            OK (b && b1)
+  end.
+
+Fixpoint forall_check {A: Type} (P : A -> res unit) (l:list A) : res unit :=
+  match l with
+  | nil => OK tt
+  | e::l => let* _ := P e in
+            forall_check P l
+  end.
 
 
 From BarocqComp Require Import Unsigned63.

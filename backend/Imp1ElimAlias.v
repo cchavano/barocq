@@ -8,6 +8,13 @@ Require Import Syntax.
 Import Typed.
 Import Imp1.Typed.
 
+
+(** WARNING: Known limitations.
+    - The use of global variables is limited to primitive types.
+    For instance, there is no support for reading a global array.
+    This would be doable but would require consider all the global variables as (implicit) arguments of the function.
+*)
+
 Module Pp.
   Import String.
   Import ListNotations.
@@ -42,10 +49,6 @@ Module Pp.
   Definition pp_comp (c:comp) :=
     match c with
     | CpAtom a _ => pp_atom a
-    (* | CpArrayGet a i _ _ => Bcat (pp_atom a )
-                                 (array_index pp_atom i)
-    | CpRecordProj a i _ _ => Bcat (pp_atom a)
-                              (Bcat (Bstr ".") (Bstr i)) *)
     | CpRecordUpdate a f v _ => Bcat (pp_atom a)
                                 (Bcat
                                    (Bcat (Bcat (Bstr "<-") (Bstr f)) (Bstr ":="))
@@ -54,7 +57,6 @@ Module Pp.
                                       (Bcat
                                          (Bcat (array_index pp_atom i)
                                             (Bstr ":=")) (pp_atom v))
-    (* | CpDeepAccess a l _ => Bcat (pp_atom a) (Bstr "...") *)
     | CpCall f _ l _ => Bcat (Bstr f) (Bcat (Bstr "(")
                                           (Bstr ")"))
   end.
@@ -263,31 +265,17 @@ Definition is_prim_literal (env:aenv) (x:ident) :=
   | _             => false
   end.
 
-Definition eval_atom (env:aenv) (vars: STree.t KVar) (a:atom)  :=
-  match a with
-  | AVar i _    => match STree.get i vars with
-                   | Some v => v
-                   | None   => if is_prim_literal env i
-                               then KPrim
-                               else KDead
-                   end
-  |  _          => KPrim (** not well-typed !!! *)
+
+Definition eval_var (env:aenv) (vars:STree.t KVar) (id:ident) (bt:btyp) :=
+  match STree.get id vars with
+  | Some v => OK v
+  | None   => OK (if is_prim_literal env id
+                  then KPrim
+                  else KDead)
   end.
-
-
-
-Definition set_variable (v:ident) (k:KVar) (d:domain) :=
-  mkdom (STree.set v k (Vars d)) (Pto d) (Atoms d).
 
 Definition set_pto (g:G.t) (d:domain) :=
   mkdom (Vars d) g (Atoms d).
-
-
-Definition edge_of_access (a:Typed.access) : EdgeLabel.t :=
-  match a with
-  | AcRecordField id _ _ => EdgeLabel.Field id
-  | AcArrayIndex a   _ _ => EdgeLabel.Index a
-  end.
 
 Definition bind_path (d:domain) (o:int) (acc:list EdgeLabel.t) : res (domain * KVar) :=
   let* (g,n'_ty) := G.create_path EdgeLabel.next_label o acc (Pto d) in
@@ -296,18 +284,63 @@ Definition bind_path (d:domain) (o:int) (acc:list EdgeLabel.t) : res (domain * K
   else OK (set_pto g d,KNode (fst n'_ty)). (* TODO update Atomes *)
 
 
-Definition deep_access (env:aenv) (d:domain) (a:atom) (acc : list EdgeLabel.t)  : res (domain * KVar) :=
-  match eval_atom env (Vars d) a  with
-  | KDead =>  OK(d,KDead)
-  | KPrim => fail (* Shouldn't happen - typing *)
-  | KNode n => bind_path d n acc
+Section EVALATOM.
+  Variable eval_atom : aenv -> domain -> atom -> res (domain * KVar).
+
+  Definition array_get (env:aenv) (d:domain) (ar:atom) (id:atom) (bt:btyp)  :=
+    match eval_atom env d ar  with
+    | Error e  => Error (MSG "Wrong array :" :: MSG (Draw.pp (Pp.pp_atom ar)) :: MSG Draw.nl :: e)
+    | OK (d,vr) =>
+        match eval_atom env d id with
+        | Error e => Error (MSG "Wrong array index:" :: MSG (Draw.pp (Pp.pp_atom id)) :: MSG Draw.nl :: e)
+        | OK (d,idx) =>
+            match vr with
+            | KDead => Error (MSG "(dead) This should be a reference " :: nil)
+            | KPrim => Error (MSG "(primitive) This should be a reference ":: nil)
+            | KNode n =>
+                match idx with
+                | KDead   => Error (MSG "(dead) This should be an array index " :: nil)
+                | KNode n => Error (MSG "(reference) This should be an array index " :: nil)
+                | KPrim   => bind_path d n (cons (EdgeLabel.Index id) nil)
+                end
+            end
+        end
+    end.
+
+  Definition record_proj_get (env:aenv) (d:domain) (ar:atom) (fd:ident) (bt:btyp)  :=
+    match eval_atom env d ar  with
+    | Error e  => Error (MSG "Wrong record :" :: MSG (Draw.pp (Pp.pp_atom ar)) :: MSG Draw.nl :: e)
+    | OK (d,vr) =>
+            match vr with
+            | KDead => Error (MSG "(dead) This should be a reference " :: nil)
+            | KPrim => Error (MSG "(primitive) This should be a reference ":: nil)
+            | KNode n => bind_path d n (cons (EdgeLabel.Field fd) nil)
+                end
+    end.
+
+  
+End EVALATOM.
+
+
+Fixpoint eval_atom (env:aenv) (d:domain) (a:atom)  :=
+  match a with
+  | AVar id bt    =>
+      let* v := eval_var env (Vars d) id bt in
+      OK (d,v)
+  | AArrayGet ar i _ bt => array_get eval_atom env d ar i bt
+  | ARecordProj ar fd _ bt => record_proj_get eval_atom env d ar fd bt
+  | _   => OK (d,KPrim) (* Is-it sound if the atom is not well-typed ? *)
   end.
 
-Definition array_get  (env:aenv) (d:domain) (a:atom) (i:atom)  : res (domain * KVar) :=
-  deep_access env d a (cons (EdgeLabel.Index i) nil).
+Definition set_variable (v:ident) (k:KVar) (d:domain) :=
+  mkdom (STree.set v k (Vars d)) (Pto d) (Atoms d).
 
-Definition record_get (env:aenv) (d:domain) (a:atom) (fd:ident)  : res (domain * KVar) :=
-  deep_access env d a (cons (EdgeLabel.Field fd) nil).
+Definition edge_of_access (a:Typed.access) : EdgeLabel.t :=
+  match a with
+  | AcRecordField id _ _ => EdgeLabel.Field id
+  | AcArrayIndex a   _ _ => EdgeLabel.Index a
+  end.
+
 
 (* Could try to normalise the expression e.g. 1 + 1 -->  2
    Also, identify injective operations
@@ -345,21 +378,22 @@ Definition update_var (l:list int) (k:KVar)  :=
 Definition update_vars (d:domain) (l:list int)  :=
   mkdom (STree.map (fun _ x => (update_var l) x) (Vars d)) (Pto d) (Atoms d).
 
-
 Definition write (env:aenv) (d:domain) (a:atom) (l:list EdgeLabel.t) (vl:atom)  : res (domain * KVar * bool) :=
-    match eval_atom env (Vars d) a  with
-    | KDead | KPrim => fail (* We could give error messages *)
-    | KNode n => (* this is a reference *)
-        match eval_atom env (Vars d) vl  with
-        | KDead => (* want to write an arbitrary value - this is bad - let's stop *)
+  let* (d,a) := eval_atom env d a in
+  let* (d,v) := eval_atom env d vl  in
+  match a with
+  | KDead | KPrim => fail (* We could give error messages *)
+  | KNode n => (* this is a reference *)
+      match v  with
+      | KDead => (* want to write an arbitrary value - this is bad - let's stop *)
             fail
-        | KPrim => OK (d,KNode n, false) (* This is not an alias *)
-        | KNode n' => let* f := G.depth (Pto d) in
-                      let* _ := G.check_must_alias  f n l n' (Pto d) in
-                      (* We have a must alias *)
-                      OK (d,KNode n,true)
-        end
-    end.
+      | KPrim => OK (d,KNode n, false) (* This is not an alias *)
+      | KNode n' => let* f := G.depth (Pto d) in
+                    let* _ := G.check_must_alias  f n l n' (Pto d) in
+                    (* We have a must alias *)
+                    OK (d,KNode n,true)
+      end
+  end.
 
 Definition array_set (env:aenv) (d:domain) (a:atom) (i:atom) (vl:atom)  : res (domain * KVar) :=
   let* (r,_) := write env d a (cons (EdgeLabel.Index i) nil) vl in
@@ -369,10 +403,6 @@ Definition array_set (env:aenv) (d:domain) (a:atom) (i:atom) (vl:atom)  : res (d
 Definition record_set (env:aenv) (d:domain) (a:atom) (fd:ident) (vl:atom) : res (domain * KVar) :=
   let* (r,_) := write env d a (cons (EdgeLabel.Field fd) nil) vl  in
   OK r.
-
-
-
-
 
 Definition compat_typ (d:domain) (k:KVar) (ty:typ) :=
   match k with
@@ -394,7 +424,7 @@ Fixpoint bind_args (te:tenv) (env:aenv) (d:domain) (args: list atom) (params : l
                 | nil => fail
                 | (i1,bt1)::params1 =>
                     let* ty := btyp_to_typ te bt1 in
-                    let k := eval_atom env (Vars d) a1  in
+                    let* (d,k) := eval_atom env d a1  in
                     let* b := compat_typ d k ty in
                     let* bargs := bind_args te env d args1 params1 in
                     if b
@@ -410,15 +440,6 @@ Definition no_alias_node (d:domain) (n:int) (arg:ident * KVar) :=
   | KNode n' => let* p := G.is_parent (Pto d) n n' in
                 if p then OK false else G.is_parent (Pto d) n' n
   end.
-
-Fixpoint forall_err {A: Type} (P : A -> res bool) (l:list A) : res bool :=
-  match l with
-  | nil => OK true
-  | e::l => let* b := P e in
-            let* b1 := forall_err P l in
-            OK (b && b1)
-  end.
-
 
 
 Fixpoint no_alias (d:domain) (l : list (ident * KVar)) :=
@@ -444,6 +465,16 @@ Definition get_function (env:aenv) (vars: STree.t KVar) (id:ident) :=
                            end
               end
   end.
+
+Definition deep_access (env:aenv) (d:domain) (a:atom) (acc : list EdgeLabel.t)  : res (domain * KVar) :=
+  let* (d,v) := eval_atom env d a in
+  match v with
+  | KDead => fail
+  | KPrim => fail (* Shouldn't happen - typing *)
+  | KNode n => bind_path d n acc
+  end.
+
+
 
 Definition call (te:tenv) (env: aenv) (d:domain) (id:ident) (bt: btyp) (args:list atom) : res (domain* KVar) :=
   match get_function env (Vars d) id with
@@ -478,17 +509,9 @@ Definition call (te:tenv) (env: aenv) (d:domain) (id:ident) (bt: btyp) (args:lis
 
 Definition eval_comp (te:tenv) (env : aenv) (d:domain) (c:comp)  : res (domain * KVar) :=
   match c with
-  | CpAtom a _ =>
-      match a with
-      | AArrayGet a i _ _ => array_get env d a i
-      | ARecordProj a fd _ _ => record_get env d a fd
-      | _ => OK (d, eval_atom env (Vars d) a )
-      end
-  (* | CpArrayGet a i _ _   => array_get env d a i *)
+  | CpAtom a _ => eval_atom env d a
   | CpArraySet a i vl _ => array_set env d a i vl
-  (* | CpRecordProj a fd _ _ =>  record_get env d a fd *)
   | CpRecordUpdate a fd vl _ => record_set env d a fd vl
-  (* | CpDeepAccess a acc _   => deep_access env d a (List.map edge_of_access acc) *)
   | CpCall f btf args _  => call te env d f btf args
   end.
 
@@ -585,7 +608,8 @@ Fixpoint eval_statement (te:tenv) (env: aenv) (s:statement) (d:domain) : res (do
                         | inr _ => Error (MSG "sequence is not well-typed" :: nil)
                         | inl d2 => eval_statement te env s2 d2
                         end
-  | StReturn a => match eval_atom env (Vars d) a  with
+  | StReturn a => let* (d,v) :=  eval_atom env d a in
+                  match v with
                   | KDead => Error (MSG "return of a dead expression" :: nil)
                   | KPrim => OK(inr nil)
                   | KNode n =>

@@ -69,8 +69,6 @@ Module MonError <: MONAD.
     constructor.
   Qed.
 
-
-
   Notation eret := ret.
 
   Notation efail := fail.
