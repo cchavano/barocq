@@ -223,7 +223,7 @@ Module Typed.
     | MPval : forall (ty:typ) (v: pval ty), mval ty
     | MArray : forall (ty:typ) (a : array (val ty)), mval (TArray ty)
     | MRecord : forall (id:ident) (rty :smaplist typ)
-                       (r :record (eval_fields_typ val rty)), mval (TRecord id rty) (* id should not be there *)
+                       (r :record val rty), mval (TRecord id rty) (* id should not be there *)
     | MAbs : forall (id:ident),SMap.get id abs_typ_impl -> mval (TAbs id).
 
     Definition mem := @MEM.t mval.
@@ -342,8 +342,9 @@ Module Typed.
     | _        => fail
     end.
 
-  Definition cast_typof_field ( k:ident) (fields : smaplist typ) (GP :good_proj k (eval_fields_typ val fields) = true) :
-    typeof_field k (eval_fields_typ val fields) GP ->   {ty:typ & val ty} :=
+
+  Definition cast_typof_field ( k:ident) (fields : smaplist typ) (GP :good_proj k fields = true) :
+    typeof_field val k  fields GP ->   {ty:typ & val ty} :=
     fun X =>
       let s := exists_typeof_field val k fields GP in
       let (ty, EQ) := s in
@@ -363,8 +364,8 @@ Module Typed.
     let* rc := MEM.get p m in
     match rc with
     | MRecord id fields r =>
-        match bool_dec  (good_proj k (eval_fields_typ val fields)) true  with
-        | left EQ => let (ty,v) := cast_typof_field k fields EQ (project r k EQ) in
+        match bool_dec  (good_proj k fields) true  with
+        | left EQ => let (ty,v) := cast_typof_field k fields EQ (project val r k EQ) in
                     cast_val v tr
         | right _ => fail
         end
@@ -441,16 +442,8 @@ Definition eval_record_update (m:mem) {tr:typ} (r:val tr) (k:ident) {te:typ} (v:
   let* rc := MEM.get p m in
   match rc in mval t return  t = tr -> res mem with
   | MRecord id fields r => fun EQ =>
-                             match bool_dec (good_proj k (eval_fields_typ val fields)) true  with
-                             | left GP =>
-                                 match exists_typeof_field val k _ GP with
-                                 | exist _ tk PRF =>
-                                     let* vtk := cast_val v tk in
-                                     let r1 := upd r k GP (cast (eq_sym PRF) vtk) in
-                                     MEM.set p (cast (f_equal mval EQ) (MRecord _ _ r1))  m
-                                 end
-                             | right _ => fail
-                             end
+                             let* r1 := dyn_upd val typ_eq_dec r k  _ v in
+                             MEM.set p (cast (f_equal mval EQ) (MRecord _ _ r1))  m
   | _ => fun _ => fail
   end eq_refl.
 

@@ -1,4 +1,4 @@
-From Coq Require Import PArith List String.
+From Coq Require Import PArith List String Bool.
 From BarocqComp Require Import Error Maps2 Ident Utils.
 
 Definition key : Type := ident.
@@ -10,84 +10,147 @@ Inductive field (k: key) (A: Type) : Type :=
 
 Arguments Field k {A}.
 
-Definition type_of_field (k: key) (fields: smaplist Type) : Type :=
-  MapList.find key_eq k fields False.
+(*Definition type_of_field (k: key) (fields: smaplist Type) : Type :=
+  MapList.find key_eq k fields False. *)
+
+Fixpoint find_type_of_field {A: Type}  (k: key) (fields: smaplist A) : res A :=
+  match fields with
+  | nil => fail
+  | e::fields => if (k=?(fst e))%string then OK (snd e) else find_type_of_field k fields
+  end.
+
+Definition type_of_field {A: Type} (F: A -> Type) (k:key) (fields : smaplist A) :  Type :=
+  match find_type_of_field k fields with
+  | OK a => F a
+  | Error _ => False
+  end.
+
 
 Definition proj_field {k:key} {T:Type} (fd:field k T) : T :=
   match fd with
   | Field _ x => x
   end.
 
-Definition record (fields: smaplist Type) : Type :=
-  fold_right (fun kt acc => prod (field (fst kt) (snd kt)) acc) unit fields.
+Definition record {A: Type} (F: A -> Type) (fields: smaplist A) : Type :=
+  fold_right (fun kt acc => prod (field (fst kt) (F (snd kt))) acc) unit fields.
 
-Fixpoint proj {fields: smaplist Type} (rc: record fields) (k: key) {struct fields} : res (type_of_field k fields).
+Fixpoint proj {A: Type} (F : A -> Type) {fields: smaplist A} (rc: record F fields) (k: key) {struct fields} : res (type_of_field F k fields).
   destruct fields as [| [x tx] fields'].
   - apply fail.
   - simpl in rc. destruct rc. destruct f.
-    unfold type_of_field. unfold MapList.find.
-    destruct (key_eq x k).
+    simpl type_of_field.
+    unfold type_of_field. simpl.
+    destruct (k=?x)%string.
     + apply (ret a).
-    + apply (proj fields' r).
+    + apply (proj A F fields' r).
 Defined.
 
 
-Definition good_proj {A: Type} (k:key) (fields : smaplist A) :=
-  existsb (String.eqb k) (map fst fields).
+Fixpoint good_proj {A: Type} (k:key) (fields : smaplist A) :=
+  match fields with
+  | nil => false
+  | e::fields' => if String.eqb k (fst e) then true else good_proj k fields'
+  end.
+
 
 Lemma good_proj_nil : forall {A: Type} {k}, @good_proj A k nil = true -> False.
 Proof.
   discriminate.
 Qed.
 
-Fixpoint typeof_field (k: key) (fields: smaplist Type) : forall (GP : good_proj k fields = true), Type.
+Fixpoint typeof_field {A: Type} (F: A -> Type) (k: key) (fields: smaplist A) : forall (GP : good_proj k fields = true), Type.
 Proof.
   destruct fields.
   - intro. exfalso. apply (good_proj_nil GP).
   - change (good_proj k (p::fields)) with (orb (String.eqb k (fst p)) (good_proj k fields)).
     destruct (String.eqb k (fst p)).
-    + intro. exact (snd p).
+    + intro. exact (F (snd p)).
     + unfold orb.
-      apply (typeof_field k fields).
+      apply (typeof_field A F k fields).
 Defined.
 
-Fixpoint project {fields:smaplist Type} (rc:record fields) (k:key) : forall (GP : good_proj k fields = true), typeof_field k fields GP.
+Fixpoint project {A: Type} (F : A -> Type) {fields:smaplist A} (rc:record F fields) (k:key) : forall (GP : good_proj k fields = true), typeof_field F k fields GP.
 Proof.
   destruct fields.
   - intros. exfalso.
     apply (good_proj_nil GP).
   - change (good_proj k (p::fields)) with (orb (String.eqb k (fst p)) (good_proj k fields)).
-    unfold typeof_field; fold typeof_field.
+    simpl.
     intros GP.
     destruct (k =? fst p)%string.
     + simpl in rc. apply (proj_field (fst rc)).
-    + apply (project fields (snd rc) k GP).
+    + apply (project A F fields (snd rc) k GP).
 Defined.
 
 
-Fixpoint upd {fields:smaplist Type} (rc: record fields) (k:key)
-  (GK :good_proj k fields = true) (v:typeof_field k fields GK) {struct fields} : record fields.
+Fixpoint upd {A: Type} (F: A -> Type) {fields:smaplist A} (rc: record F fields) (k:key)
+  (GK :good_proj k fields = true) (v:type_of_field F k fields) {struct fields} : record F fields.
 Proof.
   destruct fields.
   - exfalso. clear v. apply good_proj_nil in GK. auto.
-  - change (orb (k =? fst p)%string (good_proj  k  fields) = true) in GK.
+  - simpl in GK.
     simpl in v.
-    simpl. destruct (k =? fst p)%string.
+    unfold type_of_field in v. simpl in v.
+    destruct (k=? fst p)%string.
     + apply (Field (fst p) v,snd rc).
-    + apply (fst rc,upd _ (snd rc) k GK v).
+    + apply (fst rc,upd _ F _ (snd rc) k GK v).
 Defined.
 
-Fixpoint update {fields: smaplist Type} (rc: record fields) (k: key) (v: type_of_field k fields) {struct fields} : res (record fields).
-  destruct fields as [| [x tx] fields'].
-  - apply fail.
-  - simpl in rc. destruct rc eqn:Est. destruct f.
-    simpl. unfold type_of_field in v; unfold MapList.find in v; simpl in v.
-    destruct (key_eq x k) as [Exk | _].
-    + rewrite Exk. apply (ret (Field k v, r)).
-    + destruct (update fields' r k v) as [r' | e].
-      * apply (ret (Field x a, r')).
-      * apply (Error e).
+Fixpoint dyn_upd {A: Type} (F: A -> Type) (eq_dec : forall (x y:A), {x = y} + {x <> y}) {fields:smaplist A} (rc: record F fields) (k:key)
+  (ty:A) (v: F ty) {struct fields} : res (record F fields).
+Proof.
+  destruct fields.
+  - exact fail.
+  - simpl in rc.
+    destruct (k=? fst p)%string.
+    + destruct (eq_dec ty (snd p)).
+      apply (OK (Field (fst p) (cast (f_equal F e) v),snd rc)).
+      apply fail.
+    + eapply bind.
+      eapply (dyn_upd _ F eq_dec _ (snd rc) k ty v).
+      intro.
+      apply (OK (fst rc,X)).
 Defined.
+
+(*Lemma dyn_upd_eq :
+  forall {A: Type} (F: A -> Type) (eq_dec: forall (x y: A), {x = y} + {x <> y}) {fields: smaplist A} (rc : record F fields)  (k:key)
+         (ty:A) (v: F ty),
+    match find_type_of_field k fields with
+    | Error _  => good_proj k fields = false
+    | Some ty' => match eq_dec ty ty' with
+                  | left EQ =>
+
+*)
+
+Fixpoint update {A: Type} (F: A -> Type) {fields:smaplist A} (rc: record F fields) (k:key)
+   (v:type_of_field F k fields) {struct fields} : res (record F fields).
+Proof.
+  destruct fields.
+  - simpl in v.  apply OK. exact tt.
+  - unfold type_of_field in v. simpl in v.
+    simpl.
+    destruct (k=? fst p)%string.
+    + apply (OK (Field (fst p) v,snd rc)).
+    + eapply bind.
+      eapply update. apply (snd rc).
+      apply v.
+      intro.
+      apply (OK (fst rc,X)).
+Defined.
+
+Lemma upd_update_equal : forall {A: Type} (F: A -> Type) fields rc k v (GK: good_proj k fields = true),
+    update F rc k v = OK (upd F rc k GK v).
+Proof.
+  induction fields;simpl.
+  - discriminate.
+  - intros.
+    unfold type_of_field in v.
+    simpl in v.
+    destruct (k=? fst a)%string eqn:EQ.
+    reflexivity.
+    erewrite IHfields.
+    simpl. reflexivity.
+Qed.
 
 Ltac destruct_record r :=
   match type of r with
@@ -102,14 +165,15 @@ Ltac destruct_record r :=
   end.
 
 (** Proof principle to destruct records *)
-Fixpoint decomp_fields (fields : smaplist Type)  {struct fields} : forall (P : record fields -> Prop), Prop :=
-  match fields as fd' return (record fd' -> Prop) -> Prop with
+Fixpoint decomp_fields {A: Type} (F : A -> Type) (fields : smaplist A)  {struct fields} :
+  forall (P : record F fields -> Prop), Prop :=
+  match fields as fd' return (record F fd' -> Prop) -> Prop with
   | nil => fun P => P tt
-  | (i,v)::fields' => fun P => forall v, decomp_fields fields' (fun r' => P (Field i v, r'))
+  | (i,v)::fields' => fun P => forall v, decomp_fields F fields' (fun r' => P (Field i v, r'))
   end.
 
-Lemma decomp_fields_sound : forall fields (P : record fields -> Prop),
-    decomp_fields fields P ->
+Lemma decomp_fields_sound : forall {A: Type} (F: A -> Type) fields (P : record F fields -> Prop),
+    decomp_fields F fields P ->
     forall r, P r.
 Proof.
   induction fields; simpl.
@@ -135,14 +199,12 @@ Ltac apply_decomp_field :=
                 end
                 end.
 
-Lemma type_of_field_fst : forall k A fields,
+(*Lemma type_of_field_fst : forall k A fields,
     A = type_of_field k ((k, A) :: fields).
 Proof.
-  unfold type_of_field.
   simpl. intros.
-  destruct (key_eq k k); try discriminate.
+  rewrite String.eqb_refl.
   reflexivity.
-  congruence.
 Defined.
 
 
@@ -156,16 +218,17 @@ Proof.
   unfold type_of_field.
   simpl.
   unfold eq_rect.
-  destruct (key_eq k k). reflexivity.
-  congruence.
+  rewrite String.eqb_refl.
+  reflexivity.
 Qed.
 
 Lemma type_of_field_fst' : forall k k' A fields (EQ: k = k'),
     A = type_of_field k' ((k, A) :: fields).
 Proof.
-  unfold type_of_field.
   simpl. intros.
-  destruct (key_eq k k'); try congruence.
+  subst.
+  rewrite String.eqb_refl.
+  reflexivity.
 Defined.
 
 Lemma proj_eq' : forall (k k':key) {A: Type} v (fields: smaplist Type) (r: record fields)
@@ -182,10 +245,10 @@ Qed.
 Lemma type_of_field_snd : forall k' k A fields (NEQ: false = String.eqb k k'),
     res (type_of_field k' fields) = res (type_of_field k' ((k, A) :: fields)).
 Proof.
-  unfold type_of_field.
-  simpl. intros.
-  destruct (key_eq k k'). subst. rewrite String.eqb_refl in NEQ. discriminate.
-  reflexivity.
+  simpl.
+  intros.
+  rewrite eqb_sym in NEQ.
+  destruct (k' =? k)%string. discriminate. reflexivity.
 Defined.
 
 Lemma proj_neq : forall (k k':key) {A: Type} v (fields: smaplist Type) (r: record fields)
@@ -196,12 +259,10 @@ Proof.
   intros.
   unfold type_of_field_snd.
   unfold cast; simpl.
-  unfold type_of_field.
-  simpl.
   unfold eq_ind.
-  destruct (key_eq k k').
-  subst.  exfalso. rewrite String.eqb_refl in NEQ. discriminate.
-  destruct NEQ.
+  destruct (eqb_sym k k').
+  destruct (k=?k')%string.
+  discriminate.
   reflexivity.
 Qed.
 
@@ -210,7 +271,7 @@ Lemma neq_neqb : forall k k',
 Proof.
   intros.
   destruct (String.eqb k' k) eqn:EQ.
-  rewrite eqb_eq in EQ. congruence.
+  rewrite String.eqb_eq in EQ. congruence.
   reflexivity.
 Qed.
 
@@ -229,3 +290,4 @@ Proof.
   - erewrite proj_eq'; eauto.
   - erewrite proj_neq; eauto.
 Qed.
+*)

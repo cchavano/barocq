@@ -170,6 +170,17 @@ Section S.
       | (i,t) :: lt => fun r1 r2 => PRED t (proj_field (fst r1)) (proj_field (fst r2)) /\
                                       equal_record lt (snd r1) (snd r2)
       end.
+
+    Lemma equal_record_rw : forall fd ty fields (v1 v2:field fd (# ty)) (r1 r2:eval_recordtyp (eval_typ abs_typ_impl) fields) ,
+        equal_record ((fd,ty)::fields) (v1,r1) (v2,r2) =
+          (PRED ty (proj_field v1) (proj_field v2) /\
+             equal_record fields r1 r2).
+    Proof.
+      intros.
+      reflexivity.
+    Qed.
+
+
   End EQUAL_RECORD.
 
 
@@ -1371,8 +1382,6 @@ Section S.
         tauto.
   Qed.
 
-
-
   Lemma equal_upd_record_aux :
     forall fields r1 r2 f ty v1 v2,
       equal_record ext_equal fields r1 r2 ->
@@ -1383,34 +1392,32 @@ Section S.
     unfold eval_recordtyp.
     intros.
     unfold eval_record_upd_aux.
-    repeat match goal with
-           | |- context[bool_dec ?B1 ?B2] => destruct (bool_dec B1 B2)
-           end ; try constructor.
-    destruct (typeof_field_typ abs_typ_impl f ty  fields e1) ; try constructor.
-    apply no_TFun_equal in H0; auto.
-    change  (ext_equal (TRecord "" fields) r1 r2) in H.
-    apply no_TFun_equal in H.
-    subst.
-    change  (equal_record ext_equal fields)
-      with (ext_equal (TRecord "" fields)).
-    apply ext_equal_refl.
-    simpl.
-    clear - e.
-    { induction fields;simpl;auto.
-      simpl in *.
-      rewrite andb_true_iff in *.
-      destruct e.
-      split; auto.
-    }
-    simpl.
-    { clear - e. induction  fields ; simpl in * ;auto.
-      rewrite andb_true_iff in *.
-      intuition.
+    {
+      revert r1 r2 H.
+      induction fields.
+      - simpl.
+        constructor.
+      - simpl.
+        intros.
+        destruct a as(fd,ty1).
+        destruct r1 as (f1 & r1').
+        destruct r2 as (f2 & r2').
+        simpl in f1,f2.
+        simpl.
+        destruct (f =?fd).
+        destruct (typ_eq_dec ty ty1).
+        + subst. constructor.
+          simpl in *.
+          tauto.
+        + constructor.
+        + simpl in *.
+          destruct H as (FD & RST).
+          specialize (IHfields r1' r2' RST).
+          inv IHfields.
+          constructor.
+          simpl. constructor ;auto.
     }
   Qed.
-
-
-
 
   Lemma ext_equal_eval_record_update : forall tr r1 r2 tv v1 v2 f ty,
       ext_equal tr r1 r2 ->

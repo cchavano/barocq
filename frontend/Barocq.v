@@ -745,16 +745,14 @@ Section DENOT.
   Import MapList.
 
   Fixpoint exists_typeof_field (F: typ -> Type) (k:key) (fields : smaplist typ) :
-    forall (GP : good_proj k (eval_fields_typ F fields) = true),
-      { ty| typeof_field k (eval_fields_typ F fields) GP = F ty}.
+    forall (GP : good_proj k  fields = true),
+      { ty| typeof_field F k  fields GP = F ty}.
   Proof.
     destruct fields;simpl.
-    - intros. exfalso.
-      apply good_proj_nil in GP. exact GP.
+    - intros. discriminate.
     - destruct p.
       simpl.
       intros.
-      change (((k =? s)%string || good_proj k (eval_fields_typ F fields)) = true) in GP.
       destruct ((k=?s)%string).
       exists t0. reflexivity.
       apply exists_typeof_field.
@@ -762,8 +760,8 @@ Section DENOT.
 
 
   Definition cast_typof_field (k:key) (fields :smaplist typ):
-    forall (GP :good_proj k (eval_fields_typ eval_typ fields) = true),
-    typeof_field k (eval_fields_typ eval_typ fields) GP ->
+    forall (GP :good_proj k  fields = true),
+    typeof_field eval_typ k  fields GP ->
     value.
   Proof.
     intros.
@@ -774,8 +772,8 @@ Section DENOT.
   Definition eval_record_project_aux (fields: smaplist typ) (rc: eval_recordtyp eval_typ fields) (k: ident) (ty:typ) : res (eval_typ ty).
     simpl in rc.
     unfold eval_recordtyp in rc.
-    destruct (good_proj k (eval_fields_typ eval_typ fields)) eqn:GP.
-    - specialize (project rc k GP).
+    destruct (good_proj k fields) eqn:GP.
+    - specialize (project eval_typ rc k GP).
       intro.
       destruct (exists_typeof_field eval_typ _ _ GP) as (ty1 & EQ).
       apply (cast EQ) in X.
@@ -830,29 +828,22 @@ Proof.
   symmetry. apply good_proj_map.
 Defined.
 
-Fixpoint typeof_field_typ (k:key) (ty:typ)  (fields : smaplist typ) (GK: good_proj k fields = true) :
-  res ( eval_typ ty = typeof_field k (eval_fields_typ eval_typ fields) (good_proj_map_app  eval_typ  GK)).
+Fixpoint typeof_field_typ (k:key) (fields : smaplist typ) (GK: good_proj k fields = true) :
+  { ty : typ | find_type_of_field k fields = OK ty}.
 Proof.
   destruct fields.
   - exfalso. apply (good_proj_nil GK).
   - destruct p.
     simpl.
     revert GK.
-    unfold good_proj_map_app.
     simpl.
     repeat change_good_proj.
     destruct (k=? s)%string.
-    + destruct (typ_eq_dec ty t0).
-      intro.
-      apply OK. subst. reflexivity.
-      exact (fun _ => fail).
+    + intro.
+      exists t0;reflexivity.
     + simpl.
       intros.
-      eapply bind.
-      apply (typeof_field_typ k ty  fields GK).
-      intros.
-      apply eret.
-      rewrite H;reflexivity.
+      apply (typeof_field_typ k fields GK).
 Defined.
 
 
@@ -872,18 +863,19 @@ Definition fo_typ (t:typ) :=
   |   _         => true
   end.
 
+Definition cast_etyp {k:key} {fields : smaplist typ} {tv: typ} (v:  eval_typ tv)
+  (EQ : find_type_of_field k fields = OK tv):
+  type_of_field eval_typ k fields.
+Proof.
+  unfold type_of_field.
+  rewrite EQ. apply  v.
+Defined.
+
+
 Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_typ fields) (k: ident) (tv: typ) (v: eval_typ tv) :
-    res (eval_recordtyp eval_typ fields).
-  Proof.
-    simpl in rc.
-    unfold eval_recordtyp in rc.
-    destruct (bool_dec (forallb no_TFun (List.map snd fields)) true);[|exact fail].
-    destruct (bool_dec (no_TFun tv) true);[|exact fail].
-    destruct (bool_dec (good_proj k fields) true);[|exact fail].
-    destruct (typeof_field_typ k tv fields e1);[| exact fail].
-    { apply (OK (upd rc k _ (cast e2  v))).
-    }
-  Defined.
+  res (eval_recordtyp eval_typ fields) :=
+  dyn_upd eval_typ typ_eq_dec rc k tv v.
+
 
 (*
 Lemma typof_field_is_type :
