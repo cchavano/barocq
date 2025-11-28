@@ -1229,7 +1229,7 @@ Fixpoint transl_globdefs (te:tenv) (env: aenv) (l:list globdef) : res (list glob
              OK (gd'::gds)
   end.
 
-Definition transl_program (p: program) : res program :=
+Definition transl_program (te:tenv) (env:aenv) (p: program) : res program :=
   let* te := tenv_of_type_defs (prog_types p) in
   let* gds :=  transl_globdefs te STree.empty (prog_defs p) in
   OK (mk_program gds (prog_types p) (prog_tabs p)).

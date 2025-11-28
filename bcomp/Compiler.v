@@ -1,5 +1,5 @@
 From BarocqComp Require Import Error Utils Ident Barocq BarocqBNFgen.
-From BarocqComp Require Import ImpBNFgen Imp1 Imp1gen2 Imp1ElimAlias Unboxing Imp2gen GlobRewrite ClightCegen.
+From BarocqComp Require Import ImpBNFgen Imp1 Imp1gen2 Imp1ElimAlias InvAnalysis Unboxing Imp2gen GlobRewrite ClightCegen.
 
 Definition compile (show_debug: bool) (arch: Target.archi) (globinfo: option (ident * ident)) (prog: Barocq.program) : res ClightCe.program :=
   let* bbnf := BarocqBNFgen.norm_program arch prog in
@@ -7,8 +7,7 @@ Definition compile (show_debug: bool) (arch: Target.archi) (globinfo: option (id
   (* let* iabnf := ImpABNFgen.norm_program ibnf in *)
   let* imp1 := Imp1gen2.norm_program ibnf in
   let* imp1_typed := Imp1Typing.typecheck_program arch imp1 in
-  let* imp1_alias := Imp1gen2.gen_aliasing_program show_debug imp1_typed in
-  let* imp1_typed := Imp1gen2.check_program_aliasing imp1_alias in
+  let* _ := InvAnalysis.check_program imp1_typed in (* Maybe, we could reuse the analysis result *)
   let* imp1_typed := Imp1ElimAlias.transl_program imp1_typed in
   if Unboxing.check_program imp1_typed then
     let imp2 := Imp2gen.transl_program imp1_typed in

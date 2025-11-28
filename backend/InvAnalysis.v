@@ -240,3 +240,19 @@ Definition inv_globdef (te:tenv) (age:aenv) (ge:genv) (gd:globdef) : res genv :=
   | DeclConst _ _ => OK ge
   | DeclFun id params r => OK (STree.set id (inv_decl_function params r) ge)
   end.
+
+Fixpoint inv_globdefs (te:tenv) (age:aenv) (ge:genv) (gdefs:list globdef) : res genv :=
+  match gdefs with
+  | nil =>  OK ge
+  | gd :: gdefs' => let* ge' := inv_globdef te age ge gd in
+                    inv_globdefs te age ge' gdefs'
+  end.
+
+Definition check_program (p:program) : res (tenv *aenv) :=
+  (* Build the typing environment *)
+  let* te := tenv_of_type_defs (prog_types p) in
+  (* Perform alias analysis over all the functions *)
+  let* age := eval_globdefs te STree.empty (prog_defs p) in
+  (* Analyse the invalid path - could be done on the fly*)
+  let* inv := inv_globdefs te age STree.empty (prog_defs p) in
+  OK (te,age).
