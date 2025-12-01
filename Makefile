@@ -2,7 +2,7 @@
 
 COMMON=\
 	Unsigned63.v ZifyUint63.v Monads.v Error.v Utils.v Barray.v Brecord.v Benum.v Maps2.v\
-	Types.v Syntax.v Typing.v Intop.v Ident.v Target.v MergeSort.v DList.v Graph.v ExtOrdered.v Draw.v
+	Types.v Syntax.v Typing.v Intop.v Ident.v Target.v MergeSort.v DList.v Graph.v ExtOrdered.v Pp.v Printer.v
 
 FRONTEND=\
 	Barocq.v BarocqBNF.v BarocqBNFgen.v\
@@ -91,18 +91,21 @@ vofiles: $(VBUILD:.v=.vo) $(EXTRDEP.v=.vo)
 # Extraction
 
 $(BUILD_DIR)/extraction/STAMP: $(VBUILD:.v=.vo) $(EXTRDEP.v=.vo) $(BUILD_DIR)/extraction.v
-	rm -f $(BUILD_DIR)/extraction/*.ml $(BUILD_DIR)/extraction/*.mli
+	rm -f $(BUILD_DIR)/extraction_tmp/*.ml $(BUILD_DIR)/extraction_tmp/*.mli
 	@echo COQTOP $(BUILD_DIR)/extraction.v
+	@mkdir -p $(BUILD_DIR)/extraction_tmp
 	@$(COQEXEC) $(BUILD_DIR)/extraction.v
-	touch $(BUILD_DIR)/extraction/STAMP
+	@touch $(BUILD_DIR)/extraction/STAMP
+	@./sync.sh $(BUILD_DIR)/extraction_tmp $(BUILD_DIR)/extraction
 
-extraction: $(BUILD_DIR)/extraction/STAMP
+
+#extraction: $(BUILD_DIR)/extraction/STAMP
 
 .depend.extr: $(BUILD_DIR)/extraction/STAMP
 	$(MAKE) -f Makefile.extr depend
 
 barocq: .depend.extr compcert.ini FORCE
-	$(MAKE) -f Makefile.extr barocq
+	$(MAKE) -f Makefile.extr barocq 
 
 install:
 	@echo INSTALL barocq to $(INSTALL_DIR)/barocq
