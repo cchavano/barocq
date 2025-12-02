@@ -77,20 +77,7 @@ Definition of_alias (fd:EdgeLabel.t) (p : option (list EdgeLabel.t))  : G.PathTr
 Definition inv_may_alias (env:InvMap.t) (paths : STree.t (list EdgeLabel.t)) (fd:EdgeLabel.t) :=
   InvMap.join env (STree.map (fun _ l => G.PathTree.create (List.rev (fd::l))) paths).
 
-Definition join_path (p1 p2: option G.PathTree.t) :=
-  match p1,p2 with
-  | None , x | x , None => x
-  | Some p1 , Some p2 => Some (G.PathTree.union p1 p2)
-  end.
 
-Definition set_path_field (fd:EdgeLabel.t) (v:option G.PathTree.t) :=
-  match v with
-  | None => None
-  | Some p => Some (Node ((fd,p)::nil))
-  end.
-
-Definition set_inv (p : option G.PathTree.t) (fd:EdgeLabel.t) (v : option G.PathTree.t) :=
-  join_path p  (set_path_field fd v).
 
 
 Fixpoint find_may_edge {A: Type} (e:EdgeLabel.t) (l:list (EdgeLabel.t * A)) : option A :=
@@ -117,12 +104,23 @@ Fixpoint eval_atom (env:InvMap.t) (a:atom) :=
   | ARecordProj a id _ _ => get_field (eval_atom env a) (EdgeLabel.Field id)
   end.
 
+Definition set_path (p:option G.PathTree.t) (fd:EdgeLabel.t) (v: option G.PathTree.t) : option G.PathTree.t :=
+  match p with
+  | None => match v with
+            | None => None (* Totally defined *)
+            | Some v => Some (Node ((fd,v)::nil))
+            end
+  | Some p => G.PathTree.set_path p fd v
+end.
+
+
 Definition set_field (ge: aenv) (d:domain) (env:InvMap.t) (a1:atom) (i:EdgeLabel.t) (v:atom) :=
   let pa1  := eval_atom env a1 in
   let v    := eval_atom env v in
   let* may  := path_above_alias ge d a1 in
   let env' := inv_may_alias env may  i in
-  OK (set_inv pa1 i v,env').
+  OK (set_path pa1 i v,env').
+
 
 
 Fixpoint get_fields (p:option G.PathTree.t) (l :list EdgeLabel.t) : option G.PathTree.t :=
@@ -229,9 +227,11 @@ Fixpoint inv_statement (te:tenv) (age:aenv) (d:domain) (ge:genv) (env:InvMap.t) 
       | inr _  => Error (msg "statement is wrongly typed")
       end
   | StReturn a  => OK (eval_atom env a,env)
-  | StAttr a s  => if String.eqb "aliasing" a
-                   then Error (MSG "#[aliasing]":: MSG nl :: MSG (Pp.pp (InvMap.pp env)):: MSG (Pp.pp (pp_domain d)) :: nil)
-                   else inv_statement te age d ge env s
+  | StAttr a s  =>
+      if String.eqb "aliasing" a
+      then
+        Error (MSG "#[aliasing]":: MSG nl :: MSG (Pp.pp (InvMap.pp env)):: MSG (Pp.pp (pp_domain d)) :: nil)
+      else inv_statement te age d ge env s
   end.
 
 Definition get_inv_arguments (inv:InvMap.t) (l:list (string * btyp)) :=

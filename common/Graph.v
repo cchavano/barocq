@@ -635,6 +635,11 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       Qed.
     End IND.
 
+    Section S.
+      Variable may_edge : EdgeLabel.t -> EdgeLabel.t -> bool.
+
+
+
     Section FLATTEN.
       Variable flatten : t -> list path.
 
@@ -971,6 +976,47 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     | Node [], _ | _, Node [] => Node []
     | Node l1, Node l2 => Node (union_list union l1 l2)
     end.
+
+    Fixpoint find_may_edge (e:EdgeLabel.t) (l:list (EdgeLabel.t * t)) : option t :=
+      match l with
+      | nil => None
+      | (e1,p1) ::l1 => if may_edge e e1
+                        then match find_may_edge e l1 with
+                             | None => Some p1
+                             | Some p2 => Some (union p1 p2)
+                             end
+                        else find_may_edge e l1
+      end.
+
+    Definition follow_path (p: t) (e:EdgeLabel.t) : option t :=
+      match p with
+      | Node nil => Some (Node nil)
+      | Node l   => find_may_edge e l
+      end.
+
+    Fixpoint split_edge (fd:EdgeLabel.t) (l:list (EdgeLabel.t * t)) :=
+      match l with
+      | nil => (None , l)
+      | (fd1,t1)::l => if EdgeLabel.eq_dec fd fd1
+                       then (Some t1,l)
+                       else let (v1,l1) := split_edge fd l in
+                            (v1,(fd1,t1)::l1)
+      end.
+
+    Definition set_path (p:t) (fd:EdgeLabel.t) (v: option t) :=
+      match p with
+      | Node nil  => Some (Node nil)(* Whatever, we cannot represent this *)
+      | Node l    => (* There are some valid paths *)
+          let (pfd,l') := split_edge fd l in
+          match v with
+          | Some p => Some(Node ((fd,p)::l')) (* Strong update over the invalid paths *)
+          | None   => match l' with
+                      | nil => None (* We are totally valid now *)
+                      |  _  => Some (Node l')
+                      end
+          end
+      end.
+
 
     Lemma union_list_empty : forall l1 l2,
         union_list union l1 l2 = [] ->  l1 = [] /\ l2 = nil.
@@ -1498,28 +1544,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
           eapply find_edge_None in FIND ; eauto.
     Qed.
 
-    Section HASPATH.
-      Variable may_edge : EdgeLabel.t -> EdgeLabel.t -> bool.
-
-      Fixpoint find_may_edge (e:EdgeLabel.t) (l:list (EdgeLabel.t * t)) : option t :=
-        match l with
-        | nil => None
-        | (e1,p1) ::l1 => if may_edge e e1
-                          then match find_may_edge e l1 with
-                               | None => Some p1
-                               | Some p2 => Some (union p1 p2)
-                               end
-                          else find_may_edge e l1
-        end.
-
-      Definition follow_path (p: t) (e:EdgeLabel.t) : option t :=
-        match p with
-        | Node nil => Some (Node nil)
-        | Node l   => find_may_edge e l
-        end.
-
-    End HASPATH.
-
+                End  S.
 
   End PathTree.
 
