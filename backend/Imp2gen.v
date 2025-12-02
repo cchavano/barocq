@@ -26,7 +26,7 @@ Fixpoint transl_atom (a: Imp1.Typed.atom) : atom :=
   | Syntax.Typed.AFalse => AFalse
   | Syntax.Typed.AInt32 i s => AInt32 i s
   | Syntax.Typed.AInt64 i s => AInt64 i s
-  | Syntax.Typed.AConstr cid ty => AConstr cid (transl_btyp ty)
+  | Syntax.Typed.AConstr cid i ty => AConstr cid i (transl_btyp ty)
   | Syntax.Typed.AVar x ty => AVar x (transl_btyp ty)
   | Syntax.Typed.ACast a ty => ACast (transl_atom a) (transl_btyp ty)
   | Syntax.Typed.AUnaryOp op a ty =>
@@ -37,6 +37,8 @@ Fixpoint transl_atom (a: Imp1.Typed.atom) : atom :=
       AArrayGet (transl_atom a) (transl_atom i) ly (transl_btyp ty)
   | Syntax.Typed.ARecordProj a f ly ty =>
       ARecordProj (transl_atom a) f ly (transl_btyp ty)
+  | Syntax.Typed.APureCall f tf args tr =>
+      APureCall f (transl_btyp tf) (List.map transl_atom args) (transl_btyp tr)
   end.
 
 (* Definition transl_access (ac: Syntax.Typed.access) : Imp2.access :=

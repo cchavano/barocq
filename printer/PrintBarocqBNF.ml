@@ -66,7 +66,8 @@ let rec expr_to_string_pref (prefix : string) (e : expr) : string =
               (expr_to_string_pref "" e1)
               (expr_to_string_pref prefix e2)
       end
-    | EAttr(a,s) -> sprintf "[#%s] %s" (ident_to_string a) (expr_to_string_pref prefix s)
+    | EAttr (a, s) ->
+        sprintf "[#%s] %s" (ident_to_string a) (expr_to_string_pref prefix s)
   in
   prefix ^ str
 
@@ -74,7 +75,7 @@ and match_case_to_string (prefix : string) ((p, ep) : Benum.pattern * expr) :
     string =
   let case =
     match p with
-    | Benum.PIdent i -> ident_to_string i
+    | Benum.PIdent (i, _) -> ident_to_string i
     | Benum.PWildcard -> "_"
   in
   sprintf "%s%s =>\n%s" prefix case (expr_to_string_pref (prefix ^ indent) ep)

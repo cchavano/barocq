@@ -93,6 +93,8 @@ Fixpoint pp_atom (a:atom) :=
                            (array_index pp_atom i)
   | ARecordProj a i => Bcat (pp_atom a)
                          (Bcat (Bstr ".") (Bstr i))
+  | APureCall f l => Bcat (Bstr f) (Bcat (Bstr "(")
+                                          (Bstr ")"))
   end.
 
 Module Typed.
@@ -104,7 +106,7 @@ Module Typed.
     | AFalse => Bstr "false"%string
     | AInt32 i _ => Bstr "int"%string
     | AInt64 i _ => Bstr "int64"%string
-    | AConstr s  _ => Bstr s
+    | AConstr s  _ _ => Bstr s
     | AVar s _     => Bstr s
     | ACast a bt   => Bcat (Bstr "(btyp)"%string) (pp_atom a)
     | AUnaryOp o a _ => Bcat (Bstr (string_of_unary_op o)) (pp_atom a)
@@ -114,6 +116,8 @@ Module Typed.
                                  (array_index pp_atom i)
     | ARecordProj a i _ _ => Bcat (pp_atom a)
                               (Bcat (Bstr ".") (Bstr i))
+    | APureCall f _ l _ => Bcat (Bstr f) (Bcat (Bstr "(")
+                                          (Bstr ")"))
     end.
 
   Definition pp_comp (c:comp) :=

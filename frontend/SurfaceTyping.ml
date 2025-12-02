@@ -331,6 +331,16 @@ let tenv_get_def (mname : string) (te : tenv) (tid : ident) : btyp option =
       Some ty
   | None -> None
 
+(* let tenv_get_enum_elems (te : tenv) (tid : ident) : string list option =
+  let tid = tid.content in
+  match IdentMap.find_opt tid te.tenv_defs with
+  | Some td ->
+      begin match td with
+      | TdEnum elems -> Some elems
+      | _ -> None
+      end
+  | None -> None *)
+
 let tenv_get_constr_typ (mname : string) (te : tenv) (cname : ident) :
     btyp option =
   match IdentMap.find_opt cname.content te.tenv_constr_types with
@@ -380,6 +390,35 @@ let gtenv_get_def (imports : ident list) (gte : gtenv) (cid : cident) : btyp =
           let tid' = compose_loc_idents mname tid in
           error (Undefined_type tid'.content) ~loc:(Some tid')
     end
+
+(* let gtenv_get_enum_elems (imports : ident list) (gte : gtenv) (cid : cident) : string list =
+  let gtenv_get_prefixed (mname : ident) (tid : ident) : string list option =
+    match IdentMap.find_opt mname.content gte.gtenv_extern with
+    | Some te -> tenv_get_enum_elems te tid
+    | None -> error (Module_not_found mname.content) ~loc:(Some mname)
+  in
+  let rec gtenv_get_imports (imports : ident list) (tid : ident) : string list =
+    match imports with
+    | [] -> error (Undefined_type tid.content) ~loc:(Some tid)
+    | m1 :: imports' -> begin
+        match gtenv_get_prefixed m1 tid with
+        | Some elems -> elems
+        | None -> gtenv_get_imports imports' tid
+      end
+  in
+  match cid with
+  | IdSimple tid -> begin
+      match tenv_get_enum_elems gte.gtenv_local tid with
+      | Some elems -> elems
+      | None -> gtenv_get_imports imports tid
+    end
+  | IdPrefixed (mname, tid) -> begin
+      match gtenv_get_prefixed mname tid with
+      | Some elems -> elems
+      | None ->
+          let tid' = compose_loc_idents mname tid in
+          error (Undefined_type tid'.content) ~loc:(Some tid')
+    end *)
 
 let gtenv_get_constr_typ (imports : ident list) (gte : gtenv) (cid : cident) :
     btyp =
@@ -1018,6 +1057,21 @@ let transl_var_name (imports : ident list) (gte : gtenv) (gx : gcontext)
   in
   PrintUtils.ident_of_string x'
 
+let zval_of_constr (elems : string list) (cid : cident) : BinNums.coq_Z =
+  let rec aux elems acc constr =
+    match elems with
+    | [] -> assert false
+    | ci :: elems' ->
+        if constr = ci then acc
+        else aux elems' (BinInt.Z.add acc BinInt.Z.one) constr
+  in
+  let constr =
+    match cid with
+    | IdSimple x -> x.content
+    | IdPrefixed (_, x) -> x.content
+  in
+  aux elems BinNums.Z0 constr
+
 let transl_constr_name (imports : ident list) (gte : gtenv) (gx : gcontext)
     (x : cident) : Syntax.ident =
   let x' =
@@ -1038,11 +1092,12 @@ let transl_constr_name (imports : ident list) (gte : gtenv) (gx : gcontext)
   PrintUtils.ident_of_string x'
 
 let transl_pattern (imports : ident list) (gte : gtenv) (gx : gcontext)
-    (lx : lcontext) (p : pattern) : Benum.pattern =
+    (lx : lcontext) (elems : string list) (p : pattern) : Benum.pattern =
   match p with
   | PIdent cid ->
       let id = transl_constr_name imports gte gx cid in
-      Benum.PIdent id
+      let z = zval_of_constr elems cid in
+      Benum.PIdent (id, z)
   | PWildcard _ -> Benum.PWildcard
 
 let transl_field_name (f : ident) : Syntax.ident =
@@ -1280,8 +1335,9 @@ let rec typecheck_raw_expr (imports : ident list) (gte : gtenv) (ce : cenv)
         | _ -> assert false
       end
   | ELetIn (x, e1, e2) -> typecheck_let_in imports gte ce gx lx x e1 e2
-  | EAttr(x,e) ->  let (e,t) = typecheck_expr imports gte ce gx lx e in
-    Barocq.EAttr(PrintUtils.ident_of_string x.content,e) , t
+  | EAttr (x, e) ->
+      let e, t = typecheck_expr imports gte ce gx lx e in
+      (Barocq.EAttr (PrintUtils.ident_of_string x.content, e), t)
 
 and typecheck_expr (imports : ident list) (gte : gtenv) (ce : cenv)
     (gx : gcontext) (lx : lcontext) (e : expr) : Barocq.expr * btyp =
@@ -1364,7 +1420,7 @@ and typecheck_match (imports : ident list) (gte : gtenv) (ce : cenv)
         let bex, tx =
           typecheck_expr_expecting imports gte ce gx lx ex (Expect_typ tr)
         in
-        (transl_pattern imports gte gx lx x, bex) :: ber
+        (transl_pattern imports gte gx lx elems x, bex) :: ber
   in
   let te =
     if mname = !curr_mname then gte.gtenv_local
@@ -1383,7 +1439,7 @@ and typecheck_match (imports : ident list) (gte : gtenv) (ce : cenv)
           in
           let bex, tx = typecheck_expr imports gte ce gx lx ex in
           let ber = aux elems unmatched cases' tx in
-          ((transl_pattern imports gte gx lx x, bex) :: ber, tx)
+          ((transl_pattern imports gte gx lx elems x, bex) :: ber, tx)
     end
   | _ -> assert false
 
@@ -1752,17 +1808,17 @@ let typecheck_globdef (imports : ident list) (gte : gtenv) (ce : cenv)
       let bid_pos = Ident.to_pos bid in
       let attrib_present attr = List.mem attr f.fn_attribs in
       let inlining =
-        if attrib_present AlwaysInline then PrintClightCe.Always_inline
-        else if attrib_present Inline then PrintClightCe.Inline
-        else PrintClightCe.No_specifier
+        if attrib_present AlwaysInline then Barocq2C.Always_inline
+        else if attrib_present Inline then Barocq2C.Inline
+        else Barocq2C.No_specifier
       in
       let finfo =
         {
-          PrintClightCe.f_inline = inlining;
-          PrintClightCe.f_static = check_fun_visibility id f;
+          Barocq2C.f_inline = inlining;
+          Barocq2C.f_static = check_fun_visibility id f;
         }
       in
-      Hashtbl.add PrintClightCe.decl_fun bid_pos finfo;
+      Hashtbl.add Barocq2C.decl_fun bid_pos finfo;
       Hashtbl.add fun_locs (prefix_ident !curr_mname id.content) id;
       let gx' = gcontext_update_local gte gx id ty in
       (Some (Barocq.DefFun (bid, bf)), gte, ce, gx')

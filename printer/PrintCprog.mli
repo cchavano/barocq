@@ -1,3 +1,5 @@
-val print_clightce : string -> ClightCe.program -> unit
+val destination : string option ref
 
-val print_header : string -> string -> ClightCe.program -> unit
+val print_csyntax : string -> Csyntax.program -> unit
+
+val print_header : string -> string -> Csyntax.program -> unit

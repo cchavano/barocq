@@ -516,11 +516,11 @@ Fixpoint eval_atom (env:aenv) (d:domain) (a:atom)  :=
 Definition set_variable (v:ident) (k:KVar) (d:domain) :=
   mkdom (Vars.set v k (Vars d)) (Pto d) (Atoms d).
 
-Definition edge_of_access (a:Typed.access) : EdgeLabel.t :=
+(* Definition edge_of_access (a:Typed.access) : EdgeLabel.t :=
   match a with
   | AcRecordField id _ _ => EdgeLabel.Field id
   | AcArrayIndex a   _ _ => EdgeLabel.Index a
-  end.
+  end. *)
 
 
 (* Could try to normalise the expression e.g. 1 + 1 -->  2
@@ -557,7 +557,7 @@ Definition may_atom (a1 a2:atom) : bool :=
   | ATrue, AFalse | AFalse, ATrue => false
   | AInt32 i _ , AInt32 j _ => if Integers.Int.eq i j then true else false
   | AInt64 i _ , AInt64 j _ => if Integers.Int64.eq i j then true else false
-  | AConstr i _, AConstr j _ => if String.eqb i j then true else false
+  | AConstr i _ _, AConstr j _ _ => if String.eqb i j then true else false
   | _ , _ => true
   end.
 

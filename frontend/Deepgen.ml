@@ -221,7 +221,8 @@ and match_case_to_string (prefix : string)
   let prefix' = prefix ^ indent in
   let case =
     match p with
-    | Benum.PIdent i -> sprintf "PIdent %s" (ident_to_deep i)
+    | Benum.PIdent (i, z) ->
+        sprintf "PIdent %s %s" (ident_to_deep i) (i32_to_string z)
     | Benum.PWildcard -> sprintf "PWildcard"
   in
   sprintf "%s(%s,\n%s%s)" prefix case prefix' (expr_to_deep prefix' ep)

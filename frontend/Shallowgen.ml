@@ -410,7 +410,7 @@ let rec expr_to_rocq_rec (prefix : string) (e : expr) : string =
         | EApp _ -> sprintf "ret (%s)" (expr_to_rocq_rec "" e1)
         | _ -> assert false
       end
-    | EAttr(_, s,_) -> expr_to_rocq_rec prefix s
+    | EAttr (_, s, _) -> expr_to_rocq_rec prefix s
   in
   prefix ^ str
 
@@ -420,7 +420,7 @@ and match_case_to_string (prefix : string) ((p, ep) : Benum.pattern * expr) :
   | BarocqShallowgen.ShallowR ->
       let case =
         match p with
-        | Benum.PIdent i -> ident_to_string i
+        | Benum.PIdent (i, _) -> ident_to_string i
         | Benum.PWildcard -> "_"
       in
       sprintf
@@ -431,7 +431,7 @@ and match_case_to_string (prefix : string) ((p, ep) : Benum.pattern * expr) :
   | BarocqShallowgen.ShallowB ->
       let case =
         match p with
-        | Benum.PIdent i -> sprintf "PIdent %s" (Deepgen.ident_to_deep i)
+        | Benum.PIdent (i, _) -> sprintf "PIdent %s" (Deepgen.ident_to_deep i)
         | Benum.PWildcard -> "PWildcard"
       in
       sprintf "%s(%s,\n%s)" prefix case (expr_to_rocq_rec (prefix ^ indent) ep)

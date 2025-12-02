@@ -68,9 +68,8 @@
 %left OP_SHL OP_SHR
 %nonassoc AS
 %nonassoc OP_NOTBOOL OP_NOTINT
-%nonassoc LPAREN LBRACKET
+%nonassoc LPAREN LBRACKET RBRACKET
 %nonassoc DOT
-%nonassoc SHARP
 
 %start imodul
 %type<SurfaceAST.imodul> imodul
@@ -112,7 +111,7 @@ visibility:
 
 command:
   | def = globdef { CmdDef def }
-  | COMPUTE e = expr { CmdExpr e }
+  | COMPUTE LPAREN e = expr RPAREN { CmdExpr e }
 
 globdef:
   | TYPE id = ident BIND ty = styp { DefType (id, TdAlias ty) }

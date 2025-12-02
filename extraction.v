@@ -58,8 +58,7 @@ Separate Extraction
   Ctypes.layout_struct
   Ctypesdefs.string_of_ident
   Ctypesdefs.ident_of_string
-  Clight.type_of_function
-  ClightCegen.program_idents
+  Csyntaxgen.program_idents
   Barocq.Typing.typecheck_program
   Barocq.Typing.typecheck_iprogram
   Barocq.Typing.program_of_iprogram

@@ -1,5 +1,5 @@
 From BarocqComp Require Import Error Utils Ident Barocq BarocqBNFgen.
-From BarocqComp Require Import ImpBNFgen Imp1 Imp1gen2 Imp1ElimAlias InvAnalysis Unboxing Imp2gen GlobRewrite ClightCegen.
+From BarocqComp Require Import ImpBNFgen Imp1 Imp1gen2 Imp1ElimAlias InvAnalysis Unboxing Imp2gen GlobRewrite Csyntaxgen.
 From BarocqComp Require Import Pp.
 From Coq Require Import String.
 
@@ -32,24 +32,25 @@ Record compiler_opt :=
     trace : list ir_name
   }.
 
-Definition compile (opt : compiler_opt) (arch: Target.archi) (globinfo: option (ident * ident)) (prog: Barocq.program) : res (ClightCe.program * Log.t) :=
-    let insert_log {A : Type} (F: A -> box) (ir:ir_name) (a:A) (l:Log.t) :=
-      if List.In_dec ir_name_eq_dec ir (opt.(trace))
-      then Log.add_entry (pp_ir ir) (F a) l
-      else l
-    in
-    let log := insert_log Barocq.Pp.pp_program Barocq prog Log.empty in
-    let* bbnf := BarocqBNFgen.norm_program arch prog in
-    let log   := insert_log BarocqBNF.Pp.pp_program BBNF bbnf log in
-    let ibnf := ImpBNFgen.transl_program bbnf in
-    (* let* iabnf := ImpABNFgen.norm_program ibnf in *)
-    let* imp1 := Imp1gen2.norm_program ibnf in
-    let* imp1_typed := Imp1Typing.typecheck_program arch imp1 in
-    let log := insert_log  Imp1Typed.Pp.pp_program Imp1 imp1_typed log in
-    let* (te,age) := InvAnalysis.check_program imp1_typed in (* Maybe, we could reuse the analysis result *)
+Definition compile (opt : compiler_opt) (arch: Target.archi) (globinfo: option (ident * ident)) (prog: Barocq.program) : res (Csyntax.program * Log.t) :=
+  let insert_log {A : Type} (F: A -> box) (ir:ir_name) (a:A) (l:Log.t) :=
+    if List.In_dec ir_name_eq_dec ir (opt.(trace))
+    then Log.add_entry (pp_ir ir) (F a) l
+    else l
+  in
+  let log := insert_log Barocq.Pp.pp_program Barocq prog Log.empty in
+  let* bbnf := BarocqBNFgen.norm_program arch prog in
+  let log   := insert_log BarocqBNF.Pp.pp_program BBNF bbnf log in
+  let ibnf := ImpBNFgen.transl_program bbnf in
+  (* let* iabnf := ImpABNFgen.norm_program ibnf in *)
+  let* imp1 := Imp1gen2.norm_program ibnf in
+  let* imp1_typed := Imp1Typing.typecheck_program arch imp1 in
+  let log := insert_log  Imp1Typed.Pp.pp_program Imp1 imp1_typed log in
+  (* let* (te,age) := InvAnalysis.check_program imp1_typed in *) (* Maybe, we could reuse the analysis result
   if (dbg_analysis opt)
   then Error (msg (Pp.pp (InvAnalysis.pp_inv (snd age))))
-  else
+  else *)
+  let* te := Typing.tenv_of_type_defs (Syntax.prog_types imp1_typed) in
   let* imp1_typed := Imp1ElimAlias.transl_program te imp1_typed in
   if Unboxing.check_program imp1_typed then
     let imp2 := Imp2gen.transl_program imp1_typed in
@@ -59,7 +60,7 @@ Definition compile (opt : compiler_opt) (arch: Target.archi) (globinfo: option (
       | None => imp2
       end
     in 
-    let* clight := ClightCegen.transl_program imp2_grw in
+    let* clight := Csyntaxgen.transl_program imp2_grw in
     eret (clight,log)
   else fail.
 

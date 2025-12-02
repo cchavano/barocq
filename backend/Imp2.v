@@ -1,6 +1,6 @@
 From Coq Require Import List.
 From compcert Require Import Integers Maps.
-From BarocqComp Require Import Benum Types Syntax.
+From BarocqComp Require Import Types Syntax Benum.
 
 (** * Abstract syntax *)
 
@@ -35,13 +35,14 @@ Inductive atom :=
   | AFalse : atom
   | AInt32 : int -> signedness -> atom
   | AInt64 : int64 -> signedness -> atom
-  | AConstr : ident -> typ2 -> atom
+  | AConstr : ident -> int -> typ2 -> atom
   | AVar : ident -> typ2 -> atom
   | ACast : atom -> typ2 -> atom
   | AUnaryOp : unary_op -> atom -> typ2 -> atom
   | ABinaryOp : binary_op -> atom -> atom -> typ2 -> atom
   | AArrayGet : atom -> atom -> layout -> typ2 -> atom
-  | ARecordProj : atom -> ident -> layout -> typ2 -> atom.
+  | ARecordProj : atom -> ident -> layout -> typ2 -> atom
+  | APureCall : ident -> typ2 -> list atom -> typ2 -> atom.
 
 (* Inductive access : Type :=
   | AcRecordField : ident -> typ2 -> layout -> access
@@ -96,11 +97,12 @@ Definition typof_atom (a: atom) : typ2 :=
   | AFalse => TBool
   | AInt32 _ s => TInt32 s
   | AInt64 _ s => TInt64 s
-  | AConstr _ ty
+  | AConstr _ _ ty
   | AVar _ ty
   | ACast _ ty
   | AUnaryOp _ _ ty
   | ABinaryOp _ _ _ ty
   | AArrayGet _ _ _ ty
-  | ARecordProj _ _ _ ty => ty
+  | ARecordProj _ _ _ ty
+  | APureCall _ _ _ ty => ty
   end.

@@ -1,3 +1,4 @@
+From BarocqComp Require Import ExtOrdered.
 From Coq Require Import PArith String DecimalString.
 From compcert Require Import Ctypesdefs.
 
@@ -28,7 +29,27 @@ Definition prefix_with (str: string) (i: ident) : ident :=
   let s := to_string i in
   of_string (String.append str s).
 
+Definition eq_dec := string_dec.
+
 Definition compare (i1 i2: ident) : comparison :=
   String.compare i1 i2.
 
-Definition eq_dec := string_dec.
+Lemma compare_eq :
+  forall (i1 i2: ident), compare i1 i2 = Eq <-> i1 = i2.
+Proof.
+  apply string_compare_eq_iff.
+Qed.
+
+Lemma compare_trans :
+  forall (i1 i2 i3: ident) (c: comparison),
+  compare i1 i2 = c -> compare i2 i3 = c -> compare i1 i3 = c.
+Proof.
+  apply string_compare_trans.
+Qed.
+
+Lemma compare_antisym :
+  forall (i1 i2: ident),
+  compare i1 i2 = CompOpp (compare i2 i1).
+Proof.
+  apply String.compare_antisym.
+Qed.

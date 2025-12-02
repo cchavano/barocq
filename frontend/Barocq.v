@@ -122,6 +122,54 @@ Module Pp.
 
 End Pp.
 
+Section PURITY.
+
+  Variable pure_funs: SSet.t.
+
+  Fixpoint expr_is_pure (e: expr) : bool :=
+    match e with
+    | ETrue | EFalse | EInt32 _ _ | EInt64 _ _
+    | EConstr _ | EVar _ => true
+    | ECast e1 _
+    | ERecordProj e1 _
+    | EUnaryOp _ e1 => expr_is_pure e1
+    | EBinaryOp _ e1 e2
+    | EArrayGet e1 e2
+    | ELetIn _ e1 e2 => (expr_is_pure e1) && (expr_is_pure e2)
+    | EApp e1 args =>
+        match e1 with
+        | EVar f =>
+            SSet.mem f pure_funs
+            && (List.forallb expr_is_pure args)
+        | _ => false
+        end
+    | EArraySet _ _ _
+    | ERecordUpdate _ _ _ => false
+    | EIfThenElse e1 e2 e3 =>
+        (expr_is_pure e1)
+        && (expr_is_pure e2)
+        && (expr_is_pure e3)
+    | EMatch e cases =>
+        (expr_is_pure e) && List.forallb (fun '(_, ei) => expr_is_pure ei) cases
+    | EAttr _ e => expr_is_pure e
+    end.
+
+  Definition func_is_pure (f: function) : bool :=
+    btyp_is_prim (fn_return f) && expr_is_pure (fn_body f).
+
+End PURITY.
+
+Definition pure_functions (prog: program) : SSet.t :=
+  List.fold_left
+    (fun acc def =>
+      match def with
+      | DefFun x f =>
+          if func_is_pure acc f then (SSet.add x acc)
+          else acc
+      | _ => acc
+      end)
+    prog
+    SSet.empty.
 
 Module Typed.
 

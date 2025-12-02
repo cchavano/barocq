@@ -128,6 +128,7 @@ let invalid_paths_of_atom (inv : path_map) (a : atom) : path_tree option =
         | None -> aux (_CONTENT :: p) a1
       end
     | Syntax.Typed.ARecordProj (a1, f, _, _) -> aux (f :: p) a1
+    | _ -> assert false
   in
   aux [] a
 
@@ -1273,7 +1274,7 @@ let rec absexec (show_debug : bool) (re : renv) (fe : fenv) (d : absdom)
         let s', d' = (Imp1.Aliasing_AST.StReturn (a, d, d'), d') in
         print_dom_debug show_debug d' "OUT" true;
         (s', d')
-    | StAttr(_,s) -> absexec show_debug re fe d s
+    | StAttr (_, s) -> absexec show_debug re fe d s
   in
   let d_out =
     match d_out with

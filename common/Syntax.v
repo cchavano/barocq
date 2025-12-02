@@ -1,4 +1,4 @@
-From Coq Require Import Lia.
+From Coq Require Import PeanoNat Lia.
 From compcert Require Import Integers Ctypes.
 From BarocqComp Require Import Utils Ident Types Maps2 ExtOrdered.
 
@@ -69,7 +69,8 @@ Inductive atom : Type :=
   | AUnaryOp : unary_op -> atom -> atom
   | ABinaryOp : binary_op -> atom -> atom -> atom
   | AArrayGet : atom -> atom -> atom
-  | ARecordProj : atom -> ident -> atom.
+  | ARecordProj : atom -> ident -> atom
+  | APureCall : ident -> list atom -> atom.
 
 (** Deep accesses with atomics array indexes. *)
 
@@ -98,17 +99,97 @@ Module Typed.
     | AFalse : atom
     | AInt32 : int -> signedness -> atom
     | AInt64 : int64 -> signedness -> atom
-    | AConstr : ident -> btyp -> atom
+    | AConstr : ident -> int -> btyp -> atom
     | AVar : ident -> btyp -> atom
     | ACast : atom -> btyp -> atom
     | AUnaryOp : unary_op -> atom -> btyp -> atom
     | ABinaryOp : binary_op -> atom -> atom -> btyp -> atom
     | AArrayGet : atom -> atom -> layout -> btyp -> atom
-    | ARecordProj : atom -> ident -> layout -> btyp -> atom.
+    | ARecordProj : atom -> ident -> layout -> btyp -> atom
+    | APureCall : ident -> btyp -> list atom -> btyp -> atom.
 
-  Inductive access : Type :=
+  Section ATOMIND.
+
+  Fixpoint atom_depth (a: atom) : nat :=
+    match a with
+    | ATrue | AFalse | AInt32 _ _ | AInt64 _ _ | AConstr _ _ _ | AVar _ _ => 0
+    | ACast a _ | AUnaryOp _ a _ | ARecordProj a _ _ _ => 1 + (atom_depth a)
+    | ABinaryOp _ a1 a2 _ | AArrayGet a1 a2 _ _ => 1 + (max (atom_depth a1) (atom_depth a2))
+    | APureCall _ _ args _ =>
+        1 + (List.fold_right (fun a acc => max (atom_depth a) acc)) 0 args
+    end.
+
+  Variable P : atom -> Prop.
+
+  Variable PATrue : P ATrue.
+
+  Variable PFalse : P AFalse.
+
+  Variable PAInt32 : forall i s, P (AInt32 i s).
+
+  Variable PAInt64 : forall i s, P (AInt64 i s).
+
+  Variable PAConstr : forall i n t, P (AConstr i n t).
+
+  Variable PAVar : forall i t, P (AVar i t).
+
+  Variable PACast : forall a t, P a -> P (ACast a t).
+  
+  Variable PAUnaryOp : forall op a t, P a -> P (AUnaryOp op a t).
+
+  Variable PABinaryOp : forall op a1 a2 t, P a1 -> P a2 -> P (ABinaryOp op a1 a2 t).
+
+  Variable PAArrayGet : forall a1 a2 ly t, P a1 -> P a2 -> P (AArrayGet a1 a2 ly t).
+
+  Variable PARecordProj : forall a f ly t, P a -> P (ARecordProj a f ly t).
+
+  Variable PAPureCall : forall i tf args tr, (forall x, List.In x args -> P x) -> P (APureCall i tf args tr).
+
+  Lemma atom_depth_ind : forall a, P a.
+  Proof.
+    intro. remember (atom_depth a) as n.
+    revert a Heqn.
+    induction n using Wf_nat.lt_wf_ind.
+    destruct n.
+    - destruct a; (auto || discriminate).
+    - destruct a; try (tauto || discriminate);
+      simpl; intros.
+      + apply PACast. specialize (H n).
+        apply H. lia. inversion Heqn. reflexivity.
+      + apply PAUnaryOp. specialize (H n).
+        apply H. lia. inversion Heqn. reflexivity.
+      + inversion Heqn. clear Heqn.
+        assert (Hinf1: (atom_depth a1) < S n). lia.
+        assert (Hinf2: (atom_depth a2) < S n). lia.
+        apply PABinaryOp.
+        * apply (H (atom_depth a1) Hinf1 a1). reflexivity.
+        * apply (H (atom_depth a2) Hinf2 a2). reflexivity.
+      + inversion Heqn. clear Heqn.
+        assert (Hinf1: (atom_depth a1) < S n). lia.
+        assert (Hinf2: (atom_depth a2) < S n). lia.
+        apply PAArrayGet.
+        * apply (H (atom_depth a1) Hinf1 a1). reflexivity.
+        * apply (H (atom_depth a2) Hinf2 a2). reflexivity.
+      + apply PARecordProj. specialize (H n).
+        apply H. lia. inversion Heqn. reflexivity.
+      + apply PAPureCall. inversion Heqn. clear Heqn.
+        intros. apply H with (m := (atom_depth x)).
+        rewrite H1. clear - H0.
+        {
+          induction l.
+          - destruct H0.
+          - simpl in *. destruct H0.
+            + rewrite H. lia.
+            + apply IHl in H. lia.
+        }
+        reflexivity.
+  Qed.
+
+  End ATOMIND.
+
+  (* Inductive access : Type :=
     | AcRecordField : ident -> btyp -> layout -> access
-    | AcArrayIndex : atom -> btyp -> layout -> access.
+    | AcArrayIndex : atom -> btyp -> layout -> access. *)
 
   Inductive comp : Type := 
     | CpAtom : atom -> btyp -> comp
@@ -412,10 +493,12 @@ Module AtomOrdered <: OrderedType.
     | AInt64 i1 s1 , AInt64 i2 s2 => pair_compare compare_int64 signedness_compare (i1,s1)  (i2,s2)
     | AInt64 _ _    , _      => Lt
     | _             , AInt64 _ _ => Gt
-    | AConstr i1 bt1 , AConstr i2 bt2 => pair_compare String.compare BtypOrdered.btyp_compare (i1,bt1) (i2,bt2)
-    | AConstr _ _   ,  _          => Lt
-    | _             , AConstr _ _ => Gt
-    | AVar i1 bt1, AVar i2 bt2  => pair_compare String.compare BtypOrdered.btyp_compare (i1,bt1) (i2,bt2)
+    | AConstr c1 n1 bt1 , AConstr c2 n2 bt2 =>
+        pair_compare (pair_compare Ident.compare compare_int)
+          BtypOrdered.btyp_compare ((c1, n1), bt1) ((c2, n2), bt2)
+    | AConstr _ _ _   ,  _          => Lt
+    | _             , AConstr _ _ _ => Gt
+    | AVar i1 bt1, AVar i2 bt2  => pair_compare Ident.compare BtypOrdered.btyp_compare (i1,bt1) (i2,bt2)
     | AVar _  _  , _            => Lt
     | _          , AVar _   _   => Gt
     | ACast a1 bt1 , ACast a2 bt2 => pair_compare atom_compare BtypOrdered.btyp_compare (a1,bt1) (a2,bt2)
@@ -438,6 +521,12 @@ Module AtomOrdered <: OrderedType.
     | ARecordProj a1 f1 ly1 tr1, ARecordProj a2 f2 ly2 tr2 =>
         pair_compare (pair_compare atom_compare Ident.compare)
           (pair_compare layout_compare BtypOrdered.btyp_compare) ((a1, f1), (ly1, tr1)) ((a2, f2), (ly2, tr2))
+    | ARecordProj _ _ _ _, _ => Lt
+    | _, ARecordProj _ _ _ _ => Gt
+    | APureCall f1 bf1 args1 br1, APureCall f2 bf2 args2 br2 =>
+        pair_compare (pair_compare Ident.compare BtypOrdered.btyp_compare)
+          (pair_compare (list_compare atom_compare) (BtypOrdered.btyp_compare))
+            ((f1, bf1), (args1, br1)) ((f2, bf2), (args2, br2))
     end.
 
   Definition t := Typed.atom.
@@ -458,7 +547,7 @@ Module AtomOrdered <: OrderedType.
   Lemma atom_compare_eq : forall x y,
       atom_compare x y = Eq <-> x = y.
   Proof.
-    induction x.
+    induction x using atom_depth_ind.
     - destruct y; simpl; try intuition congruence.
     - destruct y; simpl; try intuition congruence.
     - destruct y; simpl; try intuition congruence.
@@ -471,12 +560,14 @@ Module AtomOrdered <: OrderedType.
       apply signedness_compare_eq.
     - destruct y; simpl; try intuition  congruence.
       rewrite pair_compare_eq. intuition congruence.
-      rewrite string_compare_eq_iff.
-      intuition congruence.
-      rewrite BtypOrdered.btyp_compare_eq. tauto.
+      apply pair_compare_eq.
+      rewrite Ident.compare_eq.
+      reflexivity.
+      apply compare_int_eq.
+      apply BtypOrdered.btyp_compare_eq.
     - destruct y; simpl; try intuition  congruence.
       rewrite pair_compare_eq. intuition congruence.
-      rewrite string_compare_eq_iff.
+      rewrite Ident.compare_eq.
       intuition congruence.
       rewrite BtypOrdered.btyp_compare_eq. tauto.
     - destruct y; simpl; try intuition  congruence.
@@ -508,9 +599,18 @@ Module AtomOrdered <: OrderedType.
     - destruct y; simpl; try intuition congruence.
       rewrite pair_compare_eq. intuition congruence.
       rewrite pair_compare_eq. reflexivity.
-      apply IHx. apply string_compare_eq_iff.
+      apply IHx. apply Ident.compare_eq.
       apply pair_compare_eq.
       apply layout_compare_eq.
+      apply BtypOrdered.btyp_compare_eq.
+    - destruct y; simpl; try intuition congruence.
+      rewrite pair_compare_eq. intuition congruence.
+      rewrite pair_compare_eq. reflexivity.
+      apply Ident.compare_eq.
+      apply BtypOrdered.btyp_compare_eq.
+      rewrite pair_compare_eq. reflexivity.
+      apply list_compare_eq. intros.
+      apply (H x H0).
       apply BtypOrdered.btyp_compare_eq.
   Qed.
 
@@ -525,7 +625,7 @@ Module AtomOrdered <: OrderedType.
   Lemma atom_compare_trans : forall x y z c,
       atom_compare x y = c -> atom_compare y z = c -> atom_compare x z = c.
   Proof.
-    induction x.
+    induction x using atom_depth_ind.
     - simpl.
       destruct y,z; simpl; try intuition congruence.
     - destruct y,z; simpl; try intuition congruence.
@@ -541,13 +641,19 @@ Module AtomOrdered <: OrderedType.
       apply signedness_compare_trans.
     - destruct y,z; simpl; try intuition congruence.
       apply pair_compare_trans.
-      apply string_compare_eq_iff.
-      apply string_compare_trans.
+      destruct a, b1.
+      apply pair_compare_eq.
+      apply Ident.compare_eq.
+      apply compare_int_eq.
+      apply pair_compare_trans.
+      apply Ident.compare_eq.
+      apply Ident.compare_trans.
+      apply compare_int_trans.
       apply BtypOrdered.btyp_compare_trans.
     - destruct y,z; simpl; try intuition congruence.
       apply pair_compare_trans.
-      apply string_compare_eq_iff.
-      apply string_compare_trans.
+      apply Ident.compare_eq.
+      apply Ident.compare_trans.
       apply BtypOrdered.btyp_compare_trans.
     - destruct y,z; simpl; try intuition congruence.
       apply pair_compare_trans.
@@ -556,7 +662,7 @@ Module AtomOrdered <: OrderedType.
       apply BtypOrdered.btyp_compare_trans.
     - destruct y,z; simpl; try intuition congruence.
       apply pair_compare_trans.
-      destruct a ,b2.
+      destruct a ,b1.
       rewrite pair_compare_eq.
       tauto.
       apply unary_op_compare_eq.
@@ -588,7 +694,7 @@ Module AtomOrdered <: OrderedType.
       apply BtypOrdered.btyp_compare_trans.
     - destruct y, z; simpl; try intuition congruence.
       apply pair_compare_trans.
-      destruct a, b2.
+      destruct a, b1.
       apply pair_compare_eq.
       apply atom_compare_eq.
       apply atom_compare_eq.
@@ -602,23 +708,41 @@ Module AtomOrdered <: OrderedType.
       apply BtypOrdered.btyp_compare_trans.
     - destruct y, z; simpl; try intuition congruence.
       apply pair_compare_trans.
-      destruct a, b2.
+      destruct a, b1.
       apply pair_compare_eq.
       apply atom_compare_eq.
-      apply string_compare_eq_iff.
+      apply Ident.compare_eq.
       apply pair_compare_trans.
       apply atom_compare_eq.
       apply IHx.
-      apply string_compare_trans.
+      apply Ident.compare_trans.
       apply pair_compare_trans.
       apply layout_compare_eq.
       apply layout_compare_trans.
+      apply BtypOrdered.btyp_compare_trans.
+    - destruct y, z; simpl; try intuition congruence.
+      apply pair_compare_trans.
+      destruct a. destruct b4.
+      apply pair_compare_eq.
+      apply Ident.compare_eq.
+      apply BtypOrdered.btyp_compare_eq.
+      apply pair_compare_trans.
+      apply Ident.compare_eq.
+      apply Ident.compare_trans.
+      apply BtypOrdered.btyp_compare_trans.
+      apply pair_compare_trans.
+      intros a b3. apply list_compare_eq.
+      intros. apply atom_compare_eq.
+      intro c.
+      apply ExtOrdered.list_compare_trans.
+      apply atom_compare_eq.
+      intros. apply (H _ H0 _ _ _ H3 H4).
       apply BtypOrdered.btyp_compare_trans.
   Qed.
 
   Lemma atom_antisym  : forall (x y:t), atom_compare x y = CompOpp (atom_compare y x).
   Proof.
-    induction x.
+    induction x using atom_depth_ind.
     - destruct y; simpl; try congruence.
     - destruct y ; simpl; try congruence.
     - destruct y ; simpl; try congruence.
@@ -633,11 +757,13 @@ Module AtomOrdered <: OrderedType.
       apply signedness_compare_antisym.
     - destruct y ; simpl; try congruence.
       apply pair_compare_antisym.
-      apply String.compare_antisym.
+      apply pair_compare_antisym.
+      apply Ident.compare_antisym.
+      apply compare_int_antisym.
       apply BtypOrdered.btyp_antisym.
     - destruct y ; simpl; try congruence.
       apply pair_compare_antisym.
-      apply String.compare_antisym.
+      apply Ident.compare_antisym.
       apply BtypOrdered.btyp_antisym.
     - destruct y ; simpl; try congruence.
       apply pair_compare_antisym.
@@ -678,9 +804,20 @@ Module AtomOrdered <: OrderedType.
       simpl.
       apply IHx.
       simpl.
-      apply String.compare_antisym.
+      apply Ident.compare_antisym.
       apply pair_compare_antisym.
       apply layout_compare_antisym.
+      apply BtypOrdered.btyp_antisym.
+    - destruct y; simpl; try congruence; simpl.
+      apply pair_compare_antisym.
+      apply pair_compare_antisym.
+      apply Ident.compare_antisym.
+      apply BtypOrdered.btyp_antisym.
+      apply pair_compare_antisym.
+      apply ExtOrdered.list_compare_antisym.
+      apply atom_compare_eq.
+      simpl.
+      intros. eapply H; eauto.
       apply BtypOrdered.btyp_antisym.
   Qed.
 

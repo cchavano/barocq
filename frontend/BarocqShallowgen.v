@@ -1,4 +1,4 @@
-From Coq Require Import List String.
+From Coq Require Import List String ZArith.
 From compcert Require Import Maps.
 From BarocqComp Require Import Target Monads Error Maps2 Types Utils Syntax Barray Benum Barocq BarocqShallow.
 Import ListNotations.
@@ -736,17 +736,27 @@ Module Monadification.
     | _ => efail
     end.
 
+  Definition zval_of_constr (me: menv) (tc: mtyp) (constr: ident) : res Z :=
+    match tc with
+    | MEnum eid =>
+        let* elems := Typing.TEnv.get_edef me eid in
+        Typing.zval_of_constr_rec elems Z0 constr
+    | _ => efail
+    end.
+
   Definition typecheck_pattern (me: menv) (te: mtyp) (elems: list ident) (p: pattern) (unmatched: list ident) : res (list ident) :=
     if list_is_empty unmatched then efail
     else
       match p with
       | PWildcard => eret nil
-      | PIdent i =>
+      | PIdent i z =>
           let* tp := typof_constr me i in
           if mtyp_eq_dec te tp then
             if List.in_dec Ident.eq_dec i elems then
               if List.in_dec Ident.eq_dec i unmatched then
-                eret (List.remove Ident.eq_dec i unmatched)
+                let* z2 := zval_of_constr me te i in
+                if Z.eq_dec z z2 then eret (List.remove Ident.eq_dec i unmatched)
+                else efail
               else efail
             else efail     
           else efail

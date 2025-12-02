@@ -1,4 +1,4 @@
-From Coq Require Import List String.
+From Coq Require Import List String ZArith.
 From BarocqComp Require Import Error Maps2 Utils Types Syntax Barray Benum.
 Import ListNotations.
 Import Syntax.Typed.
@@ -141,13 +141,14 @@ Definition typof_atom (a: atom) : btyp :=
   | AFalse => BBool
   | AInt32 _ s => BInt32 s
   | AInt64 _ s => BInt64 s
-  | AConstr _ ty
+  | AConstr _ _ ty
   | AVar _ ty
   | ACast _ ty
   | AUnaryOp _ _ ty
   | ABinaryOp _ _ _ ty
   | AArrayGet _ _ _ ty
-  | ARecordProj _ _ _ ty => ty
+  | ARecordProj _ _ _ ty 
+  | APureCall _ _ _ ty => ty 
   end.
 
 Definition typof_comp (c: comp) : btyp :=
@@ -421,18 +422,36 @@ Fixpoint typecheck_literal (be: benv) (l: Syntax.literal) : res literal :=
       else failwith "Typing.typecheck_literal: record type mismatch"
   end.
 
+Fixpoint zval_of_constr_rec (elems: list ident) (i: Z) (constr: ident) : res Z :=
+  match elems with
+  | nil => fail
+  | ci :: elems' => 
+      if Ident.eq_dec ci constr then ret i
+      else zval_of_constr_rec elems' (Z.add i Z.one) constr
+  end.
+
+Definition zval_of_constr (be: benv) (tc: btyp) (constr: ident) : res Z :=
+  match tc with
+  | BEnum eid =>
+      let* elems := TEnv.get_edef be eid in
+      zval_of_constr_rec elems Z0 constr
+  | _ => fail
+  end.
+
 Definition typecheck_pattern (be: benv) (te: btyp) (elems: list ident) (p: pattern) (unmatched: list ident) : res (list ident) :=
   if list_is_empty unmatched then
     failwith "Typing.typecheck_pattern: redundant pattern"
   else
     match p with
     | PWildcard => ret nil
-    | PIdent i =>
+    | PIdent i z =>
         let* tp := typof_constr be i in
         if btyp_eq_dec te tp then
           if List.in_dec Ident.eq_dec i elems then
             if List.in_dec Ident.eq_dec i unmatched then
-              ret (List.remove Ident.eq_dec i unmatched)
+              let* z2 := zval_of_constr be te i in
+              if Z.eq_dec z z2 then ret (List.remove Ident.eq_dec i unmatched)
+              else failwith "Typing.typecheck_pattern: wrong Z value of pattern"
             else
               failwith "Typing.typecheck_pattern: redundant pattern"
           else

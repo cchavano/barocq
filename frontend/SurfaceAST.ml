@@ -62,7 +62,7 @@ type raw_expr =
   | EIfThenElse of expr * expr * expr
   | EMatch of expr * (pattern * expr) list
   | ELetIn of ident * expr * expr
-  | EAttr  of ident * expr
+  | EAttr of ident * expr
 
 and expr = raw_expr Location.t
 

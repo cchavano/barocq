@@ -2,17 +2,19 @@ open Format
 open PrintCsyntax
 open AST
 
-let print_clightce (types_header : string) (prog : ClightCe.program) : unit =
-  match !PrintClightCe.destination with
+let _ = PrintCsyntax.src := Lang_barocq
+
+let destination : string option ref = ref None
+
+let print_csyntax (types_header : string) (prog : Csyntax.program) : unit =
+  match !destination with
   | None -> ()
   | Some f ->
+      PrintCsyntax.destination := !destination;
       let oc = open_out f in
       if types_header <> "" then
         Printf.fprintf oc "#include \"%s\"\n\n" types_header;
-      PrintClightCe.print_program
-        PrintClightCe.Clight2
-        (formatter_of_out_channel oc)
-        prog;
+      PrintCsyntax.print_program (formatter_of_out_channel oc) prog;
       close_out oc
 
 let print_header_globvar (p : formatter) (id : ident)
@@ -33,8 +35,8 @@ let print_header_globdef (p : formatter)
 
 let print_header_globdecl (p : formatter)
     ((id, gd) : ident * ('a, Ctypes.coq_type) globdef) : unit =
-  if PrintClightCe.fun_is_static id then ()
-  else PrintClightCe.print_globdecl p (id, gd)
+  if Barocq2C.fun_is_static id then ()
+  else PrintCsyntax.print_globdecl p (id, gd)
 
 let print_inttype_aliases (oc : out_channel) : unit =
   Printf.fprintf
@@ -45,7 +47,7 @@ let print_inttype_aliases (oc : out_channel) : unit =
      typedef unsigned long long u64;\n\n"
 
 let print_header (types_header : string) (hfile : string)
-    (prog : ClightCe.program) : unit =
+    (prog : Csyntax.program) : unit =
   let aux p prog =
     fprintf p "@[<v 0>";
     List.iter (PrintCsyntax.define_composite p) prog.Ctypes.prog_types;

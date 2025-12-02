@@ -76,6 +76,11 @@ let rec atom_to_string (a : atom) : string =
   | AArrayGet (a1, a2) ->
       sprintf "%s[%s]" (atom_to_string a1) (atom_to_string a2)
   | ARecordProj (a, x) -> sprintf "%s.%s" (atom_to_string a) (ident_to_string x)
+  | APureCall (f, args) ->
+      sprintf
+        "%s%s"
+        (ident_to_string f)
+        (list_to_string_paren atom_to_string args)
 
 and opt_parens (a : atom) : string =
   PrintUtils.opt_parens is_simpl_atom atom_to_string a
@@ -122,7 +127,7 @@ module Typed = struct
     | Syntax.Typed.AFalse -> AFalse
     | Syntax.Typed.AInt32 (i, s) -> AInt32 (i, s)
     | Syntax.Typed.AInt64 (i, s) -> AInt64 (i, s)
-    | Syntax.Typed.AConstr (x, _) -> AConstr x
+    | Syntax.Typed.AConstr (x, _, _) -> AConstr x
     | Syntax.Typed.AVar (x, _) -> AVar x
     | Syntax.Typed.ACast (a1, ty) -> ACast (untype_atom a1, ty)
     | Syntax.Typed.AUnaryOp (op, a', _) -> AUnaryOp (op, untype_atom a')
@@ -131,6 +136,8 @@ module Typed = struct
     | Syntax.Typed.AArrayGet (a, i, _, _) ->
         AArrayGet (untype_atom a, untype_atom i)
     | Syntax.Typed.ARecordProj (a, f, _, _) -> ARecordProj (untype_atom a, f)
+    | Syntax.Typed.APureCall (f, _, args, _) ->
+        APureCall (f, List.map untype_atom args)
 
   let atom_to_string (a : Syntax.Typed.atom) : string =
     atom_to_string (untype_atom a)

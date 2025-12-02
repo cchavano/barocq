@@ -31,13 +31,18 @@ let rec statement_to_string_pref (prefix : string) (s : Imp1.statement) : string
         (statement_to_string_pref prefix s1)
         (statement_to_string_pref prefix s2)
   | StReturn a -> sprintf "%sreturn %s;" prefix (atom_to_string a)
-  | StAttr(a,s)   -> sprintf "%s[#%s]%s" prefix (ident_to_string a) (statement_to_string_pref prefix s)
+  | StAttr (a, s) ->
+      sprintf
+        "%s[#%s]%s"
+        prefix
+        (ident_to_string a)
+        (statement_to_string_pref prefix s)
 
 and switch_case_to_string (prefix : string)
     ((p, sp) : Benum.pattern * Imp1.statement) : string =
   let case =
     match p with
-    | Benum.PIdent i -> sprintf "%s =>" (ident_to_string i)
+    | Benum.PIdent (i, _) -> sprintf "%s =>" (ident_to_string i)
     | Benum.PWildcard -> "_ =>"
   in
   sprintf "%s%s\n%s" prefix case (statement_to_string_pref (prefix ^ indent) sp)
@@ -83,8 +88,8 @@ end = struct
     | Imp1Typed.StSequence (s1, s2) ->
         StSequence (untype_statement s1, untype_statement s2)
     | Imp1Typed.StReturn a -> StReturn (untype_atom a)
-    | Imp1Typed.StAttr(a,s) -> StAttr(a,untype_statement s)
-  
+    | Imp1Typed.StAttr (a, s) -> StAttr (a, untype_statement s)
+
   let statement_to_string_pref (prefix : string) (s : Imp1Typed.statement) :
       string =
     statement_to_string_pref prefix (untype_statement s)

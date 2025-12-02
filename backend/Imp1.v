@@ -50,7 +50,7 @@ Module Typed.
   (** ** Computations *)
 
   Definition comp : Type := Syntax.Typed.comp.
-
+  
   (** ** Statements *)
 
   Inductive statement : Type :=
@@ -405,13 +405,51 @@ End Pp.
     | _ => fail
     end.
 
-  Fixpoint eval_atom (te: tenv) (e:env) (m: mem) (tyr:typ) (a:atom)  : res (val tyr) :=
+  Definition cast_function {a1 a2:list typ} {r1 r2:typ} (Eq : TFun a1 r1 = TFun a2 r2) (f : mem -> typ_of_fun a1 r1) :
+    mem -> typ_of_fun a2 r2.
+  Proof.
+    injection Eq.
+    intros E1 E2.
+    rewrite E2 in f.
+    rewrite E1 in f.
+    apply f.
+  Defined.
+
+
+  Definition get_fun (ge:genv) {args:list typ} {ret:typ} (v :val (TFun args ret)) : res (mem -> typ_of_fun args ret):=
+  match v with
+  | Vprim _ _ => fail (* This is actually impossible *)
+  | Vptr _ ptr  =>
+      match ptr with
+      | PtrF fid _ _ => let* f := ge fid in
+                        match f with
+                        | existT _ args' (existT _ ret' fc) =>
+                            match typ_eq_dec (TFun args' ret') (TFun args ret)  with
+                            | left EQ => OK (cast_function EQ fc)
+                            | _  => fail
+                            end
+                        end
+      | _ => fail
+      end
+  end.
+
+
+  Fixpoint eval_app (tparams : list typ) (tret : typ)
+    (args : DList.dlist (DList.resFtyp val) tparams) : forall (f: typ_of_fun tparams tret), res (val tret * mem) :=
+      match args with
+    | DList.DNIL _ => fun f => f
+    | DList.DCONS  _ e  args' =>
+        fun f => let* e1 := e in
+                eval_app _ _ args' (f e1)
+      end.
+
+  Fixpoint eval_atom (te: tenv) (ge: genv) (e:env) (m: mem) (tyr:typ) (a:atom) {struct a} : res (val tyr) :=
     match a with
     | ATrue => val_of_pval (cast_pval (PBool true) tyr)
     | AFalse => val_of_pval (cast_pval (PBool false) tyr)
     | AInt32 i s => val_of_pval (cast_pval (PInt32 s i) tyr)
     | AInt64 i s  => val_of_pval (cast_pval (PInt64 s i) tyr)
-    | AConstr s bt =>
+    | AConstr s _ bt =>
         let* td := btyp_to_typ te bt  in
         match get_enum td with
         | None => fail
@@ -424,7 +462,7 @@ End Pp.
     | ACast a1 tr =>
         let* tr := btyp_to_typ te tr in
         let* te1 := typof_atom te a1 in
-        let* v1  := eval_atom te e m te1 a1   in
+        let* v1  := eval_atom te ge e m te1 a1   in
         match v1 with
         | Vprim ty' pv =>
             let* f := get_cast abs_typ_impl ty' tr in
@@ -434,28 +472,40 @@ End Pp.
         end
     | AUnaryOp op a1 bt =>
         let* tye := btyp_to_typ te bt in
-        let* v := eval_atom te e m tye a1  in
+        let* v := eval_atom te ge e m tye a1  in
         let* v := eval_val v in
         let* res := eval_unary_op abs_typ_impl op tye v tyr in
         val_of_eval_typ res
     | ABinaryOp op a1 a2 bt =>
         let* tye1 := typof_atom te a1 in
         let* tye2  := typof_atom te a2 in
-        let* v1 := eval_atom te e m tye1 a1 in
-        let* v2 := eval_atom te e m tye2 a2 in
+        let* v1 := eval_atom te ge e m tye1 a1 in
+        let* v2 := eval_atom te ge e m tye2 a2 in
         let* v1 := eval_val v1 in
         let* v2 := eval_val v2 in
         let* res := eval_binary_op abs_typ_impl op tye1 tye2 v1 v2 tyr in
         let* pv := pval_of_typ _ res in val_of_pval (cast_pval pv tyr)
     | AArrayGet a1 i _ bt =>
         let* tya1 := typof_atom te a1 in
-        let* v1 := eval_atom te e m tya1 a1 in
-        let* v2 := eval_atom te e m (typof_index arch) i  in
+        let* v1 := eval_atom te ge e m tya1 a1 in
+        let* v2 := eval_atom te ge e m (typof_index arch) i  in
         eval_array_get m v1 v2 tyr
     | ARecordProj r id _ bt =>
         let* t := typof_atom te r in
-        let* r := eval_atom te e m t r in
+        let* r := eval_atom te ge e m t r in
         eval_record_proj m r id tyr
+    | APureCall f btf args bt =>
+        let* vf := e f in
+        let (tf, vf) := vf in
+        match tf with
+        | TFun tparams tret =>
+            let* vf := cast_val vf (TFun tparams tyr) in
+            let* f := @get_fun ge tparams tyr vf in
+            let* vargs := DList.map2 _ (eval_atom te ge e m) args tparams in
+            let* (vret, _) := eval_app tparams tyr vargs (f m) in
+            ret vret
+        | _  => fail
+        end
     end.
 
 Definition eval_array_set (m:mem) {ta:typ} (a:val ta) {ti:typ} (i:val ti) {te:typ} (v:val te): res mem :=
@@ -504,7 +554,7 @@ Fixpoint eval_accesses (te:tenv) (e:env) (m:mem) {ty:typ} (v:val ty) (l:list acc
       eval_accesses te e m va l tr
   end. *)
 
-Definition cast_function {a1 a2:list typ} {r1 r2:typ} (Eq : TFun a1 r1 = TFun a2 r2) (f : mem -> typ_of_fun a1 r1) :
+(* Definition cast_function {a1 a2:list typ} {r1 r2:typ} (Eq : TFun a1 r1 = TFun a2 r2) (f : mem -> typ_of_fun a1 r1) :
   mem -> typ_of_fun a2 r2.
 Proof.
   injection Eq.
@@ -540,51 +590,50 @@ Fixpoint eval_app (tparams : list typ) (tret : typ)
   | DList.DCONS  _ e  args' =>
       fun f => let* e1 := e in
                eval_app _ _ args' (f e1)
-    end.
-
+    end. *)
 
 Definition eval_comp (te:tenv) (ge:genv) (e:env) (m:mem) (c:comp) (tr:typ) : res (val tr  * mem) :=
   match c with
-  | CpAtom a bt => let* va := eval_atom te e m tr a in
+  | CpAtom a bt => let* va := eval_atom te ge e m tr a in
                    OK (va,m)
   (* | CpArrayGet a1 i bt _ =>
       let* tya1 := typof_atom te a1 in
-      let* v1 := eval_atom te e m tya1 a1 in
-      let* v2 := eval_atom te e m (typof_index arch) i  in
+      let* v1 := eval_atom te ge e m tya1 a1 in
+      let* v2 := eval_atom te ge e m (typof_index arch) i  in
       let* r  := eval_array_get m v1 v2 tr in
       OK(r,m) *)
   | CpArraySet a i v bt =>
       let* ta := typof_atom te a in
       let* tv := typof_atom te v in
-      let* a := eval_atom te e m ta a in
-      let* i := eval_atom te e m (typof_index arch) i in
-      let* v := eval_atom te e m tr v in
+      let* a := eval_atom te ge e m ta a in
+      let* i := eval_atom te ge e m (typof_index arch) i in
+      let* v := eval_atom te ge e m tr v in
       let* m := eval_array_set m a i v  in
       OK (v,m)
   (* | CpRecordProj r id bt _ =>
       let* t := typof_atom te r in
-      let* r := eval_atom te e m t r in
+      let* r := eval_atom te ge e m t r in
       let* v := eval_record_proj m r id tr in
       OK(v,m) *)
   | CpRecordUpdate r id v bt =>
       let* trec := typof_atom te r in
       let* tv   := typof_atom te v in
-      let* r := eval_atom te e m tr r in
-      let* v := eval_atom te e m tv v in
+      let* r := eval_atom te ge e m tr r in
+      let* v := eval_atom te ge e m tv v in
       let* m := eval_record_update m r id v in
       OK(r,m)
   (* | CpDeepAccess a l bt =>
       let*  ta := typof_atom te a in
-      let* a := eval_atom te e m ta a in
+      let* a := eval_atom te ge e m ta a in
       let* v := eval_accesses te e m a l tr in
       OK(v,m) *)
   | CpCall f btf args bt =>
       let* tyf := btyp_to_typ te btf in
       match tyf with
       | TFun tparams tret =>
-          let* f := eval_atom te e m (TFun tparams tr) (AVar f btf) in
+          let* f := eval_atom te ge e m (TFun tparams tr) (AVar f btf) in
           let* f := get_fun ge f in
-          let* vargs := DList.map2 _ (eval_atom te e m) args tparams in
+          let* vargs := DList.map2 _ (eval_atom te ge e m) args tparams in
           eval_app tparams tr vargs (f m)
       | _  => fail
       end
@@ -632,11 +681,11 @@ Fixpoint eval_statement (te:tenv) (ge:genv) (e:env) (m:mem) (ty:option typ) (s:s
       | _ => fail
       end
   | StIfThenElse a s1 s2 =>
-      let* v := eval_atom te e m TBool a in
+      let* v := eval_atom te ge e m TBool a in
       eval_statement te ge e m ty (if bool_of_valbool v then s1 else s2)
   | StSwitch a l =>
       let* ta := typof_atom te a in
-      let* va  := eval_atom te e m ta a  in
+      let* va  := eval_atom te ge e m ta a  in
       let vcases :=  MapList.map (eval_statement te ge e m ty) l in
       eval_match ta va ty vcases
   | StSequence s1 s2 =>
@@ -646,7 +695,7 @@ Fixpoint eval_statement (te:tenv) (ge:genv) (e:env) (m:mem) (ty:option typ) (s:s
       match ty with
       | None => fail
       | Some ty =>
-          let* va := eval_atom te e m ty a in
+          let* va := eval_atom te ge e m ty a in
           OK (va,m)
       end
   | StAttr a s => eval_statement te ge e m ty s
@@ -829,7 +878,8 @@ Module Typing.
     | Syntax.AInt64 i s => ret (AInt64 i s)
     | Syntax.AConstr x =>
         let* t := typof_constr be x in
-        ret (AConstr x t)
+        let* z := zval_of_constr be t x in
+        ret (AConstr x (Int.repr z) t)
     | Syntax.AVar x =>
         let* t := typof_var gx lx x in
         ret (AVar x t)
@@ -861,6 +911,12 @@ Module Typing.
         let ta := typof_atom a' in
         let* (ty, ly) := typecheck_record_proj2 be ta f in
         ret (ARecordProj a' f ly ty)
+    | Syntax.APureCall f args =>
+        let* tf := typof_var gx lx f in
+        let* args' := mmap (typecheck_atom be gx lx) args in
+        let targs := map typof_atom args' in
+        let* ty := typecheck_call tf targs in
+        ret (APureCall f tf args' ty)
     end.
 
   (* Fixpoint typecheck_access (be: benv) (gx: gcontext) (lx: lcontext) (ty: btyp) (acs: list Syntax.access) : res (btyp * list Syntax.Typed.access) :=
@@ -936,7 +992,7 @@ Module Typing.
 
   Fixpoint typecheck_statement (be: benv) (gx: gcontext) (lx: lcontext) (tret: btyp) (s: Imp1.statement) : res (Imp1Typed.statement * lcontext) :=
     let fix typecheck_match_rec (be: benv) (gx: gcontext) (lx: lcontext) (te: btyp) (tret: btyp) (elems: list ident) (unmatched: list ident)
-      (cases: list (pattern * Imp1.statement)) : res (list (pattern * Imp1Typed.statement) * lcontext) :=
+      (cases: list (Benum.pattern * Imp1.statement)) : res (list (pattern * Imp1Typed.statement) * lcontext) :=
       match cases with
       | nil => fail
       | (x, sx) :: nil =>
@@ -955,7 +1011,7 @@ Module Typing.
       end
     in
     let typecheck_match (be: benv) (gx: gcontext) (lx: lcontext) (tret: btyp) (ty: btyp)
-      (cases: list (pattern * Imp1.statement)) : res (list (pattern * Imp1Typed.statement) * lcontext) :=
+      (cases: list (Benum.pattern * Imp1.statement)) : res (list (pattern * Imp1Typed.statement) * lcontext) :=
       match ty with
       | BEnum te =>
           let* elems := TEnv.get_edef be te in

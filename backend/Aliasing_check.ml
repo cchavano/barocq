@@ -70,6 +70,7 @@ let rec check_atom (d : absdom) (a : atom) : unit =
       check_atom d a1;
       check_atom d i
   | ARecordProj (a1, _, _, _) -> check_atom d a1
+  | APureCall (_, _, args, _) -> List.iter (check_atom d) args
 
 (** [check_deep_access d a acs] checks that the deep access from [a] with access
     list [acs] is valid in [d].*)

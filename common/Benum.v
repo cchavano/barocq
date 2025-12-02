@@ -1,4 +1,4 @@
-From Coq Require Import List Bool.
+From Coq Require Import List Bool BinNums.
 From compcert Require Import Integers.
 From BarocqComp Require Import Ident Intop Error Utils.
 
@@ -161,7 +161,7 @@ Definition of_i32 (elems: list ident) (i: int) : res (enum elems) :=
     make_enum elems ei.
 
 Inductive pattern : Type := 
-  | PIdent (i: ident) : pattern
+  | PIdent (i: ident) (z: Z) : pattern
   | PWildcard : pattern.
   
 (* Fixpoint match_with {elems: list ident} {A: Type} (e: enum elems) (cases: list (pattern * A)) : res A :=
@@ -217,7 +217,7 @@ Fixpoint match_with_err {elems: list ident} {A: Type} (e: enum elems) (cases: li
   | nil => fail
   | (pi, ai) :: cases' =>
       match pi with
-      | PIdent i =>
+      | PIdent i _ =>
           let* ei := make_enum elems i in
           if enum_eq ei e then ai
           else match_with_err e cases'
@@ -231,7 +231,7 @@ Fixpoint match_with_err2 {elems: list ident} {A E: Type} (e: enum elems) (cases:
   | nil => fail
   | (pi, ai) :: cases' =>
       match pi with
-      | PIdent i =>
+      | PIdent i _ =>
           let* ei := make_enum elems i in
           if E_eq_dec (f ei) (f e) then ai
           else match_with_err2 e cases' E_eq_dec f
