@@ -33,7 +33,8 @@ Module BNF.
     | EApp : atom -> list atom -> expr
     | EIfThenElse : atom -> expr -> expr -> expr
     | EMatch : atom -> list (pattern * expr) -> expr
-    | ELetIn : ident -> expr -> expr -> expr.
+    | ELetIn : ident -> expr -> expr -> expr
+    | EAttr  : ident -> expr -> expr.
 
   (** ** Functions *)
 
@@ -105,7 +106,9 @@ Module Monadic.
     | EMatch : atom -> list (pattern * expr) -> mtyp -> expr
     | ELetIn : ident -> expr -> expr -> mtyp -> expr
     | ELetMon : ident -> expr -> expr -> mtyp -> expr
-    | ERet : expr -> mtyp -> expr.
+    | ERet : expr -> mtyp -> expr
+    | EAttr : ident -> expr -> mtyp -> expr
+  .
 
   (** ** Functions *)
 

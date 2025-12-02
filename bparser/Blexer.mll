@@ -86,7 +86,7 @@ let space = [' ''\t''\r']
 let int_suffix = ('u'? 'l'?) | ('U'? 'L'?)
 let dec_int_lit = digit (digit | '_')* int_suffix
 let hex_int_lit = ("0x" | "0X") xdigit (xdigit | '_')* int_suffix?
-let ident_char = (letter | digit | '_')
+let ident_char = (letter | digit | '_'|"'")
 let ident = letter ident_char* | '_' ident_char+
 
 rule read_token = parse

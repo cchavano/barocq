@@ -195,6 +195,9 @@ Module Normalization.
         let* ne1 := norm_expr_rec e1 in
         let* ne2 := norm_expr_rec e2 in
         ret (ELetIn x ne1 ne2)
+    | Barocq.EAttr s e =>
+        let* ne := norm_expr_rec e in
+        ret (EAttr s ne)
     end.
 
   Close Scope state_err_monad_scope.
@@ -371,6 +374,9 @@ Module Normalization2.
         let* ne1 := norm_expr_rec e1 in
         let* ne2 := norm_expr_rec e2 in
         ret (ELetIn x ne1 ne2)
+    | Barocq.EAttr s e =>
+        let* ne := norm_expr_rec e in
+        ret (EAttr s ne)
     end.
 
   Close Scope state_err_monad_scope.
@@ -478,6 +484,7 @@ Module Monadification.
     | ELetIn _ _ _ ty
     | ELetMon _ _ _ ty
     | ERet _ ty => ty
+    | EAttr _ _ ty => ty
     end.
 
   Fixpoint mtyp_eq_dec (t1 t2: mtyp) : { t1 = t2 } + { t1 <> t2 }.
@@ -1023,6 +1030,10 @@ Module Monadification.
             let* e2' := monadify_expr_rec me gx lx' e2 (mflag || false) in
             eret (ELetIn x e1' e2' (typof_expr e2'))
         end
+    | BNF.EAttr s e =>
+        let* e' := monadify_expr_rec me gx lx e false in
+        let  t:= typof_expr e' in
+        eret (EAttr s e' t)
     end.
   
   Definition monadify_expr (me: menv) (gx: gcontext) (lx: lcontext) (e: BNF.expr) : res expr :=

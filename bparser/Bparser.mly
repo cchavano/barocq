@@ -70,6 +70,7 @@
 %nonassoc OP_NOTBOOL OP_NOTINT
 %nonassoc LPAREN LBRACKET
 %nonassoc DOT
+%nonassoc SHARP
 
 %start imodul
 %type<SurfaceAST.imodul> imodul
@@ -166,9 +167,14 @@ c_attr:
   | STATIC { Vis Static }
   | EXPORT { Vis Export }
 
+attr_id :
+  | id = ident {id}
+
+
 raw_expr:
   | TRUE { ETrue }
   | FALSE { EFalse }
+  | SHARP LBRACKET id = attr_id RBRACKET  e = expr {EAttr(id,  e)}
   | i = LIT_INT32 { EInt32 (coqint_of_camlint (fst i), (snd i)) }
   | i = LIT_INT64 { EInt64 (coqint_of_camlint64 (fst i), (snd i)) }
   | cid = cident

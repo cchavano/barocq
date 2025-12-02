@@ -1,6 +1,6 @@
 From Coq Require Import List String ListDec PArith Bool.
 From compcert Require Import Coqlib Integers Maps Ctypes.
-From BarocqComp Require Import Error Maps2 Utils Intop Barray Brecord Benum Types Typing Syntax.
+From BarocqComp Require Import Error Maps2 Utils Intop Barray Brecord Benum Types Typing Syntax Pp Printer.
 From BarocqComp Require  DList.
 Import ListNotations.
 
@@ -28,6 +28,7 @@ Inductive expr : Type :=
   | EIfThenElse (e1 e2 e3: expr) : expr                      (* if e1 then e2 else e3 *)
   | EMatch (e: expr) (cases: list (pattern * expr)) : expr   (* match e with V1 -> e1 ... | Vn -> en end *)    
   | ELetIn (x: ident) (e1 e2: expr) : expr                   (* let x = e1 in e2 *)
+  | EAttr (x:ident) (e:expr)                                 (* expression with a decoration  *)
 
 with access : Type :=
   | AcRecordField : ident -> access
@@ -70,6 +71,56 @@ Definition iprog_to_prog (iprog: iprogram) : program :=
         end)
     nil
     iprog.
+
+Module Pp.
+
+  Fixpoint pp_expr (e:expr) :=
+    match e with
+    | ETrue => Bstr "true"
+    | EFalse => Bstr "false"
+    | EInt32 i s => Printer.pp_sint s i
+    | EInt64 i s => Printer.pp_sint64 s i
+    | EConstr x  => Bstr x
+    | EVar x     => Bstr x
+    | ECast e ty => Pp.seq (Bstr "(" :: pp_btyp ty :: Bstr ")"
+                              :: pp_expr e :: nil)
+    | EUnaryOp o e => Pp.seq (Bstr (string_of_unary_op o) ::
+                                   Bstr " " :: pp_expr e ::  nil)
+    | EBinaryOp o e1 e2  =>
+        Pp.seq
+          (pp_expr e1 :: Bstr " " ::
+             Bstr (string_of_binary_op o) :: Bstr " " ::
+             pp_expr e2 ::  nil)
+    | EArrayGet a i => Bcat (pp_expr a )
+                         (array_index pp_expr i)
+    | EArraySet a i v =>
+        Pp.seq (pp_expr a :: Bstr "[" :: pp_expr i :: Bstr "] <- " :: pp_expr v :: nil)
+    | ERecordProj a i => Bcat (pp_expr a)
+                         (Bcat (Bstr ".") (Bstr i))
+  | ERecordUpdate a fd v =>
+      Pp.seq (pp_expr a :: Bstr "." :: Bstr fd :: Bstr " <- " :: pp_expr v :: nil)
+
+    | EApp a l => Pp.seq (pp_expr a :: Bstr "(" :: pp_list (Bstr ", ") pp_expr l :: Bstr ")" :: nil)
+    | EIfThenElse c t e => Bstack
+                             (Bcat (Bstr "if ") (pp_expr c))
+                             (Bstack (Bcat (Bstr "then ") (pp_expr t))
+                                (Bcat (Bstr "else ") (pp_expr e)) Left) Left
+    | EMatch e cases => Bstr "match ... "
+    | ELetIn id e1 e2 => Bcat (Bstr "let ") (Bstack (Pp.seq (Bstr id :: Bstr " := " :: pp_expr e1 :: Bstr " in " :: nil))                                               (pp_expr e2) Left)
+    | EAttr id e => Pp.seq (Bstr "#[ " :: Bstr id :: Bstr " ]"  :: pp_expr e :: nil)
+    end.
+
+  Definition pp_globdef (gd:globdef) : box :=
+    match gd with
+    | DefType id td => Bcat (Bstr "type") (Bstr id)
+    | DefConst id lit _ => Pp.seq (Bstr "defn ":: Bstr id :: Bstr " := " :: Printer.pp_literal lit :: nil)
+    | DefFun id f       => Printer.pp_function pp_expr pp_btyp id f
+    | _                 => Bstr "decl ..."
+    end.
+
+  Definition pp_program (p:program) := pp_slist pp_globdef p.
+
+End Pp.
 
 
 Module Typed.
@@ -129,6 +180,36 @@ Module Typed.
 
   Definition iprogram := list command.
 
+(*  Module Pp.
+
+    Fixpoint pp_expr (e:expr) : box :=
+      | ETrue  => Bstr "true"
+      | EFalse => Bstr "false"
+      | EInt32 i s => Printer.pp_sint s i
+      | EInt64 i s => Printer.pp_sint64 s i
+      | EConstr s  _ => Bstr s
+      | EVar v _     => Bstr v
+      | ECast e v    => Pp.seq (Bstr "(":: Printer.pp_btyp v :: Bstr ")" :: pp_expr e :: nil)
+      | EUnaryOp o e1 _ => Bcat (Bstr (Printer.string_of_unary_op o)) (pp_expr e1)
+      | EBinaryOp o e1 e2 => Pp.seq ((pp_expr e1):: (Bstr (Printer.string_of_binary_op o)) :: (pp_expr e2) :: nil)
+      | EArrayGet e1 e2   => Pp.seq (pp_expr e1 :: Bstr "[" :: pp_expr e2  :: "]" :: nil)
+      | EArraySet e i v   => Pp.seq (pp_expr e  :: Bstr "[" :: pp_expr i  :: "] <- " :: pp_expr v :: nil)
+      | ERecordProj e id  => Pp.seq (pp_expr e1 :: Bstr "." :: Bstr id :: nil)
+      | ERecordUpdate e id v _  =>  Pp.seq (pp_expr e1 :: Bstr "." :: Bstr id :: nil)
+    | EApp : expr -> list expr -> btyp -> expr
+    | EIfThenElse : expr -> expr -> expr -> btyp -> expr
+    | EMatch : expr -> list (pattern * expr) -> btyp -> expr
+    | ELetIn : ident -> expr -> expr -> btyp -> expr
+
+  (* An access is associated with a type.
+     For every deep access e.X1X2...Xn, Xi has type ty
+     iff the expression e.X1...X(i-1)Xi has type ty. *)
+  with access : Type :=
+    | AcRecordField : ident -> btyp -> access
+    | AcArrayIndex : expr -> btyp -> access.
+*)
+
+  
 End Typed.
 
 Module BarocqTyped := Barocq.Typed.
@@ -258,6 +339,7 @@ Module Typing.
         let* lx' := lcontext_update lx x (typof_expr e1') in
         let* e2' := typecheck_expr be gx lx' e2 in
         ret (ELetIn x e1' e2' (typof_expr e2'))
+    | Barocq.EAttr _ e => typecheck_expr be gx lx e
     end.
 
   Definition typecheck_function (arch: Target.archi) (be: benv) (gx: gcontext) (f: Barocq.function) : res BarocqTyped.function :=

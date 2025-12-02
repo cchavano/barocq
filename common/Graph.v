@@ -9,7 +9,7 @@ Require Import List String.
 Import ListNotations.
 Require Import Unsigned63.
 
-From BarocqComp Require Import Error Maps2 Utils Draw.
+From BarocqComp Require Import Error Maps2 Utils Pp.
 
 Inductive cedge :=
 | MUST
@@ -568,6 +568,15 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
 
     Inductive t :=
     | Node : list (EdgeLabel.t * t) -> t.
+
+
+    Fixpoint pp (tr:t) : box :=
+      match tr with
+      | Node l =>
+          Bstack (Bstr "o")
+            (pp_list (Bstr " ") (fun x => Bstack (EdgeLabel.pp (fst x)) (pp (snd x)) Middle) l) Middle
+      end.
+
 
     Section IND.
 
@@ -1511,7 +1520,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
 
     End HASPATH.
 
-    
+
   End PathTree.
 
   Definition get_label (g:t) (n:int) :=
@@ -2368,8 +2377,8 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
               match find_edge e edges with
               | Some o' => check_must_alias fuel o' l n g
               | _     =>
-                  let g := Draw.pp (Bcat (Bstr (string_of_int o)) (Bcat (pp g) (Bstr (string_of_int n))))in
-                  Error (cons (MSG "check_must_alias: cannot find must alias") (cons (MSG Draw.nl) (cons (MSG g) nil)))
+                  let g := Pp.pp (Bcat (Bstr (string_of_int o)) (Bcat (pp g) (Bstr (string_of_int n))))in
+                  Error (cons (MSG "check_must_alias: cannot find must alias") (cons (MSG Pp.nl) (cons (MSG g) nil)))
               end
           end
       end.

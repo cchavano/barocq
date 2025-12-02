@@ -233,24 +233,6 @@ Fixpoint forall_check {A: Type} (P : A -> res unit) (l:list A) : res unit :=
   end.
 
 
-From BarocqComp Require Import Unsigned63.
-From Coq Require Import String.
-
-Fixpoint string_of_positive (i:positive) : string :=
-  match i with
-  | xH => "1"%string
-  | xI p => String.append (string_of_positive p) "1"%string
-  | xO p => String.append (string_of_positive p) "0"%string
-  end.
-
-Definition string_of_Z (z:Z) : string :=
-  match z with
-  | Z0 => "0"%string
-  | Zpos p => string_of_positive p
-  | Zneg p => append "-"%string (string_of_positive p)
-  end.
-
-Definition string_of_int (i:int) := string_of_Z (to_Z i).
 
 Section MERGE.
   Context {A : Type}.

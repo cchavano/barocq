@@ -17,6 +17,7 @@ Inductive tailcomp : Type :=
   | TcComp : comp -> tailcomp
   | TcIfThenElse : atom -> tailcomp -> tailcomp -> tailcomp
   | TcSwitch : atom -> list (pattern * tailcomp) -> tailcomp
+  | TcAttr   : ident -> tailcomp -> tailcomp
 
 (** ** Statements *)
 

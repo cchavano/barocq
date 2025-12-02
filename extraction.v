@@ -22,7 +22,7 @@ Load extractionMachdep.
 Extraction Blacklist List String Int Array.
 
 (* Extraction directory *)
-Set Extraction Output Directory "_build/extraction".
+Set Extraction Output Directory "_build/extraction_tmp".
 
 Extract Constant Imp1.Aliasing_AST.ABSDOM => "Aliasing_defs.AbsDom.t".
 Extract Constant Imp1gen2.gen_aliasing_program => "Aliasing_impl.gen_aliasing_program".
@@ -69,7 +69,7 @@ Separate Extraction
   Barocq.eval_def
   Compiler.aliascheck_program
   Compiler.compile_to_imp1
-  Compiler.compile
+  Compiler.compile Compiler.ir_name
   BarocqShallowgen.monadify_norm_program
   BarocqShallowgen.monadify_norm2_program
   Syntax.get_enum_typedefs
@@ -78,4 +78,4 @@ Separate Extraction
   Types.btyp_is_prim
   Imp1.Aliasing_AST.program
   Ident
-  BarocqVC.
+  BarocqVC Pp.Log.pp.

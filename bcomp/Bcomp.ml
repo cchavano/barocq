@@ -37,9 +37,7 @@ let opt_aliascheck = ref false
 
 let opt_print_tokens = ref false
 
-let opt_print_bbnf = ref false
-
-let opt_print_imp1 = ref false
+let opt_print = ref []
 
 let opt_gen_header = ref false
 
@@ -66,6 +64,17 @@ let set_target_arch (s : string) : unit =
     else raise @@ UnknownTargetArch
   in
   target_arch := arch
+
+let set_opt_print s =
+  opt_print := 
+    (match s with
+     | "barocq" -> Compiler.Barocq
+     | "bbnf"   -> Compiler.BBNF
+     | "ibnf"   -> Compiler.IBNF
+     | "imp1"   -> Compiler.Imp1
+     | "imp2"   -> Compiler.Imp2
+     |   _      -> failwith "Invalid intermediate language"
+    ) :: !opt_print
 
 let file_types_impl = ref ""
 
@@ -94,10 +103,7 @@ let options =
     ( "-print-tokens",
       Arg.Set opt_print_tokens,
       "\t\t\tPrint parsed tokens (stop after lexing)" );
-    ( "-print-bbnf",
-      Arg.Set opt_print_bbnf,
-      "\t\t\t\tPretty-print B-normal form IR" );
-    ("-print-imp1", Arg.Set opt_print_imp1, "\t\t\t\tPretty-print Imp1 IR");
+    ("-print", Arg.Symbol(["barocq";"bbnf"; "ibnf";"imp1";"imp2"],set_opt_print), "\t\t\t\tPretty-print the IR");
     ( "-debug-aliasing",
       Arg.Set opt_debug_aliasing,
       "\t\t\tDisplay the alias analysis debugging information on stderr" );
@@ -191,6 +197,18 @@ let print_token_stream (files : string list) : unit =
   in
   List.iter aux files
 
+let gen_compile_opt () =
+  { 
+    Compiler.dbg_analysis = !opt_debug_aliasing;
+    Compiler.trace = !opt_print
+  }
+  
+let output_log o l =
+  let output_string o s =
+    Stdlib.output_string o (Camlcoq.camlstring_of_coqstring s); o in
+  Pp.Log.pp output_string o l
+
+
 let () =
   begin
     Arg.parse options set_source_files usage_msg;
@@ -252,27 +270,6 @@ let () =
         exit 0
       end;
 
-      if !opt_print_bbnf then begin
-        let bbnf = BarocqBNFgen.norm_program !target_arch prog in
-        begin
-          match bbnf with
-          | Errors.OK prog -> PrintBarocqBNF.print_program stdout prog
-          | Errors.Error msg ->
-              raise @@ CompilerError (C2C.string_of_errmsg msg)
-        end;
-        exit 0
-      end;
-
-      if !opt_print_imp1 then begin
-        let imp1 = Compiler.compile_to_imp1 !target_arch prog in
-        begin
-          match imp1 with
-          | Errors.OK prog -> PrintImp1.print_program stdout prog
-          | Errors.Error msg ->
-              raise @@ CompilerError (C2C.string_of_errmsg msg)
-        end;
-        exit 0
-      end;
 
       if !opt_gen_alias_call_state_of <> "" then begin
         let imp1 = Compiler.compile_to_imp1 !target_arch prog in
@@ -507,9 +504,11 @@ let () =
       in
 
       if gen_c then
-        match Compiler.compile !opt_debug_aliasing !target_arch ginfo prog with
-        | Errors.OK prog ->
-            Camlcoq.use_canonical_atoms := true;
+        match Compiler.compile (gen_compile_opt ()) !target_arch ginfo prog with
+        | Errors.OK (prog,log) ->
+          begin 
+            ignore (output_log stdout log);
+          Camlcoq.use_canonical_atoms := true;
             let ids = ClightCegen.program_idents prog in
             record_idents
               (List.map
@@ -529,6 +528,7 @@ let () =
               printf "Header file generated at %s\n" (clean_filename hfile)
             end;
             exit 0
+        end
         | Errors.Error msg -> raise @@ CompilerError (C2C.string_of_errmsg msg)
       else exit 0
     with

@@ -217,6 +217,9 @@ Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BarocqBNF.expr :=
       let* ne1 := norm_expr_rec e1 in
       let* ne2 := norm_expr_rec e2 in
       ret (ELetIn x ne1 ne2)
+  | Barocq.EAttr s e =>
+      let* ne := norm_expr_rec e in
+      ret (EAttr s ne)
   end.
   
 Close Scope state_err_monad_scope.

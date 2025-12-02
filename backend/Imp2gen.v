@@ -89,6 +89,7 @@ Fixpoint transl_statement (s: Imp1Typed.statement) : Imp2.statement :=
   | Imp1Typed.StSequence s1 s2 =>
       StSequence (transl_statement s1) (transl_statement s2)
   | Imp1Typed.StReturn a => StReturn (Some (transl_atom a))
+  | Imp1Typed.StAttr a s => transl_statement s
   end.
 
 Fixpoint all_vars (s: Imp1Typed.statement) : smaplist btyp :=
@@ -102,6 +103,7 @@ Fixpoint all_vars (s: Imp1Typed.statement) : smaplist btyp :=
         (fun acc _ si => MapList.merge Ident.eq_dec (all_vars si) acc)
         cases
         MapList.empty
+  | Imp1Typed.StAttr _ s => all_vars s
   end.
 
 Definition transl_function (f: Imp1Typed.function) : Imp2.function :=

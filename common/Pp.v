@@ -18,15 +18,6 @@ Inductive box :=
 | Bstack (b1 b2:box) (p:position) (* b1 on top of b2 *)
 | Bframe (t:string) (l:string) (b:box) (* put a frame around b *).
 
-(*** Inductive sformat :  Type -> Type :=
-| FVal : forall (T:Type) (v:T), sformat T.
-
-Inductive format : list Type -> Type :=
-| Fnil  : format nil
-| Fcons : forall T (sf:sformat T) L (rst:format L), format (T ::L).
-***)
-
-
 Definition space :=  (Ascii.Ascii false false false false false true false false).
 
 Definition lf := Ascii.ascii_of_byte Byte.x0a.
@@ -35,6 +26,9 @@ Definition nl := String lf EmptyString.
 
 Definition string_of_int  (i:int) :=
   DecimalString.NilZero.string_of_int (Z.to_int (to_Z i)).
+
+Definition seq (l:list box) :=
+  List.fold_right (fun b1 b => Bcat b1 b) Bemp l.
 
 
 Module CString.
@@ -56,9 +50,29 @@ Module CString.
     match s with
     | Crep s n => concatn s (N.to_nat n)
     | Capp s1 s2 => append (to_string s1) (to_string s2)
-    | Cnl => String lf EmptyString
+    | Cnl => nl
     end.
 
+  Section S.
+    Variable Out : Type. (* out_channel *)
+    Variable output_string : Out -> string -> Out.
+
+    Fixpoint output_rep (o:Out) (s:string) (n:nat) :=
+      match n with
+      | O => o
+      | S n => let o := output_string o s in
+                 output_rep o s n
+        end.
+
+      Fixpoint output (o:Out) (s:t) :=
+        match s with
+        | Crep s n   => output_rep o s (N.to_nat n)
+        | Capp s1 s2 => output (output o s1) s2
+        | Cnl        => output_string o nl
+        end.
+  End S.
+
+  
   Fixpoint width (s:t) :=
     (match s with
     | Crep s n => (N.to_nat n) * (String.length s)
@@ -349,10 +363,71 @@ Module Box.
     | e1::e2 => String.append (CString.to_string e1) (String lf (xto_string e2))
     end.
 
+  Fixpoint xoutput {Out:Type} (output_string : Out -> string -> Out) (o:Out) (s : list CString.t) :=
+    match s with
+    | nil => o
+    | e::l =>
+        let o := (CString.output _ output_string o e) in
+        let o1 := output_string o nl in
+        xoutput output_string o1 l
+    end.
+
   Definition to_string (s:t) := xto_string (content s).
 
+  Definition output {Out:Type} (output_string : Out -> string -> Out) (o:Out) (s:t) := xoutput output_string o (content s).
 
 End Box.
 
 
 Definition pp (b:box) := Box.to_string (Box.pict_of_box b).
+
+Definition output {Out:Type} (output_string : Out -> string -> Out) (o:Out) (b:box) :=
+  Box.output output_string o (Box.pict_of_box b).
+
+Section PPLIST.
+  Context {A: Type}.
+  Variable sep : box.
+  Variable pp_elt : A -> box.
+
+  Fixpoint pp_list (l:list A) : box :=
+    match l with
+    | nil => Bemp
+    | e::nil => pp_elt e
+    | e1::l  => Bcat (pp_elt e1) (Bcat sep (pp_list l))
+    end.
+
+  (** vertical stacking the elements *)
+  Fixpoint pp_slist (l:list A) : box :=
+    match l with
+    | nil => Bemp
+    | e::nil => pp_elt e
+    | e1::l  => Bstack (pp_elt e1) (pp_slist l) Left
+    end.
+
+
+End PPLIST.
+
+Definition pp_option {A: Type} (pp_elt : A -> box) (v:option A) :=
+  match v with
+  | None => Bstr "."
+  | Some v => pp_elt v
+  end.
+
+Definition pp_pair {A B:Type} (sep:box) (pp_A : A -> box) (pp_B: B -> box) (v: A * B): box :=
+  Bcat (pp_A (fst v)) (Bcat sep (pp_B (snd v))).
+
+Module Log.
+  (** Just named boxed *)
+
+  Definition t:= box.
+
+  Definition empty : t := Bemp.
+
+  Definition add_entry (s:box) (v:box) (l:t) :=
+    Bstack
+        l (Bstack
+             (Bcat s (Bstr ":")) v Left)  Left.
+
+  Definition pp {Out:Type} (output_string : Out -> string -> Out) (o:Out) (l:t) :=
+    output output_string o l.
+End  Log.

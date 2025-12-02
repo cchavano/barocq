@@ -66,6 +66,7 @@ let rec expr_to_string_pref (prefix : string) (e : expr) : string =
               (expr_to_string_pref "" e1)
               (expr_to_string_pref prefix e2)
       end
+    | EAttr(a,s) -> sprintf "[#%s] %s" (ident_to_string a) (expr_to_string_pref prefix s)
   in
   prefix ^ str
 

@@ -1,6 +1,7 @@
 From Coq Require Import List String BinaryString.
 From compcert Require Import Maps Ctypesdefs.
 From BarocqComp Require Import Ident Error.
+From BarocqComp Require Import Pp.
 
 Import ListNotations.
 
@@ -65,6 +66,11 @@ Module STree.
     | None => false
     | Some _ => true
     end.
+
+  Definition pp {A: Type} (sep:box) (pp_elt : A -> box) (s:STree.t A) : box :=
+    STree.fold (fun acc k v => Bstack acc (Bcat (Bstr k)
+                                             (Bcat
+                                                sep (pp_elt v))) Left) s Bemp.
 
 End STree.
 

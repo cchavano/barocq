@@ -27,6 +27,7 @@ Fixpoint transl_expr (e: BarocqBNF.expr) : ImpBNF.tailcomp :=
   | EMatch a cases =>
       let cases' := MapList.map transl_expr cases in
       TcSwitch a cases'
+  | EAttr s e =>  TcAttr s (transl_expr e)
   end.
 
 Definition transl_function (f: BarocqBNF.function) : ImpBNF.function :=

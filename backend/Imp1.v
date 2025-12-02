@@ -1,6 +1,7 @@
 From Coq Require Import Bool List String PArith Lia.
 From compcert Require Import Integers.
-From BarocqComp Require Import  Barocq Benum  Barray Brecord Error Maps2 Utils Syntax Types Typing.
+From BarocqComp Require Import  Barocq Benum  Barray Brecord Error Maps2 Utils Syntax Types Typing Pp.
+From BarocqComp Require Printer.
 (** * Abstract syntax *)
 
 (** ** Literals *)
@@ -18,7 +19,9 @@ Inductive statement : Type :=
   | StIfThenElse : atom -> statement -> statement -> statement
   | StSwitch : atom -> list (pattern * statement) -> statement
   | StSequence : statement -> statement -> statement
-  | StReturn : atom -> statement.
+  | StReturn : atom -> statement
+  | StAttr   : ident -> statement -> statement
+.
 
 (** ** Functions *)
 
@@ -55,7 +58,8 @@ Module Typed.
     | StIfThenElse : atom -> statement -> statement -> statement
     | StSwitch : atom -> list (pattern * statement) -> statement
     | StSequence : statement -> statement -> statement
-    | StReturn : atom -> statement.
+    | StReturn : atom -> statement
+    | StAttr : ident -> statement -> statement.
 
   (** ** Functions *)
 
@@ -68,6 +72,35 @@ Module Typed.
   (** ** Programs *)
 
   Definition program : Type := Syntax.program globdef field_descr.
+
+
+Module Pp.
+  Import String.
+  Import ListNotations.
+  Import Typed.
+
+  Fixpoint pp_statement (s:statement) :=
+    match s with
+    | StSet i c => Bcat (Bstr i) (Bcat (Bstr "=") (Printer.Typed.pp_comp c))
+    | StIfThenElse a s1 s2 =>
+        let s1 := Bcat (Bstr " then ") (pp_statement s1) in
+        let s2 := Bcat (Bstr " else ") (pp_statement s2) in
+        let c  := Printer.Typed.pp_atom a in
+        let cd := Bcat (Bstr "if ") c in
+        Bstack cd (Bstack s1 s2 Left) Left
+    | StSwitch a l => Bstr "case..."
+    | StSequence s1 s2 =>
+        let s1 := pp_statement s1 in
+        let s2 := pp_statement s2 in
+        Bstack (Bcat s1 (Bstr ";"))
+               s2 Left
+    | StReturn a => Bcat (Bstr "return ") (Printer.Typed.pp_atom a)
+    | StAttr a s => Bcat (Bstr "[#") (Bcat (Bstr a) (Bcat (Bstr "]") (pp_statement s)))
+    end.
+
+  Definition pp_program (p:program) := Printer.pp_program  Printer.pp_btyp pp_statement p.
+
+End Pp.
 
 
   Section TRANSF.
@@ -616,6 +649,7 @@ Fixpoint eval_statement (te:tenv) (ge:genv) (e:env) (m:mem) (ty:option typ) (s:s
           let* va := eval_atom te e m ty a in
           OK (va,m)
       end
+  | StAttr a s => eval_statement te ge e m ty s
   end.
 
 
@@ -959,6 +993,9 @@ Module Typing.
           ret (StReturn a', lx)
         else
           failwith "Imp1.Typing.typecheck_statement: return type mismatch"
+    | Imp1.StAttr a s =>
+        let* (s',lx') := typecheck_statement be gx lx tret s in
+        ret (StAttr a s',lx')
     end.
 
   Definition typecheck_function (be: benv) (gx: gcontext) (f: Imp1.function) : res Imp1Typed.function :=

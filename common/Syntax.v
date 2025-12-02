@@ -86,7 +86,8 @@ Inductive comp : Type :=
   (* | CpRecordProj : atom -> ident -> comp *)
   | CpRecordUpdate : atom -> ident -> atom -> comp
   (* | CpDeepAccess : atom -> list access -> comp *)
-  | CpCall : ident -> list atom -> comp.
+  | CpCall : ident -> list atom -> comp
+.
 
 (** * Typed syntax *)
 

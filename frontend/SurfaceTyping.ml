@@ -1280,6 +1280,8 @@ let rec typecheck_raw_expr (imports : ident list) (gte : gtenv) (ce : cenv)
         | _ -> assert false
       end
   | ELetIn (x, e1, e2) -> typecheck_let_in imports gte ce gx lx x e1 e2
+  | EAttr(x,e) ->  let (e,t) = typecheck_expr imports gte ce gx lx e in
+    Barocq.EAttr(PrintUtils.ident_of_string x.content,e) , t
 
 and typecheck_expr (imports : ident list) (gte : gtenv) (ce : cenv)
     (gx : gcontext) (lx : lcontext) (e : expr) : Barocq.expr * btyp =

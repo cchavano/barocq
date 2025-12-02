@@ -410,6 +410,7 @@ let rec expr_to_rocq_rec (prefix : string) (e : expr) : string =
         | EApp _ -> sprintf "ret (%s)" (expr_to_rocq_rec "" e1)
         | _ -> assert false
       end
+    | EAttr(_, s,_) -> expr_to_rocq_rec prefix s
   in
   prefix ^ str
 

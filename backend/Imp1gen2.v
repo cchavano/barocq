@@ -17,6 +17,7 @@ Fixpoint tailcomp_depth (t: ImpBNF.tailcomp) : nat :=
       let cases_depths := List.map (fun c => tailcomp_depth (snd c)) cases in
       let m := List.fold_left (fun m d => Nat.max m d) cases_depths 0 in
       1 + m
+  | ImpBNF.TcAttr s e => 1 + tailcomp_depth e
   end
 
 with statement_depth (s: ImpBNF.statement) : nat :=
@@ -30,25 +31,28 @@ Fixpoint norm_statement (fuel: nat) (s: ImpBNF.statement) : res Imp1.statement :
   | S fuel' =>
       let '(ImpBNF.StSetTailcomp x t) := s in
       match t with
-        | ImpBNF.TcBegin s tc =>
-            let* s' := norm_statement fuel' s in
-            let* sc := norm_statement fuel' (ImpBNF.StSetTailcomp x tc) in
-            ret (StSequence s' sc)
-        | ImpBNF.TcIfThenElse a t1 t2 => 
-            let* s1 := norm_statement fuel' (ImpBNF.StSetTailcomp x t1) in
-            let* s2 := norm_statement fuel' (ImpBNF.StSetTailcomp x t2) in
-            ret (StIfThenElse a s1 s2)
-        | ImpBNF.TcSwitch a cases =>
-            let* cases' :=
-              Utils.list_fold_right_err
-                (fun '(ci, ti) acc =>
-                  let* si := norm_statement fuel' (ImpBNF.StSetTailcomp x ti) in
-                  ret ((ci, si) :: acc))
-                (ret nil)
-                cases
-            in
-            ret (StSwitch a cases')
-        | ImpBNF.TcComp c => ret (StSet x c)
+      | ImpBNF.TcBegin s tc =>
+          let* s' := norm_statement fuel' s in
+          let* sc := norm_statement fuel' (ImpBNF.StSetTailcomp x tc) in
+          ret (StSequence s' sc)
+      | ImpBNF.TcIfThenElse a t1 t2 =>
+          let* s1 := norm_statement fuel' (ImpBNF.StSetTailcomp x t1) in
+          let* s2 := norm_statement fuel' (ImpBNF.StSetTailcomp x t2) in
+          ret (StIfThenElse a s1 s2)
+      | ImpBNF.TcSwitch a cases =>
+          let* cases' :=
+            Utils.list_fold_right_err
+              (fun '(ci, ti) acc =>
+                 let* si := norm_statement fuel' (ImpBNF.StSetTailcomp x ti) in
+                 ret ((ci, si) :: acc))
+              (ret nil)
+              cases
+          in
+          ret (StSwitch a cases')
+      | ImpBNF.TcComp c => ret (StSet x c)
+      | ImpBNF.TcAttr a c =>
+          let* s1 := norm_statement fuel' (StSetTailcomp x c) in
+          ret (StAttr a s1)
       end
   end.
 
@@ -70,6 +74,9 @@ Fixpoint norm_tailcomp (t: ImpBNF.tailcomp) : res Imp1.statement :=
       | CpAtom a => ret (StReturn a)
       | _ => ret (StSequence (StSet "res" c) (StReturn (AVar "res")))
       end
+  | ImpBNF.TcAttr a c =>
+      let* t1 := norm_tailcomp c in
+      ret (StAttr a t1)
   end.
 
 Definition norm_function (f: ImpBNF.function) : res Imp1.function :=

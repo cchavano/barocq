@@ -2,7 +2,7 @@
 From compcert Require Import Maps.
 Require Import Uint63.
 Require Import String FMapInterface FMapList ZArith Int ListSet.
-From BarocqComp Require Import Error Maps2 Types Imp1 Graph Typing Utils Draw.
+From BarocqComp Require Import Error Maps2 Types Imp1 Graph Typing Utils Pp.
 From Coq Require Import FMapPositive.
 Require Import Syntax.
 Import Typed.
@@ -15,71 +15,6 @@ Import Imp1.Typed.
     This would be doable but would require consider all the global variables as (implicit) arguments of the function.
 *)
 
-Module Pp.
-  Import String.
-  Import ListNotations.
-
-  Fixpoint appendl (l:list string) : string :=
-    match l with
-    | nil => ""
-    | e::l => append e (appendl l)
-    end.
-
-  Definition array_index {A: Type} (f:A -> box) (v:A) :=
-    Bcat (Bstr "[") (Bcat (f v) (Bstr "]")).
-
-  Fixpoint pp_atom (a:atom) :=
-    match a with
-    | ATrue => Bstr "true"%string
-    | AFalse => Bstr "false"%string
-    | AInt32 i _ => Bstr "int"%string
-    | AInt64 i _ => Bstr "int64"%string
-    | AConstr s  _ => Bstr s
-    | AVar s _     => Bstr s
-    | ACast a bt   => Bcat (Bstr "(btyp)"%string) (pp_atom a)
-    | AUnaryOp o a _ => Bcat (Bstr "op"%string) (pp_atom a)
-    | ABinaryOp o a1 a2 _ => Bcat (pp_atom a1)
-                             (Bcat (Bstr "op"%string) (pp_atom a2))
-    | AArrayGet a i _ _ => Bcat (pp_atom a )
-                                 (array_index pp_atom i)
-    | ARecordProj a i _ _ => Bcat (pp_atom a)
-                              (Bcat (Bstr ".") (Bstr i))
-    end.
-
-  Definition pp_comp (c:comp) :=
-    match c with
-    | CpAtom a _ => pp_atom a
-    | CpRecordUpdate a f v _ => Bcat (pp_atom a)
-                                (Bcat
-                                   (Bcat (Bcat (Bstr "<-") (Bstr f)) (Bstr ":="))
-                                   (pp_atom v))
-    | CpArraySet a i v _    => Bcat (pp_atom a)
-                                      (Bcat
-                                         (Bcat (array_index pp_atom i)
-                                            (Bstr ":=")) (pp_atom v))
-    | CpCall f _ l _ => Bcat (Bstr f) (Bcat (Bstr "(")
-                                          (Bstr ")"))
-  end.
-
-  Fixpoint pp_statement (s:statement) :=
-    match s with
-    | StSet i c => Bcat (Bstr i) (Bcat (Bstr "=") (pp_comp c))
-    | StIfThenElse a s1 s2 =>
-        let s1 := Bcat (Bstr " then ") (pp_statement s1) in
-        let s2 := Bcat (Bstr " else ") (pp_statement s2) in
-        let c  := pp_atom a in
-        let cd := Bcat (Bstr "if ") c in
-        Bstack cd (Bstack s1 s2 Left) Left
-    | StSwitch a l => Bstr "case..."
-    | StSequence s1 s2 =>
-        let s1 := pp_statement s1 in
-        let s2 := pp_statement s2 in
-        Bstack (Bcat s1 (Bstr ";"))
-               s2 Left
-    | StReturn a => Bcat (Bstr "return ") (pp_atom a)
-    end.
-
-End Pp.
 
 Inductive KVar :=
 | KDead (* Dead variable - may point anywhere *)
@@ -110,7 +45,7 @@ Inductive edge :=
 Definition pp (e:edge) :=
   match e with
   | Field id => Bcat (Bstr ".") (Bstr id)
-  | Index a  => Bcat (Bstr "[") (Bcat (Pp.pp_atom a)
+  | Index a  => Bcat (Bstr "[") (Bcat (Printer.Typed.pp_atom a)
                                    (Bstr "]"))
   | Top      => Bstr "T"
   end.
@@ -459,10 +394,7 @@ Definition pp_kvar (k:KVar) : box :=
     | KNode n => Bcat (Bstr "n") (Bstr (string_of_int n))
     end.
 
-Definition pp (s:t) : box :=
-  STree.fold (fun acc k v => Bstack acc (Bcat (Bstr k)
-                                           (Bcat
-                                              (Bstr "->") (pp_kvar v))) Left) (Vars s) Bemp.
+Definition pp (s:t) : box := STree.pp (Bstr " -> ") pp_kvar (Vars s).
 
 
 End Vars.
@@ -538,10 +470,10 @@ Section EVALATOM.
 
   Definition array_get (env:aenv) (d:domain) (ar:atom) (id:atom) (bt:btyp)  :=
     match eval_atom env d ar  with
-    | Error e  => Error (MSG "Wrong array :" :: MSG (Draw.pp (Pp.pp_atom ar)) :: MSG Draw.nl :: e)
+    | Error e  => Error (MSG "Wrong array :" :: MSG (Pp.pp (Printer.Typed.pp_atom ar)) :: MSG Pp.nl :: e)
     | OK (d,vr) =>
         match eval_atom env d id with
-        | Error e => Error (MSG "Wrong array index:" :: MSG (Draw.pp (Pp.pp_atom id)) :: MSG Draw.nl :: e)
+        | Error e => Error (MSG "Wrong array index:" :: MSG (Pp.pp (Printer.Typed.pp_atom id)) :: MSG Pp.nl :: e)
         | OK (d,idx) =>
             match vr with
             | KDead => Error (MSG "(dead) This should be a reference " :: nil)
@@ -558,7 +490,7 @@ Section EVALATOM.
 
   Definition record_proj_get (env:aenv) (d:domain) (ar:atom) (fd:ident) (bt:btyp)  :=
     match eval_atom env d ar  with
-    | Error e  => Error (MSG "Wrong record :" :: MSG (Draw.pp (Pp.pp_atom ar)) :: MSG Draw.nl :: e)
+    | Error e  => Error (MSG "Wrong record :" :: MSG (Pp.pp (Printer.Typed.pp_atom ar)) :: MSG Pp.nl :: e)
     | OK (d,vr) =>
             match vr with
             | KDead => Error (MSG "(dead) This should be a reference " :: nil)
@@ -863,7 +795,7 @@ Fixpoint eval_statement (te:tenv) (env: aenv) (s:statement) (d:domain) : res (do
   | StSet v c => match eval_comp te env d c  with
                  | OK (d,k) =>  OK (inl (update_variable v d k))
                  | Error m  => Error (MSG "In statement " ::
-                                        MSG (Draw.pp (Pp.pp_statement s)) ::
+                                        MSG (Pp.pp (Pp.pp_statement s)) ::
                                         MSG " " :: m)
                  end
   | StIfThenElse a s1 s2 =>
@@ -886,6 +818,8 @@ Fixpoint eval_statement (te:tenv) (env: aenv) (s:statement) (d:domain) : res (do
                       let* p := G.get_path (Pto d) n in
                       OK (inr p)
                   end
+  | StAttr a s => if String.eqb "debug-elim-alias" a then Error (msg (Pp.pp (pp_domain d)))
+                  else eval_statement te env s d
   end.
 
 
@@ -897,6 +831,12 @@ Fixpoint join_edges {A: Type} (e:EdgeLabel.t) (l:list (EdgeLabel.t * A)) : EdgeL
   match l with
   | nil => e
   | (e1,_) :: l => join_edges (EdgeLabel.join e e1) l
+  end.
+
+Definition union_path (p1 p2 : option (list EdgeLabel.t)) :=
+  match p1, p2 with
+  | None , x | x , None => x
+  | Some p1 , Some p2 => None (* This is not possible *)
   end.
 
 Fixpoint xpath_above_alias (d:domain) (fuel:nat) (n:int) :=
@@ -911,7 +851,7 @@ Fixpoint xpath_above_alias (d:domain) (fuel:nat) (n:int) :=
                   let l := G.get_successors (Pto d) n' in
                   let l := List.filter (fun x => may_edge e (fst x)) l in
                   let e := join_edges e l in
-                  OK (STree.map (fun x p => e::p) a)
+                  OK (STree.combine union_path p (STree.map (fun x p => e::p) a))
       end
   end.
 
@@ -971,6 +911,7 @@ Fixpoint assigned (s:statement) : SSet.t :=
   | StSwitch _ l => List.fold_right (fun e acc => SSet.union (assigned (snd e)) acc) SSet.empty l
   | StSequence s1 s2 => SSet.union (assigned s1) (assigned s2)
   | StReturn _ => SSet.empty
+  | StAttr _ s => assigned s
   end.
 
 Definition bind_param (v: Vars.t) (g:G.t) (p:ident * typ)  :=
@@ -1070,7 +1011,7 @@ Fixpoint xmapi {A B:Type} (F: positive -> A -> B) (i:positive) (l:list A) : list
 Definition mapi {A B:Type} (F: positive -> A -> B) (l:list A) := xmapi F xH l.
 
 Definition afunction_of_sfunction (l:list (param_attr * btyp)) (r:btyp) (s:sfunction):=
-  mk_function r (mapi (fun i e => (string_of_positive i,snd e)) l) s.
+  mk_function r (mapi (fun i e => (Printer.string_of_positive i,snd e)) l) s.
 
 Definition eval_globdef (te:tenv) (env:aenv) (gd:globdef) : res aenv :=
   match gd with
@@ -1105,7 +1046,7 @@ Definition transl_comp (te:tenv) (env:aenv) (d:domain) (c:comp) : res comp :=
       end
   | CpRecordUpdate a i v bt =>
       match write env d a (cons (EdgeLabel.Field i) nil) v  with
-      | Error m =>  let err := Draw.pp (pp_domain d) in
+      | Error m =>  let err := Pp.pp (pp_domain d) in
                     Error (MSG err :: nil)
       | OK(_,b) => if b then OK (CpAtom a bt)
                    else OK c
@@ -1130,6 +1071,7 @@ Fixpoint statement_has_update (s:statement) :=
   | StSequence s1 s2 =>
       statement_has_update s1 || statement_has_update s2
   | StReturn a => false
+  | StAttr _ s => statement_has_update s
   end.
 
 Fixpoint atom_is_var (id:ident) (a:atom) :=
@@ -1173,6 +1115,7 @@ Fixpoint has_nop (s:statement) :=
   | StSwitch a l => List.existsb (fun x => has_nop (snd x)) l
   | StReturn _   => false
   | StSet id c   => is_nop s
+  | StAttr _ s   => has_nop s
   end.
 
 
@@ -1196,6 +1139,8 @@ Fixpoint transl_statement (te:tenv) (env: aenv) (d:domain) (s:statement) : res s
       | inr _  => fail
       end
   | StReturn a => OK (StReturn a)
+  | StAttr a s => let* s := transl_statement te env d s in
+                  OK (StAttr a s)
   end.
 
 
@@ -1205,7 +1150,7 @@ Definition transl_function (te:tenv) (env:aenv) (f:function) :=
   let* d := domain_of_function te f in
   let* s' := transl_statement te env d (fn_body f) in
   if has_nop s'
-  then Error (msg (Draw.pp (Pp.pp_statement s')))
+  then Error (msg (Pp.pp (Pp.pp_statement s')))
   else OK (mk_function (fn_return f) (fn_params f) s').
 
 Definition transl_globdef (te:tenv) (env:aenv) (g:globdef) :=
@@ -1229,7 +1174,7 @@ Fixpoint transl_globdefs (te:tenv) (env: aenv) (l:list globdef) : res (list glob
              OK (gd'::gds)
   end.
 
-Definition transl_program (te:tenv) (env:aenv) (p: program) : res program :=
+Definition transl_program (te:tenv)  (p: program) : res program :=
   let* te := tenv_of_type_defs (prog_types p) in
   let* gds :=  transl_globdefs te STree.empty (prog_defs p) in
   OK (mk_program gds (prog_types p) (prog_tabs p)).
