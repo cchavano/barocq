@@ -1,0 +1,22 @@
+module Test
+(* From s3k, Ptable_suspend *)
+
+record proc_t {
+  state : u32,
+  }	
+
+record kstate {
+   ptable : [proc_t],
+	 }
+
+
+ defn suspend_proc(proc:proc_t) :proc_t =
+    proc.state <- 0U 
+
+
+defn suspend(ks: kstate, pid: u64) : kstate =
+  let ptable = ks.ptable in
+  let proc = ptable[pid] in
+  let proc1 = suspend_proc(proc) in 
+  let ptable = ptable[pid] <- proc1 in
+  ks.ptable <- ptable

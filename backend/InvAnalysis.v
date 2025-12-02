@@ -159,6 +159,7 @@ Definition inv_below_alias (env:InvMap.t) (l : (list EdgeLabel.t) * string) (p:G
   | Some p' => InvMap.join env (InvMap.singleton v p' )
   end.
 
+
 Definition invalid_argument (age: aenv) (d:domain) (a:atom) (inv: option G.PathTree.t) (env:InvMap.t) :=
   match inv with
   | None => OK env (* The argument is still completly valid *)
@@ -230,7 +231,7 @@ Fixpoint inv_statement (te:tenv) (age:aenv) (d:domain) (ge:genv) (env:InvMap.t) 
   | StAttr a s  =>
       if String.eqb "aliasing" a
       then
-        Error (MSG "#[aliasing]":: MSG nl :: MSG (Pp.pp (InvMap.pp env)):: MSG (Pp.pp (pp_domain d)) :: nil)
+        Error (MSG "#[aliasing]":: MSG nl :: MSG (Pp.pp (InvMap.pp env)):: MSG nl :: MSG (Pp.pp (pp_domain d)) :: nil)
       else inv_statement te age d ge env s
   end.
 

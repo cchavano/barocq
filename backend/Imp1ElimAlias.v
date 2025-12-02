@@ -860,7 +860,8 @@ Definition path_above_alias (env:aenv) (d:domain) (a:atom) :=
   match v with
   | KNode n =>
       let* f := G.depth (Pto d) in
-      xpath_above_alias d f n
+      let* rp := xpath_above_alias d f n in
+      OK (STree.map (fun x p => List.rev p) rp)
   | KPrim    => OK (STree.empty)
   | KDead    => Error  (msg "path_above_alias: atom is dead - aliased with anything")
   end.
