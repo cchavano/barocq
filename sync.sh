@@ -1,9 +1,13 @@
 check()
 {
     H1=`sha256hmac $1 | cut -d' ' -f1`
-    H2=`sha256hmac $2 | cut -d' ' -f1`
-    [[ $H1 != $H2 ]]
-    return 
+    if [ -e $2 ]; then
+	H2=`sha256hmac $2 | cut -d' ' -f1`
+	[[ $H1 != $H2 ]]
+	return 
+    else
+	return 0
+    fi
 }
 
 for file1 in $1/*; do
