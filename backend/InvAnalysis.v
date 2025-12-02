@@ -1,7 +1,7 @@
 (** Invalid Path for imp1 *)
 Require Import Uint63.
 Require Import String FMapInterface FMapList ZArith Int ListSet.
-From BarocqComp Require Import Error Maps2 Types Imp1 Graph Typing Utils Pp.
+From BarocqComp Require Import Error Maps2 Types Imp1 Graph Typing Utils Pp Printer.
 From BarocqComp Require Import Imp1ElimAlias.
 From Coq Require Import FMapPositive.
 Require Import Syntax.
@@ -17,6 +17,34 @@ Import G.PathTree.
 Module InvMap.
 
   Definition t := STree.t G.PathTree.t.
+
+  Definition is_field (fd : EdgeLabel.t) : bool :=
+    match fd with
+    | EdgeLabel.Field _ => true
+    | _                 => false
+    end.
+
+  Fixpoint check_tree (tr:G.PathTree.t) :=
+    match tr with
+    | Node l =>
+        match l with
+        | nil => true
+        | (fd,_)::_ =>  if is_field fd
+                        then List.forallb (fun '(fd',r) => is_field fd' && check_tree r) l
+                        else List.forallb (fun '(fd',r) => negb (is_field fd') && check_tree r) l
+        end
+    end.
+
+  Definition ocheck (o: option G.PathTree.t) :=
+    match o with
+    | None => true
+    | Some p => check_tree p
+    end.
+
+
+
+  Definition check (m:t):=
+    STree.fold (fun acc _ v => acc && check_tree v) m true.
 
   Definition pp (m:t) := STree.pp (Bstr ":") G.PathTree.pp m.
 
@@ -78,8 +106,6 @@ Definition inv_may_alias (env:InvMap.t) (paths : STree.t (list EdgeLabel.t)) (fd
   InvMap.join env (STree.map (fun _ l => G.PathTree.create (List.rev (fd::l))) paths).
 
 
-
-
 Fixpoint find_may_edge {A: Type} (e:EdgeLabel.t) (l:list (EdgeLabel.t * A)) : option A :=
   match l with
   | nil => None
@@ -104,6 +130,8 @@ Fixpoint eval_atom (env:InvMap.t) (a:atom) :=
   | ARecordProj a id _ _ => get_field (eval_atom env a) (EdgeLabel.Field id)
   end.
 
+
+
 Definition set_path (p:option G.PathTree.t) (fd:EdgeLabel.t) (v: option G.PathTree.t) : option G.PathTree.t :=
   match p with
   | None => match v with
@@ -113,15 +141,33 @@ Definition set_path (p:option G.PathTree.t) (fd:EdgeLabel.t) (v: option G.PathTr
   | Some p => G.PathTree.set_path p fd v
 end.
 
+Definition check (str: string) (e1:InvMap.t) (e2:InvMap.t) :=
+  if InvMap.check e2
+  then OK tt
+  else
+    let b1 := Bframe "-" "|" (InvMap.pp e1) in
+    let b2 := Bframe "-" "|" (InvMap.pp e2) in
+    let err := Pp.seq ((Bstr str :: Bstr " before " :: b1 :: Bstr " after " :: b2 :: nil)) in
+    Error (MSG nl :: (msg (Pp.pp err))).
+
+Definition show_path_above_alias (ge:aenv) (d:domain) (env:InvMap.t) (a1:atom) (env': InvMap.t): res unit :=
+  let pd := pp_domain d in
+  let pe := InvMap.pp env in
+  let a  := Typed.pp_atom a1 in
+  let* res := path_above_alias ge d a1 in
+  let args := Pp.seq (Bstr "path_above_alias:" :: Bstr "alias domain" :: Bframe "-" "|" pd :: Bstr "invalid" :: Bframe "-" "|" pe :: Bstr "atom " :: a :: nil) in
+  Error (msg (Pp.pp (Bstack args
+                            (Bstack (Bstr "===>")
+                               (InvMap.pp env') Left) Left))).
 
 Definition set_field (ge: aenv) (d:domain) (env:InvMap.t) (a1:atom) (i:EdgeLabel.t) (v:atom) :=
   let pa1  := eval_atom env a1 in
   let v    := eval_atom env v in
   let* may  := path_above_alias ge d a1 in
   let env' := inv_may_alias env may  i in
+  let* _   := check "set_field" env env' in
+(*  let* _   := show_path_above_alias ge d env a1 env' in*)
   OK (set_path pa1 i v,env').
-
-
 
 Fixpoint get_fields (p:option G.PathTree.t) (l :list EdgeLabel.t) : option G.PathTree.t :=
   match l with
@@ -137,7 +183,7 @@ Definition suffix_alias (suf: G.PathTree.t) (p : option (list EdgeLabel.t))  : G
 
 
 Definition inv_suffix_alias (env:InvMap.t) (paths : STree.t (list EdgeLabel.t)) (suf:G.PathTree.t) :=
-  InvMap.join env (STree.map (fun _ p => G.PathTree.create_with p suf) paths).
+  InvMap.join env (STree.map (fun _ p => G.PathTree.create_with (List.rev p) suf) paths).
 
 (** Use aliasing instead of equality *)
 Fixpoint prefixed_by (p:list EdgeLabel.t) (tr:G.PathTree.t) :=
@@ -274,7 +320,7 @@ Definition inv_globdef (te:tenv) (age:aenv) (ge:genv) (gd:globdef) : res genv :=
   | DefConst _ _ _ => OK ge
   | DefFun id f    => match inv_def_function te age ge f with
                       | OK f => OK (STree.set id f ge)
-                      | Error e => Error (MSG "In function " :: MSG id :: MSG ":" :: e)
+                      | Error e => Error (MSG "In function " :: MSG id :: MSG ":" :: MSG nl :: e)
                       end
   | DeclConst _ _ => OK ge
   | DeclFun id params r => OK (STree.set id (inv_decl_function params r) ge)

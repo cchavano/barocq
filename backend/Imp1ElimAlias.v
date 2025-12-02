@@ -389,9 +389,9 @@ Maps.PTree.elements_complete:
   
 Definition pp_kvar (k:KVar) : box :=
     match k with
-    | KDead => Bstr "dead"
-    | KPrim => Bstr "primitive"
-    | KNode n => Bcat (Bstr "n") (Bstr (string_of_int n))
+    | KDead => Bstr "ko"
+    | KPrim => Bstr "p"
+    | KNode n => (Bstr (string_of_int n))
     end.
 
 Definition pp (s:t) : box := STree.pp (Bstr " -> ") pp_kvar (Vars s).
@@ -855,13 +855,13 @@ Fixpoint xpath_above_alias (d:domain) (fuel:nat) (n:int) :=
       end
   end.
 
+(** [path_above_alias] returns paths in reverse order *)
 Definition path_above_alias (env:aenv) (d:domain) (a:atom) :=
   let* (d,v) := eval_atom env d a in
   match v with
   | KNode n =>
       let* f := G.depth (Pto d) in
-      let* rp := xpath_above_alias d f n in
-      OK (STree.map (fun x p => List.rev p) rp)
+      xpath_above_alias d f n
   | KPrim    => OK (STree.empty)
   | KDead    => Error  (msg "path_above_alias: atom is dead - aliased with anything")
   end.
