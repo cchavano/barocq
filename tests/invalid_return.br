@@ -1,0 +1,12 @@
+module Test
+
+record rec {
+  field : i32,
+}
+
+(** Overwrite the argument and return it *)
+defn bad (r : rec) : rec =
+  let r1 = r.field <- 0 in
+(*  #[ aliasing ]  *)
+  r
+

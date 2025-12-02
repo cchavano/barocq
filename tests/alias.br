@@ -1,0 +1,20 @@
+module X
+
+type cap_t = u64
+
+type capty = [
+  CAPTY_NONE,
+  CAPTY_TIME,
+  CAPTY_MEMORY,
+  CAPTY_PMP,
+  CAPTY_MONITOR,
+  CAPTY_CHANNEL,
+  CAPTY_SOCKET,
+]
+
+
+defn mk_time(low: u64, mrk: u64, upp: u64) : u64 =
+  (CAPTY_TIME as u64) | upp << 48UL | mrk << 32UL | low << 16UL
+
+defn cap_mk_time(low: u64, upp: u64) : cap_t =
+     mk_time(low, low, upp)

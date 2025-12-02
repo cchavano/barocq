@@ -1,0 +1,11 @@
+module Test
+
+record kstate {
+  vregs:[u64],
+}
+
+defn write(ks: kstate, rid: u64, v: u64) : kstate =
+  let regs = ks.vregs in
+  let regs1 = regs[rid] <- v in
+  let r = ks.vregs <- regs1 in
+  r

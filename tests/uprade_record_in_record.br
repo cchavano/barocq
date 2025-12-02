@@ -1,0 +1,17 @@
+module Test
+
+record reg {
+low  : u32,
+high : u32,
+}
+
+record kstate {
+  vregs:reg,
+}
+
+defn write(ks: kstate, rid: u64, v: u32) : kstate =
+  let regs = ks.vregs in
+  let regs1 = regs.low <- v in
+  let r = ks.vregs <- regs1 in
+(*  #[ aliasing]*)
+  r

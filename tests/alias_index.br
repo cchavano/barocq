@@ -1,0 +1,16 @@
+module Test
+
+record rec {
+  field : i32,
+}
+
+(** Access aliases indexes *)
+defn bad (r : [rec], i1:u64, i2:u64) : [rec] =
+  let v1 = r[i1] in
+  let v2 = r[i2] in
+  (** v1 and v2 may be aliased *)
+  let v1_ = v1.field <- 10 in 
+  let v2_ = v2.field <- 12 in
+  let r = r[i1] <- v1_ in 
+  r
+

@@ -1,0 +1,19 @@
+module X
+
+type proc_t = {
+  pc: u64; ra: u64; 
+}
+
+
+
+type kstate = {
+  ptable: array proc_t;
+}
+
+
+
+defn proc_reg_write(ks: kstate, pid: u64, reg: u64, val: u64) : kstate =
+  let ptable = ks.ptable in
+  let proc = ptable[pid] in
+  let ptable = ptable[pid] <- proc in  
+  ks.ptable <- ptable
