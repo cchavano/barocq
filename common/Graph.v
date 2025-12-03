@@ -1565,14 +1565,14 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     | Some(_,l) => l
     end.
 
-  Fixpoint xdraw (fuel:nat) (g:t) (n:int) :=
+  Fixpoint xpp (fuel:nat) (g:t) (n:int) :=
     match fuel with
     | O => Bstr (string_of_int n)
     | S fuel =>
         Bstack (Bstr (string_of_int n))
           (List.fold_right
              (fun e acc => (Bcat (Bstack (EdgeLabel.pp (fst e))
-                                    (xdraw fuel g (snd e)) Middle) acc)) (Bstr "") (get_successors g n)) Middle
+                                    (xpp fuel g (snd e)) Middle) acc)) (Bstr "") (get_successors g n)) Middle
     end.
 
   Definition pp (g:t) :=
@@ -1580,7 +1580,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
              | OK d => d
              | _    => O
              end in
-    xdraw d g (root g).
+    xpp d g (root g).
 
 
   Definition eqEN (x y : EdgeLabel.t * int) :=

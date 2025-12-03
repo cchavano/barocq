@@ -24,11 +24,16 @@ Definition lf := Ascii.ascii_of_byte Byte.x0a.
 
 Definition nl := String lf EmptyString.
 
-Definition string_of_int  (i:int) :=
-  DecimalString.NilZero.string_of_int (Z.to_int (to_Z i)).
+Definition string_of_Z (z:Z) :=
+  DecimalString.NilZero.string_of_int (Z.to_int z).
+
+Definition string_of_int  (i:int) := string_of_Z (to_Z i).
 
 Definition seq (l:list box) :=
   List.fold_right (fun b1 b => Bcat b1 b) Bemp l.
+
+Definition stack (p:position) (l:list box) :=
+  List.fold_right (fun b1 b => Bstack b1 b p) Bemp l.
 
 
 Module CString.

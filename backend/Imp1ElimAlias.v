@@ -582,10 +582,14 @@ Definition update_var (l:list int) (k:KVar)  :=
 (*Definition update_vars (d:domain) (l:list int)  :=
   mkdom (STree.map (fun _ x => (update_var l) x) (Vars d)) (Pto d) (Atoms d). *)
 
+Definition pp_write (a:atom) (l:list EdgeLabel.t) (vl:atom) :=
+  Pp.seq (Printer.Typed.pp_atom a :: (pp_list (Bstr ".") EdgeLabel.pp l) :: Bstr " <- " :: Printer.Typed.pp_atom vl :: nil).
+
+
 Definition write (env:aenv) (d:domain) (a:atom) (l:list EdgeLabel.t) (vl:atom)  : res (domain * KVar * bool) :=
-  let* (d,a) := eval_atom env d a in
+  let* (d,ea) := eval_atom env d a in
   let* (d,v) := eval_atom env d vl  in
-  match a with
+  match ea with
   | KDead | KPrim => fail (* We could give error messages *)
   | KNode n => (* this is a reference *)
       match v  with
@@ -593,9 +597,17 @@ Definition write (env:aenv) (d:domain) (a:atom) (l:list EdgeLabel.t) (vl:atom)  
             fail
       | KPrim => OK (d,KNode n, false) (* This is not an alias *)
       | KNode n' => let* f := G.depth (Pto d) in
-                    let* _ := G.check_must_alias  f n l n' (Pto d) in
-                    (* We have a must alias *)
-                    OK (d,KNode n,true)
+                    match G.check_must_alias  f n l n' (Pto d) with
+                    | OK _ =>  OK (d,KNode n,true)
+                    | Error _ =>
+                        let amsg := Pp.seq (Bstr "The statement " :: pp_write a l vl :: Bstr " is invalid." :: nil) in
+                        let reason := Bstr "As the written value is a reference, there should be a MUST alias." in
+                        let l1 := Pp.seq (Printer.Typed.pp_atom a ::
+                                            Bstr " is mapped to node n" :: Bstr (string_of_int n) :: nil) in
+                        let l2 := Pp.seq (Printer.Typed.pp_atom vl ::
+                                            Bstr " is mapped to node n" :: Bstr (string_of_int n') :: nil) in
+                        Error (msg (Pp.pp (Pp.stack Left (amsg :: reason :: l1 :: l2 :: pp_domain d :: nil))))
+                    end
       end
   end.
 
@@ -1019,9 +1031,9 @@ Definition eval_globdef (te:tenv) (env:aenv) (gd:globdef) : res aenv :=
   | DefConst id l t => OK (STree.set id (ALit (literal_is_primitive l)) env)
   | DefFun id f     => match eval_function te env f with
                        | OK f => OK (STree.set id (AFun f) env)
-                       | Error e => Error (MSG "PASS elim alias:" ::
+                       | Error e => Error (MSG "Must alias analysis:" ::
                             MSG "cannot analyze function " ::
-                            MSG id :: MSG "\n" :: e)
+                            MSG id :: MSG nl :: e)
                        end
   | DeclConst id t  => let* ty := btyp_to_typ te t in
                        OK (STree.set id (ALit (typ_is_prim ty )) env)

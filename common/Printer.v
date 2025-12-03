@@ -6,27 +6,13 @@ From BarocqComp Require Import Unsigned63 Types.
 Open Scope string.
 
 
-Fixpoint string_of_positive (i:positive) : string :=
-  match i with
-  | xH => "1"%string
-  | xI p => String.append (string_of_positive p) "1"%string
-  | xO p => String.append (string_of_positive p) "0"%string
-  end.
-
-Definition string_of_Z (z:Z) : string :=
-  match z with
-  | Z0 => "0"%string
-  | Zpos p => string_of_positive p
-  | Zneg p => append "-"%string (string_of_positive p)
-  end.
-
-Definition string_of_int (i:int) := string_of_Z (to_Z i).
-
 Fixpoint appendl (l:list string) : string :=
   match l with
   | nil => ""
   | e::l => append e (appendl l)
   end.
+
+Definition string_of_positive (p:positive) := string_of_Z (Zpos p).
 
 Definition pp_int (i:Integers.Int.int) : box :=
   Bstr (string_of_Z (Integers.Int.unsigned i)).
