@@ -40,8 +40,7 @@ Module CString.
   (* High level strings, easy to print *)
   Inductive t :=
   | Crep (s:string) (n:N) (* repeat s, n times *)
-  | Capp (s1 s2:t) (* append *)
-  | Cnl  (* newline *).
+  | Capp (s1 s2:t) (* append *).
 
   Definition Cstr (s:string) := Crep s 1%N.
 
@@ -55,7 +54,24 @@ Module CString.
     match s with
     | Crep s n => concatn s (N.to_nat n)
     | Capp s1 s2 => append (to_string s1) (to_string s2)
-    | Cnl => nl
+    end.
+
+  (** [reduce s] removes trailling spaces.
+      TODO: avoid generating them *)
+  Fixpoint xreduce (s:t) :=
+    match s with
+    | Crep s1 n => if String.eqb " " s1 then None
+                  else Some s
+    | Capp s1 s2 => match xreduce s2 with
+                    | None => xreduce s1
+                    | Some s2 => Some (Capp s1 s2)
+                    end
+    end.
+
+  Definition reduce (s:t) :=
+    match xreduce s with
+    | None => Crep "" 0
+    | Some s => s
     end.
 
   Section S.
@@ -66,15 +82,15 @@ Module CString.
       match n with
       | O => o
       | S n => let o := output_string o s in
-                 output_rep o s n
-        end.
+               output_rep o s n
+      end.
 
-      Fixpoint output (o:Out) (s:t) :=
-        match s with
-        | Crep s n   => output_rep o s (N.to_nat n)
-        | Capp s1 s2 => output (output o s1) s2
-        | Cnl        => output_string o nl
-        end.
+    Fixpoint output (o:Out) (s:t) :=
+      match s with
+      | Crep s n   => output_rep o s (N.to_nat n)
+      | Capp s1 s2 => output (output o s1) s2
+      end.
+
   End S.
 
   
@@ -82,7 +98,6 @@ Module CString.
     (match s with
     | Crep s n => (N.to_nat n) * (String.length s)
     | Capp s1 s2 => width s1 + width s2
-    | Cnl => 1%nat
     end)%nat.
 
   Lemma length_append : forall s1 s2,
@@ -104,7 +119,6 @@ Module CString.
         lia.
     -  rewrite length_append.
        lia.
-    -  reflexivity.
   Qed.
 
 End  CString.
@@ -379,7 +393,9 @@ Module Box.
 
   Definition to_string (s:t) := xto_string (content s).
 
-  Definition output {Out:Type} (output_string : Out -> string -> Out) (o:Out) (s:t) := xoutput output_string o (content s).
+  Definition output {Out:Type} (output_string : Out -> string -> Out) (o:Out) (s:t) :=
+    xoutput output_string o
+      (List.map reduce (content s)).
 
 End Box.
 
