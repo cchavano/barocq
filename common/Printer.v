@@ -5,7 +5,6 @@ From BarocqComp Require Import Syntax.
 From BarocqComp Require Import Unsigned63 Types.
 Open Scope string.
 
-
 Fixpoint appendl (l:list string) : string :=
   match l with
   | nil => ""
@@ -93,8 +92,8 @@ Fixpoint pp_atom (a:atom) :=
                            (array_index pp_atom i)
   | ARecordProj a i => Bcat (pp_atom a)
                          (Bcat (Bstr ".") (Bstr i))
-  | APureCall f l => Bcat (Bstr f) (Bcat (Bstr "(")
-                                          (Bstr ")"))
+  | APureCall f l => Pp.seq (Bstr f :: Bstr "(" :: pp_list (Bstr ", ") pp_atom l
+                        :: Bstr ")" :: nil)
   end.
 
 Module Typed.
@@ -116,8 +115,8 @@ Module Typed.
                                  (array_index pp_atom i)
     | ARecordProj a i _ _ => Bcat (pp_atom a)
                               (Bcat (Bstr ".") (Bstr i))
-    | APureCall f _ l _ => Bcat (Bstr f) (Bcat (Bstr "(")
-                                          (Bstr ")"))
+    | APureCall f _ l _ => Pp.seq (Bstr f :: Bstr "(" :: pp_list (Bstr ", ") pp_atom l
+                              :: Bstr ")" :: nil)
     end.
 
   Definition pp_comp (c:comp) :=
@@ -131,8 +130,8 @@ Module Typed.
                                       (Bcat
                                          (Bcat (array_index pp_atom i)
                                             (Bstr "<-")) (pp_atom v))
-    | CpCall f _ l _ => Bcat (Bstr f) (Bcat (Bstr "(")
-                                          (Bstr ")"))
+    | CpCall f _ l _ => Pp.seq (Bstr f :: Bstr "(" :: pp_list (Bstr ", ") pp_atom l
+                          :: Bstr ")" :: nil)
   end.
 
 End Typed.
