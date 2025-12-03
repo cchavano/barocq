@@ -600,13 +600,12 @@ Definition write (env:aenv) (d:domain) (a:atom) (l:list EdgeLabel.t) (vl:atom)  
                     match G.check_must_alias  f n l n' (Pto d) with
                     | OK _ =>  OK (d,KNode n,true)
                     | Error _ =>
-                        let amsg := Pp.seq (Bstr "The statement " :: pp_write a l vl :: Bstr " is invalid." :: nil) in
-                        let reason := Bstr "As the written value is a reference, there should be a MUST alias." in
+                        let reason := Bstr "The written value is a reference but no MUST alias is found." in
                         let l1 := Pp.seq (Printer.Typed.pp_atom a ::
                                             Bstr " is mapped to node n" :: Bstr (string_of_int n) :: nil) in
                         let l2 := Pp.seq (Printer.Typed.pp_atom vl ::
                                             Bstr " is mapped to node n" :: Bstr (string_of_int n') :: nil) in
-                        Error (msg (Pp.pp (Pp.stack Left (amsg :: reason :: l1 :: l2 :: pp_domain d :: nil))))
+                        Error (msg (Pp.pp (Pp.stack Left (reason :: l1 :: l2 :: pp_domain d :: nil))))
                     end
       end
   end.

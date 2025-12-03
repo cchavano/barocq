@@ -142,12 +142,12 @@ Definition pp_attr (a:param_attr) :=
 
 Definition pp_globdef {L F T:Type} (pp_lit :  L -> box) (pp_fct : ident -> F -> box) (pp_typ : T -> box) (gd:globdef L F T) :=
   match gd with
-  | DefConst id l t => (Bcat (Bstr id)
-                          (Bcat (Bcat (Bstr " : ") (pp_typ t)) (Bcat (Bstr " := ") (pp_lit l))))
+  | DefConst id l t => Pp.seq (Bstr "defn ":: Bstr id :: Bstr " : " :: pp_typ t :: Bstr " := " :: pp_lit l :: nil)
   | DefFun   id  f  => (pp_fct id f)
-  | DeclConst id t  => (Bcat (Bstr id) (Bcat (Bstr " : ") (pp_typ t )))
-  | DeclFun id l t  => (Bcat (Bstr id) (Bcat (Bstr " : ") (Bcat (pp_list  (Bstr " -> ") (pp_pair (Bstr ",") pp_attr pp_typ) l)
-                                                             (Bcat (Bstr " -> ") (pp_typ t)))))
+  | DeclConst id t  => Pp.seq  (Bstr "defn "::Bstr id :: Bstr " : " :: pp_typ t :: nil)
+  | DeclFun id l t  => Pp.seq  (Bstr "defn ":: Bstr id :: Bstr " : " ::
+                                  (pp_list  (Bstr " -> ") (pp_pair (Bstr ",") pp_attr pp_typ) l)
+                                   :: Bstr " -> " :: pp_typ t :: nil)
   end.
 
 Fixpoint pp_literal (l:literal) :=
