@@ -185,4 +185,4 @@ Definition pp_layout (p:layout) :=
 
 Definition pp_program {T U body:Type} (pp_typ : T -> box) (pp_body : body -> box)
   (p:program (globdef literal (function body T) T) U) : box :=
-    pp_list (Bstr nl) (Printer.pp_globdef Printer.pp_literal (pp_function pp_body pp_typ) pp_typ) p.(prog_defs).
+    Pp.stack Left (List.map (Printer.pp_globdef Printer.pp_literal (pp_function pp_body pp_typ) pp_typ) p.(prog_defs)).
