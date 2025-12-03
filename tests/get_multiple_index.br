@@ -1,0 +1,17 @@
+module Test
+
+    record rec {
+    field : u32,
+  }
+
+
+   (** We access 2 indexes i and j.
+       ww also updates the array content -> rejected
+    *)
+    defn  f (t : [rec], i : u64, j: u64) : [rec]  = 
+      let v = t [ i ] in
+      let w = t [ j ] in
+      let vv = v.field <- 5U in
+      let t1 = t[i] <- vv in
+      let ww = w.field <- 7U in
+      t1
