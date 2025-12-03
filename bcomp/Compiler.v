@@ -45,23 +45,22 @@ Definition compile (opt : compiler_opt) (arch: Target.archi) (globinfo: option (
   let* imp1 := Imp1gen2.norm_program ibnf in
   let* imp1_typed := Imp1Typing.typecheck_program arch imp1 in
   let log := insert_log  Imp1Typed.Pp.pp_program Imp1 imp1_typed log in
-  (* let* (te,age) := InvAnalysis.check_program imp1_typed in *) (* Maybe, we could reuse the analysis result
+  let* (te,age) := InvAnalysis.check_program imp1_typed in (* Maybe, we could reuse the analysis result *)
   if (dbg_analysis opt)
   then Error (msg (Pp.pp (InvAnalysis.pp_inv (snd age))))
-  else *)
-  let* te := Typing.tenv_of_type_defs (Syntax.prog_types imp1_typed) in
-  let* imp1_typed := Imp1ElimAlias.transl_program te imp1_typed in
-  if Unboxing.check_program imp1_typed then
-    let imp2 := Imp2gen.transl_program imp1_typed in
-    let imp2_grw :=
-      match globinfo with
-      | Some ginfo => GlobRewrite.rewrite_program ginfo imp2
-      | None => imp2
-      end
-    in 
-    let* clight := Csyntaxgen.transl_program imp2_grw in
-    eret (clight,log)
-  else fail.
+  else
+    let* imp1_typed := Imp1ElimAlias.transl_program te imp1_typed in
+    if Unboxing.check_program imp1_typed then
+      let imp2 := Imp2gen.transl_program imp1_typed in
+      let imp2_grw :=
+        match globinfo with
+        | Some ginfo => GlobRewrite.rewrite_program ginfo imp2
+        | None => imp2
+        end
+      in 
+      let* clight := Csyntaxgen.transl_program imp2_grw in
+      eret (clight,log)
+    else fail.
 
 Definition compile_to_imp1 (arch: Target.archi) (prog: Barocq.program) : res Imp1.program :=
   let* bbnf := BarocqBNFgen.norm_program arch prog in
