@@ -530,78 +530,10 @@ Definition eval_record_update (m:mem) {tr:typ} (r:val tr) (k:ident) {te:typ} (v:
   | _ => fun _ => fail
   end eq_refl.
 
-
-(* Definition eval_access (te:tenv) (e:env) (m:mem) {ty:typ} (v:val ty) (acc:access) (tr:typ)  : res (val tr) :=
-  match acc with
-  | AcRecordField id bt _ => eval_record_proj m v id  tr
-  | AcArrayIndex a bt _ =>
-      let* i := eval_atom te e (typof_index arch) a  in
-      eval_array_get m v i tr
-  end.
-
-Definition typeof_access (te:tenv) (a:access) : res typ :=
-  match a with
-  | AcRecordField _ bt _ => btyp_to_typ te bt
-  | AcArrayIndex _ bt _ => btyp_to_typ te bt
-  end.
-
-Fixpoint eval_accesses (te:tenv) (e:env) (m:mem) {ty:typ} (v:val ty) (l:list access) (tr:typ) : res (val tr) :=
-  match l with
-  | nil => cast_val v tr
-  | acc::l =>
-      let* ta := typeof_access te acc in
-      let*va := eval_access te e m v acc ta in
-      eval_accesses te e m va l tr
-  end. *)
-
-(* Definition cast_function {a1 a2:list typ} {r1 r2:typ} (Eq : TFun a1 r1 = TFun a2 r2) (f : mem -> typ_of_fun a1 r1) :
-  mem -> typ_of_fun a2 r2.
-Proof.
-  injection Eq.
-  intros E1 E2.
-  rewrite E2 in f.
-  rewrite E1 in f.
-  apply f.
-Defined.
-
-
-Definition get_fun (ge:genv) {args:list typ} {ret:typ} (v :val (TFun args ret)) : res (mem -> typ_of_fun args ret):=
-match v with
-| Vprim _ _ => fail (* This is actually impossible *)
-| Vptr _ ptr  =>
-    match ptr with
-    | PtrF fid _ _ => let* f := ge fid in
-                      match f with
-                      | existT _ args' (existT _ ret' fc) =>
-                          match typ_eq_dec (TFun args' ret') (TFun args ret)  with
-                          | left EQ => OK (cast_function EQ fc)
-                          | _  => fail
-                          end
-                      end
-    | _ => fail
-    end
-end.
-
-
-Fixpoint eval_app (tparams : list typ) (tret : typ)
-  (args : DList.dlist (DList.resFtyp val) tparams) : forall (f: typ_of_fun tparams tret), res (val tret * mem) :=
-    match args with
-  | DList.DNIL _ => fun f => f
-  | DList.DCONS  _ e  args' =>
-      fun f => let* e1 := e in
-               eval_app _ _ args' (f e1)
-    end. *)
-
 Definition eval_comp (te:tenv) (ge:genv) (e:env) (m:mem) (c:comp) (tr:typ) : res (val tr  * mem) :=
   match c with
   | CpAtom a bt => let* va := eval_atom te ge e m tr a in
                    OK (va,m)
-  (* | CpArrayGet a1 i bt _ =>
-      let* tya1 := typof_atom te a1 in
-      let* v1 := eval_atom te ge e m tya1 a1 in
-      let* v2 := eval_atom te ge e m (typof_index arch) i  in
-      let* r  := eval_array_get m v1 v2 tr in
-      OK(r,m) *)
   | CpArraySet a i v bt =>
       let* ta := typof_atom te a in
       let* tv := typof_atom te v in
@@ -610,11 +542,6 @@ Definition eval_comp (te:tenv) (ge:genv) (e:env) (m:mem) (c:comp) (tr:typ) : res
       let* v := eval_atom te ge e m tr v in
       let* m := eval_array_set m a i v  in
       OK (v,m)
-  (* | CpRecordProj r id bt _ =>
-      let* t := typof_atom te r in
-      let* r := eval_atom te ge e m t r in
-      let* v := eval_record_proj m r id tr in
-      OK(v,m) *)
   | CpRecordUpdate r id v bt =>
       let* trec := typof_atom te r in
       let* tv   := typof_atom te v in
@@ -622,11 +549,6 @@ Definition eval_comp (te:tenv) (ge:genv) (e:env) (m:mem) (c:comp) (tr:typ) : res
       let* v := eval_atom te ge e m tv v in
       let* m := eval_record_update m r id v in
       OK(r,m)
-  (* | CpDeepAccess a l bt =>
-      let*  ta := typof_atom te a in
-      let* a := eval_atom te ge e m ta a in
-      let* v := eval_accesses te e m a l tr in
-      OK(v,m) *)
   | CpCall f btf args bt =>
       let* tyf := btyp_to_typ te btf in
       match tyf with
@@ -773,15 +695,7 @@ Fixpoint eval_literal (te: tenv)  (l: literal)  (m:mem): res ({ty:typ & val ty} 
   | LTrue => OK  (existT _ _ (Vprim _ (PBool true)),m)
   | LFalse => OK (existT _ _ (Vprim _ (PBool false)), m)
   | LInt32 i s => OK (existT _ _  (Vprim _ (PInt32 s i)),m)
-      (* match get_signed true bt with
-      | None => fail
-      | Some s => OK (existT _ _  (Vprim _ (PInt32 s i)),m)
-      end *)
   | LInt64 i s => OK (existT _ _ (Vprim _ (PInt64 s i)),m)
-      (* match get_signed true bt with
-      | None => fail
-      | Some s => OK (existT _ _ (Vprim _ (PInt64 s i)),m)
-      end *)
   | LArray a bt _ =>
       let* ta := btyp_to_typ te bt in
       match ta with
@@ -919,35 +833,11 @@ Module Typing.
         ret (APureCall f tf args' ty)
     end.
 
-  (* Fixpoint typecheck_access (be: benv) (gx: gcontext) (lx: lcontext) (ty: btyp) (acs: list Syntax.access) : res (btyp * list Syntax.Typed.access) :=
-    match acs with
-    | nil => ret (ty, nil)
-    | ac :: acs' =>
-        match ac with
-        | Syntax.AcRecordField f =>
-            let* (ty', ly) := typecheck_record_proj2 be ty f in
-            let* (r, lr) := typecheck_access be gx lx ty' acs' in
-            ret (r, (AcRecordField f ty' ly) :: lr)
-        | Syntax.AcArrayIndex ai =>
-            let* ai' := typecheck_atom be gx lx ai in
-            let* (ty', ly) := typecheck_array_get2 arch ty (typof_atom ai') in
-            let* (r, lr) := typecheck_access be gx lx ty' acs' in
-            ret (r, (AcArrayIndex ai' ty' ly) :: lr)
-        end
-    end. *)
-
   Definition typecheck_comp (be: benv) (gx: gcontext) (lx: lcontext) (c: Syntax.comp) : res Imp1Typed.comp :=
     match c with
     | Syntax.CpAtom a =>
         let* a' := typecheck_atom be gx lx a in
         ret (CpAtom a' (typof_atom a'))
-    (* | Syntax.CpArrayGet a1 a2 =>
-        let* a1' := typecheck_atom be gx lx a1 in
-        let* a2' := typecheck_atom be gx lx a2 in
-        let ty1 := typof_atom a1' in
-        let ty2 := typof_atom a2' in
-        let* (ty, ly) := typecheck_array_get2 arch ty1 ty2 in
-        ret (CpArrayGet a1' a2' ty ly) *)
     | Syntax.CpArraySet a1 a2 a3 =>
         let* a1' := typecheck_atom be gx lx a1 in
         let* a2' := typecheck_atom be gx lx a2 in
@@ -957,11 +847,6 @@ Module Typing.
         let ty3 := typof_atom a3' in
         let* ty := typecheck_array_set arch ty1 ty2 ty3 in
         ret (CpArraySet a1' a2' a3' ty)
-    (* | Syntax.CpRecordProj a x =>
-        let* a' := typecheck_atom be gx lx a in
-        let tya := typof_atom a' in
-        let* (ty, ly) := typecheck_record_proj2 be tya x in
-        ret (CpRecordProj a' x ty ly) *)
     | Syntax.CpRecordUpdate a1 x a2 =>
         let* a1' := typecheck_atom be gx lx a1 in
         let* a2' := typecheck_atom be gx lx a2 in
@@ -969,10 +854,6 @@ Module Typing.
         let ty2 := typof_atom a2' in
         let* ty := typecheck_record_update be ty1 ty2 x in
         ret (CpRecordUpdate a1' x a2' ty)
-    (* | Syntax.CpDeepAccess a acs =>
-        let* a' := typecheck_atom be gx lx a in
-        let* (t, acs') := typecheck_access be gx lx (typof_atom a') acs in
-        ret (CpDeepAccess a' acs' t) *)
     | Syntax.CpCall f args =>
         let* tf := typof_var gx lx f in
         let* args' := mmap (typecheck_atom be gx lx) args in

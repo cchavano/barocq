@@ -167,12 +167,6 @@ let rec expr_to_deep (prefix : string) (e : Typed.expr) : string =
           (ident_to_deep x)
           (expr_to_deep "" e2)
           (btyp_to_deep bt)
-    (* | EDeepAccess (e1, acs, bt) ->
-        sprintf
-          "EDeepAccess (%s) %s (%s)"
-          (expr_to_deep prefix e1)
-          (list_to_string_bracket access_to_deep acs)
-          (btyp_to_deep bt) *)
     | EApp (e1, args, bt) ->
         sprintf
           "EApp (%s) %s (%s)"
@@ -226,13 +220,6 @@ and match_case_to_string (prefix : string)
     | Benum.PWildcard -> sprintf "PWildcard"
   in
   sprintf "%s(%s,\n%s%s)" prefix case prefix' (expr_to_deep prefix' ep)
-
-and access_to_deep (ac : Typed.access) : string =
-  match ac with
-  | AcRecordField (f, bt) ->
-      sprintf "AcRecordField %s (%s)" (ident_to_deep f) (btyp_to_deep bt)
-  | AcArrayIndex (e, bt) ->
-      sprintf "AcArrayIndex (%s) (%s)" (expr_to_deep "" e) (btyp_to_deep bt)
 
 let params_to_deep (params : (ident * btyp) list) : string =
   list_to_string_bracket

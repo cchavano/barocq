@@ -1545,28 +1545,6 @@ Section S.
       rewrite get_var_of_expr_case.
       rewrite (get_var_of_expr_case x e2 (vars_of_expr STree.empty e1)).
       tauto.
-    (* - intros.
-      rewrite get_var_of_expr_case.
-      symmetry. rewrite get_var_of_expr_case.
-      symmetry.
-      assert (STree.get x (fold_left vars_of_access l acc) = Some tt
-              <->
-                (STree.get x acc = Some tt \/
-                   STree.get x (fold_left vars_of_access l STree.empty) = Some tt)).
-      revert acc.
-      induction l ; simpl; auto.
-      + intros. rewrite STree.gempty.
-        intuition congruence.
-      + intros.
-        rewrite IHl.
-        symmetry.
-        rewrite IHl.
-        destruct a; simpl.
-        rewrite STree.gempty.
-        intuition congruence.
-        rewrite (get_var_of_expr_case x e0 acc).
-        intuition congruence.
-      + tauto. *)
     - intros.
       assert (forall acc',
                  STree.get x (fold_left vars_of_expr l acc') = Some tt <->
@@ -1643,31 +1621,6 @@ Section S.
         tauto.
   Qed.
 
-
-
-
-  (* Lemma get_vars_of_access : forall acs acc,
-    forall x, STree.get x (fold_left vars_of_access  acs acc ) = Some tt <->
-                (STree.get x (fold_left vars_of_access acs STree.empty) = Some tt
-                 \/ STree.get x acc = Some tt).
-  Proof.
-    induction acs.
-    - simpl.
-      intros. rewrite STree.gempty.
-      intuition congruence.
-    - simpl.
-      intros.
-      rewrite IHacs.
-      symmetry.
-      rewrite IHacs.
-      destruct a; simpl.
-      rewrite! STree.gempty.
-      intuition congruence.
-      symmetry.
-      rewrite get_var_of_expr_case.
-      tauto.
-  Qed. *)
-
   Definition eq_env_vars_of_expr_acc (e:expr) : forall acc le le' ge ge',
       eq_env (vars_of_expr acc e) le le' ge ge' ->
       eq_env acc le le' ge ge'.
@@ -1677,12 +1630,6 @@ Section S.
     apply H; auto.
     apply get_var_of_expr_acc; auto.
   Qed.
-
-
-
-
-
-
 
   Definition eq_env_vars_of_expr (e:expr) : forall acc le le' ge ge',
       eq_env (vars_of_expr acc e) le le' ge ge' ->
@@ -1705,22 +1652,6 @@ Section S.
     eapply eq_env_vars_of_expr in H; auto.
     apply eq_env_vars_of_expr_acc in H;auto.
   Qed.
-
-
-  (* Lemma eq_env_of_access : forall acs acc le le' ge ge',
-      eq_env (fold_left vars_of_access  acs acc ) le le' ge ge' ->
-      eq_env (fold_left vars_of_access acs STree.empty) le le' ge ge' /\
-        eq_env acc le le' ge ge'.
-  Proof.
-    unfold eq_env.
-    split; intros.
-    apply H; auto.
-    rewrite get_vars_of_access.
-    tauto.
-    apply H;auto.
-    rewrite get_vars_of_access.
-    tauto.
-  Qed. *)
 
   Lemma get_fold_vars_of_expr : forall x args acc,
       STree.get x (fold_left vars_of_expr args acc) = Some tt <->
@@ -2005,62 +1936,6 @@ Section S.
       simpl. inv E2 ; try constructor.
       simpl.
       apply ext_equal_eval_record_update; auto.
-    (* - simpl in H.
-      apply eq_env_split in H as (EQ1 & EQ2).
-      destruct (typof_expr te e);try constructor.
-      simpl.
-      generalize (eq_genv_eval_expr t e le le' EQ1 H0).
-      intro E1.
-      assert (ALL : Forall2 (eq_access_value arch)
-                      (map (eval_access_expr arch abs_typ_impl te ge le) l)
-                      (map (eval_access_expr arch abs_typ_impl te ge' le') l)).
-      {
-        induction l.
-        -  simpl. constructor.
-        - simpl.
-          constructor.
-          {
-            destruct a.
-            - simpl.
-              constructor.
-            - simpl.
-              simpl in EQ2.
-              apply eq_env_of_access in EQ2 as (EQ0 & EQACC).
-              specialize (eq_genv_eval_expr (typof_index arch) e0 le le' EQACC H0).
-              inv eq_genv_eval_expr.
-              constructor.
-              simpl. constructor.
-              constructor. constructor;auto.
-          }
-          simpl in EQ2.
-          apply eq_env_of_access in EQ2 as (EQ2 & EQ3).
-          apply IHl; auto.
-      }
-      clear - E1 ALL.
-      revert E1.
-      generalize (eval_expr arch abs_typ_impl te ge le t e) as e1.
-      generalize (eval_expr arch abs_typ_impl te ge' le' t e) as e2.
-      revert t.
-      induction ALL.
-      +  simpl. intros.
-         apply ext_equal_ecast_typ;auto.
-      + simpl.
-        intros.
-        inv H.
-        * destruct (typof_record_project t k);try constructor.
-          simpl.
-          inv E1. constructor.
-          simpl.
-          apply IHALL.
-          apply ext_equal_eval_record_proj; auto.
-        * destruct (typof_array t) ; try constructor.
-          simpl.
-          inv E1. constructor.
-          simpl. inv H0. constructor.
-          simpl.
-          apply IHALL.
-          apply ext_equal_array_get. auto.
-          auto. *)
     -
       simpl in H.
       destruct (typof_expr te e); try constructor.
@@ -2096,29 +1971,6 @@ Section S.
       inv H3; try constructor.
       simpl.
       clear - H2 H6.
-      (*
-    eapply ext_equal_ecast_typ.
-    destruct l0.
-    { simpl.
-      assert (XO : x0 = DList.DNIL abs_typ_impl).
-      { apply DList.dlist_nil. }
-      assert (YO : y0 = DList.DNIL abs_typ_impl).
-      { apply DList.dlist_nil. }
-      rewrite XO. rewrite YO.
-      apply H2.
-    }
-    {
-      unfold ext_equal in H2 ; fold ext_equal in H2.
-      unfold eval_typ in x,y; fold eval_typ in x,y.
-      unfold eval_app.
-      revert x y H2.
-      induction H6.
-      - simpl. auto.
-      - simpl.
-        intros.
-        apply IHForall2.
-        auto.
-    } *)
       apply ext_equal_eval_app_res; auto.
     - simpl in H.
       apply eq_env_split in H as (EQ1 & EQ2).
@@ -2179,10 +2031,6 @@ Section S.
         apply H0.
       }
       eapply eq_env_remove in EQ2;eauto.
-  (*    generalize (eq_genv_eval_expr e2 _ _ EQ1 LE).
-    intro.
-    inv H3. constructor.
-    constructor ;auto.*)
   Qed.
 
   Lemma eq_env_all_empty : eq_env_all STree.empty STree.empty.
@@ -3022,124 +2870,6 @@ Section S.
     simpl. tauto.
   Qed.
 
-  (*
-Lemma generate_obligations_sound :
-  forall arch prog te checked props ol
-         (ND : NoDup (map ident_of_globdef prog))
-         (GEN : generate_obligations arch  te checked vc prog props = OK ol)
-         (OBL : Forall (fun p => p) ol)
-  ,
-  forall ge,
-    wf_env ge prog ->
-    Forall (has_property ge) checked ->
-    exists te' ge', eval_prog_rec arch abs_typ_impl te ge prog = OK (te',ge') /\
-                      Forall (has_property ge') props.
-Proof.
-  induction prog.
-  - simpl.
-    intros. destruct props ; try discriminate.
-    do 2 eexists. split. reflexivity.
-    constructor.
-  - simpl.
-    destruct a.
-    + intros. destruct (eval_def_type te tid fields); try discriminate.
-      simpl in *.
-      eapply IHprog in GEN ; eauto.
-      inv ND ; auto.
-      apply wf_env_tail in H; auto.
-    + intros.
-      destruct (get_prop x props) eqn:GP; try discriminate.
-      destruct p as (p,props').
-      simpl in GEN.
-      apply get_prop_inv in GP.
-      destruct (generate_const_obligation te x l ty p) eqn:CO; try discriminate.
-      simpl in GEN.
-      destruct (generate_obligations arch te ((x, p) :: checked) prog props') eqn:GO; try discriminate.
-      simpl in GEN. inv GEN.
-      destruct  (generate_const_obligation_sound _ _ _ _ _ _ ge CO) as (ge' & EF & HP ).
-      { unfold wf_env in H.
-        apply (H (DefConst x l ty)).
-        simpl. tauto. reflexivity.
-      }
-      { inv  OBL ; auto. }
-      rewrite EF. simpl.
-      apply IHprog with (ge:=ge') in GO; auto.
-      destruct GO as (te2 & ge2 & EQ & ALL).
-      do 2 eexists ; split; eauto.
-      constructor.
-      apply eval_prop_rec_preserve_props with (p1' := (x,p)::nil) in EQ.
-      inv EQ ; auto.
-      constructor ; auto.
-      auto.
-      inv ND ; auto.
-      inv OBL; auto.
-      eapply wf_env_DefConst; eauto.
-      constructor ;auto.
-      eapply eval_prop_rec_preserve_props with (p1 := (DefConst x l ty)::nil).
-      apply H0. simpl. rewrite EF. reflexivity.
-      Unshelve. apply arch.
-    + intros.
-      destruct (get_prop x props) eqn:GP; try discriminate.
-      destruct p as (p,props').
-      simpl in GEN.
-      apply get_prop_inv in GP.
-      destruct (generate_def_fun_obligation  arch te (Syntax.fn_params f) (Syntax.fn_return f) (Syntax.fn_body f) checked p) eqn:CO; try discriminate.
-      simpl in GEN.
-      destruct (generate_obligations arch te ((x, p) :: checked) prog props') eqn:GO; try discriminate.
-      simpl in GEN. inv GEN.
-      destruct  (generate_def_fun_obligation_sound _ _ x _ _  ge _ _ CO) as (ge' & EF & HP ).
-      { unfold wf_env in H.
-        apply (H (DefFun x f )).
-        simpl. tauto. reflexivity.
-      }
-      auto.
-      { inv  OBL ; auto. }
-      rewrite EF. simpl.
-      apply IHprog with (ge:=ge') in GO; auto.
-      destruct GO as (te2 & ge2 & EQ & ALL).
-      do 2 eexists ; split; eauto.
-      constructor.
-      apply eval_prop_rec_preserve_props with (p1' := (x,p)::nil) in EQ.
-      inv EQ ; auto.
-      constructor ; auto.
-      auto.
-      inv ND ; auto.
-      inv OBL; auto.
-      eapply wf_env_DefFun; eauto.
-      constructor ;auto.
-      eapply eval_prop_rec_preserve_props with (p1 := (DefFun x f)::nil).
-      apply H0. simpl. rewrite EF. reflexivity.
-    + intros.
-      eapply IHprog;eauto.
-      inv ND;auto.
-      eapply wf_env_tail;eauto.
-    + intros.
-      destruct (generate_decl_const_obligation te checked x ty) eqn:DECL ; try discriminate.
-      simpl in GEN.
-      destruct (generate_obligations arch te checked prog props) eqn:GO; try discriminate.
-      simpl in GEN; inv GEN.
-      destruct (generate_decl_const_obligation_sound te x ty checked ge P DECL); auto.
-      inv OBL; auto.
-      rewrite H1. simpl.
-      eapply IHprog;eauto.
-      inv ND;auto.
-      inv OBL;auto.
-      eapply wf_env_tail;eauto.
-    + intros.
-      destruct (generate_decl_fun_obligation  te checked x tparams tret) eqn:DECL ; try discriminate.
-      simpl in GEN.
-      destruct (generate_obligations arch te checked prog props) eqn:GO; try discriminate.
-      simpl in GEN; inv GEN.
-      destruct (generate_decl_fun_obligation_sound te x tparams tret checked ge P DECL); auto.
-      inv OBL; auto.
-      rewrite H1. simpl.
-      eapply IHprog;eauto.
-      inv ND;auto.
-      inv OBL;auto.
-      eapply wf_env_tail;eauto.
-Qed.
-   *)
-
 
   Lemma generate_obligations_incl :
     forall arch prog te checked props ol vc
@@ -3191,11 +2921,6 @@ Qed.
       obligation_def_type te tid fields = eval_def_type te tid fields.
   Proof.
     reflexivity.
-  (* unfold obligation_def_type,eval_def_type.
-  intros. destruct (fields_btyp_to_typ te fields); try reflexivity.
-  simpl. unfold tenv_update_opt, Typing.TEnv.update.
-  unfold Typing.TEnv.get. unfold STree.get.
-  destruct (te ! (StringIndexed.index tid)); simpl; auto. *)
   Qed.
 
 

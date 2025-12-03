@@ -42,7 +42,6 @@ Definition compile (opt : compiler_opt) (arch: Target.archi) (globinfo: option (
   let* bbnf := BarocqBNFgen.norm_program arch prog in
   let log   := insert_log BarocqBNF.Pp.pp_program BBNF bbnf log in
   let ibnf := ImpBNFgen.transl_program bbnf in
-  (* let* iabnf := ImpABNFgen.norm_program ibnf in *)
   let* imp1 := Imp1gen2.norm_program ibnf in
   let* imp1_typed := Imp1Typing.typecheck_program arch imp1 in
   let log := insert_log  Imp1Typed.Pp.pp_program Imp1 imp1_typed log in
@@ -67,7 +66,6 @@ Definition compile (opt : compiler_opt) (arch: Target.archi) (globinfo: option (
 Definition compile_to_imp1 (arch: Target.archi) (prog: Barocq.program) : res Imp1.program :=
   let* bbnf := BarocqBNFgen.norm_program arch prog in
   let ibnf := ImpBNFgen.transl_program bbnf in
-  (* let* iabnf := ImpABNFgen.norm_program ibnf in *)
   let* imp1 := Imp1gen2.norm_program ibnf in
   eret imp1.
 

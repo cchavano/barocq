@@ -44,18 +44,6 @@ Inductive atom :=
   | ARecordProj : atom -> ident -> layout -> typ2 -> atom
   | APureCall : ident -> typ2 -> list atom -> typ2 -> atom.
 
-(* Inductive access : Type :=
-  | AcRecordField : ident -> typ2 -> layout -> access
-  | AcArrayIndex : atom -> typ2 -> layout -> access. *)
-
-(** ** Expressions ("pure" computations) *)
-
-(* Inductive expr : Type :=
-  | EAtom : atom -> typ2 -> expr
-  | EArrayGet : atom -> atom -> typ2 -> layout -> expr
-  | ERecordProj : atom -> ident -> typ2 -> layout -> expr
-  | EDeepAccess : atom -> list access -> typ2 -> expr. *)
-
 (** ** "Effectul" computations *)
 
 Inductive ecomp : Type :=

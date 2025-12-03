@@ -196,70 +196,66 @@ let rec atom_to_rocq (a : atom) : string =
   | AInt64 (i, s) -> int64_to_rocq i s
   | AConstr (x, _) ->
       let x = ident_to_string x in
-      begin
-        match !shver with
-        | BarocqShallowgen.ShallowR -> x
-        | BarocqShallowgen.ShallowB -> sprintf "%s_Types.%s" !coqlib x
+      begin match !shver with
+      | BarocqShallowgen.ShallowR -> x
+      | BarocqShallowgen.ShallowB -> sprintf "%s_Types.%s" !coqlib x
       end
   | AVar (x, _) -> ident_to_string x
   | ACast (a1, dst_ty, _) ->
       let t1 = typof_atom a1 in
-      begin
-        match t1 with
-        | MEnum tid ->
-            let cast_op =
-              match !shver with
-              | BarocqShallowgen.ShallowR ->
-                  sprintf "cast_%s_to_i32" (ident_to_string tid)
-              | BarocqShallowgen.ShallowB -> "Benum.to_i32"
-            in
-            if dst_ty = MInt32 Signed then
-              sprintf "%s %s" cast_op (opt_parens a1)
-            else
+      begin match t1 with
+      | MEnum tid ->
+          let cast_op =
+            match !shver with
+            | BarocqShallowgen.ShallowR ->
+                sprintf "cast_%s_to_i32" (ident_to_string tid)
+            | BarocqShallowgen.ShallowB -> "Benum.to_i32"
+          in
+          if dst_ty = MInt32 Signed then sprintf "%s %s" cast_op (opt_parens a1)
+          else
+            sprintf
+              "%s (%s %s)"
+              (cast_to_rocq (MInt32 Signed) dst_ty)
+              cast_op
+              (opt_parens a1)
+      | _ -> begin
+          match dst_ty with
+          | MEnum tid ->
+              let cast_op =
+                match !shver with
+                | BarocqShallowgen.ShallowR ->
+                    sprintf "cast_i32_to_%s" (ident_to_string tid)
+                | BarocqShallowgen.ShallowB ->
+                    sprintf "Benum.of_i32 elems_of_%s" (ident_to_string tid)
+              in
               sprintf
                 "%s (%s %s)"
-                (cast_to_rocq (MInt32 Signed) dst_ty)
                 cast_op
+                (cast_to_rocq t1 (MInt32 Signed))
                 (opt_parens a1)
-        | _ -> begin
-            match dst_ty with
-            | MEnum tid ->
-                let cast_op =
-                  match !shver with
-                  | BarocqShallowgen.ShallowR ->
-                      sprintf "cast_i32_to_%s" (ident_to_string tid)
-                  | BarocqShallowgen.ShallowB ->
-                      sprintf "Benum.of_i32 elems_of_%s" (ident_to_string tid)
-                in
-                sprintf
-                  "%s (%s %s)"
-                  cast_op
-                  (cast_to_rocq t1 (MInt32 Signed))
-                  (opt_parens a1)
-            | _ ->
-                if t1 = dst_ty then atom_to_rocq a1
-                else sprintf "%s %s" (cast_to_rocq t1 dst_ty) (opt_parens a1)
-          end
+          | _ ->
+              if t1 = dst_ty then atom_to_rocq a1
+              else sprintf "%s %s" (cast_to_rocq t1 dst_ty) (opt_parens a1)
+        end
       end
   | AUnaryOp (op, a, _) ->
       let ty = typof_atom a in
       sprintf "%s%s" (unary_op_to_rocq ty op) (opt_parens a)
   | ABinaryOp (op, a1, a2, ty) ->
       let ty1 = typof_atom a1 in
-      begin
-        match op with
-        | BopAndbool | BopOrbool ->
-            sprintf
-              "%s %s %s"
-              (opt_parens a1)
-              (binary_op_to_rocq ty1 op)
-              (opt_parens a2)
-        | _ ->
-            sprintf
-              "%s %s %s"
-              (binary_op_to_rocq ty1 op)
-              (opt_parens a1)
-              (opt_parens a2)
+      begin match op with
+      | BopAndbool | BopOrbool ->
+          sprintf
+            "%s %s %s"
+            (opt_parens a1)
+            (binary_op_to_rocq ty1 op)
+            (opt_parens a2)
+      | _ ->
+          sprintf
+            "%s %s %s"
+            (binary_op_to_rocq ty1 op)
+            (opt_parens a1)
+            (opt_parens a2)
       end
   | ARecordProj (a1, x, _) -> begin
       match !shver with

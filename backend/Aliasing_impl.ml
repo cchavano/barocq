@@ -411,14 +411,13 @@ let exec_set_array_get (x : ident) (a : atom) (i : atom) (st : absstate) :
             in
             { st' with st_arr_locked = al }
         in
-        begin
-          match yi_inv with
-          | Some t ->
-              (* x inherits the invalid paths from y[i]. *)
-              AbsState (inv_add st' x t)
-          | None ->
-              (* If variable shadowing occurs, removes x from the map of invalid paths. *)
-              AbsState { st' with st_inv = IdentMap.remove x st'.st_inv }
+        begin match yi_inv with
+        | Some t ->
+            (* x inherits the invalid paths from y[i]. *)
+            AbsState (inv_add st' x t)
+        | None ->
+            (* If variable shadowing occurs, removes x from the map of invalid paths. *)
+            AbsState { st' with st_inv = IdentMap.remove x st'.st_inv }
         end
       else top "impossible array get, the array is not free"
   | _ -> assert false
@@ -637,10 +636,9 @@ let rec args_bijection (params : ident list) (args : atom list) :
   | [], [] -> IdentMap.empty
   | y :: params', a :: args' ->
       let r = args_bijection params' args' in
-      begin
-        match a with
-        | AVar (x, ty) -> if is_prim ty then r else IdentMap.add y x r
-        | _ -> r
+      begin match a with
+      | AVar (x, ty) -> if is_prim ty then r else IdentMap.add y x r
+      | _ -> r
       end
   | _, _ -> assert false
 
@@ -1134,14 +1132,13 @@ let print_dom_debug (show_debug : bool) (d : absdom) (suffix : string)
            (path_map_to_string st.st_inv)
            suffix
            (locked_arrays_to_string st);
-      begin
-        if inv_res then
-          match st.st_inv_res with
-          | Some t ->
-              debug_info show_debug
-              @@ sprintf "INV_RES: %s\n" (PathTree.to_string t)
-          | None -> debug_info show_debug "INV_RES: None\n"
-        else ()
+      begin if inv_res then
+        match st.st_inv_res with
+        | Some t ->
+            debug_info show_debug
+            @@ sprintf "INV_RES: %s\n" (PathTree.to_string t)
+        | None -> debug_info show_debug "INV_RES: None\n"
+      else ()
       end
   | Top _ -> debug_info show_debug @@ sprintf "DOM_%s: Top\n" suffix);
   if suffix = "OUT" then debug_info show_debug "\n"
@@ -1680,24 +1677,22 @@ module DotExport = struct
        %sgraph [fontname=\"Heltvica\",dpi=300];node [fontname = \
        \"Heltvica\"];edge [fontname = \"Heltvica\"];\n"
       indent;
-    begin
-      match d with
-      | AbsState st ->
-          print_env out st.st_env;
-          print_mem out st.st_mem;
-          print_res out st.st_res
-      | Top _ -> ()
+    begin match d with
+    | AbsState st ->
+        print_env out st.st_env;
+        print_mem out st.st_mem;
+        print_res out st.st_res
+    | Top _ -> ()
     end;
     fprintf out "}"
 
   let print_rev_state (out : out_channel) (d : absdom) : unit =
     fprintf out "digraph memory {\n%sgraph [dpi=300];\n" indent;
-    begin
-      match d with
-      | AbsState st ->
-          print_rev_env out st.st_rev_env;
-          print_rev_mem out st.st_rev_mem
-      | Top _ -> ()
+    begin match d with
+    | AbsState st ->
+        print_rev_env out st.st_rev_env;
+        print_rev_mem out st.st_rev_mem
+    | Top _ -> ()
     end;
     fprintf out "}"
 end

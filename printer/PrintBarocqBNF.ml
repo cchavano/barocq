@@ -8,27 +8,18 @@ let rec expr_to_string_pref (prefix : string) (e : expr) : string =
   let str =
     match e with
     | EAtom a -> atom_to_string a
-    (* | EArrayGet (a1, a2) ->
-        sprintf "%s[%s]" (atom_to_string a1) (atom_to_string a2) *)
     | EArraySet (a1, a2, a3) ->
         sprintf
           "%s[%s] <- %s"
           (atom_to_string a1)
           (atom_to_string a2)
           (PrintSyntax.opt_parens a3)
-    (* | ERecordProj (a, x) ->
-        sprintf "%s.%s" (atom_to_string a) (ident_to_string x) *)
     | ERecordUpdate (a1, x, a2) ->
         sprintf
           "%s.%s <- %s"
           (atom_to_string a1)
           (ident_to_string x)
           (PrintSyntax.opt_parens a2)
-    (* | EDeepAccess (a, acs) ->
-        sprintf
-          "%s%s"
-          (atom_to_string a)
-          (PrintSyntax.access_list_to_string acs) *)
     | EApp (f, args) ->
         sprintf
           "%s%s"

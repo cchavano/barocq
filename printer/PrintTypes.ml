@@ -43,20 +43,17 @@ let rec btyp_to_string_rec (ly : layout) (ty : btyp) : string =
   | BEnum te -> ident_to_string te
   | BRecord (tr, _) ->
       let tr' = ident_to_string tr in
-      begin
-        match ly with
-        | LyBoxed -> tr'
-        | LyUnboxed None -> sprintf "#%s" tr'
-        | _ -> assert false
+      begin match ly with
+      | LyBoxed -> tr'
+      | LyUnboxed None -> sprintf "#%s" tr'
+      | _ -> assert false
       end
   | BArray (ta, ba) ->
       let ta' = btyp_to_string_rec ba ta in
-      begin
-        match ly with
-        | LyBoxed -> sprintf "[%s]" ta'
-        | LyUnboxed (Some sz) ->
-            sprintf "#[%s; %s]" ta' (Camlcoq.Z.to_string sz)
-        | _ -> assert false
+      begin match ly with
+      | LyBoxed -> sprintf "[%s]" ta'
+      | LyUnboxed (Some sz) -> sprintf "#[%s; %s]" ta' (Camlcoq.Z.to_string sz)
+      | _ -> assert false
       end
   | BAbs t -> ident_to_string t
   | BFun (tparams, tret) ->

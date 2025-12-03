@@ -181,11 +181,10 @@ let gen_abs_defs_impl_env (defs : globdef list) : string =
     | [] -> []
     | d :: defs' ->
         let r = lassoc defs' in
-        begin
-          match d with
-          | DeclConst (x, _) | DeclFun (x, _, _) ->
-              (Deepgen.ident_to_deep x, ident_to_string x) :: r
-          | _ -> r
+        begin match d with
+        | DeclConst (x, _) | DeclFun (x, _, _) ->
+            (Deepgen.ident_to_deep x, ident_to_string x) :: r
+        | _ -> r
         end
   in
   let genv_list prefix l =
@@ -437,38 +436,37 @@ module VCgen = struct
     match bprog with
     | [] -> ()
     | bd :: bprog' ->
-        begin
-          match bd with
-          | Barocq.Typed.DefFun (fid, f) ->
-              let vars =
-                BarocqVC.vars_of_expr Maps2.STree.empty f.Syntax.fn_body
-              in
-              let sdefs_needed =
-                List.filter
-                  (fun d -> BarocqVC.has_var (ident_of_globdef d) vars)
-                  sdefs
-              in
-              fprintf
-                out
-                "Definition needed_checked_%s : list propt := "
-                (ident_to_string fid);
-              let delim =
-                if sdefs_needed = [] then ("[", "]")
-                else (sprintf "[\n%s" indent2, sprintf "\n%s]\n" indent)
-              in
-              print_list
-                out
-                ~delim
-                ~sep:(sprintf ";\n%s" indent2)
-                gen_def_property
-                sdefs_needed;
-              fprintf out "%s.\n" indent
-          | Barocq.Typed.DeclFun (fid, _, _) ->
-              fprintf
-                out
-                "Definition needed_checked_%s : list propt := [].\n"
-                (ident_to_string fid)
-          | _ -> ()
+        begin match bd with
+        | Barocq.Typed.DefFun (fid, f) ->
+            let vars =
+              BarocqVC.vars_of_expr Maps2.STree.empty f.Syntax.fn_body
+            in
+            let sdefs_needed =
+              List.filter
+                (fun d -> BarocqVC.has_var (ident_of_globdef d) vars)
+                sdefs
+            in
+            fprintf
+              out
+              "Definition needed_checked_%s : list propt := "
+              (ident_to_string fid);
+            let delim =
+              if sdefs_needed = [] then ("[", "]")
+              else (sprintf "[\n%s" indent2, sprintf "\n%s]\n" indent)
+            in
+            print_list
+              out
+              ~delim
+              ~sep:(sprintf ";\n%s" indent2)
+              gen_def_property
+              sdefs_needed;
+            fprintf out "%s.\n" indent
+        | Barocq.Typed.DeclFun (fid, _, _) ->
+            fprintf
+              out
+              "Definition needed_checked_%s : list propt := [].\n"
+              (ident_to_string fid)
+        | _ -> ()
         end;
         print_needed_checked_lists out bprog' sdefs
 
@@ -492,14 +490,12 @@ module VCgen = struct
     match sdefs with
     | [] -> ()
     | d :: sdefs' ->
-        begin
-          match d with
-          | DefFun (fid, f) ->
-              fprintf out "%s\n" (gen_fun_params fid f.fn_params)
-          | DeclFun (fid, tparams, tret) ->
-              let params = params_of_absfun tparams in
-              fprintf out "%s\n" (gen_fun_params fid params)
-          | _ -> ()
+        begin match d with
+        | DefFun (fid, f) -> fprintf out "%s\n" (gen_fun_params fid f.fn_params)
+        | DeclFun (fid, tparams, tret) ->
+            let params = params_of_absfun tparams in
+            fprintf out "%s\n" (gen_fun_params fid params)
+        | _ -> ()
         end;
         print_functions_params out sdefs'
 

@@ -85,35 +85,21 @@ let rec atom_to_string (a : atom) : string =
 and opt_parens (a : atom) : string =
   PrintUtils.opt_parens is_simpl_atom atom_to_string a
 
-(* let access_to_string (ac : access) : string =
-  match ac with
-  | AcRecordField f -> sprintf ".%s" (ident_to_string f)
-  | AcArrayIndex i -> sprintf "[%s]" (atom_to_string i) *)
-
-(* let access_list_to_string (acs : access list) : string =
-  list_to_string access_to_string acs *)
-
 let comp_to_string (c : comp) : string =
   match c with
   | CpAtom a -> atom_to_string a
-  (* | CpArrayGet (a1, a2) ->
-      sprintf "%s[%s]" (atom_to_string a1) (atom_to_string a2) *)
   | CpArraySet (a1, a2, a3) ->
       sprintf
         "%s[%s] <- %s"
         (atom_to_string a1)
         (atom_to_string a2)
         (opt_parens a3)
-  (* | CpRecordProj (a, x) ->
-      sprintf "%s.%s" (atom_to_string a) (ident_to_string x) *)
   | CpRecordUpdate (a1, x, a2) ->
       sprintf
         "%s.%s <- %s"
         (atom_to_string a1)
         (ident_to_string x)
         (opt_parens a2)
-  (* | CpDeepAccess (a, acs) ->
-      sprintf "%s%s" (atom_to_string a) (access_list_to_string acs) *)
   | CpCall (f, args) ->
       sprintf
         "%s%s"
@@ -142,23 +128,13 @@ module Typed = struct
   let atom_to_string (a : Syntax.Typed.atom) : string =
     atom_to_string (untype_atom a)
 
-  (* let untype_access (ac : Syntax.Typed.access) : Syntax.access =
-    match ac with
-    | Syntax.Typed.AcRecordField (f, _, _) -> AcRecordField f
-    | Syntax.Typed.AcArrayIndex (a, _, _) -> AcArrayIndex (untype_atom a) *)
-
   let untype_comp (c : Syntax.Typed.comp) : comp =
     match c with
     | Syntax.Typed.CpAtom (a, _) -> CpAtom (untype_atom a)
-    (* | Syntax.Typed.CpArrayGet (a1, a2, _, _) ->
-        CpArrayGet (untype_atom a1, untype_atom a2) *)
     | Syntax.Typed.CpArraySet (a1, a2, a3, _) ->
         CpArraySet (untype_atom a1, untype_atom a2, untype_atom a3)
-    (* | Syntax.Typed.CpRecordProj (a', f, _, _) -> CpRecordProj (untype_atom a', f) *)
     | Syntax.Typed.CpRecordUpdate (a1, f, a2, _) ->
         CpRecordUpdate (untype_atom a1, f, untype_atom a2)
-    (* | Syntax.Typed.CpDeepAccess (a, acs, _) ->
-        CpDeepAccess (untype_atom a, List.map untype_access acs) *)
     | Syntax.Typed.CpCall (f, _, args, _) ->
         CpCall (f, List.map untype_atom args)
 

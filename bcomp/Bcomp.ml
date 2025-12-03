@@ -259,104 +259,92 @@ let () =
       end;
 
       if !opt_aliascheck then begin
-        begin
-          match
-            Compiler.aliascheck_program !opt_debug_aliasing !target_arch prog
-          with
-          | Errors.OK _ -> printf "Alias checking succeeded\n"
-          | Errors.Error msg ->
-              raise @@ CompilerError (C2C.string_of_errmsg msg)
+        begin match
+          Compiler.aliascheck_program !opt_debug_aliasing !target_arch prog
+        with
+        | Errors.OK _ -> printf "Alias checking succeeded\n"
+        | Errors.Error msg -> raise @@ CompilerError (C2C.string_of_errmsg msg)
         end;
         exit 0
       end;
 
       if !opt_gen_alias_call_state_of <> "" then begin
         let imp1 = Compiler.compile_to_imp1 !target_arch prog in
-        begin
-          match imp1 with
-          | Errors.OK prog -> begin
-              match Imp1.Typing.typecheck_program !target_arch prog with
-              | Errors.OK prog -> begin
-                  let fid = !opt_gen_alias_call_state_of in
-                  match Aliasing_impl.get_fun_descr prog fid with
-                  | Some fdescr ->
-                      let callstate = fdescr.Aliasing_defs.fd_callstate in
-                      let dotfile = get_full_filename fid "_call_state.dot" in
-                      let dotfile_rev =
-                        get_full_filename fid "_call_state_rev.dot"
-                      in
-                      let out = open_out dotfile in
-                      let out_rev = open_out dotfile_rev in
-                      Aliasing_impl.DotExport.print_state
-                        out
-                        (Aliasing_defs.AbsDom.AbsState callstate);
-                      Aliasing_impl.DotExport.print_rev_state
-                        out_rev
-                        (Aliasing_defs.AbsDom.AbsState callstate);
-                      close_out out;
-                      close_out out_rev;
-                      let _ = Unix.system (dot_png_cmd dotfile dotfile) in
-                      let _ =
-                        Unix.system (dot_png_cmd dotfile_rev dotfile_rev)
-                      in
-                      ()
-                  | _ ->
-                      eprintf "Error: function \"%s\" is not defined" fid;
-                      exit 1
-                end
-              | Errors.Error msg ->
-                  raise
-                  @@ UnexpectedError
-                       (sprintf
-                          "Imp1 typing failed: %s"
-                          (C2C.string_of_errmsg msg))
-            end
-          | Errors.Error msg ->
-              raise @@ CompilerError (C2C.string_of_errmsg msg)
+        begin match imp1 with
+        | Errors.OK prog -> begin
+            match Imp1.Typing.typecheck_program !target_arch prog with
+            | Errors.OK prog -> begin
+                let fid = !opt_gen_alias_call_state_of in
+                match Aliasing_impl.get_fun_descr prog fid with
+                | Some fdescr ->
+                    let callstate = fdescr.Aliasing_defs.fd_callstate in
+                    let dotfile = get_full_filename fid "_call_state.dot" in
+                    let dotfile_rev =
+                      get_full_filename fid "_call_state_rev.dot"
+                    in
+                    let out = open_out dotfile in
+                    let out_rev = open_out dotfile_rev in
+                    Aliasing_impl.DotExport.print_state
+                      out
+                      (Aliasing_defs.AbsDom.AbsState callstate);
+                    Aliasing_impl.DotExport.print_rev_state
+                      out_rev
+                      (Aliasing_defs.AbsDom.AbsState callstate);
+                    close_out out;
+                    close_out out_rev;
+                    let _ = Unix.system (dot_png_cmd dotfile dotfile) in
+                    let _ = Unix.system (dot_png_cmd dotfile_rev dotfile_rev) in
+                    ()
+                | _ ->
+                    eprintf "Error: function \"%s\" is not defined" fid;
+                    exit 1
+              end
+            | Errors.Error msg ->
+                raise
+                @@ UnexpectedError
+                     (sprintf
+                        "Imp1 typing failed: %s"
+                        (C2C.string_of_errmsg msg))
+          end
+        | Errors.Error msg -> raise @@ CompilerError (C2C.string_of_errmsg msg)
         end
       end;
 
       if !opt_gen_alias_return_state_of <> "" then begin
         let imp1 = Compiler.compile_to_imp1 !target_arch prog in
-        begin
-          match imp1 with
-          | Errors.OK prog -> begin
-              match Imp1.Typing.typecheck_program !target_arch prog with
-              | Errors.OK prog -> begin
-                  let fid = !opt_gen_alias_return_state_of in
-                  match Aliasing_impl.get_fun_descr prog fid with
-                  | Some fdescr ->
-                      let returnstate = fdescr.Aliasing_defs.fd_returnstate in
-                      let dotfile = get_full_filename fid "_return_state.dot" in
-                      let dotfile_rev =
-                        get_full_filename fid "_return_state_rev.dot"
-                      in
-                      let out = open_out dotfile in
-                      let out_rev = open_out dotfile_rev in
-                      Aliasing_impl.DotExport.print_state out returnstate;
-                      Aliasing_impl.DotExport.print_rev_state
-                        out_rev
-                        returnstate;
-                      close_out out;
-                      close_out out_rev;
-                      let _ = Unix.system (dot_png_cmd dotfile dotfile) in
-                      let _ =
-                        Unix.system (dot_png_cmd dotfile_rev dotfile_rev)
-                      in
-                      ()
-                  | _ ->
-                      eprintf "function \"%s\" is not defined" fid;
-                      exit 1
-                end
-              | Errors.Error msg ->
-                  raise
-                  @@ UnexpectedError
-                       (sprintf
-                          "Imp1 typing failed: %s"
-                          (C2C.string_of_errmsg msg))
-            end
-          | Errors.Error msg ->
-              raise @@ CompilerError (C2C.string_of_errmsg msg)
+        begin match imp1 with
+        | Errors.OK prog -> begin
+            match Imp1.Typing.typecheck_program !target_arch prog with
+            | Errors.OK prog -> begin
+                let fid = !opt_gen_alias_return_state_of in
+                match Aliasing_impl.get_fun_descr prog fid with
+                | Some fdescr ->
+                    let returnstate = fdescr.Aliasing_defs.fd_returnstate in
+                    let dotfile = get_full_filename fid "_return_state.dot" in
+                    let dotfile_rev =
+                      get_full_filename fid "_return_state_rev.dot"
+                    in
+                    let out = open_out dotfile in
+                    let out_rev = open_out dotfile_rev in
+                    Aliasing_impl.DotExport.print_state out returnstate;
+                    Aliasing_impl.DotExport.print_rev_state out_rev returnstate;
+                    close_out out;
+                    close_out out_rev;
+                    let _ = Unix.system (dot_png_cmd dotfile dotfile) in
+                    let _ = Unix.system (dot_png_cmd dotfile_rev dotfile_rev) in
+                    ()
+                | _ ->
+                    eprintf "function \"%s\" is not defined" fid;
+                    exit 1
+              end
+            | Errors.Error msg ->
+                raise
+                @@ UnexpectedError
+                     (sprintf
+                        "Imp1 typing failed: %s"
+                        (C2C.string_of_errmsg msg))
+          end
+        | Errors.Error msg -> raise @@ CompilerError (C2C.string_of_errmsg msg)
         end
       end;
 
@@ -416,82 +404,81 @@ let () =
             BarocqShallowgen.ShallowB
             prog
         in
-        begin
-          match (rprog, bprog) with
-          | Errors.OK rprog, Errors.OK bprog ->
-              let rawname = gen_rocq_prefix () in
-              let full_filename = get_full_filename rawname in
+        begin match (rprog, bprog) with
+        | Errors.OK rprog, Errors.OK bprog ->
+            let rawname = gen_rocq_prefix () in
+            let full_filename = get_full_filename rawname in
 
-              (* Generation of ShallowB types *)
-              let types_file = get_full_filename rawname "_Types.v" in
-              let types_oc = open_out types_file in
-              Btypesgen.coqlib := rawname;
-              Btypesgen.print types_oc bprog;
-              printf
-                "ShallowB types generated at %s\n"
-                (clean_filename types_file);
+            (* Generation of ShallowB types *)
+            let types_file = get_full_filename rawname "_Types.v" in
+            let types_oc = open_out types_file in
+            Btypesgen.coqlib := rawname;
+            Btypesgen.print types_oc bprog;
+            printf
+              "ShallowB types generated at %s\n"
+              (clean_filename types_file);
 
-              (* Generation of ShallowB *)
-              let shallowB_file = get_full_filename rawname "_ShallowB.v" in
-              let shallowB_oc = open_out shallowB_file in
-              Shallowgen.coqlib := rawname;
-              Shallowgen.SB.print_program shallowB_oc bprog;
-              close_out shallowB_oc;
-              printf
-                "ShallowB embedding generated at %s\n"
-                (clean_filename shallowB_file);
+            (* Generation of ShallowB *)
+            let shallowB_file = get_full_filename rawname "_ShallowB.v" in
+            let shallowB_oc = open_out shallowB_file in
+            Shallowgen.coqlib := rawname;
+            Shallowgen.SB.print_program shallowB_oc bprog;
+            close_out shallowB_oc;
+            printf
+              "ShallowB embedding generated at %s\n"
+              (clean_filename shallowB_file);
 
-              (* ShallowR <-> ShallowB correspondence *)
-              CorresRBgen.coqlib := rawname;
-              let corresRB_tactics_file = full_filename "_CorresRB_Tactics.v" in
-              let corresRB_tactics_oc = open_out corresRB_tactics_file in
-              CorresRBgen.HelperTactics.print corresRB_tactics_oc rprog bprog;
-              close_out corresRB_tactics_oc;
-              printf
-                "ShallowR <-> ShallowB helper tactics generated at %s\n"
-                (clean_filename corresRB_tactics_file);
-              let corresRB_file = full_filename "_CorresRB.v" in
-              let corresRB_oc = open_out corresRB_file in
-              CorresRBgen.print_corres corresRB_oc rprog bprog;
-              close_out corresRB_oc;
-              printf
-                "ShallowR <-> ShallowB correspondence theorems generated at %s\n"
-                (clean_filename corresRB_file);
+            (* ShallowR <-> ShallowB correspondence *)
+            CorresRBgen.coqlib := rawname;
+            let corresRB_tactics_file = full_filename "_CorresRB_Tactics.v" in
+            let corresRB_tactics_oc = open_out corresRB_tactics_file in
+            CorresRBgen.HelperTactics.print corresRB_tactics_oc rprog bprog;
+            close_out corresRB_tactics_oc;
+            printf
+              "ShallowR <-> ShallowB helper tactics generated at %s\n"
+              (clean_filename corresRB_tactics_file);
+            let corresRB_file = full_filename "_CorresRB.v" in
+            let corresRB_oc = open_out corresRB_file in
+            CorresRBgen.print_corres corresRB_oc rprog bprog;
+            close_out corresRB_oc;
+            printf
+              "ShallowR <-> ShallowB correspondence theorems generated at %s\n"
+              (clean_filename corresRB_file);
 
-              (* ShallowB <-> Deep correspondence *)
-              CorresBDgen.coqlib := rawname;
-              let preludeBD_file = full_filename "_CorresBD_Prelude.v" in
-              let corresBD_proof = full_filename "_CorresBD_Proof.v" in
-              let corresBD_file = full_filename "_CorresBD.v" in
-              let preludeBD_oc = open_out preludeBD_file in
-              let corresBD_oc = open_out corresBD_file in
-              CorresBDgen.print_prelude preludeBD_oc !target_arch tprog bprog;
-              CorresBDgen.print_proof !target_arch corresBD_proof;
-              CorresBDgen.print_corres corresBD_oc !target_arch bprog;
-              close_out preludeBD_oc;
-              close_out corresBD_oc;
-              printf
-                "ShallowB <-> Deep correspondence prelude generated at %s\n"
-                (clean_filename preludeBD_file);
-              printf
-                "ShallowB <-> Deep correspondence theorems generated at %s\n"
-                (clean_filename corresBD_file);
+            (* ShallowB <-> Deep correspondence *)
+            CorresBDgen.coqlib := rawname;
+            let preludeBD_file = full_filename "_CorresBD_Prelude.v" in
+            let corresBD_proof = full_filename "_CorresBD_Proof.v" in
+            let corresBD_file = full_filename "_CorresBD.v" in
+            let preludeBD_oc = open_out preludeBD_file in
+            let corresBD_oc = open_out corresBD_file in
+            CorresBDgen.print_prelude preludeBD_oc !target_arch tprog bprog;
+            CorresBDgen.print_proof !target_arch corresBD_proof;
+            CorresBDgen.print_corres corresBD_oc !target_arch bprog;
+            close_out preludeBD_oc;
+            close_out corresBD_oc;
+            printf
+              "ShallowB <-> Deep correspondence prelude generated at %s\n"
+              (clean_filename preludeBD_file);
+            printf
+              "ShallowB <-> Deep correspondence theorems generated at %s\n"
+              (clean_filename corresBD_file);
 
-              (* ShallowR <-> Deep correspondence *)
-              CorresRDgen.coqlib := rawname;
-              let corresRD_file = full_filename "_CorresRD.v" in
-              let corresRD_oc = open_out corresRD_file in
-              CorresRDgen.print_corres corresRD_oc !target_arch rprog;
-              printf
-                "ShallowR <-> Deep correspondence theorems generated at %s\n"
-                (clean_filename corresRD_file);
-              close_out corresRD_oc
-          | Errors.Error msg, _ | _, Errors.Error msg ->
-              raise
-              @@ UnexpectedError
-                   (sprintf
-                      "fail to generate the correspondence theorems: %s"
-                      (C2C.string_of_errmsg msg))
+            (* ShallowR <-> Deep correspondence *)
+            CorresRDgen.coqlib := rawname;
+            let corresRD_file = full_filename "_CorresRD.v" in
+            let corresRD_oc = open_out corresRD_file in
+            CorresRDgen.print_corres corresRD_oc !target_arch rprog;
+            printf
+              "ShallowR <-> Deep correspondence theorems generated at %s\n"
+              (clean_filename corresRD_file);
+            close_out corresRD_oc
+        | Errors.Error msg, _ | _, Errors.Error msg ->
+            raise
+            @@ UnexpectedError
+                 (sprintf
+                    "fail to generate the correspondence theorems: %s"
+                    (C2C.string_of_errmsg msg))
         end
       end;
 

@@ -115,10 +115,9 @@ let rec btyp_to_string (ty : btyp) : string =
         | Types.LyUnboxed (Some v) -> PrintUtils.i32_to_string v
         | _ -> ""
       in
-      begin
-        match ly with
-        | Types.LyUnboxed _ -> sprintf "[%s]#%s" s (btyp_to_string t)
-        | _ -> sprintf "[%s]%s" s (btyp_to_string t)
+      begin match ly with
+      | Types.LyUnboxed _ -> sprintf "[%s]#%s" s (btyp_to_string t)
+      | _ -> sprintf "[%s]%s" s (btyp_to_string t)
       end
   | BEnum (mname, tid) | BRecord (mname, tid, _) | BAbs (mname, tid) ->
       if mname = !curr_mname then tid else sprintf "%s::%s" mname tid
@@ -321,7 +320,7 @@ let tenv_get_def (mname : string) (te : tenv) (tid : ident) : btyp option =
             let ub =
               fields
               |> List.filter (fun (_, (ty, ly)) ->
-                     ly <> Types.LyBoxed && not (btyp_is_prim ty))
+                  ly <> Types.LyBoxed && not (btyp_is_prim ty))
               |> List.map fst
             in
             BRecord (mname, tid, ub)
@@ -736,19 +735,18 @@ let eval_cbinop (op : binary_op) (v1 : cvalue) (v2 : cvalue) : cvalue =
         | BopGe -> Cge
         | _ -> assert false
       in
-      begin
-        match (v1, v2) with
-        | VInt32 (i1, s1), VInt32 (i2, s2) ->
-            if s1 = s2 then
-              let cmp = if s1 = Types.Signed then Int.cmp else Int.cmp in
-              VBool (cmp cop i1 i2)
-            else assert false
-        | VInt64 (i1, s1), VInt64 (i2, s2) ->
-            if s1 = s2 then
-              let cmp = if s1 = Types.Signed then Int64.cmp else Int64.cmp in
-              VBool (cmp cop i1 i2)
-            else assert false
-        | _ -> assert false
+      begin match (v1, v2) with
+      | VInt32 (i1, s1), VInt32 (i2, s2) ->
+          if s1 = s2 then
+            let cmp = if s1 = Types.Signed then Int.cmp else Int.cmp in
+            VBool (cmp cop i1 i2)
+          else assert false
+      | VInt64 (i1, s1), VInt64 (i2, s2) ->
+          if s1 = s2 then
+            let cmp = if s1 = Types.Signed then Int64.cmp else Int64.cmp in
+            VBool (cmp cop i1 i2)
+          else assert false
+      | _ -> assert false
       end
 
 let eval_ccast (v : cvalue) (dst_ty : btyp) : cvalue =
@@ -853,27 +851,25 @@ and styp_layout_to_btyp (imports : ident list) (gte : gtenv) (ce : cenv)
         (tb, ly)
     | SLUnboxed (stu, sz) ->
         let tu = styp_to_btyp imports gte ce stu in
-        begin
-          match tu with
-          | BArray (_, _) -> begin
-              match sz with
-              | Some sz ->
-                  let sz_val = eval_const imports gte ce sz in
-                  begin
-                    match (sz_val, !arr_index_btyp) with
-                    | VInt32 (i, Types.Unsigned), BInt32 Types.Unsigned ->
-                        (tu, Types.LyUnboxed (Some (Int.unsigned i)))
-                    | VInt64 (i, Types.Unsigned), BInt64 Types.Unsigned ->
-                        (tu, Types.LyUnboxed (Some (Int64.unsigned i)))
-                    | _ -> error Unboxed_array_wrong_size_type
-                  end
-                  (* else (tu, Types.LyUnboxed (Some s)) *)
-              | None -> error Unboxed_array_missing_size
-            end
-          | BFun _ -> error Forbidden_unlayout
-          | _ ->
-              if btyp_is_prim tu then (tu, Types.LyPrim)
-              else (tu, Types.LyUnboxed None)
+        begin match tu with
+        | BArray (_, _) -> begin
+            match sz with
+            | Some sz ->
+                let sz_val = eval_const imports gte ce sz in
+                begin match (sz_val, !arr_index_btyp) with
+                | VInt32 (i, Types.Unsigned), BInt32 Types.Unsigned ->
+                    (tu, Types.LyUnboxed (Some (Int.unsigned i)))
+                | VInt64 (i, Types.Unsigned), BInt64 Types.Unsigned ->
+                    (tu, Types.LyUnboxed (Some (Int64.unsigned i)))
+                | _ -> error Unboxed_array_wrong_size_type
+                end
+                (* else (tu, Types.LyUnboxed (Some s)) *)
+            | None -> error Unboxed_array_missing_size
+          end
+        | BFun _ -> error Forbidden_unlayout
+        | _ ->
+            if btyp_is_prim tu then (tu, Types.LyPrim)
+            else (tu, Types.LyUnboxed None)
         end
   with Error (cause, loc) -> update_error_loc cause loc sty
 
@@ -1026,15 +1022,14 @@ let rec mname_of_ident (imports : ident list) (gte : gtenv) (gx : gcontext)
   | [] -> error (Undefined_ident id.content) ~loc:(Some id)
   | m1 :: imports' ->
       let m1_gx = IdentMap.find m1.content gx.gx_extern in
-      begin
-        match IdentMap.find_opt id.content m1_gx with
-        | Some _ -> m1.content
-        | None -> begin
-            let m1_te = IdentMap.find m1.content gte.gtenv_extern in
-            match IdentMap.find_opt id.content m1_te.tenv_constr_types with
-            | Some _ -> m1.content
-            | None -> mname_of_ident imports' gte gx id
-          end
+      begin match IdentMap.find_opt id.content m1_gx with
+      | Some _ -> m1.content
+      | None -> begin
+          let m1_te = IdentMap.find m1.content gte.gtenv_extern in
+          match IdentMap.find_opt id.content m1_te.tenv_constr_types with
+          | Some _ -> m1.content
+          | None -> mname_of_ident imports' gte gx id
+        end
       end
 
 let transl_var_name (imports : ident list) (gte : gtenv) (gx : gcontext)
@@ -1078,12 +1073,11 @@ let transl_constr_name (imports : ident list) (gte : gtenv) (gx : gcontext)
     match x with
     | IdSimple x ->
         let prefix =
-          begin
-            match
-              IdentMap.find_opt x.content gte.gtenv_local.tenv_constr_types
-            with
-            | Some _ -> !curr_mname
-            | None -> mname_of_ident imports gte gx x
+          begin match
+            IdentMap.find_opt x.content gte.gtenv_local.tenv_constr_types
+          with
+          | Some _ -> !curr_mname
+          | None -> mname_of_ident imports gte gx x
           end
         in
         prefix_ident prefix x.content
@@ -1258,10 +1252,9 @@ let rec typecheck_raw_expr (imports : ident list) (gte : gtenv) (ce : cenv)
           e2
           (Expect_typ !arr_index_btyp)
       in
-      begin
-        match t1 with
-        | BArray (ta, _) -> (Barocq.EArrayGet (e1', e2'), ta)
-        | _ -> assert false
+      begin match t1 with
+      | BArray (ta, _) -> (Barocq.EArrayGet (e1', e2'), ta)
+      | _ -> assert false
       end
   | EArraySet (e1, e2, e3) ->
       let e1', t1 =
@@ -1277,40 +1270,35 @@ let rec typecheck_raw_expr (imports : ident list) (gte : gtenv) (ce : cenv)
           e2
           (Expect_typ !arr_index_btyp)
       in
-      begin
-        match t1 with
-        | BArray (ta, ly) ->
-            let e3', _ =
-              typecheck_expr_expecting imports gte ce gx lx e3 (Expect_typ ta)
-            in
-            (Barocq.EArraySet (e1', e2', e3'), t1)
-        | _ -> assert false
+      begin match t1 with
+      | BArray (ta, ly) ->
+          let e3', _ =
+            typecheck_expr_expecting imports gte ce gx lx e3 (Expect_typ ta)
+          in
+          (Barocq.EArraySet (e1', e2', e3'), t1)
+      | _ -> assert false
       end
   | ERecordProj (e1, f) ->
       let e1', t1 =
         typecheck_expr_expecting imports gte ce gx lx e1 Expect_record
       in
-      begin
-        match t1 with
-        | BRecord (mname, rid, _) ->
-            let f' = transl_field_name f in
-            let t = typecheck_record_proj gte mname rid f in
-            (Barocq.ERecordProj (e1', f'), t)
-        | _ -> assert false
+      begin match t1 with
+      | BRecord (mname, rid, _) ->
+          let f' = transl_field_name f in
+          let t = typecheck_record_proj gte mname rid f in
+          (Barocq.ERecordProj (e1', f'), t)
+      | _ -> assert false
       end
   | ERecordUpdate (e1, le) -> typecheck_record_update imports gte ce gx lx e1 le
   | EApp (e1, args) ->
       let e1', t1 =
         typecheck_expr_expecting imports gte ce gx lx e1 Expect_function
       in
-      begin
-        match t1 with
-        | BFun (tparams, tret) ->
-            let args', t =
-              typecheck_app imports gte ce gx lx tparams tret args
-            in
-            (Barocq.EApp (e1', args'), t)
-        | _ -> assert false
+      begin match t1 with
+      | BFun (tparams, tret) ->
+          let args', t = typecheck_app imports gte ce gx lx tparams tret args in
+          (Barocq.EApp (e1', args'), t)
+      | _ -> assert false
       end
   | EIfThenElse (e1, e2, e3) ->
       let e1', _ =
@@ -1325,14 +1313,13 @@ let rec typecheck_raw_expr (imports : ident list) (gte : gtenv) (ce : cenv)
       let e1', t1 =
         typecheck_expr_expecting imports gte ce gx lx e1 Expect_enum
       in
-      begin
-        match t1 with
-        | BEnum (mname, eid) ->
-            let cases', t =
-              typecheck_match imports gte ce gx lx mname eid cases
-            in
-            (Barocq.EMatch (e1', cases'), t)
-        | _ -> assert false
+      begin match t1 with
+      | BEnum (mname, eid) ->
+          let cases', t =
+            typecheck_match imports gte ce gx lx mname eid cases
+          in
+          (Barocq.EMatch (e1', cases'), t)
+      | _ -> assert false
       end
   | ELetIn (x, e1, e2) -> typecheck_let_in imports gte ce gx lx x e1 e2
   | EAttr (x, e) ->
@@ -1479,16 +1466,15 @@ let rec typecheck_const (imports : ident list) (gte : gtenv) (ce : cenv)
           List.map (fun c -> fst (typecheck_const imports gte ce gx ta ba c)) a
         in
         let res = (Syntax.LArray (a', transl_btyp ta, ba), ty) in
-        begin
-          match ly with
-          | Types.LyBoxed -> res
-          | Types.LyUnboxed (Some sz) ->
-              let sza =
-                Camlcoq.coqint_of_camlint (Int32.of_int (List.length a))
-              in
-              if BinInt.Z.eq_dec sz sza then res
-              else error (Unboxed_const_wrong_size (sz, sza))
-          | _ -> assert false
+        begin match ly with
+        | Types.LyBoxed -> res
+        | Types.LyUnboxed (Some sz) ->
+            let sza =
+              Camlcoq.coqint_of_camlint (Int32.of_int (List.length a))
+            in
+            if BinInt.Z.eq_dec sz sza then res
+            else error (Unboxed_const_wrong_size (sz, sza))
+        | _ -> assert false
         end
     | CRecord rc, BRecord (mname, rid, _) ->
         let fields, rid' =
@@ -1872,10 +1858,9 @@ let typecheck_command (imports : ident list) (gte : gtenv) (ce : cenv)
   match cmd with
   | CmdDef d ->
       let bd, gte', ce', gx' = typecheck_globdef imports gte ce gx d in
-      begin
-        match bd with
-        | Some bd -> (Some (Barocq.CmdDef bd), gte', ce', gx')
-        | None -> (None, gte', ce', gx')
+      begin match bd with
+      | Some bd -> (Some (Barocq.CmdDef bd), gte', ce', gx')
+      | None -> (None, gte', ce', gx')
       end
   | CmdExpr e ->
       let be, _ = typecheck_expr imports gte ce gx lcontext_empty e in

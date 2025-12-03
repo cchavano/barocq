@@ -7,11 +7,8 @@ Open Scope string_scope.
 Fixpoint transl_expr (e: BarocqBNF.expr) : ImpBNF.tailcomp :=
   match e with
   | EAtom a => TcComp (CpAtom a)
-  (* | EArrayGet a1 a2 => TcComp (CpArrayGet a1 a2) *)
   | EArraySet a1 a2 a3 => TcComp (CpArraySet a1 a2 a3)
-  (* | ERecordProj a x => TcComp (CpRecordProj a x) *)
   | ERecordUpdate a1 x a2 => TcComp (CpRecordUpdate a1 x a2)
-  (* | EDeepAccess a acs => TcComp (CpDeepAccess a acs) *)
   | EApp a args =>
       let fid :=
         match a with

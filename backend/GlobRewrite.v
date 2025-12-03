@@ -46,13 +46,6 @@ Section REWRITE.
         APureCall f tf args' tr'
     end.
 
-  (* Definition rewrite_expr (e: expr) : expr :=
-    match e with
-    | ERecordProj a f ty ly => ERecordProj (rewrite_atom a) f ty ly
-    | EDeepAccess a ac ty => EDeepAccess (rewrite_atom a) ac ty
-    | _ => e
-    end. *)
-
   Definition rewrite_ecomp (ec: ecomp) : ecomp := 
     match ec with
     | EcArraySet a i v => EcArraySet (rewrite_atom a) (rewrite_atom i) (rewrite_atom v)

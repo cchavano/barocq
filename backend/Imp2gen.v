@@ -41,14 +41,6 @@ Fixpoint transl_atom (a: Imp1.Typed.atom) : atom :=
       APureCall f (transl_btyp tf) (List.map transl_atom args) (transl_btyp tr)
   end.
 
-(* Definition transl_access (ac: Syntax.Typed.access) : Imp2.access :=
-  match ac with
-  | Syntax.Typed.AcRecordField f ty ly =>
-      AcRecordField f (transl_btyp ty) ly
-  | Syntax.Typed.AcArrayIndex i ty ly =>
-      AcArrayIndex (transl_atom i) (transl_btyp ty) ly
-  end. *)
-
 Definition set_or_skip (x: ident) (a: atom) : Imp2.statement :=
   match a with
   | AVar y ty =>
@@ -61,16 +53,6 @@ Fixpoint transl_statement (s: Imp1Typed.statement) : Imp2.statement :=
   match s with
   | Imp1Typed.StSet x (CpAtom a ty) =>
       set_or_skip x (transl_atom a)
-  (* | Imp1Typed.StSet x (CpArrayGet a1 a2 ty ly) =>
-      let a1' := transl_atom a1 in
-      let a2' := transl_atom a2 in
-      StSetExpr x (EArrayGet a1' a2' (transl_btyp ty) ly) *)
-  (* | Imp1Typed.StSet x (CpRecordProj a1 f ty ly) =>
-      StSetExpr x (ERecordProj (transl_atom a1) f (transl_btyp ty) ly)
-  | Imp1Typed.StSet x (CpDeepAccess a acs ty) =>
-      let a' := transl_atom a in
-      let acs' := List.map transl_access acs in
-      StSetExpr x (EDeepAccess a' acs' (transl_btyp ty)) *)
   | Imp1Typed.StSet x (CpArraySet a1 a2 a3 _) =>
       let a1' := transl_atom a1 in
       let a2' := transl_atom a2 in

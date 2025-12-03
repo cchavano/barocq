@@ -516,13 +516,6 @@ Fixpoint eval_atom (env:aenv) (d:domain) (a:atom)  :=
 Definition set_variable (v:ident) (k:KVar) (d:domain) :=
   mkdom (Vars.set v k (Vars d)) (Pto d) (Atoms d).
 
-(* Definition edge_of_access (a:Typed.access) : EdgeLabel.t :=
-  match a with
-  | AcRecordField id _ _ => EdgeLabel.Field id
-  | AcArrayIndex a   _ _ => EdgeLabel.Index a
-  end. *)
-
-
 (* Could try to normalise the expression e.g. 1 + 1 -->  2
    Also, identify injective operations
  *)
