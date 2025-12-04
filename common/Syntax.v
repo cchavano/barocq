@@ -859,4 +859,20 @@ Module AtomOrdered <: OrderedType.
       subst. rewrite atom_compare_refl in EQB. discriminate.
   Qed.
 
+  (** vars *)
+
+  Print atom.
+
+  Fixpoint vars_of_atom (a:atom) : list ident :=
+    match a with
+    | ATrue | AFalse | AInt32 _ _ | AInt64 _ _ | AConstr _ _ _  =>  nil
+    | AVar i _ => i :: nil
+    | ACast a _ => vars_of_atom a
+    | AUnaryOp _  a _ => vars_of_atom a
+    | ABinaryOp _ a1 a2 _ => vars_of_atom a1 ++ vars_of_atom a2
+    | AArrayGet a1 a2 _ _ => vars_of_atom a1 ++ vars_of_atom a2
+    | ARecordProj a1 _ _ _ => vars_of_atom a1
+    | APureCall id _ l _   => id :: List.fold_right (fun e acc => vars_of_atom e ++ acc) nil l
+    end.
+
 End AtomOrdered.

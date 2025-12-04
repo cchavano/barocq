@@ -102,7 +102,6 @@ Module Pp.
 
 End Pp.
 
-
   Section TRANSF.
     Variable trans_statement : statement -> res statement.
 

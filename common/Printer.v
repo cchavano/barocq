@@ -19,17 +19,22 @@ Definition pp_int (i:Integers.Int.int) : box :=
 Definition pp_int64 (i:Integers.Int64.int) : box :=
   Bstr (string_of_Z (Integers.Int64.unsigned i)).
 
-Definition pp_signedness (s:signedness) :=
-  match s with
-  | Signed => Bstr "s"
-  | Unsigned => Bstr "u"
-  end.
-
 Definition pp_sint (s:signedness) (i:Integers.Int.int) : box :=
-  Bcat (pp_signedness s) (pp_int i).
+  if s
+  then pp_int i
+  else Bcat (pp_int i) (Bstr "U").
 
 Definition pp_sint64 (s:signedness) (i:Integers.Int64.int) : box :=
-  Bcat (pp_signedness s) (pp_int64 i).
+  if s
+  then Bcat (pp_int64 i) (Bstr "L")
+  else Bcat (pp_int64 i) (Bstr "UL").
+
+
+Definition pp_signedness (s:signedness) :=
+  match s with
+  | Signed => Bemp
+  | Unsigned => Bstr "u"
+  end.
 
 
 Definition array_index {A: Type} (f:A -> box) (v:A) :=
@@ -76,15 +81,30 @@ Definition string_of_binary_op (o:binary_op) :=
   | BopGe      => ">="
   end.
 
+Import Types.
+
+Fixpoint pp_btyp (bt: btyp) :=
+  match bt with
+  | BBool => Bstr "bool"
+  | BInt32 s => if s then Bstr "i32" else Bstr "u32"
+  | BInt64 s => if s then Bstr "i64" else Bstr "u64"
+  | BArray bt ly => Pp.seq (Bstr "[" :: pp_btyp bt :: Bstr "]" :: nil)
+  | BEnum id => Bcat (Bstr "enum ") (Bstr id)
+  | BRecord id _ => Bcat (Bstr "record ") (Bstr id)
+  | BFun args r  => Bcat (pp_list (Bstr " -> ") pp_btyp args) (pp_btyp r)
+  | BAbs id      => Bcat (Bstr "abs ") (Bstr id)
+  end.
+
+
 Fixpoint pp_atom (a:atom) :=
   match a with
   | ATrue => Bstr "true"%string
   | AFalse => Bstr "false"%string
-  | AInt32 i _ => Bstr "int"%string
-  | AInt64 i _ => Bstr "int64"%string
+  | AInt32 i s => pp_sint s i
+  | AInt64 i s => pp_sint64 s i
   | AConstr s  => Bstr s
   | AVar s     => Bstr s
-  | ACast a bt   => Bcat (Bstr "(btyp)"%string) (pp_atom a)
+  | ACast a bt   => Pp.seq (pp_atom a :: Bstr " as " :: pp_btyp bt :: nil)
   | AUnaryOp o a => Bcat (Bstr (string_of_unary_op o)) (pp_atom a)
   | ABinaryOp o a1 a2 => Bcat (pp_atom a1)
                              (Bcat (Bstr (string_of_binary_op o)) (pp_atom a2))
@@ -99,15 +119,16 @@ Fixpoint pp_atom (a:atom) :=
 Module Typed.
   Import Typed.
 
+
   Fixpoint pp_atom (a:atom) :=
     match a with
     | ATrue => Bstr "true"%string
     | AFalse => Bstr "false"%string
-    | AInt32 i _ => Bstr "int"%string
-    | AInt64 i _ => Bstr "int64"%string
+    | AInt32 i s => pp_sint s i
+    | AInt64 i s => pp_sint64 s i
     | AConstr s  _ _ => Bstr s
     | AVar s _     => Bstr s
-    | ACast a bt   => Bcat (Bstr "(btyp)"%string) (pp_atom a)
+    | ACast a bt   => Pp.seq (pp_atom a :: Bstr " as " :: pp_btyp bt :: nil)
     | AUnaryOp o a _ => Bcat (Bstr (string_of_unary_op o)) (pp_atom a)
     | ABinaryOp o a1 a2 _ => Bcat (pp_atom a1)
                              (Bcat (Bstr (string_of_binary_op o)) (pp_atom a2))
@@ -163,19 +184,6 @@ Fixpoint pp_literal (l:literal) :=
   | LRecord l _ _ => Bcat (Bstr "{| ")  (Bcat (pp_list (Bstr ";") (pp_pair (Bstr ":") Bstr pp_literal) l) (Bstr " |}"))
   end.
 
-Import Types.
-
-Fixpoint pp_btyp (bt: btyp) :=
-  match bt with
-  | BBool => Bstr "bool"
-  | BInt32 s => Bcat (pp_signedness s) (Bstr "int32")
-  | BInt64 s => Bcat (pp_signedness s) (Bstr "int64")
-  | BArray bt ly => Bcat (pp_btyp bt) (Bstr "[]")
-  | BEnum id => Bcat (Bstr "enum ") (Bstr id)
-  | BRecord id _ => Bcat (Bstr "record ") (Bstr id)
-  | BFun args r  => Bcat (pp_list (Bstr " -> ") pp_btyp args) (pp_btyp r)
-  | BAbs id      => Bcat (Bstr "abs ") (Bstr id)
-  end.
 
 Definition pp_layout (p:layout) :=
   match p with

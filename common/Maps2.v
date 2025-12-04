@@ -67,6 +67,16 @@ Module STree.
     | Some _ => true
     end.
 
+  Definition getl {A: Type} (s:string) (m:STree.t (list A)) : list A :=
+    match get s m with
+    | None => nil
+    | Some l => l
+    end.
+
+  Definition setl {A: Type} (s:string) (e:A) (m:STree.t (list A)) : STree.t (list A) :=
+    set s (e::getl s m) m.
+
+
   Definition pp {A: Type} (sep:box) (pp_elt : A -> box) (s:STree.t A) : box :=
     STree.fold (fun acc k v => Bstack acc (Bcat (Bstr k)
                                              (Bcat

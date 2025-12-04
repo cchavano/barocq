@@ -349,7 +349,7 @@ Module Map(O:OrderedType).
     | Some l => add k (List_remove eqb e l) m
     end.
 
-  Definition add_from_list {elt:Type}   (k:key) (e:elt) (m : t (list elt)) : t (list elt) :=
+  Definition addl {elt:Type}   (k:key) (e:elt) (m : t (list elt)) : t (list elt) :=
     add k (e::findl k m) m.
 
 
@@ -400,9 +400,9 @@ Module Map(O:OrderedType).
 
   Lemma findl_eq : forall {A: Type} k1 k2 (x:A) m,
       O.eq k1 k2 ->
-      findl k1 (add_from_list k2 x m) = x:: (findl k1 m).
+      findl k1 (addl k2 x m) = x:: (findl k1 m).
   Proof.
-    unfold findl,add_from_list.
+    unfold findl,addl.
     intros.
     rewrite find_add.
     destruct (O.eq_dec k1 k2).
@@ -415,9 +415,9 @@ Module Map(O:OrderedType).
 
   Lemma findl_neq : forall {A: Type} k1 k2 (x:A) m,
       ~ O.eq k1 k2 ->
-      findl k1 (add_from_list k2 x m) = (findl k1 m).
+      findl k1 (addl k2 x m) = (findl k1 m).
   Proof.
-    unfold findl,add_from_list.
+    unfold findl,addl.
     intros.
     rewrite find_add.
     destruct (O.eq_dec k1 k2).
@@ -1872,7 +1872,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Fixpoint register_edgelabels (n:int) (l:list (EdgeLabel.t * int)) (m:ELMap.t (list int))  :=
     match l with
     | nil => m
-    | cons (e,_) l => ELMap.add_from_list  e n  (register_edgelabels n l m)
+    | cons (e,_) l => ELMap.addl  e n  (register_edgelabels n l m)
     end.
 
   Definition register_parents (n:int) (l:list (EdgeLabel.t * int)) (m: IntMap.t (EdgeLabel.t * int)) :=
@@ -1895,7 +1895,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
             (IntMap.add fr (n,l) (edges g))
             (register_parents fr l (parent g))
             (* register the label *)
-            (NLMap.add_from_list n fr (nodelabels g))
+            (NLMap.addl n fr (nodelabels g))
             (register_edgelabels fr l (edgelabels g))
             (fr + 1),fr).
 
@@ -2033,13 +2033,13 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     forall o lb lb' g
            (WF: wf g)
     ,
-      has_node_label_rev o lb (NLMap.add_from_list lb' (fresh g) (nodelabels g)) <->
+      has_node_label_rev o lb (NLMap.addl lb' (fresh g) (nodelabels g)) <->
         (has_node_label_rev o lb (nodelabels g) \/ (o = fresh g /\ NodeLabel.eq lb lb')).
   Proof.
     intros.
     unfold has_node_label_rev at 1.
     unfold NLMap.findl.
-    unfold NLMap.add_from_list.
+    unfold NLMap.addl.
     rewrite NLMap.find_add.
     destruct (NodeLabel.eq_dec lb lb').
     - unfold has_node_label_rev.
@@ -2484,7 +2484,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
           mk (root g) (IntMap.add o (nl,el') (edges g))
              (register_parents o el' (parent g))
             (nodelabels g)
-            (ELMap.add_from_list  e' o
+            (ELMap.addl  e' o
                (ELMap.remove_from_list (eqb_of_dec Int.eq_dec) e o (edgelabels g)))
             (fresh g)
       end.

@@ -1,5 +1,5 @@
 # Tests that should not compile
-FAIL=invalid_return.br get_multiple_index.br
+FAIL=invalid_return.br get_multiple_index.br redef_index3.br
 SUCCESS= update_array_in_record.br update_record_in_record.br suspend.br suspend_in.br
 
 KO= $(FAIL:.br=.fail)

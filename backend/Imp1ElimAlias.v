@@ -185,13 +185,13 @@ Module Vars.
     let rvar :=
       STree.fold (fun 'acc k v => match get_node v with
                                   | None => acc
-                                  | Some n => IntMap.add_from_list n k acc
+                                  | Some n => IntMap.addl n k acc
                                   end) vrs (IntMap.empty _) in
     mk vrs rvar.
 
   Definition rev_add (x:ident) (v:KVar) (rm : IntMap.t (list ident)) :=
     match v with
-    | KNode n => IntMap.add_from_list n x rm
+    | KNode n => IntMap.addl n x rm
     | _       => rm
     end.
 
@@ -309,7 +309,7 @@ Module Vars.
          rewrite <- Vars_RVar0.
          intuition congruence.
        +  assert (REW: match v with
-                       | KNode n0 => IntMap.add_from_list n0 k (IntMap.remove_from_list String.eqb n1 k (RVar m))
+                       | KNode n0 => IntMap.addl n0 k (IntMap.remove_from_list String.eqb n1 k (RVar m))
                        | _ => IntMap.remove_from_list String.eqb n1 k (RVar m)
                        end = IntMap.remove_from_list String.eqb n1 k (RVar m)).
           {
@@ -352,7 +352,7 @@ Module Vars.
          rewrite <- Vars_RVar0.
          destruct (STree.elt_eq x k); intuition congruence.
        +  assert (REW: match v with
-                       | KNode n0 => IntMap.add_from_list n0 k (RVar m)
+                       | KNode n0 => IntMap.addl n0 k (RVar m)
                        | _ => RVar m
                        end = RVar m ).
           {
@@ -404,8 +404,13 @@ Record domain := mkdom
     {
       Vars : Vars.t;
       Pto  : G.t;
-      Atoms: SMap.t (list atom); (* Atoms[x] = a -> x is a variable of a *)
+      Atoms: SMap.t (list atom); (* Atoms[x] = a1,...,an -> x is a variable of ai
+                                      This is used to invalidate atoms in the graph
+                                    *)
     }.
+
+
+
 
 
 Definition pp_domain (d:domain) :=
@@ -458,11 +463,26 @@ Definition eval_var (env:aenv) (vars:Vars.t) (id:ident) (bt:btyp) :=
   Definition set_pto (g:G.t) (d:domain) :=
   mkdom (Vars d) g (Atoms d).
 
-Definition bind_path (d:domain) (o:int) (acc:list EdgeLabel.t) : res (domain * KVar) :=
+  Definition set_atom (a:SMap.t (list atom)) (d:domain) :=
+    mkdom (Vars d) (Pto d) a.
+
+  Definition SMap_setl  (s:string) (e:atom) (m:SMap.t (list atom)) : SMap.t (list atom) :=
+    SMap.set s (e::SMap.get s m) m.
+
+  Definition register_vars_of_edge (e:EdgeLabel.t) (m : SMap.t (list atom)) :=
+    match e with
+    | EdgeLabel.Field _ | EdgeLabel.Top => m
+    | EdgeLabel.Index a => List.fold_right (fun id acc => SMap_setl id a m) m (AtomOrdered.vars_of_atom a)
+    end.
+
+
+  Definition bind_path (d:domain) (o:int) (acc:list EdgeLabel.t) : res (domain * KVar) :=
   let* (g,n'_ty) := G.create_path EdgeLabel.next_label o acc (Pto d) in
   if typ_is_prim (snd n'_ty)
   then OK (d,KPrim) (* Do not record primitive access *)
-  else OK (set_pto g d,KNode (fst n'_ty)). (* TODO update Atomes *)
+  else
+    let atoms := List.fold_right register_vars_of_edge (Atoms d) acc in
+    OK (set_atom atoms (set_pto g d),KNode (fst n'_ty)).
 
 
 Section EVALATOM.
@@ -822,7 +842,7 @@ Fixpoint eval_statement (te:tenv) (env: aenv) (s:statement) (d:domain) : res (do
                       let* p := G.get_path (Pto d) n in
                       OK (inr p)
                   end
-  | StAttr a s => if String.eqb "debug-elim-alias" a then Error (msg (Pp.pp (pp_domain d)))
+  | StAttr a s => if String.eqb "mustalias" a then Error (msg (Pp.pp (pp_domain d)))
                   else eval_statement te env s d
   end.
 

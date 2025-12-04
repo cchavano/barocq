@@ -1,0 +1,11 @@
+module Test
+
+    (** update/read at wrong index
+    *)
+    defn  f (t : [i32]) : i32  = 
+     let i = 0UL in 
+     let v = t [ i ] <- 0 in
+     let i = i + 1UL in
+     let w = t [ i ] in (** w is invalid *)
+     w 
+
