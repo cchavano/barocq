@@ -153,7 +153,7 @@ Section TRANSL.
         let* e2 := transl_atom a2 in
         let tarith := typeof e1 in
         let tderef := transl_typ2_rec ly ty in
-        let ederef := Ederef (Ebinop Oadd e1 e2 tarith) tderef in
+        let ederef := Eindex e1 e2 tderef in
         match ly with
         | LyBoxed
         | LyUnboxed (Some _)
