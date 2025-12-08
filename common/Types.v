@@ -413,7 +413,7 @@ Section EVALTYP.
   Variable eval_typ : typ -> Type.
 
   Definition eval_recordtyp (fields: smaplist typ) : Type :=
-    record eval_typ fields.
+    grecord eval_typ fields.
 
   Fixpoint eval_funtyp (tparams: list typ) (tret: Type) : Type :=
     match tparams with

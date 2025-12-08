@@ -841,7 +841,7 @@ Section DENOT.
 
   Fixpoint exists_typeof_field (F: typ -> Type) (k:key) (fields : smaplist typ) :
     forall (GP : good_proj k  fields = true),
-      { ty| typeof_field F k  fields GP = F ty}.
+      { ty| gtypeof_field F k  fields GP = F ty}.
   Proof.
     destruct fields;simpl.
     - intros. discriminate.
@@ -856,7 +856,7 @@ Section DENOT.
 
   Definition cast_typof_field (k:key) (fields :smaplist typ):
     forall (GP :good_proj k  fields = true),
-    typeof_field eval_typ k  fields GP ->
+    gtypeof_field eval_typ k  fields GP ->
     value.
   Proof.
     intros.
@@ -868,7 +868,7 @@ Section DENOT.
     simpl in rc.
     unfold eval_recordtyp in rc.
     destruct (good_proj k fields) eqn:GP.
-    - specialize (project eval_typ rc k GP).
+    - specialize (gproject eval_typ rc k GP).
       intro.
       destruct (exists_typeof_field eval_typ _ _ GP) as (ty1 & EQ).
       apply (cast EQ) in X.
@@ -960,9 +960,9 @@ Definition fo_typ (t:typ) :=
 
 Definition cast_etyp {k:key} {fields : smaplist typ} {tv: typ} (v:  eval_typ tv)
   (EQ : find_type_of_field k fields = OK tv):
-  type_of_field eval_typ k fields.
+  gtype_of_field eval_typ k fields.
 Proof.
-  unfold type_of_field.
+  unfold gtype_of_field.
   rewrite EQ. apply  v.
 Defined.
 

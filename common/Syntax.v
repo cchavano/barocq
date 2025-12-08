@@ -861,8 +861,6 @@ Module AtomOrdered <: OrderedType.
 
   (** vars *)
 
-  Print atom.
-
   Fixpoint vars_of_atom (a:atom) : list ident :=
     match a with
     | ATrue | AFalse | AInt32 _ _ | AInt64 _ _ | AConstr _ _ _  =>  nil

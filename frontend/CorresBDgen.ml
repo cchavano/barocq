@@ -44,7 +44,7 @@ module Deeptypes = struct
           "TFun %s %s"
           (list_to_string_bracket mtyp_to_typ_string tparams)
           (opt_parens tret)
-    | MAbs tid -> ident_to_string tid
+    | MAbs tid -> sprintf "TAbs \"%s\"" (ident_to_string tid)
     | MRes tr -> mtyp_to_typ_string tr
 
   and opt_parens (ty : mtyp) : string =
@@ -412,10 +412,10 @@ let print_typing_env (out : out_channel) (types : mtyp type_def Maps2.smaplist)
   fprintf
     out
     "Definition typing_env : tenv := Eval compute in {|\n\
-     %stenv_defs :=\n\
+     %sTEnv.tenv_defs :=\n\
      %s%s;\n\
-     %stenv_constr_types :=\n\
-     %s%s\n\
+     %sTEnv.tenv_constr_types :=\n\
+     %s%s\n\m
      |}.\n"
     indent
     indent2
@@ -594,7 +594,7 @@ let prelude_imports () : string =
     "From Coq Require Import String List.\n\
      From compcert Require Import Integers.\n\
      From BarocqComp Require Import Ident Error Maps2 Barray Benum Brecord \
-     Types Typing Barocq BarocqVC CorresBD_Tactics.\n\
+     Types Typing Barocq BarocqVC CorresBD_Tactics Syntax.\n\
      From %s Require Import %s_Types %s %s.\n\n\
      Import ListNotations.\n\n\
      Open Scope string_scope.\n"

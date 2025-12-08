@@ -427,7 +427,7 @@ and match_case_to_string (prefix : string) ((p, ep) : Benum.pattern * expr) :
   | BarocqShallowgen.ShallowB ->
       let case =
         match p with
-        | Benum.PIdent (i, _) -> sprintf "PIdent %s" (Deepgen.ident_to_deep i)
+        | Benum.PIdent (i, z) -> sprintf "PIdent %s %i" (Deepgen.ident_to_deep i) (Camlcoq.Z.to_int z)
         | Benum.PWildcard -> "PWildcard"
       in
       sprintf "%s(%s,\n%s)" prefix case (expr_to_rocq_rec (prefix ^ indent) ep)

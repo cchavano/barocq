@@ -10,20 +10,20 @@ Inductive field (k: key) (A: Type) : Type :=
 
 Arguments Field k {A}.
 
-(*Definition type_of_field (k: key) (fields: smaplist Type) : Type :=
-  MapList.find key_eq k fields False. *)
-
-Fixpoint find_type_of_field {A: Type}  (k: key) (fields: smaplist A) : res A :=
+Polymorphic Fixpoint find_type_of_field {A: Type}  (k: key) (fields: smaplist A) : res A :=
   match fields with
   | nil => fail
   | e::fields => if (k=?(fst e))%string then OK (snd e) else find_type_of_field k fields
   end.
 
-Definition type_of_field {A: Type} (F: A -> Type) (k:key) (fields : smaplist A) :  Type :=
+Definition gtype_of_field {A: Type} (F: A -> Type) (k:key) (fields : smaplist A) :  Type :=
   match find_type_of_field k fields with
   | OK a => F a
   | Error _ => False
   end.
+
+Definition type_of_field  (k:key) (fields : smaplist Type) :  Type :=
+   gtype_of_field (fun x => x) k fields.
 
 
 Definition proj_field {k:key} {T:Type} (fd:field k T) : T :=
@@ -31,19 +31,24 @@ Definition proj_field {k:key} {T:Type} (fd:field k T) : T :=
   | Field _ x => x
   end.
 
-Definition record {A: Type} (F: A -> Type) (fields: smaplist A) : Type :=
+Polymorphic Definition grecord {A: Type} (F: A -> Type) (fields: smaplist A) : Type :=
   fold_right (fun kt acc => prod (field (fst kt) (F (snd kt))) acc) unit fields.
 
-Fixpoint proj {A: Type} (F : A -> Type) {fields: smaplist A} (rc: record F fields) (k: key) {struct fields} : res (type_of_field F k fields).
+Definition record (fields : smaplist Type) := grecord (fun x => x) fields.
+
+Fixpoint gproj {A: Type} (F : A -> Type) {fields: smaplist A} (rc: grecord F fields) (k: key) {struct fields} : res (gtype_of_field F k fields).
   destruct fields as [| [x tx] fields'].
   - apply fail.
   - simpl in rc. destruct rc. destruct f.
-    simpl type_of_field.
-    unfold type_of_field. simpl.
+    simpl gtype_of_field.
+    unfold gtype_of_field. simpl.
     destruct (k=?x)%string.
     + apply (ret a).
-    + apply (proj A F fields' r).
+    + apply (gproj A F fields' g).
 Defined.
+
+Definition proj {fields: smaplist Type} (r:record fields) (k: key) : res (type_of_field k fields) :=
+  gproj (fun x => x)  r k.
 
 
 Fixpoint good_proj {A: Type} (k:key) (fields : smaplist A) :=
@@ -58,7 +63,7 @@ Proof.
   discriminate.
 Qed.
 
-Fixpoint typeof_field {A: Type} (F: A -> Type) (k: key) (fields: smaplist A) : forall (GP : good_proj k fields = true), Type.
+Fixpoint gtypeof_field {A: Type} (F: A -> Type) (k: key) (fields: smaplist A) : forall (GP : good_proj k fields = true), Type.
 Proof.
   destruct fields.
   - intro. exfalso. apply (good_proj_nil GP).
@@ -66,10 +71,10 @@ Proof.
     destruct (String.eqb k (fst p)).
     + intro. exact (F (snd p)).
     + unfold orb.
-      apply (typeof_field A F k fields).
+      apply (gtypeof_field A F k fields).
 Defined.
 
-Fixpoint project {A: Type} (F : A -> Type) {fields:smaplist A} (rc:record F fields) (k:key) : forall (GP : good_proj k fields = true), typeof_field F k fields GP.
+Fixpoint gproject {A: Type} (F : A -> Type) {fields:smaplist A} (rc:grecord F fields) (k:key) : forall (GP : good_proj k fields = true), gtypeof_field F k fields GP.
 Proof.
   destruct fields.
   - intros. exfalso.
@@ -79,25 +84,37 @@ Proof.
     intros GP.
     destruct (k =? fst p)%string.
     + simpl in rc. apply (proj_field (fst rc)).
-    + apply (project A F fields (snd rc) k GP).
+    + apply (gproject A F fields (snd rc) k GP).
 Defined.
 
+Definition typeof_field  (k: key) (fields: smaplist Type) : forall (GP : good_proj k fields = true), Type :=
+  gtypeof_field (fun x => x) k fields.
 
-Fixpoint upd {A: Type} (F: A -> Type) {fields:smaplist A} (rc: record F fields) (k:key)
-  (GK :good_proj k fields = true) (v:type_of_field F k fields) {struct fields} : record F fields.
+
+Definition project  {fields:smaplist Type} (rc:record fields) (k:key) : forall (GP : good_proj k fields = true), typeof_field  k fields GP :=
+  gproject (fun x => x) rc k.
+
+
+Fixpoint gupd {A: Type} (F: A -> Type) {fields:smaplist A} (rc: grecord F fields) (k:key)
+  (GK :good_proj k fields = true) (v:gtype_of_field F k fields) {struct fields} : grecord F fields.
 Proof.
   destruct fields.
   - exfalso. clear v. apply good_proj_nil in GK. auto.
   - simpl in GK.
     simpl in v.
-    unfold type_of_field in v. simpl in v.
+    unfold gtype_of_field in v. simpl in v.
     destruct (k=? fst p)%string.
     + apply (Field (fst p) v,snd rc).
-    + apply (fst rc,upd _ F _ (snd rc) k GK v).
+    + apply (fst rc,gupd _ F _ (snd rc) k GK v).
 Defined.
 
-Fixpoint dyn_upd {A: Type} (F: A -> Type) (eq_dec : forall (x y:A), {x = y} + {x <> y}) {fields:smaplist A} (rc: record F fields) (k:key)
-  (ty:A) (v: F ty) {struct fields} : res (record F fields).
+Definition upd {fields:smaplist Type} (rc: record fields) (k:key)
+  (GK :good_proj k fields = true) (v:type_of_field k fields)  : record fields :=
+  gupd (fun x => x) rc k GK v.
+
+
+Fixpoint dyn_upd {A: Type} (F: A -> Type) (eq_dec : forall (x y:A), {x = y} + {x <> y}) {fields:smaplist A} (rc: grecord F fields) (k:key)
+  (ty:A) (v: F ty) {struct fields} : res (grecord F fields).
 Proof.
   destruct fields.
   - exact fail.
@@ -122,29 +139,29 @@ Defined.
 
 *)
 
-Fixpoint update {A: Type} (F: A -> Type) {fields:smaplist A} (rc: record F fields) (k:key)
-   (v:type_of_field F k fields) {struct fields} : res (record F fields).
+Fixpoint gupdate {A: Type} (F: A -> Type) {fields:smaplist A} (rc: grecord F fields) (k:key)
+   (v:gtype_of_field F k fields) {struct fields} : res (grecord F fields).
 Proof.
   destruct fields.
   - simpl in v.  apply OK. exact tt.
-  - unfold type_of_field in v. simpl in v.
+  - unfold gtype_of_field in v. simpl in v.
     simpl.
     destruct (k=? fst p)%string.
     + apply (OK (Field (fst p) v,snd rc)).
     + eapply bind.
-      eapply update. apply (snd rc).
+      eapply gupdate. apply (snd rc).
       apply v.
       intro.
       apply (OK (fst rc,X)).
 Defined.
 
 Lemma upd_update_equal : forall {A: Type} (F: A -> Type) fields rc k v (GK: good_proj k fields = true),
-    update F rc k v = OK (upd F rc k GK v).
+    gupdate F rc k v = OK (gupd F rc k GK v).
 Proof.
   induction fields;simpl.
   - discriminate.
   - intros.
-    unfold type_of_field in v.
+    unfold gtype_of_field in v.
     simpl in v.
     destruct (k=? fst a)%string eqn:EQ.
     reflexivity.
@@ -165,22 +182,22 @@ Ltac destruct_record r :=
   end.
 
 (** Proof principle to destruct records *)
-Fixpoint decomp_fields {A: Type} (F : A -> Type) (fields : smaplist A)  {struct fields} :
-  forall (P : record F fields -> Prop), Prop :=
-  match fields as fd' return (record F fd' -> Prop) -> Prop with
+Fixpoint gdecomp_fields {A: Type} (F : A -> Type) (fields : smaplist A)  {struct fields} :
+  forall (P : grecord F fields -> Prop), Prop :=
+  match fields as fd' return (grecord F fd' -> Prop) -> Prop with
   | nil => fun P => P tt
-  | (i,v)::fields' => fun P => forall v, decomp_fields F fields' (fun r' => P (Field i v, r'))
+  | (i,v)::fields' => fun P => forall v, gdecomp_fields F fields' (fun r' => P (Field i v, r'))
   end.
 
-Lemma decomp_fields_sound : forall {A: Type} (F: A -> Type) fields (P : record F fields -> Prop),
-    decomp_fields F fields P ->
+Lemma gdecomp_fields_sound : forall {A: Type} (F: A -> Type) fields (P : grecord F fields -> Prop),
+    gdecomp_fields F fields P ->
     forall r, P r.
 Proof.
   induction fields; simpl.
   - intros. destruct r. apply H.
   -  intros. destruct a.
      destruct r. simpl in f. destruct f.
-     apply IHfields with (r:=r); auto.
+     apply IHfields with (r:=g); auto.
 Qed.
 
 Ltac apply_decomp_field :=
@@ -189,11 +206,11 @@ Ltac apply_decomp_field :=
   let pred := fresh "PRED" in
   match goal with
   | |- ?P ?X => set (pred := P) ;
-                apply decomp_fields_sound;
+                apply gdecomp_fields_sound with (F:= fun x => x);
                 match goal with
-                | |- decomp_fields ?F ?P =>
-                    unfold F;
-                    cbv beta iota delta [decomp_fields ];
+                | |- gdecomp_fields ?F ?FD ?P =>
+                    unfold FD;
+                    cbv beta iota delta [gdecomp_fields ];
                     unfold snd ; intros;
                     unfold pred;clear pred
                 end
