@@ -271,7 +271,6 @@ Module Typing.
     | EArraySet _ _ _ ty
     | ERecordProj _ _ ty
     | ERecordUpdate _ _ _ ty
-    (* | EDeepAccess _ _ ty *)
     | EMatch _ _ ty 
     | EApp _ _ ty
     | EIfThenElse _ _ _ ty

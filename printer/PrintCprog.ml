@@ -62,3 +62,11 @@ let print_header (types_header : string) (hfile : string)
   print_inttype_aliases oc;
   aux (formatter_of_out_channel oc) prog;
   close_out oc
+
+let export_csyntax sourcename csyntax ofile =
+  let oc = open_out ofile in
+  ExportCsyntax.print_program
+    (Format.formatter_of_out_channel oc)
+    csyntax
+    sourcename;
+  close_out oc

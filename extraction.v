@@ -3,7 +3,8 @@ From Coq Require Import ExtrOcamlString.
 From Coq Require Import ExtrOCamlInt63.
 
 From Coq Require BinInt BinPos.
-From compcert Require Integers Floats Machregs Archi AST Memdata Csyntax Initializers Ctyping Ctypes Clight Ctypesdefs Values.
+From compcert Require Integers Floats Machregs Archi AST Memdata Csyntax Initializers.
+From compcert Require Import Ctyping Ctypes Clight Ctypesdefs Values Cabs Parser.
 From BarocqComp Require Imp1 Imp1gen2 Barocq Compiler BarocqShallowgen BarocqVC.
 
 (* Extraction language *)
@@ -27,6 +28,16 @@ Set Extraction Output Directory "_build/extraction_tmp".
 Extract Constant Imp1.Aliasing_AST.ABSDOM => "Aliasing_defs.AbsDom.t".
 Extract Constant Imp1gen2.gen_aliasing_program => "Aliasing_impl.gen_aliasing_program".
 Extract Constant Imp1gen2.check_program_aliasing => "Aliasing_check.check_program".
+
+(* Cabs *)
+Extract Constant Cabs.loc =>
+"{ lineno : int;
+   filename: string;
+   byteno: int;
+   ident : int;
+ }".
+Extract Inlined Constant Cabs.string => "String.t".
+Extract Constant Cabs.char_code => "int64".
 
 Separate Extraction
   BinPos.Pos.pred
@@ -77,4 +88,6 @@ Separate Extraction
   Types.btyp_is_prim
   Imp1.Aliasing_AST.program
   Ident
-  BarocqVC Pp.Log.pp.
+  BarocqVC Pp.Log.pp
+  Cabs
+  Parser.translation_unit_file.

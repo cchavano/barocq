@@ -55,6 +55,8 @@ let opt_gen_alias_return_state_of = ref ""
 
 let opt_debug_aliasing = ref false
 
+let opt_export_csyntax = ref false
+
 let target_arch = ref (if Archi.ptr64 then Target.Ptr64 else Target.Ptr32)
 
 let set_target_arch (s : string) : unit =
@@ -106,6 +108,7 @@ let options =
     ( "-print",
       Arg.Symbol (["barocq"; "bbnf"; "ibnf"; "imp1"; "imp2"], set_opt_print),
       "\tPretty-print the IR" );
+    ("-export-csyntax", Arg.Set opt_export_csyntax, "Export the Csyntax AST");
     ( "-debug-aliasing",
       Arg.Set opt_debug_aliasing,
       "\t\t\tDisplay the alias analysis debugging information on stderr" );
@@ -506,6 +509,12 @@ let () =
             PrintCprog.destination := Some cfile;
             (* Program printing *)
             PrintCprog.print_csyntax !file_types_impl prog;
+            (* Rocq Csyntax export *)
+            if !opt_export_csyntax then begin
+              let csyntax_file = get_full_filename !c_output ".v" in
+              PrintCprog.export_csyntax !c_output prog csyntax_file;
+              printf "Csyntax exported at %s\n" (clean_filename csyntax_file)
+            end;
             printf "C file generated at %s\n" (clean_filename cfile);
             (* Header printing *)
             if !opt_gen_header then begin
