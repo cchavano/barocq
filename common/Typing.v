@@ -154,11 +154,8 @@ Definition typof_atom (a: atom) : btyp :=
 Definition typof_comp (c: comp) : btyp :=
   match c with
   | CpAtom _ ty
-  (* | CpArrayGet _ _ ty _ *)
   | CpArraySet _ _ _ ty
-  (* | CpRecordProj _ _ ty _ *)
   | CpRecordUpdate _ _ _ ty
-  (* | CpDeepAccess _ _ ty *)
   | CpCall _ _ _ ty => ty
   end.
 

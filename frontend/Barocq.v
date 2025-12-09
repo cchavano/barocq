@@ -215,9 +215,10 @@ Module Typed.
 
   Definition iprogram := list command.
 
-(*  Module Pp.
+ (* Module Pp.
 
     Fixpoint pp_expr (e:expr) : box :=
+    match e with
       | ETrue  => Bstr "true"
       | EFalse => Bstr "false"
       | EInt32 i s => Printer.pp_sint s i
@@ -231,19 +232,9 @@ Module Typed.
       | EArraySet e i v   => Pp.seq (pp_expr e  :: Bstr "[" :: pp_expr i  :: "] <- " :: pp_expr v :: nil)
       | ERecordProj e id  => Pp.seq (pp_expr e1 :: Bstr "." :: Bstr id :: nil)
       | ERecordUpdate e id v _  =>  Pp.seq (pp_expr e1 :: Bstr "." :: Bstr id :: nil)
-    | EApp : expr -> list expr -> btyp -> expr
-    | EIfThenElse : expr -> expr -> expr -> btyp -> expr
-    | EMatch : expr -> list (pattern * expr) -> btyp -> expr
-    | ELetIn : ident -> expr -> expr -> btyp -> expr
+      end.
 
-  (* An access is associated with a type.
-     For every deep access e.X1X2...Xn, Xi has type ty
-     iff the expression e.X1...X(i-1)Xi has type ty. *)
-  with access : Type :=
-    | AcRecordField : ident -> btyp -> access
-    | AcArrayIndex : expr -> btyp -> access.
-*)
-
+ End Pp. *)
   
 End Typed.
 
@@ -450,7 +441,7 @@ End Typing.
 
 Section DENOT.
   Import Typed.
-  (** The denotational semantics lifts programs to evaluable Coq terms. *)
+  (** The denotational semantics lifts programs to evaluable Rocq terms. *)
 
   Variable arch : Target.archi.
 
@@ -466,10 +457,6 @@ Section DENOT.
     | Target.Ptr32 => TInt32 Unsigned
     | Target.Ptr64 => TInt64 Unsigned
     end.
-
-  Inductive access_value : Type :=
-   | AcvalRecordField : ident -> access_value
-   | AcvalArrayIndex : res (eval_typ typof_index) -> access_value.
 
   Definition genv := STree.t value.
 

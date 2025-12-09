@@ -47,17 +47,6 @@ Inductive binary_op : Type :=
 
 (** Atoms are pure computations in C *)
 
-(* Inductive atom : Type :=
-  | ATrue : atom
-  | AFalse : atom
-  | AInt32 : int -> signedness -> atom
-  | AInt64 : int64 -> signedness -> atom
-  | AConstr : ident -> atom
-  | AVar : ident -> atom
-  | ACast : atom -> btyp -> atom
-  | AUnaryOp : unary_op -> atom -> atom
-  | ABinaryOp : binary_op -> atom -> atom -> atom. *)
-
 Inductive atom : Type :=
   | ATrue : atom
   | AFalse : atom
@@ -72,21 +61,12 @@ Inductive atom : Type :=
   | ARecordProj : atom -> ident -> atom
   | APureCall : ident -> list atom -> atom.
 
-(** Deep accesses with atomics array indexes. *)
-
-(* Inductive access : Type :=
-  | AcRecordField : ident -> access
-  | AcArrayIndex : atom -> access. *)
-
 (** * Computations with atomic operands *)
 
 Inductive comp : Type := 
   | CpAtom : atom -> comp
-  (* | CpArrayGet : atom -> atom -> comp *)
   | CpArraySet : atom -> atom -> atom -> comp
-  (* | CpRecordProj : atom -> ident -> comp *)
   | CpRecordUpdate : atom -> ident -> atom -> comp
-  (* | CpDeepAccess : atom -> list access -> comp *)
   | CpCall : ident -> list atom -> comp
 .
 
@@ -187,17 +167,10 @@ Module Typed.
 
   End ATOMIND.
 
-  (* Inductive access : Type :=
-    | AcRecordField : ident -> btyp -> layout -> access
-    | AcArrayIndex : atom -> btyp -> layout -> access. *)
-
   Inductive comp : Type := 
     | CpAtom : atom -> btyp -> comp
-    (* | CpArrayGet : atom -> atom -> btyp -> layout -> comp *)
     | CpArraySet : atom -> atom -> atom -> btyp -> comp
-    (* | CpRecordProj : atom -> ident -> btyp -> layout -> comp *)
     | CpRecordUpdate : atom -> ident -> atom -> btyp -> comp
-    (* | CpDeepAccess : atom -> list access -> btyp -> comp *)
     | CpCall : ident -> btyp -> list atom -> btyp -> comp.
 
 End Typed.
