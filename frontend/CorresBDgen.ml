@@ -415,7 +415,7 @@ let print_typing_env (out : out_channel) (types : mtyp type_def Maps2.smaplist)
      %sTEnv.tenv_defs :=\n\
      %s%s;\n\
      %sTEnv.tenv_constr_types :=\n\
-     %s%s\n\m
+     %s%s\n\
      |}.\n"
     indent
     indent2
