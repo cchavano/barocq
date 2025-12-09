@@ -648,12 +648,13 @@ module RecordConv = struct
     let field_update_thm ((fid, fty) : ident * mtyp) =
       let update_correct =
         sprintf
-          "%s@Brecord.upd fields_of_%s (rconv_%s_RtoB r) %s eq_refl %s = \
+          "%s@Brecord.upd fields_of_%s (rconv_%s_RtoB r) %s (%s) %s eq_refl = \
            rconv_%s_RtoB (r <| %s_%s := v |>)"
           indent
           rid
           rid
           (Deepgen.ident_to_deep fid)
+          (mtyp_to_rocq BarocqShallowgen.ShallowB fty)
           (conv_value_opt_parens RtoB fty "v")
           rid
           (String.lowercase_ascii rid)

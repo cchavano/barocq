@@ -953,9 +953,33 @@ Proof.
 Defined.
 
 
-Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_typ fields) (k: ident) (tv: typ) (v: eval_typ tv) :
+Fixpoint typeof_field_typ_prf (k:key) (fields : smaplist typ) (ty:typ) :
+  res (find_type_of_field k fields = OK ty).
+Proof.
+  destruct fields.
+  - simpl. apply fail.
+  - destruct p.
+    simpl.
+    destruct (k=? s)%string.
+    + destruct (typ_eq_dec t0 ty).
+      subst. apply OK. apply eq_refl.
+      apply fail.
+    + apply (typeof_field_typ_prf k fields ).
+Defined.
+
+(*Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_typ fields) (k: ident) (tv: typ) (v: eval_typ tv) :
   res (eval_recordtyp eval_typ fields) :=
   dyn_upd eval_typ typ_eq_dec rc k tv v.
+*)
+
+Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_typ fields) (k: ident) (tv: typ) (v: eval_typ tv) :
+  res (eval_recordtyp eval_typ fields).
+Proof.
+  destruct (typeof_field_typ_prf k fields tv).
+  apply (OK (gupd eval_typ rc k tv v e)).
+  apply fail.
+Defined.
+
 
 
 (*

@@ -1382,7 +1382,7 @@ Section S.
         tauto.
   Qed.
 
-  Lemma equal_upd_record_aux :
+(*  Lemma equal_upd_record_aux :
     forall fields r1 r2 f ty v1 v2,
       equal_record ext_equal fields r1 r2 ->
       ext_equal ty v1 v2 ->
@@ -1418,6 +1418,56 @@ Section S.
           simpl. constructor ;auto.
     }
   Qed.
+*)
+  Lemma equal_upd_record_aux :
+    forall fields r1 r2 f ty v1 v2,
+      equal_record ext_equal fields r1 r2 ->
+      ext_equal ty v1 v2 ->
+      res_rel (equal_record ext_equal fields) (eval_record_upd_aux abs_typ_impl fields r1 f ty v1)
+        (eval_record_upd_aux abs_typ_impl fields r2 f ty v2).
+  Proof.
+    unfold eval_recordtyp.
+    intros.
+    unfold eval_record_upd_aux.
+    {
+      destruct (typeof_field_typ_prf f fields ty); try constructor.
+      revert r1 r2 H.
+      induction fields.
+      - simpl. auto.
+      - simpl.
+        intros.
+        destruct a as(fd,ty1).
+        destruct r1 as (f1 & r1').
+        destruct r2 as (f2 & r2').
+        simpl in f1,f2.
+        simpl.
+        simpl in H.
+        revert e.
+        simpl.
+        destruct (f =?fd).
+        intro.
+        simpl.
+        split.
+        destruct (typ_eq_dec  ty ty1).
+        subst.
+        assert (e = eq_refl).
+        { apply Eqdep_dec.UIP_dec.
+          decide equality.
+          apply typ_eq_dec.
+          repeat decide equality.
+        }
+        subst.
+        simpl; auto.
+        congruence.
+        tauto.
+        destruct H as (FD & RST).
+        intros.
+        specialize (IHfields e r1' r2' ).
+        simpl.
+        split; auto.
+    }
+  Qed.
+
 
   Lemma ext_equal_eval_record_update : forall tr r1 r2 tv v1 v2 f ty,
       ext_equal tr r1 r2 ->

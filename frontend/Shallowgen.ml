@@ -282,7 +282,7 @@ let rec atom_to_rocq (a : atom) : string =
             (atom_to_rocq a2)
       | BarocqShallowgen.ShallowB ->
           sprintf
-            "Brecord.upd %s %s eq_refl %s"
+            "Brecord.upd %s %s _ %s eq_refl"
             (opt_parens a1)
             (Deepgen.ident_to_deep x)
             (opt_parens a2)

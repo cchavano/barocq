@@ -95,7 +95,7 @@ Definition project  {fields:smaplist Type} (rc:record fields) (k:key) : forall (
   gproject (fun x => x) rc k.
 
 
-Fixpoint gupd {A: Type} (F: A -> Type) {fields:smaplist A} (rc: grecord F fields) (k:key)
+(*Fixpoint gupd {A: Type} (F: A -> Type) {fields:smaplist A} (rc: grecord F fields) (k:key)
   (GK :good_proj k fields = true) (v:gtype_of_field F k fields) {struct fields} : grecord F fields.
 Proof.
   destruct fields.
@@ -107,10 +107,34 @@ Proof.
     + apply (Field (fst p) v,snd rc).
     + apply (fst rc,gupd _ F _ (snd rc) k GK v).
 Defined.
-
-Definition upd {fields:smaplist Type} (rc: record fields) (k:key)
+*)
+(*Definition upd {fields:smaplist Type} (rc: record fields) (k:key)
   (GK :good_proj k fields = true) (v:type_of_field k fields)  : record fields :=
   gupd (fun x => x) rc k GK v.
+*)
+
+Lemma OK_inj {A:Type} {r1 r2: A}  (EQ: OK r1 = OK r2) : r1 = r2.
+Proof.
+  injection EQ.
+  auto.
+Defined.
+
+
+Fixpoint gupd {A: Type} (F: A -> Type) {fields:smaplist A} (rc: grecord F fields) (k:key) (T:A) (v: F T)
+  (EQ: find_type_of_field k fields = OK T)
+  {struct fields} : grecord F fields.
+Proof.
+  destruct fields.
+  - exfalso. clear v. discriminate.
+  - simpl in EQ.
+    destruct (k=? fst p)%string.
+    + apply (Field (fst p) (cast (f_equal F (eq_sym (OK_inj EQ))) v),snd rc).
+    + apply (fst rc,gupd _ F _ (snd rc) k _ v EQ).
+Defined.
+
+Definition upd {fields:smaplist Type} (rc: record  fields) (k:key) (T:Type) (v: T)
+  (EQ: find_type_of_field k fields = OK T) : record  fields :=
+  gupd (fun x => x) rc k T v EQ.
 
 
 Fixpoint dyn_upd {A: Type} (F: A -> Type) (eq_dec : forall (x y:A), {x = y} + {x <> y}) {fields:smaplist A} (rc: grecord F fields) (k:key)
@@ -129,15 +153,13 @@ Proof.
       apply (OK (fst rc,X)).
 Defined.
 
-(*Lemma dyn_upd_eq :
-  forall {A: Type} (F: A -> Type) (eq_dec: forall (x y: A), {x = y} + {x <> y}) {fields: smaplist A} (rc : record F fields)  (k:key)
-         (ty:A) (v: F ty),
-    match find_type_of_field k fields with
-    | Error _  => good_proj k fields = false
-    | Some ty' => match eq_dec ty ty' with
-                  | left EQ =>
 
-*)
+
+
+
+
+
+
 
 Fixpoint gupdate {A: Type} (F: A -> Type) {fields:smaplist A} (rc: grecord F fields) (k:key)
    (v:gtype_of_field F k fields) {struct fields} : res (grecord F fields).
@@ -155,19 +177,6 @@ Proof.
       apply (OK (fst rc,X)).
 Defined.
 
-Lemma upd_update_equal : forall {A: Type} (F: A -> Type) fields rc k v (GK: good_proj k fields = true),
-    gupdate F rc k v = OK (gupd F rc k GK v).
-Proof.
-  induction fields;simpl.
-  - discriminate.
-  - intros.
-    unfold gtype_of_field in v.
-    simpl in v.
-    destruct (k=? fst a)%string eqn:EQ.
-    reflexivity.
-    erewrite IHfields.
-    simpl. reflexivity.
-Qed.
 
 Ltac destruct_record r :=
   match type of r with
