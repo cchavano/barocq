@@ -1434,13 +1434,6 @@ Section S.
     eapply ext_equal_ecast_typ;eauto.
   Qed.
 
-
-
-  Inductive eq_access_value (arch:archi): access_value arch abs_typ_impl -> access_value arch abs_typ_impl -> Prop :=
-  | eq_access_field : forall k, eq_access_value arch (AcvalRecordField arch abs_typ_impl k) (AcvalRecordField arch abs_typ_impl k)
-  | eq_access_index : forall v1 v2, res_rel (ext_equal (typof_index arch)) v1 v2 -> eq_access_value arch (AcvalArrayIndex arch abs_typ_impl v1)
-                                                                                      (AcvalArrayIndex arch abs_typ_impl v2).
-
   Lemma res_rel_ifthenelse : forall x y t1 t2 v1 v2  v1' v2' tr,
       ext_equal TBool x y ->
       res_rel (ext_equal t1) v1 v1' ->
