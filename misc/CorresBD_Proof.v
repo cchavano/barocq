@@ -5,12 +5,26 @@ From BarocqComp Require Import Target Utils Monads Error Barray Brecord Types Ba
 Import Typed.
 Open Scope list_scope.
 
+Ltac gen_list L :=
+  match L with
+  | nil => idtac
+  | (_,VAL _ ?F) :: ?L1 =>
+      let vr := fresh "f"in
+      generalize F as vr ; intro; gen_list L1
+  end.
+
 Ltac vc :=
   match goal with
   | |- @check_value  _ _ _ _ => reflexivity
-  | |- _ =>
-      unfold eq_value;
-      apply same_value_refl'; [reflexivity| apply eq_refl]
+  | |-
+      let ge := genv_has_property ?ABS ?ENV ?L in
+      let v  := build_funval ?A ?ABS ?TE ge ?P ?R
+                  (Syntax.fn_body ?F) in
+      eq_value ?ABS (VAL ?TY ?G) ?DTYP v
+    => let L1 := (eval unfold L in L) in
+       cbv beta delta [F TY G L P R Syntax.fn_body build_funval];
+       gen_list L1; intro ge ; compute in ge;
+       unfold eq_value; apply same_value_refl';[reflexivity | (compute; reflexivity)]
   end.
 
 
@@ -26,11 +40,24 @@ Ltac has_property_FFI :=
     unfold snd;
     apply same_value_refl; reflexivity].
 
-Opaque project.
 Opaque Benum.enum_eq_dec.
-Opaque upd.
-
-
+Opaque Benum.match_with_err.
+Opaque Benum.of_i32.
+Opaque Int.add Int64.add.
+Opaque Int.sub Int64.sub.
+Opaque Int.mul Int64.mul.
+Opaque Intop.I32.div Intop.U32.div Intop.I64.div Intop.U64.div.
+Opaque Intop.I32.mod Intop.U32.mod Intop.I64.mod Intop.U64.mod.
+Opaque Int.and Int64.and.
+Opaque Int.or Int64.or.
+Opaque Int.xor Int64.xor.
+Opaque Int.shl Int64.shl.
+Opaque Int.shr Int.shru Int64.shr Int64.shru.
+Opaque Int.eq Int64.eq.
+Opaque Int.lt Int.ltu Int64.lt Int64.ltu.
+Opaque Int.cmp Int.cmpu Int64.cmp Int64.cmpu.
+Opaque Intop.I32.of_u64.
+Opaque Intop.U64.of_i32.
 
 Theorem eval_prog_spec : exists te ge, eval_prog $ARCH abs_types_impl abs_defs_impl $PROG = OK (te, ge) /\
                                       Forall (has_property abs_types_impl ge) (List.app decl_prop def_prop).
