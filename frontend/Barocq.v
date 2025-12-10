@@ -976,6 +976,7 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
   res (eval_recordtyp eval_typ fields).
 Proof.
   destruct (typeof_field_typ_prf k fields tv).
+  unfold eval_recordtyp.
   apply (OK (gupd eval_typ rc k tv v e)).
   apply fail.
 Defined.

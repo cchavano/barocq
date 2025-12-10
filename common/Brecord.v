@@ -31,8 +31,11 @@ Definition proj_field {k:key} {T:Type} (fd:field k T) : T :=
   | Field _ x => x
   end.
 
-Polymorphic Definition grecord {A: Type} (F: A -> Type) (fields: smaplist A) : Type :=
-  fold_right (fun kt acc => prod (field (fst kt) (F (snd kt))) acc) unit fields.
+Polymorphic Fixpoint grecord {A: Type} (F: A -> Type) (fields: smaplist A) : Type :=
+  match fields with
+  | nil => unit
+  | kt::fields' => prod (field (fst kt) (F (snd kt))) (grecord F fields')
+  end.
 
 Definition record (fields : smaplist Type) := grecord (fun x => x) fields.
 
@@ -125,16 +128,66 @@ Fixpoint gupd {A: Type} (F: A -> Type) {fields:smaplist A} (rc: grecord F fields
   {struct fields} : grecord F fields.
 Proof.
   destruct fields.
-  - exfalso. clear v. discriminate.
+  - exact tt.
   - simpl in EQ.
     destruct (k=? fst p)%string.
     + apply (Field (fst p) (cast (f_equal F (eq_sym (OK_inj EQ))) v),snd rc).
     + apply (fst rc,gupd _ F _ (snd rc) k _ v EQ).
 Defined.
 
+
 Definition upd {fields:smaplist Type} (rc: record  fields) (k:key) (T:Type) (v: T)
   (EQ: find_type_of_field k fields = OK T) : record  fields :=
   gupd (fun x => x) rc k T v EQ.
+
+Fixpoint mk_recordT {A: Type} (F: A -> Type) {fields:smaplist A} (rc : grecord F fields) {struct fields} : record (MapList.map F fields).
+Proof.
+  destruct fields.
+  - apply tt.
+  - simpl in rc. simpl.
+    apply (fst rc, mk_recordT _ F _ (snd rc)).
+Defined.
+
+Definition map_res {A: Type} (F: A -> Type) (x:res A) : res Type :=
+  match x with
+  | OK x => OK (F x)
+  | Error e => Error e
+  end.
+
+Fixpoint map_find_type_of_field {A: Type} (F: A -> Type) (k:key) {fields:smaplist A} (T:A) (EQ:find_type_of_field k fields = OK T) :
+  find_type_of_field k (MapList.map F fields) = OK (F T).
+Proof.
+  destruct fields.
+  - discriminate.
+  - simpl in *.
+    destruct (k =? fst p)%string.
+    +  apply (f_equal (map_res F)) in EQ.
+       simpl in EQ.
+       apply EQ.
+    + apply map_find_type_of_field.
+      apply EQ.
+Qed.
+
+
+(*
+Lemma gupd_upd : forall {A: Type} (F: A -> Type) {fields:smaplist A} (rc: grecord F fields) (k:key) (T:A) (v: F T)
+  (EQ:find_type_of_field k fields = OK T),
+   mk_recordT F (gupd F rc k T v EQ) = @upd (MapList.map F fields) (mk_recordT F rc) k (F T) v (map_find_type_of_field F k T EQ).
+Proof.
+  unfold upd.
+  induction fields.
+  - simpl. discriminate.
+  - intros.
+    simpl in EQ.
+    destruct (string_dec k (fst a)).
+    + subst.
+      assert (OK (snd a) = OK T).
+      { rewrite String.eqb_refl in EQ.
+        apply EQ. }
+
+      rewrite IHfields.
+      destruct (k =? fst a)%string.
+*)
 
 
 Fixpoint dyn_upd {A: Type} (F: A -> Type) (eq_dec : forall (x y:A), {x = y} + {x <> y}) {fields:smaplist A} (rc: grecord F fields) (k:key)

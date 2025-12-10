@@ -124,7 +124,7 @@ Module MapList.
     end.
 
   Definition map (A: Type) (f: V -> A) (l: t V) : t A :=
-    map (fun '(x, v) => (x, f v)) l.
+    map (fun xv => (fst xv, f (snd xv))) l.
 
   Definition map_err (A: Type) (f: V -> res A) (l: t V) : res (t A) :=
     mmap (fun '(x, v) => let* a := f v in ret (x, a)) l.
