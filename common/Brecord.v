@@ -37,6 +37,33 @@ Polymorphic Fixpoint grecord {A: Type} (F: A -> Type) (fields: smaplist A) : Typ
   | kt::fields' => prod (field (fst kt) (F (snd kt))) (grecord F fields')
   end.
 
+Fixpoint grecord_map {A: Type} (F1 : A -> Type) (F2 : A -> Type) (F : forall (x:A), F1 x -> F2 x)
+  (fields : smaplist A) : grecord F1 fields -> grecord F2 fields:=
+  match fields  with
+  | nil => fun r => tt
+  | p :: fields' =>
+      fun  r => (Field (fst p) (F (snd p) (proj_field (fst r))), grecord_map  F1 F2 F fields' (snd r))
+  end.
+
+Fixpoint grecord_mmap {A: Type} (F1 : A -> Type) (F2 : A -> Type) (F : forall (x:A), F1 x -> res (F2 x))
+  (fields : smaplist A) : grecord F1 fields -> res (grecord F2 fields) :=
+  match fields  with
+  | nil => fun r => OK tt
+  | p :: fields' =>
+      fun  r => let* fd := F (snd p) (proj_field (fst r)) in
+                let* rc := grecord_mmap F1 F2 F fields' (snd r) in
+                OK ( Field (fst p) fd, rc)
+  end.
+
+Inductive sfield {A: Type} (F: A -> Type) :=
+  mksfield (s:string) (a:A) (v: F a).
+
+Fixpoint list_of_grecord {A: Type} (F: A -> Type) (fields : smaplist A) : grecord F fields ->  list (sfield F) :=
+    match fields  with
+  | nil => fun _  => nil
+  | p :: l => (fun '(fd, r) => mksfield F (fst p) (snd p) (proj_field fd) :: list_of_grecord  F l r)
+  end.
+
 Definition record (fields : smaplist Type) := grecord (fun x => x) fields.
 
 Fixpoint gproj {A: Type} (F : A -> Type) {fields: smaplist A} (rc: grecord F fields) (k: key) {struct fields} : res (gtype_of_field F k fields).

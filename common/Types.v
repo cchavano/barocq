@@ -37,6 +37,7 @@ Definition typ_is_prim (ty: typ) : bool :=
   | _ => false
   end.
 
+
 Fixpoint typ_eq_dec (t1 t2: typ) : { t1 = t2 } + { t1 <> t2 }.
 Proof.
   decide equality.
