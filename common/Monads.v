@@ -41,6 +41,17 @@ Module MonError <: MONAD.
     | None => fail
     end.
 
+  Definition isOK {A: Type} (v: M A) : Prop :=
+    exists x, v = OK x.
+
+  Lemma isOK_Error : forall {A: Type} (v : M A),
+      isOK v -> forall e, v = Error e -> False.
+  Proof.
+    unfold isOK.
+    intros. destruct H. congruence.
+  Qed.
+
+  
   Inductive res_rel {A B : Type} (R : A -> B -> Prop) : res A -> res B -> Prop :=
     res_rel_error : forall m, res_rel R (Error m) (Error m)
   | res_rel_ok : forall (x : A) (y : B), R x y -> res_rel R (OK x) (OK y).

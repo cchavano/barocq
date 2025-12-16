@@ -514,8 +514,8 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       root  : int;
       edges : Edge;
       parent : IntMap.t (EdgeLabel.t * int); (* reverse edge - remember we have a tree *)
-      nodelabels :  NLMap.t (list int) ; (* nodes with a given label *)
-      edgelabels :  ELMap.t (list int) ; (* nodes which edges have a given label *)
+      nodelabels : NLMap.t (list int) ; (* nodes with a given label *)
+      edgelabels : ELMap.t (list int) ; (* nodes which edges have a given label *)
       fresh      : int; (* fresh node *)
     }.
 

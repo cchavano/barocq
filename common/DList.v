@@ -147,3 +147,30 @@ Section MAP.
     end.
 
 End MAP.
+
+Section Forall2Rec.
+
+  Context {F1 : typ -> Type}.
+  Context {F2 : typ -> Type}.
+  Variable R : forall (ty:typ), F1 ty -> F2 ty -> Prop.
+
+  Fixpoint forall2  (lt:list typ) : dlist F1 lt -> dlist F2 lt -> Prop  :=
+    match lt  with
+    | nil => fun _ _ => True
+    | ty :: lt' => fun dl1 dl2 => R ty (car F1 dl1) (car F2 dl2)
+                                  /\
+                                    forall2 lt' (cdr F1 dl1) (cdr F2 dl2)
+    end.
+
+End Forall2Rec.
+
+Fixpoint eval_app {eval_typ : typ -> Type} (tparams: list typ) (tret: typ) (f: eval_funtyp eval_typ tparams (eval_typ tret)) (args: DList.dlist eval_typ  tparams) :
+    res (eval_typ tret).
+Proof.
+  destruct args.
+  - simpl in f. apply (f tt).
+  - simpl in f.
+    destruct l.
+    + apply (f e).
+    + apply (eval_app _ _ _ (f e) args).
+Defined.

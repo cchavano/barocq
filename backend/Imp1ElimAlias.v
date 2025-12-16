@@ -523,13 +523,13 @@ Section EVALATOM.
 End EVALATOM.
 
 
-Fixpoint eval_atom (env:aenv) (d:domain) (a:atom)  :=
+Fixpoint aeval_atom (env:aenv) (d:domain) (a:atom)  :=
   match a with
   | AVar id bt    =>
       let* v := eval_var env  (Vars d) id bt in
       OK (d,v)
-  | AArrayGet ar i _ bt => array_get eval_atom env d ar i bt
-  | ARecordProj ar fd _ bt => record_proj_get eval_atom env d ar fd bt
+  | AArrayGet ar i _ bt => array_get aeval_atom env d ar i bt
+  | ARecordProj ar fd _ bt => record_proj_get aeval_atom env d ar fd bt
   | _   => OK (d,KPrim) (* Is-it sound if the atom is not well-typed ? *)
   end.
 
@@ -600,8 +600,8 @@ Definition pp_write (a:atom) (l:list EdgeLabel.t) (vl:atom) :=
 
 
 Definition write (env:aenv) (d:domain) (a:atom) (l:list EdgeLabel.t) (vl:atom)  : res (domain * KVar * bool) :=
-  let* (d,ea) := eval_atom env d a in
-  let* (d,v) := eval_atom env d vl  in
+  let* (d,ea) := aeval_atom env d a in
+  let* (d,v) := aeval_atom env d vl  in
   match ea with
   | KDead | KPrim => fail (* We could give error messages *)
   | KNode n => (* this is a reference *)
@@ -652,7 +652,7 @@ Fixpoint bind_args (te:tenv) (env:aenv) (d:domain) (args: list atom) (params : l
                 | nil => fail
                 | (i1,bt1)::params1 =>
                     let* ty := btyp_to_typ te bt1 in
-                    let* (d,k) := eval_atom env d a1  in
+                    let* (d,k) := aeval_atom env d a1  in
                     let* b := compat_typ d k ty in
                     let* bargs := bind_args te env d args1 params1 in
                     if b
@@ -695,7 +695,7 @@ Definition get_function (env:aenv) (vars: Vars.t) (id:ident) :=
   end.
 
 Definition deep_access (env:aenv) (d:domain) (a:atom) (acc : list EdgeLabel.t)  : res (domain * KVar) :=
-  let* (d,v) := eval_atom env d a in
+  let* (d,v) := aeval_atom env d a in
   match v with
   | KDead => fail
   | KPrim => fail (* Shouldn't happen - typing *)
@@ -737,7 +737,7 @@ Definition call (te:tenv) (env: aenv) (d:domain) (id:ident) (bt: btyp) (args:lis
 
 Definition eval_comp (te:tenv) (env : aenv) (d:domain) (c:comp)  : res (domain * KVar) :=
   match c with
-  | CpAtom a _ => eval_atom env d a
+  | CpAtom a _ => aeval_atom env d a
   | CpArraySet a i vl _ => array_set env d a i vl
   | CpRecordUpdate a fd vl _ => record_set env d a fd vl
   | CpCall f btf args _  => call te env d f btf args
@@ -834,7 +834,7 @@ Fixpoint eval_statement (te:tenv) (env: aenv) (s:statement) (d:domain) : res (do
                         | inr _ => Error (MSG "sequence is not well-typed" :: nil)
                         | inl d2 => eval_statement te env s2 d2
                         end
-  | StReturn a => let* (d,v) :=  eval_atom env d a in
+  | StReturn a => let* (d,v) :=  aeval_atom env d a in
                   match v with
                   | KDead => Error (MSG "return of a dead expression" :: nil)
                   | KPrim => OK(inr nil)
@@ -881,7 +881,7 @@ Fixpoint xpath_above_alias (d:domain) (fuel:nat) (n:int) :=
 
 (** [path_above_alias] returns paths in reverse order *)
 Definition path_above_alias (env:aenv) (d:domain) (a:atom) :=
-  let* (d,v) := eval_atom env d a in
+  let* (d,v) := aeval_atom env d a in
   match v with
   | KNode n =>
       let* f := G.depth (Pto d) in
@@ -909,7 +909,7 @@ Fixpoint xpath_below_alias (d:domain) (fuel:nat) (n:int) :=
   end.
 
 Definition path_below_alias (env:aenv) (d:domain) (a:atom) :=
-  let* (d,v) := eval_atom env  d a in
+  let* (d,v) := aeval_atom env  d a in
   match v  with
   | KNode n =>
       let* f := G.depth (Pto d) in

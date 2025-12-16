@@ -1067,18 +1067,6 @@ Lemma typof_field_is_type :
     | _ => (fun _ => fail)
     end) v.
 
-  Fixpoint eval_app (tparams: list typ) (tret: typ) (f: eval_funtyp eval_typ tparams (eval_typ tret)) (args: DList.dlist eval_typ  tparams) :
-    res (eval_typ tret).
-  Proof.
-    destruct args.
-    - simpl in f. apply (f tt).
-    - simpl in f.
-      destruct l.
-      +  apply (f e).
-      + apply (eval_app _ _ (f e) args).
-  Defined.
-
-
 
   Fixpoint eval_app_typ (tparams: list typ) (tret: typ) (f: eval_funtyp eval_typ tparams (eval_typ tret)) (args: DList.dlist eval_typ tparams) (ty:typ):
     res (eval_typ ty).

@@ -10,7 +10,7 @@ FRONTEND=\
 
 BACKEND=\
 	ImpBNF.v ImpBNFgen.v Imp1.v Imp1gen2.v Imp1ElimAlias.v InvAnalysis.v\
-	Unboxing.v Imp2.v Imp2gen.v GlobRewrite.v Csyntaxgen.v
+	Unboxing.v Imp2.v Imp2gen.v GlobRewrite.v Csyntaxgen.v Imp1Imp.v
 
 BCOMP=Compiler.v
 
@@ -97,7 +97,7 @@ $(BUILD_DIR)/extraction/STAMP: $(VBUILD:.v=.vo) $(EXTRDEP.v=.vo) $(BUILD_DIR)/ex
 	@$(COQEXEC) $(BUILD_DIR)/extraction.v
 	@touch $(BUILD_DIR)/extraction_tmp/STAMP
 	@if ! [ -d "$(BUILD_DIR)/extraction" ]; then \
-    	mkdir $(BUILD_DIR)/extraction; \
+	mkdir $(BUILD_DIR)/extraction; \
     fi
 	@./sync.sh $(BUILD_DIR)/extraction_tmp $(BUILD_DIR)/extraction
 

@@ -55,6 +55,23 @@ Fixpoint grecord_mmap {A: Type} (F1 : A -> Type) (F2 : A -> Type) (F : forall (x
                 OK ( Field (fst p) fd, rc)
   end.
 
+
+Section REL.
+  Context {A: Type}.
+  Context {F1 : A -> Type}.
+  Context {F2 : A -> Type}.
+  Variable (R : forall (x:A), F1 x -> F2 x -> Prop).
+
+  Fixpoint grecord_rel {fields : smaplist A} : grecord F1 fields -> grecord F2 fields -> Prop :=
+  match fields  with
+  | nil => fun _ _ => True
+  | p :: fields' =>
+      fun  r1 r2 => R (snd p) (proj_field (fst r1)) (proj_field (fst r2)) /\
+        grecord_rel  (snd r1) (snd r2)
+  end.
+End REL.
+
+
 Inductive sfield {A: Type} (F: A -> Type) :=
   mksfield (s:string) (a:A) (v: F a).
 
@@ -63,6 +80,13 @@ Fixpoint list_of_grecord {A: Type} (F: A -> Type) (fields : smaplist A) : grecor
   | nil => fun _  => nil
   | p :: l => (fun '(fd, r) => mksfield F (fst p) (snd p) (proj_field fd) :: list_of_grecord  F l r)
   end.
+
+Fixpoint Forall {A: Type} {F : A -> Type} (P : forall (x:A), F x ->  Prop) {fields : smaplist A}: grecord F fields -> Prop :=
+  match fields with
+  | nil => fun _ => True
+  | p :: l => fun r => P (snd p) (proj_field (fst r)) /\ Forall P (snd r)
+  end.
+
 
 Definition record (fields : smaplist Type) := grecord (fun x => x) fields.
 
@@ -76,6 +100,20 @@ Fixpoint gproj {A: Type} (F : A -> Type) {fields: smaplist A} (rc: grecord F fie
     + apply (ret a).
     + apply (gproj A F fields' g).
 Defined.
+
+(** [gprojT] has a simpler return type *)
+Fixpoint gprojT {A: Type} {F : A -> Type} {fields: smaplist A} (rc: grecord F fields) (k: key) {struct fields} :
+  res {t: A & F t}.
+Proof.
+  destruct fields as [| [x tx] fields'].
+  - apply fail.
+  - simpl in rc. destruct rc as (fd & rc').
+    destruct (k=?x)%string.
+    + apply (ret (existT _ tx (proj_field fd))).
+    + apply (gprojT A F fields' rc' k).
+Defined.
+
+
 
 Definition proj {fields: smaplist Type} (r:record fields) (k: key) : res (type_of_field k fields) :=
   gproj (fun x => x)  r k.
