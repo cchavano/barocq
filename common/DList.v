@@ -1,16 +1,17 @@
 (** Dependent list indexed by [typ] *)
-From BarocqComp Require Import Types.
 From BarocqComp Require Import Error Utils.
 From compcert Require Import Coqlib.
 Import List Notations.
 
 Section S.
 
-  Variable Ftyp : typ -> Type.
+  Context {A: Type}.
 
-  Inductive dlist : list typ -> Type :=
+  Variable Ftyp : A -> Type.
+
+  Inductive dlist : list A -> Type :=
   | DNIL : dlist nil
-  | DCONS : forall {ty:typ} (e: Ftyp ty) {l:list typ} (dl : dlist l) , dlist (ty::l).
+  | DCONS : forall {ty:A} (e: Ftyp ty) {l:list A} (dl : dlist l) , dlist (ty::l).
 
   Lemma inj_list_hd : forall {A:Type} {e1 e2:A} {l1 l2:list A},
       e1::l1 = e2::l2 ->  e1 = e2.
@@ -24,15 +25,10 @@ Section S.
     congruence.
   Defined.
 
-  Definition cast (ty ty': typ) (EQ: ty = ty') (v: Ftyp ty) : Ftyp ty'.
-  Proof.
-    apply (@cast  (Ftyp ty)).
-    f_equal.
-    exact EQ.
-    exact v.
-  Defined.
+  Definition cast {ty ty': A} (EQ: ty = ty') (v: Ftyp ty) : Ftyp ty' :=
+    cast (f_equal Ftyp EQ) v.
 
-  Definition car {ty:typ} {lt:list typ} (dl : dlist (ty::lt)) : Ftyp ty.
+  Definition car {ty:A} {lt:list A} (dl : dlist (ty::lt)) : Ftyp ty.
   Proof.
     remember (ty::lt) as l.
     destruct dl.
@@ -41,7 +37,7 @@ Section S.
       exact e.
   Defined.
 
-  Definition cdr {ty:typ} {lt:list typ} (dl : dlist (ty::lt)) : dlist lt.
+  Definition cdr {ty:A} {lt:list A} (dl : dlist (ty::lt)) : dlist lt.
   Proof.
     remember (ty::lt) as l.
     destruct dl.
@@ -51,7 +47,7 @@ Section S.
       exact dl.
   Defined.
 
-  Fixpoint seq (l:list typ) : forall (x:dlist l), dlist l:=
+  Fixpoint seq (l:list A) : forall (x:dlist l), dlist l:=
     match l with
     | nil  => fun _ => DNIL
     | ty ::tl  => fun x => DCONS (car x) (seq _ (cdr x))
@@ -71,14 +67,24 @@ Section S.
     reflexivity.
   Qed.
 
+  Variable eq_dec : forall (t1 t2:A),{t1 = t2} + {t1 <> t2}.
+
+
+  Definition equal {t1:A} (v1 : Ftyp t1) {t2:A} (v2:Ftyp t2) : Prop :=
+    match eq_dec t1 t2 with
+    | left EQ => cast EQ v1 = v2
+    | _       => False
+    end.
+
+
   
-  Context {A: Type}.
+  Context {B: Type}.
 
   Section MMAP.
 
-  Variable F : forall (ty:typ), A -> res (Ftyp ty).
+  Variable F : forall (ty:A), B -> res (Ftyp ty).
 
-  Fixpoint mmap  (l:list A) (lt:list typ) : res (dlist lt) :=
+  Fixpoint mmap  (l:list B) (lt:list A) : res (dlist lt) :=
     match l with
     | nil =>  match lt with
               | nil => OK DNIL
@@ -97,9 +103,9 @@ Section S.
 
   End MMAP.
 
-  Variable P : forall (ty:typ) (v1 v2: Ftyp ty), Prop.
+  Variable P : forall (ty:A) (v1 v2: Ftyp ty), Prop.
 
-  Inductive Forall2 : forall (lt:list typ) (d1 d2: dlist lt), Prop :=
+  Inductive Forall2 : forall (lt:list A) (d1 d2: dlist lt), Prop :=
   | ForallDNIL : Forall2 nil DNIL DNIL
   | ForallDCONS : forall ty v1 v2, P ty v1 v2 -> forall lt d1 d2, Forall2 lt d1 d2 -> Forall2 (ty::lt) (DCONS v1 d1) (DCONS v2 d2).
 
@@ -125,13 +131,13 @@ End S.
 
 Section MAP.
 
-  Context {A: Type}.
-  Variable Ftyp : typ -> Type.
-  Variable F : forall (ty:typ), A -> res (Ftyp ty).
+  Context {A B: Type}.
+  Variable Ftyp : A -> Type.
+  Variable F : forall (ty:A), B -> res (Ftyp ty).
 
-  Definition resFtyp (ty:typ) := res (Ftyp ty).
+  Definition resFtyp (ty:A) := res (Ftyp ty).
 
-  Fixpoint map2  (l:list A) (lt:list typ) : res (dlist resFtyp lt) :=
+  Fixpoint map2  (l:list B) (lt:list A) : res (dlist resFtyp lt) :=
     match lt as l0 return (res (dlist resFtyp l0)) with
     | nil => match l with
              | nil => OK (DNIL resFtyp)
@@ -148,13 +154,41 @@ Section MAP.
 
 End MAP.
 
+Section IN.
+  Context {A: Type}.
+  Context {F1 : A -> Type}.
+  Variable eq_dec : forall (t1 t2:A),{t1 = t2} + {t1 <> t2}.
+
+  Fixpoint In {ty:A} (v:F1 ty) {lt:list A} (dl : dlist F1 lt) : Prop :=
+    match dl with
+    | DNIL _ => False
+    | DCONS _ e1 dl1 => equal F1 eq_dec v e1 \/ In v dl1
+    end.
+
+  Fixpoint nth_error {lt:list A} (dl :dlist F1 lt) (n:nat) : res {a:A & F1 a} :=
+    match n with
+    | O%nat => match dl with
+               | DNIL _ => fail
+               | DCONS _ e1 _ =>  OK (existT _ _ e1)
+               end
+    | S n'  => match dl with
+               | DNIL _ => fail
+               | DCONS _ _ dl1 => nth_error dl1 n'
+               end
+    end.
+
+  
+End IN.
+
+
+
 Section Forall2Rec.
+  Context {A : Type}.
+  Context {F1 : A -> Type}.
+  Context {F2 : A -> Type}.
+  Variable R : forall (ty:A), F1 ty -> F2 ty -> Prop.
 
-  Context {F1 : typ -> Type}.
-  Context {F2 : typ -> Type}.
-  Variable R : forall (ty:typ), F1 ty -> F2 ty -> Prop.
-
-  Fixpoint forall2  (lt:list typ) : dlist F1 lt -> dlist F2 lt -> Prop  :=
+  Fixpoint forall2  (lt:list A) : dlist F1 lt -> dlist F2 lt -> Prop  :=
     match lt  with
     | nil => fun _ _ => True
     | ty :: lt' => fun dl1 dl2 => R ty (car F1 dl1) (car F2 dl2)
@@ -164,13 +198,3 @@ Section Forall2Rec.
 
 End Forall2Rec.
 
-Fixpoint eval_app {eval_typ : typ -> Type} (tparams: list typ) (tret: typ) (f: eval_funtyp eval_typ tparams (eval_typ tret)) (args: DList.dlist eval_typ  tparams) :
-    res (eval_typ tret).
-Proof.
-  destruct args.
-  - simpl in f. apply (f tt).
-  - simpl in f.
-    destruct l.
-    + apply (f e).
-    + apply (eval_app _ _ _ (f e) args).
-Defined.

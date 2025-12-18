@@ -405,6 +405,11 @@ Module AtomOrdered <: OrderedType.
     destruct o1,o2; simpl ; intuition congruence.
   Qed.
 
+  Definition unary_op_dec (o1 o2:unary_op) : {o1 = o2} + {o1 <> o2}.
+  Proof.
+    decide equality.
+  Qed.
+
   Lemma unary_op_compare_trans : forall x y z c,
       unary_op_compare x y = c -> unary_op_compare y z = c -> unary_op_compare x z = c.
   Proof.
@@ -413,7 +418,6 @@ Module AtomOrdered <: OrderedType.
 
   Definition binary_op_compare (o1 o2:binary_op) : comparison :=
     Pos.compare (binary_op_positive o1) (binary_op_positive o2).
-
 
   Lemma binary_op_compare_eq : forall o1 o2,
       binary_op_compare o1 o2 = Eq <-> o1 = o2.
@@ -424,6 +428,11 @@ Module AtomOrdered <: OrderedType.
     destruct o1,o2 ; simpl in *; intuition congruence.
     subst.
     apply Pos.compare_refl.
+  Qed.
+
+  Definition binary_op_dec (o1 o2:binary_op) : {o1 = o2} + {o1 <> o2}.
+  Proof.
+    decide equality.
   Qed.
 
   Lemma binary_op_compare_trans : forall x y z c,

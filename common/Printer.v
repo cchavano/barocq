@@ -13,6 +13,8 @@ Fixpoint appendl (l:list string) : string :=
 
 Definition string_of_positive (p:positive) := string_of_Z (Zpos p).
 
+Definition string_of_nat (n:nat) := string_of_Z (Z.of_nat n).
+
 Definition pp_int (i:Integers.Int.int) : box :=
   Bstr (string_of_Z (Integers.Int.unsigned i)).
 

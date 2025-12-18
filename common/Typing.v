@@ -1,4 +1,4 @@
-From Coq Require Import List String ZArith.
+From Coq Require Import List String ZArith Bool.
 From BarocqComp Require Import Error Maps2 Utils Types Syntax Barray Benum.
 Import ListNotations.
 Import Syntax.Typed.
@@ -477,3 +477,72 @@ Definition typecheck_match (be: benv) (ty: btyp) (cases: list (pattern * btyp)) 
       typecheck_match_rec be ty elems elems cases
   | _ => failwith "Typing.typecheck_match: enum type expected"
   end.
+
+Module Typ.
+  (* Typing functions operating on [typ] *)
+  Definition typecheck_unary_op (op: unary_op) (ty: typ) : res typ :=
+    match op, ty with
+    | UopNotbool, TBool
+    | UopNotint, TInt32 _
+    | UopNotint, TInt64 _
+    | UopNeg, TInt32 _
+    | UopNeg, TInt64 _
+    | UopPlus, TInt32 _
+    | UopPlus, TInt64 _ => ret ty
+    | _, _ => failwith "Typing.typecheck_unary_op: type mismatch"
+    end.
+
+
+  Definition is_bool (ty:typ) :=
+    match ty with
+    | TBool => true
+    | _     => false
+    end.
+
+  Definition same_num (t1 t2:typ) :=
+    match t1 , t2 with
+    | TInt32 s1, TInt32 s2
+    | TInt64 s1, TInt64 s2 =>
+        if signedness_eq_dec s1 s2 then true
+        else false
+    | TEnum t1 l1, TEnum t2 l2 =>
+        if Ident.eq_dec t1 t2 then
+          forall2b String.eqb l1 l2
+        else false
+    |  _ , _ => false
+  end.
+
+  Definition same_int (t1 t2:typ) :=
+    match t1 , t2 with
+    | TInt32 s1, TInt32 s2
+    | TInt64 s1, TInt64 s2 =>
+        if signedness_eq_dec s1 s2 then true
+        else false
+    |  _ , _ => false
+  end.
+
+
+
+  Definition typecheck_binary_op (op: binary_op) (ty1 ty2: typ) : res typ :=
+    match op with
+    | BopAndbool
+    | BopOrbool
+    | BopXorbool => if is_bool ty1 && is_bool ty2
+                    then ret TBool
+                    else failwith "Typing.typecheck_binary_op: type mismatch"
+    | BopEq
+    | BopNeq => if same_num ty1 ty2 || (is_bool ty1 && is_bool ty2)
+                then ret TBool
+                else failwith "Typing.typecheck_binary_op: integer signedness mismatch"
+    | BopLt
+    | BopLe
+    | BopGt
+    | BopGe => if same_num ty1 ty2
+               then ret TBool
+               else failwith "Typing.typecheck_binary_op: type mismatch"
+    | _ =>  if same_int ty1 ty2
+            then ret ty1
+            else failwith "Typing.typecheck_binary_op: integer signedness mismatch"
+  end.
+
+End Typ.

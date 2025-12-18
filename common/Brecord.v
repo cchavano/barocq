@@ -1,5 +1,5 @@
 From Coq Require Import PArith List String Bool.
-From BarocqComp Require Import Error Maps2 Ident Utils.
+From BarocqComp Require Import DList Error Maps2 Ident Utils.
 
 Definition key : Type := ident.
 
@@ -80,6 +80,14 @@ Fixpoint list_of_grecord {A: Type} (F: A -> Type) (fields : smaplist A) : grecor
   | nil => fun _  => nil
   | p :: l => (fun '(fd, r) => mksfield F (fst p) (snd p) (proj_field fd) :: list_of_grecord  F l r)
   end.
+
+Fixpoint dlist_of_grecord {A: Type} {F: A-> Type} {fields : smaplist A} : grecord F fields -> DList.dlist F (List.map snd fields) :=
+  match fields as l return (grecord F l -> dlist F (map snd l)) with
+  | nil => fun _  => DNIL F
+  | p :: fields' =>
+       fun r  => DCONS F (proj_field (fst r)) (dlist_of_grecord  (snd r))
+  end.
+
 
 Fixpoint Forall {A: Type} {F : A -> Type} (P : forall (x:A), F x ->  Prop) {fields : smaplist A}: grecord F fields -> Prop :=
   match fields with

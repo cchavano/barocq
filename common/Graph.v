@@ -1864,9 +1864,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       lia.
   Qed.
 
-
-
-
   Definition int_overflow {A: Type} := Error (A:= A) (cons (MSG "fresh has reached max_int"%string) nil).
 
   Fixpoint register_edgelabels (n:int) (l:list (EdgeLabel.t * int)) (m:ELMap.t (list int))  :=

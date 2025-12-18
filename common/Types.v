@@ -406,7 +406,6 @@ Definition typof_record (ty:typ) :=
   end.
 
 
-
 (** * Conversion of a typ to a Coq Type *)
 
 Section EVALTYP.
