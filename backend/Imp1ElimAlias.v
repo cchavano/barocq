@@ -429,6 +429,127 @@ Definition pp (s:t) : box := STree.pp (Bstr " -> ") pp_kvar (Vars s).
 
 End Vars.
 
+Fixpoint subst_atom (env : smaplist atom) (a:atom): res atom :=
+  match a with
+  | AVar id bt =>
+      match MapList.find_err string_dec id env with
+      | OK a => OK a
+      | Error _ => Error (MSG id :: nil)
+      end
+  | ACast a bt => let* a := subst_atom env a in
+                  OK (ACast a bt)
+  | AUnaryOp o a bt => let* a := subst_atom env a in
+                       OK (AUnaryOp o a bt)
+  | ABinaryOp o a1 a2 bt =>
+      let* a1 := subst_atom env a1 in
+      let* a2 := subst_atom env a2 in
+      OK (ABinaryOp o a1 a2 bt)
+  | AArrayGet a i ly bt =>
+      let* a := subst_atom env a in
+      let* i := subst_atom env i in
+      OK (AArrayGet a i ly bt)
+  | ARecordProj a fd ly bt =>
+      let* a := subst_atom env a in
+      OK (ARecordProj a fd ly bt)
+  | APureCall id bt1 la bt2 =>
+      let* l := maperr (subst_atom env) la in
+      OK (APureCall id bt1 l bt2)
+  | ATrue | AFalse | AInt32 _ _ | AInt64 _ _ | AConstr _ _ _  => OK a
+  end.
+
+Definition subst_edge (env : smaplist atom) (e: EdgeLabel.t) :=
+  match e with
+  | EdgeLabel.Top => Error (MSG "index is unknown" :: nil)
+  | EdgeLabel.Field fd => OK (EdgeLabel.Field fd)
+  | EdgeLabel.Index i  => let* a := subst_atom env i in
+                          OK (EdgeLabel.Index i)
+  end.
+
+
+Module GEXPR.
+  (* Restricted form of expressions.
+     Due to typing issues, it is not straightforward to reconstruct an atom... *)
+
+  Inductive t :=
+  | Atm (a:atom)
+  | Var (id:ident)
+  | Get (e:t) (field : EdgeLabel.t).
+
+
+  Fixpoint incl_idents (l1 l2 :list ident) : res unit :=
+    match l1 with
+    | nil => OK tt
+    | e::l1' => if List.existsb (String.eqb e) l2
+                then incl_idents l1' l2
+                else Error (MSG "Variable " :: MSG e :: MSG " would escape its scope." :: nil)
+    end.
+
+  Definition check_edge (args:list ident) (e:EdgeLabel.t) : res unit :=
+    match e with
+    | EdgeLabel.Top => Error (MSG "Expression cannot contain an unknown indexe." :: nil)
+    | EdgeLabel.Field fd => OK tt
+    | EdgeLabel.Index e  => let v := AtomOrdered.vars_of_atom e in
+                            incl_idents v args
+    end.
+
+  Fixpoint check_expr (args:list ident) (e:t) : res unit :=
+    match e with
+    | Atm a => let v := AtomOrdered.vars_of_atom a in
+               incl_idents v args
+    | Var i => incl_idents (i::nil) args
+    | Get e fd => let* _ := check_expr args e in
+                  check_edge args fd
+    end.
+
+
+  Definition eq_dec (e1 e2:t) : {e1 = e2} + {e1 <> e2}.
+  Proof.
+    decide equality.
+    apply AtomOrdered.eq_dec.
+    apply string_dec.
+    apply EdgeLabel.eq_dec.
+  Qed.
+
+  Fixpoint subst_expr (env : smaplist atom) (e:t) : res t :=
+    match e with
+    | Atm a => let* a := subst_atom env a in
+               OK (Atm a)
+    | Var  id  =>  match MapList.find_err string_dec id env with
+                   | OK a => OK (Atm a)
+                   | Error _ => Error (MSG id :: nil)
+                  end
+    | Get e fd => let* e := subst_expr env e in
+                  let* fd := subst_edge env fd in
+                  OK (Get e fd)
+    end.
+
+  Fixpoint pp (e:t) :=
+    match e with
+    | Atm a => Printer.Typed.pp_atom a
+    | Var id => Bstr id
+    | Get e fd => Bcat (pp e) (EdgeLabel.pp fd)
+    end.
+
+(*  Definition typof (te:tenv) (e:t) : res typ :=
+    match e with
+    | Atm a => btyp_to_typ te a
+    | Get e fd =>
+        let* bt := typof te e in
+ *)
+
+End GEXPR.
+
+
+
+
+
+
+
+
+
+
+
+
 
 Record domain := mkdom
     {
@@ -446,16 +567,17 @@ Record domain := mkdom
 Definition pp_domain (d:domain) :=
   Bstack (Bstr "") (Bcat (Bframe "_" "|"  (Vars.pp (Vars d))) (G.pp (Pto d))) Middle.
 
-Inductive sfunction {A:Type} :=
+Inductive sfunction  :=
 | RPrim (* return a primitive value *)
-| RDeep (a:A).
+| RDeep (e:GEXPR.t).
 
-Definition sfunction_eq_dec {A: Type} (eq_dec : forall (a1 a2:A),{a1 = a2} + {a1 <> a2}) (s1 s2:@sfunction A) : {s1 = s2} + {s1 <> s2}.
+Definition sfunction_eq_dec  (s1 s2:sfunction) : {s1 = s2} + {s1 <> s2}.
 Proof.
   decide equality.
+  apply GEXPR.eq_dec.
 Defined.
 
-Definition afunction := Syntax.function (@sfunction atom) typ.
+Definition afunction := Syntax.function sfunction  typ.
 
 Inductive alit := | IsPrim (b:bool).
 
@@ -727,32 +849,17 @@ Definition deep_access (env:aenv) (d:domain) (a:atom) (acc : list EdgeLabel.t)  
   | KNode n => bind_path d n acc
   end.
 
-Fixpoint subst_atom (env : smaplist atom) (a:atom): res atom :=
-  match a with
-  | AVar id bt =>
-      match MapList.find_err string_dec id env with
-      | OK a => OK a
-      | Error _ => Error (MSG id :: nil)
-      end
-  | ACast a bt => let* a := subst_atom env a in
-                  OK (ACast a bt)
-  | AUnaryOp o a bt => let* a := subst_atom env a in
-                       OK (AUnaryOp o a bt)
-  | ABinaryOp o a1 a2 bt =>
-      let* a1 := subst_atom env a1 in
-      let* a2 := subst_atom env a2 in
-      OK (ABinaryOp o a1 a2 bt)
-  | AArrayGet a i ly bt =>
-      let* a := subst_atom env a in
-      let* i := subst_atom env i in
-      OK (AArrayGet a i ly bt)
-  | ARecordProj a fd ly bt =>
-      let* a := subst_atom env a in
-      OK (ARecordProj a fd ly bt)
-  | APureCall id bt1 la bt2 =>
-      let* l := maperr (subst_atom env) la in
-      OK (APureCall id bt1 l bt2)
-  | ATrue | AFalse | AInt32 _ _ | AInt64 _ _ | AConstr _ _ _  => OK a
+Fixpoint aeval_expr (env:aenv) (d:domain) (e:GEXPR.t) : res (domain * KVar) :=
+  match e with
+  | GEXPR.Atm a => aeval_atom env d a
+  | GEXPR.Get e fd => let* (d,v) := aeval_expr env d e in
+                      match v with
+                      | KDead => fail
+                      | KPrim => fail
+                      | KNode n => bind_path d n (fd::nil)
+                      end
+  | GEXPR.Var id    =>  let* v := eval_var env  (Vars d) id (*bt*) in
+                       OK (d,v)
 
   end.
 
@@ -772,8 +879,8 @@ Definition call (te:tenv) (env: aenv) (d:domain) (id:ident) (bt: btyp) (args:lis
                 | RDeep e =>
                     let params := (List.map fst (fn_params af)) in
                     let  args := List.combine params args in
-                    match subst_atom args e with
-                    | OK a => aeval_atom env d a
+                    match GEXPR.subst_expr args e with
+                    | OK a => aeval_expr env d a
                     | Error m =>
                         Error (MSG "function ":: MSG id :: MSG " the parameter " ::
                                           (m ++ MSG " cannot be found within " :: MSG (Pp.pp (pp_list (Bstr ",") Bstr params)) :: nil))
@@ -854,11 +961,11 @@ Definition merge_domain (d1 d2:domain) : res domain :=
   OK (mkdom v pto atm).
 
 
-Definition join_sfunction (s1 s2:@sfunction (list EdgeLabel.t)) : res sfunction :=
+Definition join_sfunction (s1 s2:sfunction)  : res sfunction :=
   match s1 , s2 with
   | RPrim , RPrim => OK RPrim
-  | RPrim , RDeep e | RDeep e , RPrim => efail (* This should be a typing error *)
-  | RDeep e1 , RDeep e2 => if List.list_eq_dec EdgeLabel.eq_dec e1 e2
+  | RPrim , RDeep e | RDeep e , RPrim => efail (* Or maybe e is just an atom ... *)
+  | RDeep e1 , RDeep e2 => if GEXPR.eq_dec  e1 e2
                            then OK (RDeep e1)
                            else fail
   end.
@@ -884,7 +991,7 @@ Definition join_sfunction (s1 s2:@sfunction (list EdgeLabel.t)) : res sfunction 
 
 
 
-Definition merge  (v1 v2 : domain + @sfunction (list EdgeLabel.t)) :=
+Definition merge  (v1 v2 : domain + sfunction ) :=
   match v1 , v2 with
   | inl d1 , inl d2 => let* d := merge_domain d1 d2 in
                        OK (inl d)
@@ -899,7 +1006,23 @@ Definition merge  (v1 v2 : domain + @sfunction (list EdgeLabel.t)) :=
 Definition update_variable (v:ident) (d:domain) (kv:KVar) :=
   set_variable v kv (forget_var v d).
 
-Fixpoint eval_statement (te:tenv) (env: aenv) (s:statement) (d:domain) : res (domain + @sfunction (list EdgeLabel.t)) :=
+Fixpoint expr_of_list (e:GEXPR.t) (l:list EdgeLabel.t) :=
+  match l with
+  | nil => e
+  | fd::l => expr_of_list (GEXPR.Get e fd) l
+  end.
+
+
+Definition expr_of_path (l : list EdgeLabel.t) :=
+  match l with
+  | nil => Error (MSG "Invalid path expression" :: nil)
+  | e::l => match e with
+            | EdgeLabel.Field fd => OK (expr_of_list (GEXPR.Var fd) l)
+            |  _                 => Error (MSG "Invalid path expression" :: nil)
+            end
+  end.
+
+Fixpoint eval_statement (te:tenv) (env: aenv) (s:statement) (d:domain) : res (domain + sfunction) :=
   match s with
   | StSet v c => match eval_comp te env d c  with
                  | OK (d,k) =>  OK (inl (update_variable v d k))
@@ -927,7 +1050,8 @@ Fixpoint eval_statement (te:tenv) (env: aenv) (s:statement) (d:domain) : res (do
       | KPrim => OK(inr RPrim)
       | KNode n =>
           let* p := G.get_path (Pto d) n in
-          OK (inr (RDeep p))
+          let* e := expr_of_path p in
+          OK (inr (RDeep e))
       end
   | StAttr a s => if String.eqb "mustalias" a then Error (msg (Pp.pp (pp_domain d)))
                   else eval_statement te env s d
@@ -1074,37 +1198,17 @@ Definition domain_of_function (te:tenv)(f:function) : res domain :=
        else fail
   else fail.
 
-Definition incl_idents (l1 l2 :list ident) :=
-  List.forallb (fun x => List.existsb (fun y => String.eqb x y) l2) l1.
-
-Definition atom_of_edge (args:list ident) (e:EdgeLabel.t) (a:atom)  :=
-  match e with
-  | EdgeLabel.Top => efail
-  | EdgeLabel.Field fd => OK (ARecordProj a fd LyPrim BBool) (* Ignore btyp *)
-  | EdgeLabel.Index e  => let v := AtomOrdered.vars_of_atom e in
-                          if incl_idents v args
-                          then OK (AArrayGet e e LyPrim BBool)
-                          else efail
-  end.
 
 
 
-Definition atom_of_path (args : list ident) (e:atom) (l:list EdgeLabel.t) :=
-  fold_right_err (atom_of_edge args) l e.
-
-Definition sfunction_of_path (params: list (ident * btyp)) (r : @sfunction (list EdgeLabel.t)) : res (@sfunction atom) :=
+Definition sfunction_of_path (params: list (ident * btyp)) (r : sfunction ) : res sfunction :=
   let params := List.map fst params in
   match r with
   | RPrim => OK RPrim
-  | RDeep l =>
-      match l with
-      | EdgeLabel.Field p :: l =>
-          if List.existsb (String.eqb p) params
-          then let* a := atom_of_path params (AVar p BBool) l in
-               OK (RDeep a)
-          else fail
-      | _ => fail
-      end
+  | RDeep e => match GEXPR.check_expr params e with
+               | OK _ => OK (RDeep e)
+               | Error m => Error (MSG "Symbolic expression ":: MSG (Pp.pp (GEXPR.pp e)) :: MSG " is invalid. " :: MSG nl :: m)
+               end
   end.
 
 
@@ -1139,11 +1243,11 @@ Fixpoint get_write_arg (l:list (param_attr * btyp)) : res positive :=
       end
   end.
 
-Definition get_return (te:tenv)(l:list (param_attr * btyp)) (r:btyp) : res (@sfunction atom) :=
+Definition get_return (te:tenv)(l:list (param_attr * btyp)) (r:btyp) : res sfunction  :=
   let* ty := btyp_to_typ te r in
   if typ_is_prim ty then OK RPrim
   else let* i := get_write_arg l  in
-       OK (RDeep (AVar (Printer.string_of_positive i) BBool)).
+       OK (RDeep (GEXPR.Var (Printer.string_of_positive i) )).
 
 Fixpoint xmapi {A B:Type} (F: positive -> A -> B) (i:positive) (l:list A) : list B :=
   match l with
@@ -1153,7 +1257,7 @@ Fixpoint xmapi {A B:Type} (F: positive -> A -> B) (i:positive) (l:list A) : list
 
 Definition mapi {A B:Type} (F: positive -> A -> B) (l:list A) := xmapi F xH l.
 
-Definition afunction_of_sfunction (l:list (param_attr * typ)) (r:typ) (s:@sfunction atom):=
+Definition afunction_of_sfunction (l:list (param_attr * typ)) (r:typ) (s:sfunction):=
   mk_function r (mapi (fun i e => (Printer.string_of_positive i,snd e)) l) s.
 
 Definition eval_globdef (te:tenv) (env:aenv) (gd:globdef) : res aenv :=

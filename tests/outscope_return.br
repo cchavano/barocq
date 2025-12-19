@@ -1,0 +1,13 @@
+module Test
+
+    record r {
+    field:u64,
+  }
+
+    record kstate {
+    vregs:[r],
+  }
+
+defn write(ks: kstate, rid: u64, v: u64) : r =
+  let idx  = rid+1UL in
+  ks.vregs[idx]
