@@ -5,16 +5,20 @@ SUCCESS= update_array_in_record.br update_record_in_record.br suspend.br suspend
 KO= $(FAIL:.br=.fail)
 OK= $(SUCCESS:.br=.ok)
 
+all : ok fail
+
 fail : $(KO)
 
 ok : $(OK)
 
 %.fail:%.br
+	@echo SHOULD FAIL
 	@echo barocq $*.br
 	@barocq $*.br &> $*.fail ; exit 0
 	@cat $*.fail
 
 %.ok:%.br
+	@echo SHOULD SUCCEED
 	@echo barocq $*.br
 	@barocq $*.br > $*.ok
 	@cat $*.ok
