@@ -67,6 +67,16 @@ Section S.
     reflexivity.
   Qed.
 
+  Lemma car_cdr : forall (t:A) (lt:list A) (dl :dlist (t::lt)),
+      dl = DCONS (car dl) (cdr dl).
+  Proof.
+    intros.
+    rewrite <- (seq_id _ dl) at 1.
+    simpl.
+    rewrite seq_id.
+    reflexivity.
+  Qed.
+
   Variable eq_dec : forall (t1 t2:A),{t1 = t2} + {t1 <> t2}.
 
 
