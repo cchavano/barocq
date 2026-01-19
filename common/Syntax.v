@@ -261,6 +261,18 @@ Proof.
   decide equality.
 Defined.
 
+Definition function_dec {B T: Type}
+  (b_dec : forall (b1 b2:B), {b1 = b2} + { b1 <> b2})
+  (t_dec : forall (t1 t2:T), {t1 = t2} + { t1 <> t2})
+  (f1 f2: function B T) :  {f1 = f2} + {f1 <> f2}.
+Proof.
+  decide equality.
+  apply list_eq_dec.
+  decide equality.
+  apply eq_dec.
+Defined.
+
+
 Module IntOrderded.
 
   Definition compare_int (i1 i2:int) := Z.compare (Int.unsigned i1) (Int.unsigned i2).

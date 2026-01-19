@@ -1017,7 +1017,7 @@ Section S.
   Proof.
     intros.
     unfold cast_typ.
-    destruct (typ_eq_dec tf ti).
+    destruct (typ_eq_dec ti tf).
     subst. apply res_rel_refl.
     intros. apply ext_equal_refl. auto.
     constructor.
@@ -1028,11 +1028,10 @@ Section S.
       res_rel (ext_equal tf) (cast_typ abs_typ_impl v1 tf) (cast_typ abs_typ_impl v2 tf).
   Proof.
     unfold cast_typ.
-    intros. destruct (typ_eq_dec tf ti); try constructor.
+    intros. destruct (typ_eq_dec ti tf); try constructor.
     subst.
-    constructor. auto.
+    simpl. auto.
   Qed.
-
 
   Lemma ext_equal_eval_unary_op : forall op ti x y tf,
       ext_equal ti x y ->
@@ -1084,7 +1083,7 @@ Section S.
   Proof.
     intros.
     unfold ecast_typ.
-    destruct (typ_eq_dec tf ti). subst.
+    destruct (typ_eq_dec ti tf). subst.
     apply H.
     constructor.
   Qed.
@@ -1818,8 +1817,9 @@ Section S.
   Proof.
     intros.
     unfold ecast_typ.
-    destruct (typ_eq_dec tf ti).
-    subst. destruct v.
+    destruct (typ_eq_dec ti tf).
+    subst. simpl.
+    destruct v.
     constructor. apply ext_equal_refl; auto.
     constructor. constructor.
   Qed.
@@ -1833,9 +1833,9 @@ Section S.
     subst. unfold cast_value.
     change (cast eq_refl v0) with v0 in H.
     unfold cast_typ.
-    destruct (typ_eq_dec ty t); try constructor.
-    subst.  unfold eq_rect_r,eq_rect.
-    simpl. constructor;auto. apply ext_equal_sym. auto.
+    destruct (typ_eq_dec t ty); try constructor.
+    subst.
+    simpl. apply ext_equal_sym. auto.
     tauto.
   Qed.
 

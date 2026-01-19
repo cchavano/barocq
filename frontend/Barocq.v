@@ -479,15 +479,15 @@ Section DENOT.
 
   Definition cast_typ  {t2:typ} (v: eval_typ t2) (t1:typ): res (eval_typ t1).
   Proof.
-    destruct (typ_eq_dec t1 t2).
-    subst. exact (OK v).
+    destruct (typ_eq_dec t2 t1).
+    apply (OK (cast (f_equal eval_typ e) v)).
     apply fail.
   Defined.
 
   Definition ecast_typ  {t2:typ} (v: res (eval_typ t2)) (t1:typ): res (eval_typ t1).
   Proof.
-    destruct (typ_eq_dec t1 t2).
-    - subst. exact v.
+    destruct (typ_eq_dec t2 t1).
+    - apply (cast (f_equal res (f_equal eval_typ e)) v).
     - apply fail.
   Defined.
 

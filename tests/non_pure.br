@@ -1,0 +1,21 @@
+module Test
+
+record kstate {
+  vregs:[u64],
+}
+
+defn write(ks: kstate, rid: u64, v: u64) : kstate =
+  let regs = ks.vregs in
+  let regs1 = regs[rid] <- v in
+  let r = ks.vregs <- regs1 in
+  r
+
+(** this is normalised *)
+defn usewrite (ks:kstate, rid: u64, v:u64) : u64 =
+     write(ks,rid,v).vregs[rid]
+
+defn arith(rid: u64, v:u64) : u64 =
+     rid + v
+
+defn usearith (ks:kstate, rid: u64, v:u64) : u64 =
+     arith(rid,v) + ks.vregs[rid]

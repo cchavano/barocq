@@ -13,7 +13,10 @@ Import Imp1.Typed.
     - The use of global variables is limited to primitive types.
     For instance, there is no support for reading a global array.
     This would be doable but would require consider all the global variables as (implicit) arguments of the function.
-*)
+    - Function pointers cannot be stored in memory (arrays or records).
+    This would be doable but require either more precise typing of function arguments
+    or put a default contract on function pointers.
+ *)
 
 Section MAPERR.
   Context {A B: Type}.
@@ -46,24 +49,6 @@ End FOLDERR.
 
 
 
-Inductive KVar :=
-| KDead (* Dead variable - may point anywhere *)
-| KPrim (* Primitive type - no alias *)
-| KNode (n:int) (* Reference in the alias graph *).
-
-Definition get_node (k:KVar) : option int :=
-  match k with
-  | KNode n => Some n
-  | _       => None
-  end.
-
-Definition is_dead (k:KVar) : bool :=
-  match k with
-  | KDead => true
-  | _ => false
-  end.
-
-
 
 Module EdgeLabel <: OrderedType.
 
@@ -84,7 +69,7 @@ Definition pp (e:edge) :=
 Definition next_label (t:typ) (e:edge) :=
   match t, e with
   | TArray ty , (Index _ | Top) => OK ty
-  | TRecord _ l  , Field fd => MapList.find_err Ident.eq_dec fd l
+  | TRecord _ l  , Field fd => Brecord.find_type_of_field fd l
   | _  , _ => fail
   end.
 
@@ -194,6 +179,171 @@ End EdgeLabel.
 
 Module G := Make(TypOrdered)(EdgeLabel).
 
+Fixpoint subst_atom (env : smaplist atom) (a:atom): res atom :=
+  match a with
+  | AVar id bt =>
+      match MapList.find_err string_dec id env with
+      | OK a => OK a
+      | Error _ => Error (MSG id :: nil)
+      end
+  | ACast a bt => let* a := subst_atom env a in
+                  OK (ACast a bt)
+  | AUnaryOp o a bt => let* a := subst_atom env a in
+                       OK (AUnaryOp o a bt)
+  | ABinaryOp o a1 a2 bt =>
+      let* a1 := subst_atom env a1 in
+      let* a2 := subst_atom env a2 in
+      OK (ABinaryOp o a1 a2 bt)
+  | AArrayGet a i ly bt =>
+      let* a := subst_atom env a in
+      let* i := subst_atom env i in
+      OK (AArrayGet a i ly bt)
+  | ARecordProj a fd ly bt =>
+      let* a := subst_atom env a in
+      OK (ARecordProj a fd ly bt)
+  | APureCall id bt1 la bt2 =>
+      let* l := maperr (subst_atom env) la in
+      OK (APureCall id bt1 l bt2)
+  | ATrue | AFalse | AInt32 _ _ | AInt64 _ _ | AConstr _ _ _  => OK a
+  end.
+
+Definition subst_edge (env : smaplist atom) (e: EdgeLabel.t) :=
+  match e with
+  | EdgeLabel.Top => Error (MSG "index is unknown" :: nil)
+  | EdgeLabel.Field fd => OK (EdgeLabel.Field fd)
+  | EdgeLabel.Index i  => let* a := subst_atom env i in
+                          OK (EdgeLabel.Index i)
+  end.
+
+Module GEXPR.
+  (* Restricted form of expressions.
+     Due to typing issues, it is not straightforward to reconstruct an atom... *)
+
+  Inductive t :=
+  (*| Atm (a:atom) *)
+  | Var (id:ident)
+  | Get (e:t) (field : EdgeLabel.t).
+
+
+  Fixpoint incl_idents (l1 l2 :list ident) : res unit :=
+    match l1 with
+    | nil => OK tt
+    | e::l1' => if List.existsb (String.eqb e) l2
+                then incl_idents l1' l2
+                else Error (MSG "Variable " :: MSG e :: MSG " would escape its scope." :: nil)
+    end.
+
+  Definition check_edge (args:list ident) (e:EdgeLabel.t) : res unit :=
+    match e with
+    | EdgeLabel.Top => Error (MSG "Expression cannot contain an unknown indexe." :: nil)
+    | EdgeLabel.Field fd => OK tt
+    | EdgeLabel.Index e  => let v := AtomOrdered.vars_of_atom e in
+                            incl_idents v args
+    end.
+
+  Fixpoint check_expr (args:list ident) (e:t) : res unit :=
+    match e with
+    (*| Atm a => let v := AtomOrdered.vars_of_atom a in
+               incl_idents v args *)
+    | Var i => incl_idents (i::nil) args
+    | Get e fd => let* _ := check_expr args e in
+                  check_edge args fd
+    end.
+
+
+  Definition eq_dec (e1 e2:t) : {e1 = e2} + {e1 <> e2}.
+  Proof.
+    decide equality.
+    (*apply AtomOrdered.eq_dec.*)
+    apply string_dec.
+    apply EdgeLabel.eq_dec.
+  Qed.
+
+(*  Fixpoint subst_expr (env : smaplist atom) (e:t) : res t :=
+    match e with
+    (*| Atm a => let* a := subst_atom env a in
+               OK (Atm a) *)
+    | Var  id  =>  match MapList.find_err string_dec id env with
+                   | OK a => OK (Atm a)
+                   | Error _ => Error (MSG id :: nil)
+                  end
+    | Get e fd => let* e := subst_expr env e in
+                  let* fd := subst_edge env fd in
+                  OK (Get e fd)
+    end.
+*)
+
+  Fixpoint pp (e:t) :=
+    match e with
+    (*| Atm a => Printer.Typed.pp_atom a*)
+    | Var id => Bstr id
+    | Get e fd => Bcat (pp e) (EdgeLabel.pp fd)
+    end.
+
+(*  Definition typof (te:tenv) (e:t) : res typ :=
+    match e with
+    | Atm a => btyp_to_typ te a
+    | Get e fd =>
+        let* bt := typof te e in
+        match fd with
+        | EdgeLabel.Field fd =>
+*)
+End GEXPR.
+
+Inductive sfunction  :=
+| RPrim  (* return a primitive value *)
+| RDeep (e:GEXPR.t).
+
+Definition sfunction_eq_dec  (s1 s2:sfunction) : {s1 = s2} + {s1 <> s2}.
+Proof.
+  decide equality.
+  apply GEXPR.eq_dec.
+Defined.
+
+Definition afunction := Syntax.function (sfunction*bool)  typ.
+
+Definition afunction_eq_dec (f1 f2:afunction) : {f1 = f2} + {f1 <> f2}.
+apply function_dec.
+decide equality.
+apply bool_dec.
+apply sfunction_eq_dec.
+apply typ_eq_dec.
+Defined.
+
+Inductive alit := | IsPrim (b:bool).
+
+Inductive aglobdef :=
+| ALit (b:bool) (* Is-it primitive ? *)
+| AFun (f:afunction).
+
+Inductive KVar :=
+| KDead (* Dead variable - may point anywhere *)
+| KPrim (* Primitive type - no alias *)
+| KNode (n:int) (* Reference in the alias graph *)
+| KFun  (f:afunction) (* a function pointer *).
+
+Definition get_node (k:KVar) : option int :=
+  match k with
+  | KNode n => Some n
+  | _       => None
+  end.
+
+Definition is_dead (k:KVar) : bool :=
+  match k with
+  | KDead => true
+  | _ => false
+  end.
+
+Definition is_primitive (k:KVar) : bool :=
+  match k with
+  | KPrim => true
+  | _ => false
+  end.
+
+
+
+
+
 Module Vars.
   (* Mapping and reverse mapping *)
 
@@ -209,7 +359,6 @@ Module Vars.
   Definition empty := mk STree.empty (IntMap.empty _).
 
   Definition get (x:ident) (m:t) := STree.get x (Vars m).
-
 
   Definition of_vars (vrs: STree.t KVar) : t :=
     let rvar :=
@@ -261,6 +410,8 @@ Module Vars.
     - right;intros.
       congruence.
     - left. exists n; reflexivity.
+    - right;intros.
+      congruence.
   Qed.
 
   Lemma List_remove_eq : forall k l,
@@ -414,138 +565,22 @@ Maps.PTree.elements_complete:
 
     Locate PTree.fold.
 *)
-
-
   
 Definition pp_kvar (k:KVar) : box :=
     match k with
     | KDead => Bstr "ko"
     | KPrim => Bstr "p"
     | KNode n => (Bstr (string_of_int n))
+    | KFun f  => Bstr "fptr"
     end.
 
-Definition pp (s:t) : box := STree.pp (Bstr " -> ") pp_kvar (Vars s).
+   Definition pp (s:t) : box := STree.pp (Bstr " -> ") pp_kvar (Vars s).
+
+
+
 
 
 End Vars.
-
-Fixpoint subst_atom (env : smaplist atom) (a:atom): res atom :=
-  match a with
-  | AVar id bt =>
-      match MapList.find_err string_dec id env with
-      | OK a => OK a
-      | Error _ => Error (MSG id :: nil)
-      end
-  | ACast a bt => let* a := subst_atom env a in
-                  OK (ACast a bt)
-  | AUnaryOp o a bt => let* a := subst_atom env a in
-                       OK (AUnaryOp o a bt)
-  | ABinaryOp o a1 a2 bt =>
-      let* a1 := subst_atom env a1 in
-      let* a2 := subst_atom env a2 in
-      OK (ABinaryOp o a1 a2 bt)
-  | AArrayGet a i ly bt =>
-      let* a := subst_atom env a in
-      let* i := subst_atom env i in
-      OK (AArrayGet a i ly bt)
-  | ARecordProj a fd ly bt =>
-      let* a := subst_atom env a in
-      OK (ARecordProj a fd ly bt)
-  | APureCall id bt1 la bt2 =>
-      let* l := maperr (subst_atom env) la in
-      OK (APureCall id bt1 l bt2)
-  | ATrue | AFalse | AInt32 _ _ | AInt64 _ _ | AConstr _ _ _  => OK a
-  end.
-
-Definition subst_edge (env : smaplist atom) (e: EdgeLabel.t) :=
-  match e with
-  | EdgeLabel.Top => Error (MSG "index is unknown" :: nil)
-  | EdgeLabel.Field fd => OK (EdgeLabel.Field fd)
-  | EdgeLabel.Index i  => let* a := subst_atom env i in
-                          OK (EdgeLabel.Index i)
-  end.
-
-
-Module GEXPR.
-  (* Restricted form of expressions.
-     Due to typing issues, it is not straightforward to reconstruct an atom... *)
-
-  Inductive t :=
-  | Atm (a:atom)
-  | Var (id:ident)
-  | Get (e:t) (field : EdgeLabel.t).
-
-
-  Fixpoint incl_idents (l1 l2 :list ident) : res unit :=
-    match l1 with
-    | nil => OK tt
-    | e::l1' => if List.existsb (String.eqb e) l2
-                then incl_idents l1' l2
-                else Error (MSG "Variable " :: MSG e :: MSG " would escape its scope." :: nil)
-    end.
-
-  Definition check_edge (args:list ident) (e:EdgeLabel.t) : res unit :=
-    match e with
-    | EdgeLabel.Top => Error (MSG "Expression cannot contain an unknown indexe." :: nil)
-    | EdgeLabel.Field fd => OK tt
-    | EdgeLabel.Index e  => let v := AtomOrdered.vars_of_atom e in
-                            incl_idents v args
-    end.
-
-  Fixpoint check_expr (args:list ident) (e:t) : res unit :=
-    match e with
-    | Atm a => let v := AtomOrdered.vars_of_atom a in
-               incl_idents v args
-    | Var i => incl_idents (i::nil) args
-    | Get e fd => let* _ := check_expr args e in
-                  check_edge args fd
-    end.
-
-
-  Definition eq_dec (e1 e2:t) : {e1 = e2} + {e1 <> e2}.
-  Proof.
-    decide equality.
-    apply AtomOrdered.eq_dec.
-    apply string_dec.
-    apply EdgeLabel.eq_dec.
-  Qed.
-
-  Fixpoint subst_expr (env : smaplist atom) (e:t) : res t :=
-    match e with
-    | Atm a => let* a := subst_atom env a in
-               OK (Atm a)
-    | Var  id  =>  match MapList.find_err string_dec id env with
-                   | OK a => OK (Atm a)
-                   | Error _ => Error (MSG id :: nil)
-                  end
-    | Get e fd => let* e := subst_expr env e in
-                  let* fd := subst_edge env fd in
-                  OK (Get e fd)
-    end.
-
-  Fixpoint pp (e:t) :=
-    match e with
-    | Atm a => Printer.Typed.pp_atom a
-    | Var id => Bstr id
-    | Get e fd => Bcat (pp e) (EdgeLabel.pp fd)
-    end.
-
-(*  Definition typof (te:tenv) (e:t) : res typ :=
-    match e with
-    | Atm a => btyp_to_typ te a
-    | Get e fd =>
-        let* bt := typof te e in
- *)
-
-End GEXPR.
-
-
-
-
-
-
-
-
 
 
 
@@ -558,6 +593,7 @@ Record domain := mkdom
       Atoms: SMap.t (list atom); (* Atoms[x] = a1,...,an -> x is a variable of ai
                                       This is used to invalidate atoms in the graph
                                     *)
+      IsPure: bool (* No side-effect *)
     }.
 
 
@@ -567,23 +603,6 @@ Record domain := mkdom
 Definition pp_domain (d:domain) :=
   Bstack (Bstr "") (Bcat (Bframe "_" "|"  (Vars.pp (Vars d))) (G.pp (Pto d))) Middle.
 
-Inductive sfunction  :=
-| RPrim (* return a primitive value *)
-| RDeep (e:GEXPR.t).
-
-Definition sfunction_eq_dec  (s1 s2:sfunction) : {s1 = s2} + {s1 <> s2}.
-Proof.
-  decide equality.
-  apply GEXPR.eq_dec.
-Defined.
-
-Definition afunction := Syntax.function sfunction  typ.
-
-Inductive alit := | IsPrim (b:bool).
-
-Inductive aglobdef :=
-| ALit (b:bool) (* Is-it primitive ? *)
-| AFun (f:afunction).
 
 Definition aenv := STree.t aglobdef.
 
@@ -591,7 +610,7 @@ Definition aenv := STree.t aglobdef.
 Definition forget_var (x:ident)  (d:domain) :=
   mkdom (Vars.set x KDead (Vars d))
            (List.fold_right (fun a g => G.update_edgelabel (EdgeLabel.Index a) EdgeLabel.Top g) (Pto d) (SMap.get x (Atoms d)))
-           (SMap.set x nil (Atoms d)).
+           (SMap.set x nil (Atoms d)) (IsPure d).
 
 Definition is_prim_literal (env:aenv) (x:ident) :=
   match STree.get x env with
@@ -602,67 +621,87 @@ Definition is_prim_literal (env:aenv) (x:ident) :=
 Definition eval_var (env:aenv) (vars:Vars.t) (id:ident) (*(bt:btyp)*) :=
   match Vars.get id vars with
   | Some v => OK v
-  | None   => OK (if is_prim_literal env id
-                  then KPrim
-                  else KDead)
+  | None   => match STree.get id env with
+              | Some v =>
+                  match v with
+                  ALit b =>
+                    if b then OK KPrim
+                    else
+                      (* We could do better and return a node *)
+                      fail
+                  | AFun f => OK (KFun f)
+                  end
+              | None => fail
+              end
   end.
 
   Definition set_pto (g:G.t) (d:domain) :=
-  mkdom (Vars d) g (Atoms d).
+  mkdom (Vars d) g (Atoms d) (IsPure d).
+
+  Definition set_pure (pure:bool) (d:domain) :=
+    mkdom (Vars d) (Pto d) (Atoms d) pure.
+
 
   Definition set_atom (a:SMap.t (list atom)) (d:domain) :=
-    mkdom (Vars d) (Pto d) a.
+    mkdom (Vars d) (Pto d) a (IsPure d).
 
   Definition SMap_setl  (s:string) (e:atom) (m:SMap.t (list atom)) : SMap.t (list atom) :=
     SMap.set s (e::SMap.get s m) m.
 
+
+  Definition register_vars_of_atom (a:atom) (m: SMap.t (list atom)) :=
+    List.fold_right (fun id acc => SMap_setl id a acc) m (AtomOrdered.vars_of_atom a).
+
   Definition register_vars_of_edge (e:EdgeLabel.t) (m : SMap.t (list atom)) :=
     match e with
     | EdgeLabel.Field _ | EdgeLabel.Top => m
-    | EdgeLabel.Index a => List.fold_right (fun id acc => SMap_setl id a m) m (AtomOrdered.vars_of_atom a)
+    | EdgeLabel.Index a => register_vars_of_atom a m
     end.
 
 
-  Definition bind_path (d:domain) (o:int) (acc:list EdgeLabel.t) : res (domain * KVar) :=
-  let* (g,n'_ty) := G.create_path EdgeLabel.next_label o acc (Pto d) in
+  Definition bind_path (d:domain) (o:int) (acc: EdgeLabel.t) : res (domain * KVar) :=
+  let* (g,n'_ty) := G.create_edge EdgeLabel.next_label o acc (Pto d) in
   if typ_is_prim (snd n'_ty)
   then OK (d,KPrim) (* Do not record primitive access *)
   else
-    let atoms := List.fold_right register_vars_of_edge (Atoms d) acc in
-    OK (set_atom atoms (set_pto g d),KNode (fst n'_ty)).
+    let atoms :=  register_vars_of_edge acc (Atoms d) in
+    OK (set_pto g (set_atom atoms d),KNode (fst n'_ty)).
 
 
 Section EVALATOM.
-  Variable eval_atom : aenv -> domain -> atom -> res (domain * KVar).
+  Variable aeval_atom : tenv -> aenv -> domain -> atom -> res (domain * KVar).
 
-  Definition array_get (env:aenv) (d:domain) (ar:atom) (id:atom) (*(bt:btyp)*)  :=
-    match eval_atom env d ar  with
+  Definition array_get (te:tenv) (env:aenv) (d:domain) (ar:atom) (id:atom) (*(bt:btyp)*)  :=
+    match aeval_atom te env d ar  with
     | Error e  => Error (MSG "Wrong array :" :: MSG (Pp.pp (Printer.Typed.pp_atom ar)) :: MSG Pp.nl :: e)
     | OK (d,vr) =>
-        match eval_atom env d id with
+        match aeval_atom te env d id with
         | Error e => Error (MSG "Wrong array index:" :: MSG (Pp.pp (Printer.Typed.pp_atom id)) :: MSG Pp.nl :: e)
         | OK (d,idx) =>
             match vr with
             | KDead => Error (MSG "(dead) This should be a reference " :: nil)
             | KPrim => Error (MSG "(primitive) This should be a reference ":: nil)
+            | KFun _ => Error (MSG "(function) This should be a reference ":: nil)
             | KNode n =>
                 match idx with
                 | KDead   => Error (MSG "(dead) This should be an array index " :: nil)
                 | KNode n => Error (MSG "(reference) This should be an array index " :: nil)
-                | KPrim   => bind_path d n (cons (EdgeLabel.Index id) nil)
+                | KFun _ => Error (MSG "(function) This should be an array index " :: nil)
+                | KPrim   => bind_path d n (EdgeLabel.Index id)
                 end
             end
         end
     end.
 
-  Definition record_proj_get (env:aenv) (d:domain) (ar:atom) (fd:ident) (*(bt:btyp)*)  :=
-    match eval_atom env d ar  with
+  Definition record_proj_get (te:tenv) (env:aenv) (d:domain) (ar:atom) (fd:ident) (*(bt:btyp)*)  :=
+    match aeval_atom te env d ar  with
     | Error e  => Error (MSG "Wrong record :" :: MSG (Pp.pp (Printer.Typed.pp_atom ar)) :: MSG Pp.nl :: e)
     | OK (d,vr) =>
             match vr with
             | KDead => Error (MSG "(dead) This should be a reference " :: nil)
             | KPrim => Error (MSG "(primitive) This should be a reference ":: nil)
-            | KNode n => bind_path d n (cons (EdgeLabel.Field fd) nil)
+            | KFun _ => Error (MSG "(function) This should be a reference ":: nil)
+            | KNode n => bind_path d n (EdgeLabel.Field fd)
                 end
     end.
 
@@ -670,18 +709,146 @@ Section EVALATOM.
 End EVALATOM.
 
 
-Fixpoint aeval_atom (env:aenv) (d:domain) (a:atom)  :=
+
+Definition get_function (env:aenv) (vars: Vars.t) (id:ident) :=
+  match Vars.get id vars with
+  | Some _ => fail
+  | None   => match STree.get id env with
+              | None => fail
+              | Some ad => match ad with
+                           | AFun af => OK af
+                           |  _      => fail
+                           end
+              end
+  end.
+
+Definition typ_of_afunction (a:afunction) : typ :=
+  TFun (List.map snd (fn_params a)) (fn_return a).
+
+Definition compat_typ (d:domain) (k:KVar) (ty:typ) :=
+  match k with
+  | KDead   => OK false (* We have no idea of the type - we could keep it *)
+  | KPrim   => OK (typ_is_prim ty)
+  | KFun a  => OK (if typ_eq_dec ty (typ_of_afunction a) then true else false)
+  | KNode n => let* ty' := G.get_node_label (Pto d) n in
+               OK (if typ_eq_dec ty ty' then true else false)
+  end.
+
+
+
+Section CALL.
+  Variable aeval_atom : tenv -> aenv -> domain -> atom -> res (domain * KVar).
+
+  Fixpoint bind_args (te:tenv) (env:aenv) (d:domain) (args: list atom) (params : list (ident * typ)) {struct args} :=
+  match args with
+  | nil => match params with
+           | nil => OK nil
+           |  _  => fail
+           end
+  | a1::args1 => match params with
+                | nil => fail
+                | (i1,ty)::params1 =>
+                    match aeval_atom te env d a1 with
+                    | Error _ =>
+                        Error (MSG (Pp.pp (seq (Bstr "Expression ":: Printer.Typed.pp_atom a1:: Bstr " is invalid."::nil))) ::nil)
+                    | OK (d,k) =>
+                        let* b := compat_typ d k ty in
+                        let* bargs := bind_args te env d args1 params1 in
+                        if b
+                        then OK ((i1,k)::bargs)
+                        else
+                          Error (MSG (Pp.pp (seq (Bstr "Expression " :: Printer.Typed.pp_atom a1 ::
+                                                    Bstr " has incompatible types."::nil))) :: nil)
+                    end
+                 end
+  end.
+
+Definition no_alias_node (d:domain) (n:int) (arg:ident * KVar) :=
+  match snd arg with
+  | KDead => OK false
+  | KPrim => OK true
+  | KFun _ => OK true
+  | KNode n' => let* p := G.is_parent (Pto d) n n' in
+                if p then OK false else G.is_parent (Pto d) n' n
+  end.
+
+
+Fixpoint no_alias (d:domain) (l : list (ident * KVar)) :=
+  match l with
+  | nil => OK true
+  | (id1,v1)::l => match v1 with
+                   | KDead => OK false
+                   | KPrim => no_alias d l
+                   | KFun _ => no_alias d l
+                   | KNode n => let* b := no_alias d l in
+                                if b then forall_err (no_alias_node d n) l
+                                else OK false
+                   end
+  end.
+
+Fixpoint aeval_expr (te:tenv) (env:aenv) (vars : list (ident * KVar)) (d:domain) (e:GEXPR.t) : res (domain * KVar) :=
+  match e with
+  (*| GEXPR.Atm a => aeval_atom te env d a - to prevent a recursive call *)
+  | GEXPR.Get e fd => let* (d,v) := aeval_expr te env vars d e in
+                      match v with
+                      | KDead => fail
+                      | KPrim => fail
+                      | KFun _ => fail
+                      | KNode n => bind_path d n fd
+                      end
+  | GEXPR.Var id    => match MapList.find_err string_dec id vars with
+                       | OK kv => OK (d,kv)
+                       | Error _ => Error (MSG id :: nil)
+                       end
+  end.
+
+Check bind_args.
+
+Definition call (te:tenv) (env: aenv) (d:domain) (id:ident) (bt: btyp) (args:list atom) : res (domain* KVar) :=
+  match get_function env (Vars d) id with
+    | OK af =>
+        let fret := fn_body af in
+        match bind_args te env d args (fn_params af) with
+        | OK params =>
+            match no_alias  d params with
+            | OK no_alias =>
+                if no_alias
+                then (* Apply the function summary *)
+                  match fret with
+                  | (RPrim,pure) => OK (set_pure pure d,KPrim)
+                  | (RDeep e,pure) =>
+                      aeval_expr te env params (set_pure pure d) e
+                  end
+                else fail
+            | Error _ => Error (MSG "function " :: MSG id :: MSG " arguments may be aliased" :: nil)
+            end
+        | Error err =>
+            Error (MSG "function " :: MSG id :: MSG " mismatch arguments" :: MSG nl :: err)
+        end
+    | Error _ => Error (MSG "function " :: MSG id :: MSG " Not_found" :: nil)
+    end.
+
+End CALL.
+
+
+Fixpoint aeval_atom (te:tenv) (env:aenv) (d:domain) (a:atom) {struct a} :=
   match a with
   | AVar id bt    =>
       let* v := eval_var env  (Vars d) id (*bt*) in
       OK (d,v)
-  | AArrayGet ar i _ bt => array_get aeval_atom env d ar i (*bt*)
-  | ARecordProj ar fd _ bt => record_proj_get aeval_atom env d ar fd (*bt*)
-  | _   => OK (d,KPrim) (* Is-it sound if the atom is not well-typed ? *)
+  | AArrayGet ar i _ bt => array_get aeval_atom te env d ar i (*bt*)
+  | ARecordProj ar fd _ bt => record_proj_get aeval_atom te env d ar fd (*bt*)
+  | APureCall id btf l _   =>
+
+      let* (d,v) := call aeval_atom te env d id btf l in
+      if IsPure d
+      then OK (d,v)
+      else Error (MSG "Function " :: MSG id :: MSG " is not pure." :: nil)
+  | _ => OK (d,KPrim)
   end.
 
 Definition set_variable (v:ident) (k:KVar) (d:domain) :=
-  mkdom (Vars.set v k (Vars d)) (Pto d) (Atoms d).
+  mkdom (Vars.set v k (Vars d)) (Pto d) (Atoms d) (IsPure d).
 
 (* Could try to normalise the expression e.g. 1 + 1 -->  2
    Also, identify injective operations
@@ -731,11 +898,11 @@ Definition may_edge (e1 e2:EdgeLabel.t) :=
   end.
 
 
-
 Definition update_var (l:list int) (k:KVar)  :=
   match k with
   | KDead => KDead
   | KPrim => KPrim
+  | KFun f => KFun f
   | KNode n => if List.in_dec Int.eq_dec n l then KDead else KNode n
   end.
 
@@ -746,16 +913,17 @@ Definition pp_write (a:atom) (l:list EdgeLabel.t) (vl:atom) :=
   Pp.seq (Printer.Typed.pp_atom a :: (pp_list (Bstr ".") EdgeLabel.pp l) :: Bstr " <- " :: Printer.Typed.pp_atom vl :: nil).
 
 
-Definition write (env:aenv) (d:domain) (a:atom) (l:list EdgeLabel.t) (vl:atom)  : res (domain * KVar * bool) :=
-  let* (d,ea) := aeval_atom env d a in
-  let* (d,v) := aeval_atom env d vl  in
+Definition write (te:tenv) (env:aenv) (d:domain) (a:atom) (l:list EdgeLabel.t) (vl:atom)  : res (domain * KVar * bool) :=
+  let* (d,ea) := aeval_atom te env d a in
+  let* (d,v) := aeval_atom te env d vl  in
   match ea with
-  | KDead | KPrim => fail (* We could give error messages *)
+  | KDead | KPrim | KFun _ => fail (* We could give error messages *)
   | KNode n => (* this is a reference *)
       match v  with
       | KDead => (* want to write an arbitrary value - this is bad - let's stop *)
             fail
       | KPrim => OK (d,KNode n, false) (* This is not an alias *)
+      | KFun _ => OK (d,KNode n, false) (* This is not an alias *)
       | KNode n' => let* f := G.depth (Pto d) in
                     match G.check_must_alias  f n l n' (Pto d) with
                     | OK _ =>  OK (d,KNode n,true)
@@ -770,144 +938,63 @@ Definition write (env:aenv) (d:domain) (a:atom) (l:list EdgeLabel.t) (vl:atom)  
       end
   end.
 
-Definition array_set (env:aenv) (d:domain) (a:atom) (i:atom) (vl:atom)  : res (domain * KVar) :=
-  let* (r,_) := write env d a (cons (EdgeLabel.Index i) nil) vl in
-  OK r.
-
-
-Definition record_set (env:aenv) (d:domain) (a:atom) (fd:ident) (vl:atom) : res (domain * KVar) :=
-  let* (r,_) := write env d a (cons (EdgeLabel.Field fd) nil) vl  in
-  OK r.
-
-Definition compat_typ (d:domain) (k:KVar) (ty:typ) :=
-  match k with
-  | KDead   => OK false (* We have no idea of the type - we could keep it *)
-  | KPrim   => OK (typ_is_prim ty)
-  | KNode n => let* ty' := G.get_label (Pto d) n in
-               OK (if typ_eq_dec ty ty' then true else false)
-  end.
 
 
 
-Fixpoint bind_args (te:tenv) (env:aenv) (d:domain) (args: list atom) (params : list (ident * typ)) :=
-  match args with
-  | nil => match params with
-           | nil => OK nil
-           |  _  => fail
-           end
-  | a1::args1 => match params with
-                | nil => fail
-                | (i1,ty)::params1 =>
-                    let* (d,k) := aeval_atom env d a1  in
-                    let* b := compat_typ d k ty in
-                    let* bargs := bind_args te env d args1 params1 in
-                    if b
-                    then OK ((i1,k)::bargs)
-                    else fail
-                 end
-  end.
 
-Definition no_alias_node (d:domain) (n:int) (arg:ident * KVar) :=
-  match snd arg with
-  | KDead => OK false
-  | KPrim => OK true
-  | KNode n' => let* p := G.is_parent (Pto d) n n' in
-                if p then OK false else G.is_parent (Pto d) n' n
-  end.
+Definition array_set (te:tenv) (env:aenv) (d:domain) (a:atom) (i:atom) (vl:atom)  : res (domain * KVar) :=
+  (* Some write are pure, somehow, if this is a nop *)
+  let* (r,_) := write te env d a (cons (EdgeLabel.Index i) nil) vl in
+  let (d,kv) := r in
+  OK (set_pure false d,kv).
 
 
-Fixpoint no_alias (d:domain) (l : list (ident * KVar)) :=
-  match l with
-  | nil => OK true
-  | (id1,v1)::l => match v1 with
-                   | KDead => OK false
-                   | KPrim => no_alias d l
-                   | KNode n => let* b := no_alias d l in
-                                if b then forall_err (no_alias_node d n) l
-                                else OK false
-                   end
-  end.
-
-Definition get_function (env:aenv) (vars: Vars.t) (id:ident) :=
-  match Vars.get id vars with
-  | Some _ => fail
-  | None   => match STree.get id env with
-              | None => fail
-              | Some ad => match ad with
-                           | AFun af => OK af
-                           |  _      => fail
-                           end
-              end
-  end.
+Definition record_set (te:tenv) (env:aenv) (d:domain) (a:atom) (fd:ident) (vl:atom) : res (domain * KVar) :=
+  let* (r,_) := write te env d a (cons (EdgeLabel.Field fd) nil) vl  in
+  let (d,kv) := r in
+  OK (set_pure false d,kv).
 
 
+
+
+
+
+(*
 Definition deep_access (env:aenv) (d:domain) (a:atom) (acc : list EdgeLabel.t)  : res (domain * KVar) :=
   let* (d,v) := aeval_atom env d a in
   match v with
   | KDead => fail
-  | KPrim => fail (* Shouldn't happen - typing *)
+  | KPrim => fail
+  | KFun _ => fail (* Shouldn't happen - typing *)
   | KNode n => bind_path d n acc
   end.
-
-Fixpoint aeval_expr (env:aenv) (d:domain) (e:GEXPR.t) : res (domain * KVar) :=
-  match e with
-  | GEXPR.Atm a => aeval_atom env d a
-  | GEXPR.Get e fd => let* (d,v) := aeval_expr env d e in
-                      match v with
-                      | KDead => fail
-                      | KPrim => fail
-                      | KNode n => bind_path d n (fd::nil)
-                      end
-  | GEXPR.Var id    =>  let* v := eval_var env  (Vars d) id (*bt*) in
-                       OK (d,v)
-
-  end.
+ *)
 
 
-Definition call (te:tenv) (env: aenv) (d:domain) (id:ident) (bt: btyp) (args:list atom) : res (domain* KVar) :=
-  match get_function env (Vars d) id with
-  | OK af =>
-      let fret := fn_body af in
-      match bind_args te env d args (fn_params af) with
-      | OK params =>
-          match no_alias  d params with
-          | OK no_alias =>
-              if no_alias
-              then (* Apply the function summary *)
-                match fret with
-                | RPrim => OK (d,KPrim)
-                | RDeep e =>
-                    let params := (List.map fst (fn_params af)) in
-                    let  args := List.combine params args in
-                    match GEXPR.subst_expr args e with
-                    | OK a => aeval_expr env d a
-                    | Error m =>
-                        Error (MSG "function ":: MSG id :: MSG " the parameter " ::
-                                          (m ++ MSG " cannot be found within " :: MSG (Pp.pp (pp_list (Bstr ",") Bstr params)) :: nil))
-                    end
-                end
-              else fail
-          | Error _ => Error (MSG "function " :: MSG id :: MSG "arguments may be aliased" :: nil)
-          end
-      | Error _ =>
-          Error (MSG "function " :: MSG id :: MSG "mismatch arguments" :: nil)
-      end
-  | Error _ => Error (MSG "function " :: MSG id :: MSG "Not_found" :: nil)
-  end.
 
 
 
 Definition eval_comp (te:tenv) (env : aenv) (d:domain) (c:comp)  : res (domain * KVar) :=
   match c with
-  | CpAtom a _ => aeval_atom env d a
-  | CpArraySet a i vl _ => array_set env d a i vl
-  | CpRecordUpdate a fd vl _ => record_set env d a fd vl
-  | CpCall f btf args _  => call te env d f btf args
+  | CpAtom a _ => aeval_atom te env d a
+  | CpArraySet a i vl _ => array_set te env d a i vl
+  | CpRecordUpdate a fd vl _ => record_set te env d a fd vl
+  | CpCall f btf args _  => call aeval_atom te env d f btf args
+  end.
+
+Definition is_pure_function (env:aenv) (f:ident) : res bool :=
+  match STree.get f env with
+  | None => fail
+  | Some v =>
+      match v with
+      | ALit _ => fail
+      | AFun f => OK (snd (fn_body f))
+      end
   end.
 
 Definition inter_pto (g1 g2: G.t) : res (G.t * (IntMap.t int *  IntMap.t int)) :=
-  let* lb1 := G.get_label g1 (G.root g1)  in
-  let* lb2 := G.get_label g2 (G.root g2) in
+  let* lb1 := G.get_node_label g1 (G.root g1)  in
+  let* lb2 := G.get_node_label g2 (G.root g2) in
   if typ_eq_dec lb1 lb2 then
     G.inter (TypOrdered.depth lb1) (G.root g1) g1 (G.root g2) g2 (G.mkroot lb1,(IntMap.empty _,IntMap.empty _))
   else fail.
@@ -919,6 +1006,8 @@ Definition merge_var (m1: IntMap.t int) (m2:IntMap.t int) (k1 k2:KVar)  :=
   | KDead , _ | _ , KDead => KDead
   | KPrim , KPrim => KPrim
   | KPrim , _| _ , KPrim =>  KDead (* Should not happen. *)
+  | KFun a , KFun b  => if afunction_eq_dec a b then KFun a else KDead
+  | KFun _ , _ | _ , KFun _ => KDead
   | KNode n1 , KNode n2 =>
       match IntMap.find n1 m1 , IntMap.find n2 m2 with
       | Some n1' , Some n2' =>
@@ -953,12 +1042,12 @@ Definition merge_atoms (m1 m2:SMap.t (list atom)) :=
   PMap.combine (ListSet.set_inter Syntax.AtomOrdered.eq_dec) m1 m2.
 
 Definition merge_domain (d1 d2:domain) : res domain :=
-  let (v1,pt1,at1) := d1 in
-  let (v2,pt2,at2) := d2 in
+  let (v1,pt1,at1,p1) := d1 in
+  let (v2,pt2,at2,p2) := d2 in
   let* (pto,m) := inter_pto pt1 pt2 in
   let v := Vars.of_vars (merge_vars (fst m) (snd m) (Vars.Vars v1) (Vars.Vars v2)) in
   let atm := merge_atoms at1 at2 in
-  OK (mkdom v pto atm).
+  OK (mkdom v pto atm (p1 && p2)).
 
 
 Definition join_sfunction (s1 s2:sfunction)  : res sfunction :=
@@ -991,12 +1080,12 @@ Definition join_sfunction (s1 s2:sfunction)  : res sfunction :=
 
 
 
-Definition merge  (v1 v2 : domain + sfunction ) :=
+Definition merge  (v1 v2 : domain + (sfunction * bool) ) :=
   match v1 , v2 with
   | inl d1 , inl d2 => let* d := merge_domain d1 d2 in
                        OK (inl d)
-  | inr sf1 , inr sf2 => let* sf := join_sfunction sf1 sf2 in
-                         OK (inr sf)
+  | inr (sf1,p1) , inr (sf2,p2) => let* sf := join_sfunction sf1 sf2 in
+                         OK (inr (sf,p1 && p2))
   | _ , _ => fail
   end.
 
@@ -1005,6 +1094,8 @@ Definition merge  (v1 v2 : domain + sfunction ) :=
 
 Definition update_variable (v:ident) (d:domain) (kv:KVar) :=
   set_variable v kv (forget_var v d).
+
+
 
 Fixpoint expr_of_list (e:GEXPR.t) (l:list EdgeLabel.t) :=
   match l with
@@ -1022,7 +1113,7 @@ Definition expr_of_path (l : list EdgeLabel.t) :=
             end
   end.
 
-Fixpoint eval_statement (te:tenv) (env: aenv) (s:statement) (d:domain) : res (domain + sfunction) :=
+Fixpoint eval_statement (te:tenv) (env: aenv) (s:statement) (d:domain) : res (domain + (sfunction * bool)) :=
   match s with
   | StSet v c => match eval_comp te env d c  with
                  | OK (d,k) =>  OK (inl (update_variable v d k))
@@ -1032,6 +1123,7 @@ Fixpoint eval_statement (te:tenv) (env: aenv) (s:statement) (d:domain) : res (do
                  end
   | StIfThenElse a s1 s2 =>
       (* I don't care about the conditional *)
+      let* _  := aeval_atom  te env d a in
       let* d1 := eval_statement te env s1 d in
       let* d2 := eval_statement te env s2 d in
       merge d1 d2
@@ -1044,19 +1136,19 @@ Fixpoint eval_statement (te:tenv) (env: aenv) (s:statement) (d:domain) : res (do
                         end
   | StReturn a =>
       (* If [a] is an arithmetic expression, we could alsoe return it *)
-      let* (d,v) :=  aeval_atom env d a in
+      let* (d,v) :=  aeval_atom te env d a in
       match v with
       | KDead => Error (MSG "return of a dead expression" :: nil)
-      | KPrim => OK(inr RPrim)
+      | KFun _ => Error (MSG "return of a function pointer" :: nil)
+      | KPrim => OK(inr (RPrim,IsPure d))
       | KNode n =>
           let* p := G.get_path (Pto d) n in
           let* e := expr_of_path p in
-          OK (inr (RDeep e))
+          OK (inr (RDeep e,IsPure d))
       end
   | StAttr a s => if String.eqb "mustalias" a then Error (msg (Pp.pp (pp_domain d)))
                   else eval_statement te env s d
   end.
-
 
 Definition path_of_list (l:list ident) : STree.t (list EdgeLabel.t) :=
   List.fold_right (fun e acc => STree.set e nil acc) STree.empty l.
@@ -1091,13 +1183,14 @@ Fixpoint xpath_above_alias (d:domain) (fuel:nat) (n:int) :=
   end.
 
 (** [path_above_alias] returns paths in reverse order *)
-Definition path_above_alias (env:aenv) (d:domain) (a:atom) :=
-  let* (d,v) := aeval_atom env d a in
+Definition path_above_alias (te:tenv) (env:aenv) (d:domain) (a:atom) :=
+  let* (d,v) := aeval_atom te env d a in
   match v with
   | KNode n =>
       let* f := G.depth (Pto d) in
       xpath_above_alias d f n
   | KPrim    => OK (STree.empty)
+  | KFun _   => OK (STree.empty)
   | KDead    => Error  (msg "path_above_alias: atom is dead - aliased with anything")
   end.
 
@@ -1119,13 +1212,14 @@ Fixpoint xpath_below_alias (d:domain) (fuel:nat) (n:int) :=
               OK (p ++ a)
   end.
 
-Definition path_below_alias (env:aenv) (d:domain) (a:atom) :=
-  let* (d,v) := aeval_atom env  d a in
+Definition path_below_alias (te:tenv) (env:aenv) (d:domain) (a:atom) :=
+  let* (d,v) := aeval_atom te env  d a in
   match v  with
   | KNode n =>
       let* f := G.depth (Pto d) in
       xpath_below_alias d f n
   | KPrim    => OK nil
+  | KFun _   => OK nil
   | KDead    => Error  (msg "path_above_alias: atom is dead - aliased with anything")
   end.
 
@@ -1194,7 +1288,7 @@ Definition domain_of_function (te:tenv)(f:function) : res domain :=
   then let modified := assigned (fn_body f) in
        if List.forallb (fun i_t => negb (SSet.mem (fst i_t) modified)) params
        then let* (v,pto) := init_domain params in
-            OK (mkdom v pto (SMap.init nil))
+            OK (mkdom v pto (SMap.init nil) true)
        else fail
   else fail.
 
@@ -1211,17 +1305,15 @@ Definition sfunction_of_path (params: list (ident * btyp)) (r : sfunction ) : re
                end
   end.
 
-
-
 Definition eval_function (te:tenv) (env:aenv) (f:function) : res afunction :=
   let* d := domain_of_function te f in
   let* d := eval_statement te env (fn_body f) d in
   match d with
-  | inr r =>
+  | inr (r,pure) =>
       let* r := sfunction_of_path (fn_params f) r in
       let* tr := btyp_to_typ te (fn_return f) in
       let* params := MapList.map_err (btyp_to_typ te) (fn_params f) in
-      OK (mk_function tr params r)
+      OK (mk_function tr params (r,pure))
   |  _    => fail
   end.
 
@@ -1258,7 +1350,7 @@ Fixpoint xmapi {A B:Type} (F: positive -> A -> B) (i:positive) (l:list A) : list
 Definition mapi {A B:Type} (F: positive -> A -> B) (l:list A) := xmapi F xH l.
 
 Definition afunction_of_sfunction (l:list (param_attr * typ)) (r:typ) (s:sfunction):=
-  mk_function r (mapi (fun i e => (Printer.string_of_positive i,snd e)) l) s.
+  mk_function r (mapi (fun i e => (Printer.string_of_positive i,snd e)) l) (s,true).
 
 Definition eval_globdef (te:tenv) (env:aenv) (gd:globdef) : res aenv :=
   match gd with
@@ -1287,14 +1379,14 @@ Fixpoint eval_globdefs (te: tenv) (env:aenv) (l:list globdef) : res aenv :=
 Definition transl_comp (te:tenv) (env:aenv) (d:domain) (c:comp) : res comp :=
   match c with
   | CpArraySet a i v bt =>
-      match write env d a (cons (EdgeLabel.Index i) nil) v  with
+      match write te env d a (cons (EdgeLabel.Index i) nil) v  with
       | Error m => Error m
       | OK(_,b) =>
           OK (if b then CpAtom a bt
               else c)
       end
   | CpRecordUpdate a i v bt =>
-      match write env d a (cons (EdgeLabel.Field i) nil) v  with
+      match write te env d a (cons (EdgeLabel.Field i) nil) v  with
       | Error m =>  let err := Pp.pp (pp_domain d) in
                     Error (MSG err :: nil)
       | OK(_,b) => if b then OK (CpAtom a bt)

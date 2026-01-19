@@ -656,6 +656,13 @@ Section S.
   Definition copy  (m:mem) {ty:typ} (pty : ptr ty)   : res mem :=
     xcopy m pty (empty_fr (_fresh m)).
 
+  Fixpoint copy_list (m:mem) (l : list {ty:typ & val ty}) : res mem :=
+    match l with
+    | nil =>  OK (empty_fr (_fresh m))
+    | v ::l => let* cpm := copy_list m l in
+               copy_val (@xcopy m) (projT2 v) cpm
+    end.
+
   (** preservation of well-formedness *)
   Lemma wf_empty : forall ge, wf ge empty.
   Proof.
@@ -725,7 +732,7 @@ Section S.
 
   Definition cast_val {ty:typ} (v: val ty) (ty':typ) : res (val ty') :=
     match typ_eq_dec ty ty' with
-    | left EQ => OK (eq_rect ty val v ty' EQ)
+    | left EQ => OK (cast (f_equal val EQ) v)
     | right _ => efail
     end.
 
@@ -812,26 +819,35 @@ Section S.
       let (ty, EQ) := s in
       existT val ty (cast EQ X).
 
-  Definition eval_array_get (m:mem) {ta:typ} (v1:val ta) {ti:typ} (v2:val ti) (tr:typ) : res (val tr) :=
-    let*  i := index_of_val v2 in
-    let*  p := isptr v1 in
-    let* arr := get p m in
-    match arr with
+  Inductive cedge :=
+  | CField (id:ident)
+  | CIndex (i:Integers.Int64.int).
+
+  Definition eval_array_get {ty: typ} (m:mval ty) (i:Integers.Int64.int) (tr:typ) : res (val tr) :=
+    match m with
     | MArray _ l =>  let* v := Barray.get l i in cast_val v tr
     | _ => fail
     end.
 
-  Definition eval_record_proj (m:mem) {tr : typ} (pr:val tr) (k:ident) (tr:typ) : res (val tr) :=
-    let* p := isptr pr in
-    let* rc := get p m in
-    match rc with
-    | MRecord id fields r =>
-        match bool_dec  (good_proj k fields) true  with
-        | left EQ => let (ty,v) := cast_typof_field k fields EQ (gproject val r k EQ) in
-                     cast_val v tr
-        | right _ => fail
-        end
+  Definition ecast_val  (v:res {ty:typ & val ty}) (tyr:typ) : res (val tyr) :=
+    match v with
+    | OK (existT _ ty v) =>  cast_val v tyr
     | _ => fail
+    end.
+
+  Definition eval_record_proj {ty: typ} (m:mval ty) (k:ident) (tr:typ) : res (val tr) :=
+    match m with
+    | MRecord id fields r =>
+        ecast_val (gprojT r k) tr
+    | _ => fail
+    end.
+
+  Definition eval_mem_access (m:mem) {ta:typ} (v1:val ta) (ce:cedge) (tr:typ) : res (val tr) :=
+    let* p := isptr v1 in
+    let* mv := get p m in
+    match ce with
+    | CIndex i => eval_array_get mv  i tr
+    | CField fd => eval_record_proj mv fd tr
     end.
 
   Definition cast_function {a1 a2:list typ} {r1 r2:typ} (Eq : TFun a1 r1 = TFun a2 r2) (f : mem -> typ_of_fun a1 r1) :
@@ -875,29 +891,38 @@ Section S.
   Definition mk_fptr (id:ident) (args: list typ) (r:typ) : val (TFun args r) :=
     Vptr (TFun args r) (PtrF id args r).
 
+  Definition ecast {ty:typ} (v: val ty) (tyr: typ): res (val tyr) :=
+    match typ_eq_dec ty tyr with
+    | left EQ => OK (cast (f_equal val EQ) v)
+    | right _ => efail
+    end.
+
+  Definition get_lvar  (e:env) (id:ident) (tyr:typ) : res (val tyr) :=
+    match e id with
+    | OK (existT _ ty' v') => ecast v' tyr
+    | Error m => Error m
+    end.
+
   Definition get_var (te:tenv) (ge:genv) (e:env) (id:ident) (bt:btyp) (tyr:typ) : res (val tyr) :=
     let* ty := btyp_to_typ te bt in
-    match e id with
-      OK (existT _ ty' v') => match typ_eq_dec ty ty' with
-                              | left _ => match typ_eq_dec ty' tyr with
-                                          | left EQ => OK (cast (f_equal val EQ) v')
-                                          | right _ => efail
-                                          end
-                              | _      => efail
-                              end
-    | Error _ => (* this may be a global *)
-        let* d := ge id in
-        match d with
-        | DeclFun args tret _ => match typ_eq_dec (TFun args tret) tyr with
-                               | left EQ => OK (cast (f_equal val EQ) (mk_fptr id args tret))
-                               | _  => fail
-                               end
-        | DeclLit ty v => match typ_eq_dec ty tyr with
-                          | left EQ => OK (cast (f_equal val EQ) v)
-                          | right _ => efail
-                          end
-        end
-    end.
+    if typ_eq_dec ty tyr
+    then
+      match e id with
+      | OK (existT _ ty' v') => ecast v' tyr
+      | Error _ =>
+          let* d := ge id in
+          match d with
+          | DeclFun args tret _ => match typ_eq_dec (TFun args tret) tyr with
+                                   | left EQ => OK (cast (f_equal val EQ) (mk_fptr id args tret))
+                                   | _  => fail
+                                   end
+          | DeclLit ty v => match typ_eq_dec ty tyr with
+                            | left EQ => OK (cast (f_equal val EQ) v)
+                            | right _ => efail
+                            end
+          end
+      end
+    else fail.
 
 
 
@@ -945,11 +970,12 @@ Section S.
         let* tya1 := typof_atom te a1 in
         let* v1 := eval_atom te ge e m tya1 a1 in
         let* v2 := eval_atom te ge e m (typof_index arch) i  in
-        eval_array_get m v1 v2 tyr
+        let* i  := index_of_val v2 in
+        eval_mem_access m v1 (CIndex i) tyr
     | ARecordProj r id _ bt =>
         let* t := typof_atom te r in
         let* r := eval_atom te ge e m t r in
-        eval_record_proj m r id tyr
+        eval_mem_access m r (CField id) tyr
     | APureCall f btf args bt =>
         let* vf := e f in
         let (tf, vf) := vf in
@@ -958,7 +984,7 @@ Section S.
             let* vf := cast_val vf (TFun tparams tyr) in
             let* f := @load_fun ge tparams tyr vf in
             let* vargs := DList.map2 _ (eval_atom te ge e m) args tparams in
-            let* (vret, _) := eval_rapp tparams tyr vargs (f m) in
+            let* (vret, _) := eval_rapp tparams tyr vargs (f empty) in
             ret vret
         | _  => fail
         end

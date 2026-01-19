@@ -151,20 +151,20 @@ Definition check (str: string) (e1:InvMap.t) (e2:InvMap.t) :=
     let err := Pp.seq ((Bstr str :: Bstr " before " :: b1 :: Bstr " after " :: b2 :: nil)) in
     Error (MSG nl :: (msg (Pp.pp err))).
 
-Definition show_path_above_alias (ge:aenv) (d:domain) (env:InvMap.t) (a1:atom) (env': InvMap.t): res unit :=
+Definition show_path_above_alias (te:tenv) (ge:aenv) (d:domain) (env:InvMap.t) (a1:atom) (env': InvMap.t): res unit :=
   let pd := pp_domain d in
   let pe := InvMap.pp env in
   let a  := Typed.pp_atom a1 in
-  let* res := path_above_alias ge d a1 in
+  let* res := path_above_alias te ge d a1 in
   let args := Pp.seq (Bstr "path_above_alias:" :: Bstr "alias domain" :: Bframe "-" "|" pd :: Bstr "invalid" :: Bframe "-" "|" pe :: Bstr "atom " :: a :: nil) in
   Error (msg (Pp.pp (Bstack args
                             (Bstack (Bstr "===>")
                                (InvMap.pp env') Left) Left))).
 
-Definition set_field (ge: aenv) (d:domain) (env:InvMap.t) (a1:atom) (i:EdgeLabel.t) (v:atom) :=
+Definition set_field (te:tenv) (ge: aenv) (d:domain) (env:InvMap.t) (a1:atom) (i:EdgeLabel.t) (v:atom) :=
   let pa1  := eval_atom env a1 in
   let v    := eval_atom env v in
-  let* may  := path_above_alias ge d a1 in
+  let* may  := path_above_alias te ge d a1 in
   let env' := inv_may_alias env may  i in
   let* _   := check "set_field" env env' in
 (*  let* _   := show_path_above_alias ge d env a1 env' in*)
@@ -207,16 +207,16 @@ Definition inv_below_alias (env:InvMap.t) (l : (list EdgeLabel.t) * string) (p:G
   end.
 
 
-Definition invalid_argument (age: aenv) (d:domain) (a:atom) (inv: option G.PathTree.t) (env:InvMap.t) :=
+Definition invalid_argument (te:tenv) (age: aenv) (d:domain) (a:atom) (inv: option G.PathTree.t) (env:InvMap.t) :=
   match inv with
   | None => OK env (* The argument is still completly valid *)
-  | Some p => let* maya := path_above_alias age d a in
+  | Some p => let* maya := path_above_alias te age d a in
               let env'  := inv_suffix_alias env maya p in
-              let* mayb := path_below_alias age d a in
+              let* mayb := path_below_alias te age d a in
               OK (List.fold_right (fun e acc => inv_below_alias acc e p) env' mayb)
   end.
 
-Fixpoint invalid_arguments (age: aenv) (d:domain) (inv: InvMap.t) (args : list atom) (l : list (btyp * option G.PathTree.t)) : res InvMap.t :=
+Fixpoint invalid_arguments (te:tenv) (age: aenv) (d:domain) (inv: InvMap.t) (args : list atom) (l : list (btyp * option G.PathTree.t)) : res InvMap.t :=
   match args with
   | nil => match l with
            | nil => OK inv
@@ -224,12 +224,12 @@ Fixpoint invalid_arguments (age: aenv) (d:domain) (inv: InvMap.t) (args : list a
            end
   | a1::args' => match l with
                  | nil => Error (msg "Wrong number of arguments")
-                 | (_,p1)::lp => let* inv1 := invalid_argument age d a1 p1 inv in
-                                 invalid_arguments age d inv1 args' lp
+                 | (_,p1)::lp => let* inv1 := invalid_argument te age d a1 p1 inv in
+                                 invalid_arguments te age d inv1 args' lp
                  end
   end.
 
-Definition call (age: aenv) (d:domain) (ge:genv) (id:ident) (args:list atom) (env:InvMap.t) :=
+Definition call (te:tenv) (age: aenv) (d:domain) (ge:genv) (id:ident) (args:list atom) (env:InvMap.t) :=
   match Vars.get id (Vars d) with
   | Some _ => Error ((MSG "identifier ") :: MSG id :: MSG " should be a function." :: nil)
   | None   =>
@@ -239,18 +239,18 @@ Definition call (age: aenv) (d:domain) (ge:genv) (id:ident) (args:list atom) (en
           let fargs := Afunction.fn_aparams af in
           let (_,p) := Afunction.fn_areturn af in
           (** Invalidate the aliases of the arguments *)
-          let* env' := invalid_arguments age d env args fargs in
+          let* env' := invalid_arguments te age d env args fargs in
           OK (p,env')
           end
   end.
 
 
-Definition inv_comp  (age: aenv) (d:domain) (ge:genv)  (env:InvMap.t) (c:comp) :=
+Definition inv_comp  (te:tenv) (age: aenv) (d:domain) (ge:genv)  (env:InvMap.t) (c:comp) :=
   match c with
   | CpAtom a _ => OK (eval_atom env a,env)
-  | CpArraySet a1 i v _ => set_field age d env a1 (EdgeLabel.Index i) v
-  | CpRecordUpdate a1 fd v _ => set_field age d env a1 (EdgeLabel.Field fd) v
-  | CpCall id _ args _  => call age d ge id args env
+  | CpArraySet a1 i v _ => set_field te age d env a1 (EdgeLabel.Index i) v
+  | CpRecordUpdate a1 fd v _ => set_field te age d env a1 (EdgeLabel.Field fd) v
+  | CpCall id _ args _  => call te age d ge id args env
   end.
 
 Definition join (v1 v2 : option G.PathTree.t * InvMap.t) : res (option G.PathTree.t * InvMap.t) :=
@@ -258,7 +258,7 @@ Definition join (v1 v2 : option G.PathTree.t * InvMap.t) : res (option G.PathTre
 
 Fixpoint inv_statement (te:tenv) (age:aenv) (d:domain) (ge:genv) (env:InvMap.t) (s:statement) :=
   match s with
-  | StSet id c => let* (p,env') := inv_comp age d ge env c in
+  | StSet id c => let* (p,env') := inv_comp te age d ge env c in
                   OK (None, InvMap.set id p env')
   | StIfThenElse _ s1 s2 =>
       let* e1 := inv_statement te age d ge env s1 in

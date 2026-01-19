@@ -11,7 +11,7 @@ Require Import Unsigned63.
 
 From BarocqComp Require Import Error Maps2 Utils Pp.
 
-Inductive cedge :=
+Inductive classify_edge :=
 | MUST
 | MAY
 | NOTMAY.
@@ -20,7 +20,7 @@ Definition eqb_of_dec {A: Type} (eq_dec:forall (x y:A), {x = y}+{x <> y}) : A ->
   fun x y => if eq_dec x y then true else false.
 
 
-Fixpoint In_eq {A : Type} (eq : A -> A -> Prop) (e:A) (l:list A) :=
+(*Fixpoint In_eq {A : Type} (eq : A -> A -> Prop) (e:A) (l:list A) :=
   match l with
   | nil => False
     | e'::l => eq e e' \/ In_eq eq e l
@@ -52,7 +52,8 @@ Proof.
   - intros.
     destruct H;[left|right];auto.
 Qed.
-
+ *)
+(*
 Section S.
   Context {A: Type}.
   Variable eqA : A -> A -> Prop.
@@ -169,6 +170,63 @@ Qed.
 
 
 End S.
+*)
+
+Lemma NoDup_map : forall {A B:Type} (l:list (A * B)),
+    NoDup (map fst l) ->
+    forall e d1 d2,
+    In (e, d1) l ->
+    In (e, d2) l ->
+  d1 = d2.
+Proof.
+  induction l.
+  - simpl. tauto.
+  - simpl.
+    intros.
+    inv H.
+    destruct a as (e1,d).
+    simpl in *.
+    destruct H0,H1; subst.
+    +  inv H; inv H0.
+       simpl in *.
+       congruence.
+    + inv H.
+      apply in_map with (f:=fst) in H0.
+      simpl in H0.
+      tauto.
+    + inv H0.
+      apply in_map with (f:=fst)  in H.
+      simpl in H. tauto.
+    +  eapply IHl;eauto.
+Qed.
+
+Lemma NoDup_map_snd : forall {A B:Type}  (l:list (A * B)),
+    NoDup (map snd l) ->
+    forall e1 e2 d,
+    In (e1, d) l ->
+    In (e2, d) l ->
+    e1 = e2.
+Proof.
+  induction l.
+  - simpl. tauto.
+  - simpl. intros.
+    inv H.
+    destruct a as (e3,d1).
+    simpl in *.
+    destruct H0,H1; subst.
+    +  inv H; inv H0.
+       simpl in *.
+       eapply eq_trans ; eauto.
+    + inv H.
+      apply in_map with (f:=snd)  in H0.
+      simpl in H0. tauto.
+    + inv H0.
+      apply in_map with (f:=snd) in H.
+      simpl in H.
+      tauto.
+    +  eapply IHl;eauto.
+Qed.
+
 
 Section FORALL.
   Context {A: Type}.
@@ -465,7 +523,7 @@ Module IntMap := Map(Int).
 Module Type NodeLabelT.
   Axiom t : Type.
   Axiom lt: t -> t -> Prop.
-  Axiom eq: t -> t -> Prop.
+  Definition eq:= @eq t.
   Axiom depth : t -> nat.
 
   Axiom eq_refl  : forall x, eq x x.
@@ -1513,7 +1571,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     Qed.
 
 
-    
+
     Lemma prefixed_by_None :
       forall p tr
              (WF : wf tr),
@@ -1548,15 +1606,17 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
 
   End PathTree.
 
-  Definition get_label (g:t) (n:int) :=
-    match IntMap.find n (edges g) with
+  Definition get_label (E:Edge) (n:int) :=
+    match IntMap.find n E with
     | None => fail
     | Some(n,_) => OK n
     end.
 
+  Definition get_node_label (g:t) (n:int) := get_label (edges g) n.
+
 
   Definition depth (g:t) :=
-    let* lb := get_label g (root g)  in
+    let* lb := get_label (edges g) (root g)  in
     OK (NodeLabel.depth lb).
 
   Definition get_successors (g:t) (n:int) :=
@@ -1607,39 +1667,123 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     congruence.
   Qed.
 
+  Definition eqEN_dec (e1 e2: EdgeLabel.t * int) : { e1 = e2 } + {e1 <> e2}.
+  Proof.
+    decide equality.
+    apply eqs.
+    apply EdgeLabel.eq_dec.
+  Qed.
+
 
   Definition has_edge (o:int) (e:EdgeLabel.t) (d:int) (E:Edge) :=
     exists nl l, IntMap.find o E = Some (nl,l)
-                 /\ In_eq eqEN (e,d) l.
+                 /\ In (e,d) l.
+
 
   Definition has_edge_rev (o:int) (e:EdgeLabel.t) (d:int) (m:IntMap.t (EdgeLabel.t * int)) :=
-    exists e', IntMap.find d m = Some (e', o) /\ EdgeLabel.eq e e'.
-
+    IntMap.find d m = Some (e, o).
 
   Definition has_node_label (o:int) (nl:NodeLabel.t) (E:Edge) :=
-    exists l nl', IntMap.find o E = Some (nl',l) /\ NodeLabel.eq nl nl'.
+    get_label E o = OK nl.
 
+  Definition has_node (o:int) (E:Edge) :=
+    exists nl, has_node_label o nl E.
+
+  Lemma has_node_label_has_node : forall o nl E, has_node_label o nl E -> has_node o E.
+  Proof.
+    intros. eexists; eauto.
+  Qed.
+
+  
   Definition has_node_label_rev (o:int) (nl:NodeLabel.t) (lbs:NLMap.t (list int)) :=
     In o (NLMap.findl nl lbs).
 
-  Record wf (g:t) :=
-    {
-      wf_nodup  : forall o e d1 d2, has_edge o e d1 (edges g) -> has_edge o e d2 (edges g) -> d1 = d2;
-      wf_tree  : forall o1 o2 e1 e2 d, has_edge o1 e1 d (edges g) -> has_edge o2 e2 d (edges g) -> o1 = o2 /\ EdgeLabel.eq e1 e2;
-      wf_parent : forall o e d, has_edge o e d (edges g) <-> has_edge_rev o e d (parent g);
-      wf_nl     : forall o nl, has_node_label o nl (edges g) <-> has_node_label_rev o nl (nodelabels g);
-      wf_el     : forall o e, In o (ELMap.findl e (edgelabels g)) <-> exists d, has_edge o e d (edges g);
-      wf_fresh  : forall o  lb, has_node_label o lb (edges g) -> (ltb o (fresh g) = true)%int63
+  Record le_graph (g1 g2:t) := mk_le
+      {
+        le_node : forall n lb, has_node_label n lb (edges g1) -> has_node_label n lb (edges g2);
+        le_edge : forall o e d, has_edge o e d (edges g1) -> has_edge o e d (edges g2);
+        le_fresh : (fresh g1 <=? fresh g2)%uint63 = true
+      }.
+
+  Lemma le_graph_refl : forall g, le_graph  g g.
+  Proof.
+    intros.
+    constructor; auto.
+    lia.
+  Qed.
+
+  Lemma le_graph_trans : forall g1 g2 g3, le_graph g1 g2 -> le_graph g2 g3 -> le_graph g1 g3.
+  Proof.
+    intros.
+    destruct H,H0;constructor;auto.
+    lia.
+  Qed.
+
+  Definition has_edge_dec : forall o e d E,
+      {has_edge o e d E} + { ~has_edge o e d E }.
+  Proof.
+    unfold has_edge.
+    intros.
+    destruct (IntMap.find (elt:=NodeLabel.t * list (EdgeLabel.t * int)) o E) as [(lb,lst)|] eqn:FIND.
+    destruct (In_dec eqEN_dec (e,d) lst).
+    - left. exists lb,lst.
+      split;auto.
+    - right.
+      intro.
+      destruct H as (nl&l& EQ1&EQ2).
+      congruence.
+    - right.
+      intro.
+      destruct H as (nl&l& EQ1&EQ2).
+      congruence.
+  Qed.
+
+  Definition gpath := (int * list (EdgeLabel.t * int))%type.
+
+  Definition edge (E: Edge) (o:int) (d:int) :=
+    exists e, has_edge o e d E.
+
+
+
+  Record is_tree (E : Edge) := {
+    tree_no_loop : forall n, Relation_Operators.clos_trans _ (edge E) n n -> False;
+    tree_parent  : forall o1 o2 e1 e2 d, has_edge o1 e1 d E -> has_edge o2 e2 d E -> o1 = o2 /\  e1 = e2;
     }.
 
-  Fixpoint find_label (lb:EdgeLabel.t) (l:list (EdgeLabel.t * int)) :=
+
+  Section S.
+
+    Variable next_label : NodeLabel.t -> EdgeLabel.t -> res NodeLabel.t.
+
+
+    Record wf  (g:t) :=
+    {
+      wf_nodup  : forall o e d1 d2, has_edge o e d1 (edges g) -> has_edge o e d2 (edges g) -> d1 = d2;
+      wf_tree   : is_tree (edges g);
+      wf_nxt    : forall o e d lbo lbd, has_edge o e d (edges g)  ->
+                                        has_node_label o lbo (edges g) ->
+                                        has_node_label d lbd (edges g) ->
+                                        next_label lbo e = OK lbd;
+      wf_parent : forall o e d, has_edge o e d (edges g) <-> has_edge_rev o e d (parent g);
+      wf_lb     : forall o e d, has_edge o e d (edges g) -> has_node d (edges g);
+      wf_nl     : forall o nl, has_node_label o nl (edges g) <-> has_node_label_rev o nl (nodelabels g);
+      wf_el     : forall o e, In o (ELMap.findl e (edgelabels g)) <-> exists d, has_edge o e d (edges g);
+      wf_fresh  : forall o, has_node o (edges g) -> (ltb o (fresh g) = true)%int63
+    }.
+
+
+
+
+
+  Fixpoint find_edgelabel (lb:EdgeLabel.t) (l:list (EdgeLabel.t * int)) :=
     match l with
     | nil => None
-    | (el,n)::l => if EdgeLabel.eq_dec lb el then Some n else find_label lb l
+    | (el,n)::l => if EdgeLabel.eq_dec lb el then Some n else find_edgelabel lb l
     end.
 
-  Lemma find_label_eq : forall lb lb' (EQ: EdgeLabel.eq lb lb') l,
-      find_label lb l = find_label lb' l.
+
+(*  Lemma find_label_eq : forall lb lb' (EQ: EdgeLabel.eq lb lb') l,
+      find_edgelabel lb l = find_edgelabel lb' l.
   Proof.
     induction l; simpl;auto.
     destruct a. destruct (EdgeLabel.eq_dec lb t0);
@@ -1650,25 +1794,24 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     exfalso ;apply n.
     eapply EdgeLabel.eq_trans;eauto.
   Qed.
+   *)
 
   Lemma find_label_not_In : forall lb l,
-      ~ In_eq EdgeLabel.eq lb (map fst l) ->
-      find_label lb l = None.
+      ~ In lb (map fst l) ->
+      find_edgelabel lb l = None.
   Proof.
     induction l; simpl;auto.
     destruct a. simpl.
     destruct (EdgeLabel.eq_dec lb t0);auto.
-    tauto.
+    unfold EdgeLabel.eq in e.
+    intuition congruence.
   Qed.
-
-
 
   Fixpoint find_node (n:int) (l:list (EdgeLabel.t * int)) :=
     match l with
     | nil => None
     | (e,n')::l => if Int.eq_dec n  n'  then Some e else find_node n l
     end.
-
 
   Fixpoint partition_label (lb:EdgeLabel.t) (l:list (EdgeLabel.t * int)) :=
     match l with
@@ -1704,8 +1847,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     unfold has_edge_rev.
     simpl.
     rewrite IntMap.find_empty.
-    intros. destruct H.
-    intuition congruence.
+    discriminate.
   Qed.
 
 
@@ -1713,11 +1855,9 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Proof.
     split ; [| tauto].
     unfold has_node_label.
-    intros.
-    simpl in H.
-    destruct H as (l & FIND).
-    rewrite IntMap.find_empty in FIND.
-    destruct FIND ; intuition congruence.
+    unfold get_label.
+    rewrite IntMap.find_empty.
+    unfold efail. discriminate.
   Qed.
 
   Lemma has_node_label_rev_empty : forall o nl, has_node_label_rev o nl (NLMap.empty _) <-> False.
@@ -1728,22 +1868,77 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     auto.
   Qed.
 
-    Lemma has_edge_label : forall o e d E,
-      has_edge o e d E -> exists lb, has_node_label o lb E.
+    Lemma has_edge_node_d : forall o e d E,
+      has_edge o e d E -> has_node o E.
   Proof.
     intros.
     destruct H.
-    exists x. destruct H as (l & H & IN); do 2 eexists ;eauto.
-    split. apply H.
-    apply NodeLabel.eq_refl.
+    exists x. destruct H as (l & H & IN).
+    unfold has_node_label,get_label.
+    rewrite H. reflexivity.
   Qed.
 
+  Lemma has_node_label_inj : forall n lb1 lb2 E,
+      has_node_label n lb1 E ->
+      has_node_label n lb2 E ->
+      lb1 = lb2.
+  Proof.
+    unfold has_node_label.
+    congruence.
+  Qed.
+
+  Lemma has_edge_node_label_le  :
+    forall n ty el n' ty' g g'
+           (LE  : le_graph g g')
+           (E2 :has_edge n el n' (edges g))
+           (WFG : wf g)
+           (N1 :has_node_label n ty (edges g'))
+           (N2 :has_node_label n' ty' (edges g')),
+      has_node_label n ty (edges g) /\ has_node_label n' ty' (edges g).
+  Proof.
+    intros.
+    split.
+    exploit has_edge_node_d.
+    apply E2. intros (lb & N1').
+    assert (lb = ty).
+    { destruct LE.
+      apply le_node0 in N1'.
+      eapply has_node_label_inj;eauto.
+    }
+    subst. auto.
+    eapply wf_lb  in E2 ; eauto.
+    destruct E2 as (lb & N2').
+    assert (lb = ty').
+    { destruct LE.
+      apply le_node0 in N2'.
+      eapply has_node_label_inj;eauto.
+    }
+    congruence.
+  Qed.
+
+  Lemma has_edge_next_label :
+    forall g
+           (WF: wf g) n ty ed n' ty'
+           (EDGE : has_edge n ed n' (edges g))
+           (ND    : has_node_label n ty (edges g))
+           (NXT : next_label ty ed = OK ty'),
+      has_node_label n' ty' (edges g).
+  Proof.
+      intros.
+      exploit wf_lb ; eauto.
+      intros.
+      destruct H.
+      eapply wf_nxt in EDGE; eauto.
+      congruence.
+  Qed.
+
+
   Lemma has_edge_add :
-    forall o e d1 g nl l
-           (WF : wf g),
+    forall  o e d1 g nl l
+           (WF : wf  g),
       has_edge o e d1 (IntMap.add (fresh g) (nl, l) (edges g)) <->
         has_edge o e d1 (edges g) \/
-          (o = fresh g /\ In_eq eqEN (e,d1) l).
+          (o = fresh g /\ In (e,d1) l).
   Proof.
     unfold has_edge ; intros.
     split; intros.
@@ -1764,9 +1959,8 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       {
         do 2 eexists. split; eauto.
       }
-      apply has_edge_label in E.
-      destruct E as (lb & LB).
-      apply wf_fresh in LB;auto.
+      apply has_edge_node_d in E.
+      eapply wf_fresh in E;eauto.
       lia.
       * do 2 eexists; split;eauto.
       + destruct IN ; subst.
@@ -1774,6 +1968,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
         destruct (Int.eq_dec (fresh g) (fresh g)); try congruence.
         do 2 eexists ; split ; eauto.
   Qed.
+
 
   Lemma has_edge_mkroot : forall o e d1 lb,
       has_edge o e d1 (edges (mkroot lb)) <-> False.
@@ -1800,35 +1995,23 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     simpl.
     unfold has_edge_rev.
     split ; try tauto.
-    intros (nl & FIND).
-    rewrite IntMap.find_empty in FIND.
+    rewrite IntMap.find_empty.
     intuition congruence.
   Qed.
 
   Lemma has_node_label_mkroot : forall o nl lb,
-      has_node_label o nl (edges (mkroot lb)) <-> o = 0%int63 /\ NodeLabel.eq nl lb.
+      has_node_label o nl (edges (mkroot lb)) <-> o = 0%int63 /\ nl = lb.
   Proof.
     unfold has_node_label.
-    split ; intros.
-    - destruct H as (ed & nl1 & FIND & EQ).
-      unfold mkroot in FIND.
-      simpl in FIND.
-      rewrite IntMap.find_add in FIND.
-      destruct (Int.eq_dec o 0).
-      + subst. inv FIND.
-        tauto.
-      + rewrite IntMap.find_empty in FIND.
-        discriminate.
-    - destruct H ; subst.
-      exists nil,lb.
-      unfold mkroot ; simpl.
-      rewrite IntMap.find_add.
-      destruct (Int.eq_dec 0 0); try congruence.
-      intuition congruence.
+    intros. unfold get_label,mkroot; simpl.
+    rewrite IntMap.find_add.
+    destruct (Int.eq_dec o 0).
+    - intuition congruence.
+    - simpl. unfold efail ; intuition congruence.
   Qed.
 
   Lemma has_node_label_rev_mkroot : forall o nl lb,
-      has_node_label_rev o nl (nodelabels (mkroot lb)) <-> o = 0%int63 /\ NodeLabel.eq nl lb.
+      has_node_label_rev o nl (nodelabels (mkroot lb)) <-> o = 0%int63 /\ nl = lb.
   Proof.
     unfold has_node_label_rev.
     intros.
@@ -1847,10 +2030,21 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     constructor; intros.
     - rewrite has_edge_mkroot in H.
       tauto.
-    - rewrite has_edge_mkroot in H.
-      tauto.
+    - constructor.
+      +  intros.
+         induction H.
+         * unfold edge in H.
+           destruct H.
+           rewrite has_edge_mkroot in H.
+           auto.
+         *  tauto.
+      + intros. rewrite has_edge_mkroot in H.
+        tauto.
+    - rewrite has_edge_mkroot in H. tauto.
     - rewrite has_edge_mkroot.
       rewrite has_edge_rev_mkroot.
+      tauto.
+    - rewrite has_edge_mkroot in H.
       tauto.
     - rewrite has_node_label_mkroot.
       rewrite has_node_label_rev_mkroot.
@@ -1859,7 +2053,8 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       intro H. destruct H.
       rewrite has_edge_mkroot in H.
       tauto.
-    - rewrite has_node_label_mkroot in H.
+    - destruct H.
+      rewrite has_node_label_mkroot in H.
       unfold mkroot. simpl.
       lia.
   Qed.
@@ -1950,13 +2145,13 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
 
 
   Lemma has_edge_rev_add :
-    forall  g l
+    forall g l
             (WF : wf g)
             (NODUP2 : forall e1 e2 d, In (e1,d) l -> In (e2,d) l -> e1 = e2)
             (NOPARENT : forall o e1 e2 n, In (e1,n) l -> has_edge o e2 n (edges g) -> False)
            o e d,
     has_edge_rev o e d (register_parents (fresh g) l (parent g)) <->
-      (has_edge_rev o e d (parent g) \/ (o = fresh g /\ In_eq eqEN (e,d) l)).
+      (has_edge_rev o e d (parent g) \/ (o = fresh g /\ In (e,d) l)).
   Proof.
     unfold has_edge_rev at 1.
     intros.
@@ -1965,29 +2160,14 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     - apply find_node_Some in FIND.
       split ; intros.
       + inv H.
-        destruct H0. inv H.
-        right; split;auto.
-        apply In_eq_eq with (e1:=(x,d)).
-        apply eqEN_sym.
-        apply eqEN_trans.
-        unfold eqEN; simpl; auto.
-        split;auto. apply EdgeLabel.eq_sym ;auto.
-        apply In_In_eq;auto.
-        apply eqEN_refl;auto.
+        tauto.
       + destruct H.
-        rewrite <- wf_parent in H; auto.
+        rewrite <- wf_parent in H; eauto.
         exfalso. eapply NOPARENT;eauto.
-        destruct H. exists t0.
-        split.
-        congruence.
-        rewrite In_eq_iff in H0.
-        destruct H0 as (e' & EQ & IN).
-        destruct e' as (e',d1).
-        unfold eqEN in EQ. simpl in EQ.
-        destruct EQ ; subst.
-        assert (e' = t0).
+        destruct H.
+        repeat f_equal.
         eapply NODUP2;eauto.
-        subst. auto.
+        congruence.
     -  split; intros.
        unfold has_edge_rev.
        tauto.
@@ -1995,16 +2175,24 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
        apply H.
        destruct H.
        exfalso.
-       apply In_eq_iff in H0.
-       destruct H0 as (e' & EQ & IN).
-       destruct e'. unfold eqEN in EQ.
-       simpl in *. destruct EQ; subst.
        eapply find_node_None;eauto.
   Qed.
 
+  Lemma has_node_label_add : forall o o' lb lb' l g,
+      has_node_label o lb (IntMap.add o' (lb', l) (edges g))  <->
+        (o <> o' /\ has_node_label o lb (edges g) \/ (o = o' /\ lb = lb')).
+  Proof.
+    intros.
+    unfold has_node_label at 1.
+    unfold get_label.
+    rewrite IntMap.find_add.
+    unfold has_node_label, get_label.
+    destruct (Int.eq_dec o o');
+    intuition congruence.
+  Qed.
 
 
-  Lemma has_node_label_add : forall o lb lb' l g
+(*  Lemma has_node_label_add : forall o lb lb' l g
                                     (WF : wf g),
       has_node_label o lb (IntMap.add (fresh g) (lb', l) (edges g))  <->
         (has_node_label o lb (edges g) \/ o = fresh g /\ NodeLabel.eq lb  lb').
@@ -2025,6 +2213,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       destruct H; auto.
       intuition congruence.
   Qed.
+ *)
 
   Lemma has_node_label_rev_add :
     forall o lb lb' g
@@ -2055,41 +2244,36 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       simpl. tauto.
   Qed.
 
-  Lemma find_label_None : forall  e l, find_label e l = None ->
-                                       In_eq EdgeLabel.eq e (map fst l) -> False.
+  Lemma find_label_None : forall  e l, find_edgelabel e l = None ->
+                                       In e (map fst l) -> False.
   Proof.
     induction l ; simpl; auto.
     destruct a.
-    destruct (EdgeLabel.eq_dec e t0).
+    destruct (EdgeLabel.eq_dec e t0);
+    unfold EdgeLabel.eq in *.
     discriminate.
-    simpl.
-    intros.
-    destruct H0.
-    tauto.
-    tauto.
+    simpl. intuition congruence.
   Qed.
 
-  Lemma find_label_Some : forall  e d l, find_label e l = Some d ->
-                                      exists e', In (e',d) l /\ EdgeLabel.eq e e'.
+  Lemma find_label_Some : forall  e d l, find_edgelabel e l = Some d ->
+                                      In (e,d) l.
   Proof.
     induction l ; simpl; auto.
     - congruence.
     - destruct a.
-      destruct (EdgeLabel.eq_dec e t0).
-      intros.
-      inv H.
-      exists t0. tauto.
-      intros. apply IHl in H.
-      destruct H. exists x. tauto.
+      destruct (EdgeLabel.eq_dec e t0);
+        unfold EdgeLabel.eq in *.
+      intuition congruence.
+      intuition congruence.
   Qed.
 
 
   Lemma findl_register_edgelabels :
     forall g l e
-           (NODUP1 : NoDup_eq EdgeLabel.eq (map fst l))
+           (NODUP1 : NoDup (map fst l))
            (NODUP2 : NoDup (map snd l)),
       (ELMap.findl e (register_edgelabels (fresh g) l (edgelabels g))) =
-        match find_label e l with
+        match find_edgelabel e l with
         | None => ELMap.findl e (edgelabels g)
         | Some n => fresh g :: ELMap.findl e (edgelabels g)
         end.
@@ -2105,62 +2289,215 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       destruct (EdgeLabel.eq_dec e e1).
       + specialize (IHl H2 H4).
       rewrite ELMap.findl_eq by auto.
-      rewrite find_label_eq with (lb' := e1) in IHl by auto.
+      unfold EdgeLabel.eq in e0; subst.
       rewrite find_label_not_In in IHl by auto.
       congruence.
       + rewrite ELMap.findl_neq by auto.
         auto.
   Qed.
 
+  Import Relation_Operators.
+
+  Lemma clos_trans_refl_trans : forall (A: Type) R x y,
+    clos_trans A R x y ->
+    clos_refl_trans A R x y.
+  Proof.
+    intros.
+    apply Operators_Properties.clos_trans_t1n in H.
+    induction H.
+    econstructor ; eauto.
+    eapply rt_trans; eauto.
+    econstructor.
+    auto.
+  Qed.
+
+  Lemma clos_refl_trans_has_node : forall g,
+      wf g ->
+      forall n m, clos_refl_trans int (edge (edges g)) n m ->
+                (has_node n (edges g) /\ has_node  m (edges g)) \/ (n = m).
+  Proof.
+    intros.
+    induction H0.
+    - unfold edge in H0. destruct H0 ; subst.
+      left ; split.
+      apply has_edge_node_d in H0.
+      destruct H0. eexists ; eauto.
+      apply wf_lb in H0; auto.
+    - tauto.
+    - intuition congruence.
+  Qed.
+
+
+  Lemma clos_refl_trans_fresh : forall g,
+      wf g ->
+      forall n m,
+        (n = fresh g \/ m = fresh g) ->
+        clos_refl_trans int (edge (edges g)) n m ->
+        n = fresh g /\ m = fresh g.
+  Proof.
+    intros.
+    apply clos_refl_trans_has_node in H1; auto.
+    destruct H0; destruct H1; try (intuition congruence).
+    subst.
+    destruct H1.
+    apply wf_fresh in H0 ; auto. lia.
+    destruct H1 ; subst.
+    apply wf_fresh in H2; auto. lia.
+  Qed.
+
+
+  Lemma clos_trans_has_node : forall g,
+      wf g ->
+      forall n m, clos_trans int (edge (edges g)) n m -> has_node n (edges g) /\ has_node m (edges g).
+  Proof.
+    intros.
+    induction H0.
+    - unfold edge in H0. destruct H0.
+      split.
+      apply has_edge_node_d in H0.
+      destruct H0. eexists ; eauto.
+      apply wf_lb in H0; auto.
+    - tauto.
+  Qed.
+
+  Lemma clos_trans_has_node_fresh :
+    forall g,
+      wf g ->
+      forall n m, n = fresh g \/ m = fresh g ->
+                  clos_trans int (edge (edges g)) n m -> False.
+  Proof.
+    intros.
+    apply clos_trans_has_node in  H1; auto.
+    destruct H0 ; subst.
+    destruct H1.
+    apply wf_fresh in H0. lia. auto.
+    destruct H1.
+    apply wf_fresh in H1. lia. auto.
+  Qed.
 
   Lemma wf_create_node :
     forall nl l g g1 n
-           (NODUP1 : NoDup_eq EdgeLabel.eq (map fst l))
+           (CREATE : create_node nl l g = OK(g1,n))
+           (NODUP1 : NoDup (map fst l))
            (NODUP2 : NoDup (map snd l))
            (NODUP2 : forall e1 e2 d, In (e1,d) l -> In (e2,d) l -> e1 = e2)
-           (NOEDGE : forall e1 e2 o d, has_edge o e1 d (edges g) -> In_eq eqEN (e2,d) l -> False)
+           (NOEDGE : forall e1 e2 o d, has_edge o e1 d (edges g) -> In (e2,d) l -> False)
+           (DEDGE  : forall e d, In (e,d) l -> exists lb, has_node_label d lb (edges g) /\ next_label nl e = OK lb)
            (WF : wf g)
     ,
-      create_node nl l g = OK(g1,n) ->
       wf g1 /\ n = fresh g /\
         (forall o e d,
-          has_edge o e d (edges g) -> has_edge o e d (edges g1))
+            has_edge o e d (edges g1) <->
+              (has_edge o e d (edges g)
+               \/
+                 (o = n /\ In (e,d) l)))
       /\
-        has_node_label n nl (edges g1) /\
-        forall e d, In (e,d) l -> has_edge n e d (edges g1).
+        (forall o lb, has_node_label o lb (edges g1) <->
+           (has_node_label o lb (edges g)
+            \/
+              o = n /\  lb =  nl))
+      /\ (fresh g <> max_int /\ fresh g1 =  fresh g + 1)%uint63
+  .
   Proof.
     unfold create_node.
     intros.
     destruct ((fresh g =? max_int)%uint63) eqn:FR ; try discriminate.
-    inv H.
+    inv CREATE.
     split.
     - constructor.
       + simpl; intros; simpl in *.
-        rewrite has_edge_add in H; auto.
-        rewrite has_edge_add in H0;auto.
+        rewrite has_edge_add in H by auto.
+        rewrite has_edge_add in H0 by auto.
         destruct H ; destruct H0.
         * eapply WF; eauto.
         * destruct H0.
-          apply has_edge_label in H.
-          destruct H.
-          apply wf_fresh in H; auto.
+          apply has_edge_node_d in H.
+          apply wf_fresh  in H; auto.
           lia.
         * destruct H.
-          apply has_edge_label in H0.
-          destruct H0.
+          apply has_edge_node_d in H0.
           apply wf_fresh in H0; auto.
           lia.
         *
           destruct H; destruct H0.
           eapply NoDup_map; eauto.
-          apply EdgeLabel.eq_sym.
-          apply EdgeLabel.eq_trans.
       + simpl.
+        assert (wfT : is_tree (edges g)) by (destruct WF; auto  ).
+        constructor.
+        assert (forall n n',
+                   clos_trans int (edge (IntMap.add (fresh g) (nl, l) (edges g))) n n' ->
+                   clos_trans int (edge (edges g)) n n' \/
+                     (n = fresh g /\ exists e n1, In (e,n1) l /\
+                                                    clos_refl_trans _ (edge (edges g)) n1 n')).
+        {
+          intros.
+          apply Operators_Properties.clos_trans_t1n in H.
+          induction H.
+          - unfold edge in H.
+            destruct H.
+            rewrite has_edge_add in H.
+            destruct H.
+            + left.
+              constructor.
+              eexists. eauto.
+            + right.
+              destruct H.
+              split;auto.
+              do 2 eexists; split; eauto.
+              apply rt_refl.
+            + auto.
+          - destruct IHclos_trans_1n.
+            +
+              unfold edge in H.
+              destruct H.
+              rewrite has_edge_add in H.
+              destruct H.
+              left.
+              eapply t_trans.
+              eapply t_step.
+              eexists. eauto. auto.
+              right.
+              destruct H. split; auto.
+              do 2 eexists.
+              split; eauto.
+              apply clos_trans_refl_trans. auto.
+              auto.
+            +  unfold edge in H.
+               destruct H as (e & HAS).
+               rewrite has_edge_add in HAS; auto.
+               destruct HAS.
+               destruct H1; subst.
+               apply wf_lb in H; auto.
+               apply wf_fresh in H ; auto.
+               lia.
+               destruct H; subst.
+               destruct H1 ; subst.
+               destruct H1 as (e1 & n1 & IN & CLO).
+               right.
+               split ; auto.
+               do 2 eexists ; split; eauto.
+        }
         intros.
-        rewrite has_edge_add in H; auto.
-        rewrite has_edge_add in H0;auto.
+        apply H in H0.
+        destruct H0.
+        * destruct wfT.
+          eauto.
+        * destruct H0. subst.
+          destruct H1 as (e1 & n1 & IN & CLO).
+          apply clos_refl_trans_fresh in CLO.
+          destruct CLO; subst.
+          apply DEDGE in IN.
+          destruct IN as (lb & HAS & _).
+          apply has_node_label_has_node  in HAS.
+          apply wf_fresh in HAS; auto.
+          lia. auto.
+          tauto.
+        * { intros.
+        rewrite has_edge_add in H; eauto.
+        rewrite has_edge_add in H0;eauto.
         destruct H; destruct H0.
-        * eapply WF;eauto.
+        destruct wfT.
+        * eapply tree_parent0;eauto.
         * destruct H0; subst.
           exfalso.
           eapply NOEDGE;eauto.
@@ -2169,8 +2506,37 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
         * destruct H,H0; split; auto.
           congruence.
           eapply NoDup_map_snd ;eauto.
-          apply EdgeLabel.eq_sym.
-          apply EdgeLabel.eq_trans.
+          }
+      + simpl. intros.
+        rewrite has_edge_add in H by eauto.
+        rewrite has_node_label_add in H0 by eauto.
+        rewrite has_node_label_add in H1 by eauto.
+        destruct H.
+        destruct H0 as [(_ & NLO) | (FO & NLO)];
+          destruct H1 as [(_ & NL1) | (FD & NLD)].
+        * eapply wf_nxt; eauto.
+        * subst.
+          eapply wf_lb in H;eauto.
+          eapply wf_fresh in H ; eauto.
+          lia.
+        * subst.
+          apply has_edge_node_d in H.
+          eapply wf_fresh in H ; eauto.
+          lia.
+        * subst.
+          apply has_edge_node_d in H.
+          eapply wf_fresh in H ; eauto.
+          lia.
+        * destruct H ; subst.
+          apply DEDGE in H2. destruct H2 as (lb & ND & NXT).
+          destruct H0 ; try tauto.
+          destruct H ; subst.
+          intuition subst.
+          assert (lb = lbd).
+          eapply has_node_label_inj; eauto.
+          congruence.
+          apply has_node_label_has_node in ND.
+          apply wf_fresh in ND ; auto. lia.
       + simpl.
         intros.
         rewrite has_edge_add;auto.
@@ -2179,34 +2545,48 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
         tauto.
         intros.
         eapply NOEDGE;eauto.
-        apply In_In_eq.
-        apply eqEN_refl.
-        apply H.
+      + simpl.
+        intros.
+        rewrite has_edge_add in H by auto.
+        destruct (eq_dec d (fresh g)).
+        { exists nl.
+          rewrite has_node_label_add by auto.
+          intuition congruence.
+        }
+        destruct H.
+        * apply wf_lb in H; auto.
+        { destruct H as (lb & NL).
+          exists lb.
+          rewrite has_node_label_add by auto.
+          tauto.
+        }
+        * destruct H ; subst.
+          apply DEDGE in H1.
+          destruct H1 as (lb & H1).
+          exists lb.
+          rewrite has_node_label_add by auto. tauto.
       + simpl.
         intros.
         rewrite has_node_label_add by auto.
         rewrite has_node_label_rev_add by auto.
-        rewrite wf_nl by auto.
+        rewrite <- wf_nl by auto.
+        assert (has_node_label o nl0 (edges g) -> o <> fresh g).
+        { intros. apply has_node_label_has_node in H.
+          apply wf_fresh in H;auto. lia. }
         tauto.
       +  simpl.
          intros.
          rewrite findl_register_edgelabels.
-         destruct (find_label  e l) eqn:FIND.
+         destruct (find_edgelabel  e l) eqn:FIND.
          * simpl.
            rewrite wf_el.
            apply find_label_Some in FIND.
            split; intros.
            destruct H.
-           destruct FIND as (e' & IN & EQ).
            exists i.
            rewrite has_edge_add by auto.
            right.
            split;try congruence.
-           rewrite In_eq_iff.
-           exists (e',i).
-           split;auto.
-           split. simpl;auto.
-           reflexivity.
            destruct H as (d & EDGE).
            exists d.
            rewrite has_edge_add by auto.
@@ -2227,31 +2607,37 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
              exfalso.
              eapply find_label_None;eauto.
              change e with (fst (e,x)).
-             eapply In_eq_map  with (eqA := eqEN).
-             unfold eqEN. tauto.
-             tauto.
+             eapply in_map. tauto.
            * auto.
            * auto.
       + simpl.
         intros.
+        destruct H.
         rewrite has_node_label_add in H by auto.
         destruct H.
+        destruct H as [_ H].
+        apply has_node_label_has_node in H.
         apply wf_fresh in H;auto. lia.
         lia.
     -  simpl.
-       repeat split;auto.
+       repeat apply conj; auto.
        + intros.
-         rewrite has_edge_add by auto.
+         rewrite has_edge_add  by auto.
          tauto.
-       + rewrite has_node_label_add by auto.
-         right.
-         split;auto. apply NodeLabel.eq_refl.
        + intros.
-         rewrite has_edge_add by auto.
-         right;auto.
-         split;auto.
-         apply In_In_eq.
-         apply eqEN_refl. auto.
+         rewrite has_node_label_add.
+         split; intros.
+         tauto.
+         destruct H.
+         assert (o <> fresh g).
+         { intro ; subst.
+           apply has_node_label_has_node in H.
+           apply wf_fresh in H ; auto.
+           lia.
+         }
+         tauto.
+         tauto.
+       + lia.
   Qed.
 
   (* [add_edge n1 el n2 g] add a new edge beteeen 2 existing nodes n1 and n2 *)
@@ -2259,14 +2645,10 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     match IntMap.find n1 (edges g) with
     | None => Error (cons (MSG "add_edge: origin node does not exist") nil)
     | Some (nl,l) =>
-        let ns := cons n1 (match ELMap.find el (edgelabels g) with
-                           | None => nil
-                           | Some l => l
-                           end) in
         OK (mk (root g) (IntMap.add n1 (nl,cons (el,n2) l) (edges g))
                (register_parents n1 ((el,n2)::nil) (parent g))
               (nodelabels g)
-                             (ELMap.add el ns (edgelabels g))
+                             (ELMap.addl el n1 (edgelabels g))
                              (fresh g))
     end.
 
@@ -2275,24 +2657,44 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       This is a generalised get_field.
    *)
 
-  Fixpoint create_path (next_label : NodeLabel.t -> EdgeLabel.t -> res NodeLabel.t)
+  Fixpoint create_path
     (n:int)  (l:list EdgeLabel.t) (g:t) : res (t * (int * NodeLabel.t)) :=
     match IntMap.find n (edges g) with
     | None => Error (MSG "create_path: origin node " ::  MSG (string_of_int n) :: MSG " does not exist" :: nil)
     | Some(nl,succs) => match l with
                         | nil => OK (g,(n,nl))
                         | e::l =>
-                            match find_label e succs with
-                            | Some n' => create_path next_label n' l g (* following path *)
+                            match find_edgelabel e succs with
+                            | Some n' => create_path  n' l g (* following path *)
                             | None    =>
                                 (* the edge does not exists *)
                                 let* lb :=  next_label nl e in
                                 let* (g',nn) := create_node lb nil g in
                                 let* g2      := add_edge n e nn g' in
-                                create_path next_label nn l g2
+                                create_path  nn l g2
                             end
                         end
     end.
+
+  Definition create_edge (n:int) (e:EdgeLabel.t) (g:t) : res (t * (int * NodeLabel.t)) :=
+    match IntMap.find n (edges g) with
+    | None => Error (MSG "create_edge: origin node " ::  MSG (string_of_int n) :: MSG " does not exist" :: nil)
+    | Some(nl,succs) =>
+        match find_edgelabel e succs with
+        | Some n' =>
+            let* lb := get_label (edges g) n' in
+                         OK (g,(n',lb))
+        | None    =>
+            (* the edge does not exists *)
+            let* lb :=  next_label nl e in
+            let* (g',nn) := create_node lb nil g in
+            let* g2      := add_edge n e nn g' in
+            OK(g2,(nn,lb))
+        end
+    end.
+
+
+
 
   Fixpoint remove_edges (n:int) (l:list (EdgeLabel.t * int)) (lb:ELMap.t (list int) ) : ELMap.t (list int) :=
     match l with
@@ -2370,7 +2772,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     end.
 
   Section UPDATE.
-    Variable classify_edge : EdgeLabel.t -> EdgeLabel.t -> cedge.
+    Variable classify_edge : EdgeLabel.t -> EdgeLabel.t -> classify_edge.
 
     Fixpoint partition_edges (e: EdgeLabel.t) (l: list (EdgeLabel.t * int)) :
       (list (EdgeLabel.t * int) * list (EdgeLabel.t * int) * list (EdgeLabel.t * int)) :=
@@ -2432,7 +2834,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       match l1 with
       | nil => OK (nil, acc)
       | cons (e,n) l1' =>
-          match find_label e l2 with
+          match find_edgelabel e l2 with
           | None => inter_list l1' g1 l2 g2 acc
           | Some n' =>
               let* ga := inter n g1 n' g2 acc in
@@ -2549,15 +2951,680 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
          end.
 
   Definition get_path (g:t) (n:int) :=
-    let* lb := get_label g (root g) in
+    let* lb := get_label (edges g) (root g) in
     let* path := get_upward_path_rec (NodeLabel.depth lb) g n in
     OK (List.rev path).
 
-  Inductive is_tree_node (g:t) : int -> Prop :=
+(*  Inductive is_tree_node (g:t) : int -> Prop :=
   | Leaf : forall n,
     (forall e n', In (e,n') (get_successors g n) -> is_tree_node g n') -> is_tree_node g n.
 
   Definition is_tree (g:t) :=
     forall n, is_tree_node g n.
+ *)
+
+
+  Lemma find_create_node : forall lb g g1 n n' nl succs,
+      create_node lb [] g = OK (g1, n') ->
+      wf g ->
+      IntMap.find n (edges g) = Some (nl, succs) ->
+      IntMap.find n (edges g1) = Some (nl, succs).
+  Proof.
+    intros.
+    unfold create_node in H.
+    destruct (fresh g =? max_int)%uint63 eqn:FR;
+      try discriminate.
+    inv H. simpl.
+    rewrite IntMap.Facts.add_o.
+    destruct (IntMap.M.E.eq_dec (fresh g) n).
+    - assert (has_node_label n nl (edges g)).
+      { unfold has_node_label.
+        unfold get_label.
+        rewrite H1. reflexivity.
+      }
+      subst. apply has_node_label_has_node in H.
+      apply wf_fresh in H; auto.
+      lia.
+    - auto.
+  Qed.
+
+  Lemma has_edge_add_gen :
+    forall o e d1 g n nl l
+           (WF : wf g),
+      has_edge o e d1 (IntMap.add n (nl, l) (edges g)) <->
+        ( (o <> n /\ has_edge o e d1 (edges g))
+          \/
+          (o =  n /\ In (e,d1) l)).
+  Proof.
+    unfold has_edge ; intros.
+    split; intros.
+    - destruct H as (nl1 & l1 & FIND & IN).
+    rewrite IntMap.find_add in FIND.
+    destruct (Int.eq_dec o n).
+    * inv FIND.
+      tauto.
+    * left. split;auto.
+      do 2 eexists; split; eauto.
+    - destruct H as [FIND| IN].
+      +
+      destruct FIND as (NEQ & nl1 & l1 & FIND & IN).
+      rewrite IntMap.find_add.
+      destruct (Int.eq_dec o n); try tauto.
+      do 2 eexists ; split; eauto.
+      + destruct IN as (EQ & IN); subst.
+        subst.
+        rewrite IntMap.find_add.
+        destruct (Int.eq_dec n n); try congruence.
+        do 2 eexists ; split ; eauto.
+  Qed.
+
+  Lemma and_False_r : forall (P:Prop) , (P /\ False) <-> False.
+  Proof.
+    tauto.
+  Qed.
+
+  Lemma or_False_r : forall (P:Prop) , (P \/ False) <-> P.
+  Proof.
+    tauto.
+  Qed.
+
+  Lemma has_edge_rev_add_gen : forall o e d o1 e1 d1 g,
+      has_edge_rev o e d
+        (IntMap.add d1 (e1, o1) (parent g))
+      <->
+        ((d <> d1 /\
+            has_edge_rev o e d (parent g)) \/
+           ( o = o1 /\ e = e1 /\ d = d1)).
+  Proof.
+    intros.
+    unfold has_edge_rev.
+    rewrite IntMap.find_add.
+    destruct (Int.eq_dec d d1);
+    intuition congruence.
+  Qed.
+
+  Lemma le_create_node :
+    forall lb succs g g' n'
+           (WF : wf g),
+      create_node lb succs g = OK (g',n') ->
+      le_graph g g'.
+  Proof.
+    unfold create_node.
+    intros.
+    destruct ((fresh g =? max_int)%uint63) eqn:F; try discriminate.
+    inv H.
+    constructor ; simpl; auto.
+    - intros.
+      rewrite has_node_label_add.
+      destruct (eq_dec n (fresh g)); try tauto.
+      { subst.
+        apply has_node_label_has_node in H.
+        apply wf_fresh in H; auto. lia. }
+    - intros.
+      rewrite has_edge_add_gen by auto.
+      destruct (eq_dec o (fresh g)).
+      { subst. apply has_edge_node_d in H.
+        apply wf_fresh in H; auto. lia.
+      }
+      tauto.
+    - lia.
+  Qed.
+
+  Lemma clos_refl_trans_morph : forall (A:Type) (E1 E2: A -> A -> Prop),
+      inclusion _ E1 E2 ->
+      inclusion _ (clos_refl_trans _ E1) (clos_refl_trans _ E2).
+  Proof.
+    unfold inclusion.
+    intros.
+    induction H0.
+    -  apply rt_step.
+       auto.
+    - apply rt_refl.
+    -  eapply rt_trans ; eauto.
+  Qed.
+
+  Lemma wf_create_edge : forall  n e g g' n' lb,
+      wf g ->
+      create_edge n e g = OK (g',(n',lb)) ->
+      wf g'.
+  Proof.
+    intros.
+    unfold create_edge in H0.
+    destruct (IntMap.find
+        (elt:=NodeLabel.t * list (EdgeLabel.t * int)) n
+        (edges g)
+             ) eqn:FIND ; try discriminate.
+    destruct p as (nl, succs).
+    destruct (find_edgelabel e succs) eqn:FLABEL; try discriminate.
+    - (* The edge already exists - nothing to do *)
+      destruct (get_label (edges g) i) eqn:GL ; try discriminate.
+      simpl in H0. inv H0;auto.
+    - (* Add the edge *)
+      destruct (next_label nl e) as [lb'|] eqn:NXT ; try discriminate.
+      simpl in H0.
+      destruct (create_node lb' [] g) eqn:CNODE ; try discriminate.
+      simpl in H0. destruct p as (g1,n1).
+      destruct (add_edge n e n1 g1) as [g2|] eqn:ADD;
+        try discriminate.
+      simpl in H0.
+      inv H0.
+      exploit  wf_create_node; eauto.
+      { simpl ; constructor. }
+      { simpl ; constructor. }
+      { simpl ; tauto. }
+      { simpl ; tauto. }
+      intros (WF1 & FR & HAS & NL & FRG).
+      exploit find_create_node; eauto.
+      intro FINDG1.
+      unfold add_edge in ADD.
+      rewrite FINDG1 in ADD.
+      inv ADD.
+      assert (En : forall e d, In (e,d) succs <-> has_edge n e d (edges g)).
+      {
+        split;intros.
+        do 2 eexists.
+        rewrite FIND.
+        split; eauto.
+        destruct H0 as (lb1 & l & FIND2).
+        intuition congruence.
+      }
+      assert (NLB : has_node_label n nl (edges g)).
+      {
+        unfold has_node_label.
+        unfold get_label. rewrite FIND.
+        reflexivity.
+      }
+      assert (FRD : forall o e, has_edge o e (fresh g) (edges g) -> False).
+      {
+        intros.
+        apply wf_lb in H0; auto.
+        apply wf_fresh in H0;auto.
+        lia.
+      }
+      assert (FRO : forall d e, has_edge (fresh g) e d (edges g) -> False).
+      {
+        intros.
+        apply has_edge_node_d in H0.
+        apply wf_fresh in H0;auto.
+        lia.
+      }
+      constructor.
+      + (* NODUP *) simpl.
+        intros.
+        rewrite has_edge_add_gen in H0,H1;auto.
+        rewrite HAS in H0,H1.
+        simpl in H0,H1.
+        rewrite En in H0,H1.
+        unfold eqEN in H0,H1.
+        simpl in H0,H1.
+        intuition try congruence.
+        * eapply wf_nodup with (g:=g) ;eauto.
+        * subst.
+          exfalso.
+          eapply find_label_None; eauto.
+          change e with (fst (e,d2)).
+          apply in_map.
+          rewrite En.
+          congruence.
+        * subst.
+          exfalso.
+          eapply find_label_None; eauto.
+          change e with (fst (e,d1)).
+          apply in_map.
+          rewrite En.
+          congruence.
+        * eapply wf_nodup with (g:= g) ; eauto.
+      + (* wf_tree *)
+        simpl.
+        constructor.
+        {
+          assert (CLO : forall n1 n2,
+                     clos_trans int (edge (IntMap.add n (nl, (e,fresh g):: succs) (edges g1)))  n1 n2 ->
+                     clos_trans int (edge (edges g1)) n1 n2 \/
+                     clos_refl_trans int (edge (edges g1)) n1 n /\ n2 = fresh g).
+          {
+            intros.
+            apply Operators_Properties.clos_trans_t1n in H0.
+            induction H0.
+            destruct H0 as (e1 & E).
+            rewrite has_edge_add_gen in E; auto.
+            destruct E. destruct H0.
+            left.
+            constructor. eexists;eauto.
+            destruct H0; subst.
+            simpl in H1.
+            destruct H1. inv H0.
+            right; split; auto.
+            apply rt_refl.
+            rewrite En in H0.
+            left. eapply t_step.
+            eexists.
+            rewrite HAS.
+            left; eauto.
+            destruct IHclos_trans_1n.
+            clear H1.
+            unfold edge in H0.
+            destruct H0 as (e1 & ED).
+            rewrite has_edge_add_gen in ED;auto.
+            destruct ED.
+            destruct H0.
+            left.
+            eapply t_trans; eauto.
+            eapply t_step.
+            eexists ; eauto.
+            destruct H0 ; subst.
+            simpl in H1.
+            destruct H1 ; subst.
+            inv H0.
+            { exfalso.
+              remember (fresh g) as n1.
+              rename H into WFG.
+              clear - HAS NL H2 Heqn1 WFG.
+              induction H2.
+              - subst.
+                destruct H.
+                rewrite HAS in H.
+                destruct H.
+                apply has_edge_node_d in H.
+                apply wf_fresh in H; auto.
+                lia.
+                simpl in H; tauto.
+              - subst.
+                eapply IHclos_trans1; eauto.
+            }
+            { rewrite En in H0.
+              left.
+              eapply t_trans;eauto.
+              eapply t_step;eauto.
+              eexists ; eauto.
+              rewrite HAS. left; eauto.
+            }
+            destruct H2 ; subst.
+            right.
+            split; auto.
+            destruct H0.
+            rewrite has_edge_add_gen in H0 ; auto.
+            destruct H0.
+            destruct H0.
+            eapply rt_trans; eauto.
+            eapply rt_step. eexists ; eauto.
+            simpl in H0.
+            destruct H0.
+            subst.
+            apply rt_refl.
+        }
+        intros.
+        apply CLO in H0.
+        destruct H0.
+        eapply tree_no_loop;eauto.
+        eapply wf_tree;eauto.
+        destruct H0 ; subst.
+        apply clos_refl_trans_morph with (E2 :=  (edge (edges g))) in H0.
+        apply clos_refl_trans_fresh in H0; auto.
+        destruct H0; subst.
+        apply has_node_label_has_node in NLB.
+        apply wf_fresh in NLB; eauto.
+        lia.
+        repeat intro.
+        destruct H1.
+        rewrite HAS in H1.
+        simpl in H1 ; destruct H1 ; try tauto.
+        eexists ; eauto.
+        }
+
+        intros.
+        rewrite has_edge_add_gen in H0,H1;auto.
+        rewrite HAS in *.
+        simpl in H0,H1.
+        rewrite and_False_r in *.
+        rewrite or_False_r in *.
+        rewrite En in H0,H1.
+        destruct H0 as [(EQ1 & H0) | (EQ1 & [H0| H0])];
+        destruct H1 as [(EQ2 & H1) | (EQ2 & [H1| H1])]; try intuition congruence.
+        { eapply wf_tree with (g:=g) ;eauto. }
+        { inv H1 ; subst.
+          exfalso;eauto.
+        }
+        { eapply wf_tree with (g:=g) ;eauto.
+          congruence.
+        }
+        { inv H0 ;
+          exfalso ; eauto.
+        }
+        {
+          inv H0.
+          exfalso ; eauto.
+        }
+        { eapply wf_tree with (g:=g) ;eauto.
+          congruence.
+        }
+        { inv H1.
+          exfalso ; eauto.
+        }
+        { subst.
+          eapply wf_tree with (g:=g) ;eauto.
+        }
+      + simpl.
+        intros o e0 d lbo lbd.
+        rewrite has_edge_add_gen by auto.
+        rewrite! has_node_label_add by auto.
+        simpl. rewrite En.
+        rewrite! NL. rewrite HAS.
+        simpl.
+        intros.
+        intuition subst; try congruence;
+          try (eapply wf_nxt with (g:=g) ; eauto;fail);
+          try (exfalso ; eapply  FRD; eauto;fail);
+          try (exfalso ; eapply  FRO; eauto;fail).
+        * inv H5.
+          apply has_node_label_has_node in H6.
+          apply wf_fresh in H6; auto.
+          lia.
+        * inv H5.
+          apply has_node_label_has_node in NLB.
+          apply wf_fresh in NLB;auto.
+          lia.
+      + intros.
+        simpl.
+        rewrite has_edge_add_gen by auto.
+        simpl.
+        rewrite has_edge_rev_add_gen.
+        rewrite <- wf_parent by auto.
+        simpl.
+        rewrite HAS.
+        simpl.
+        rewrite! and_False_r.
+        rewrite! or_False_r.
+        rewrite En.
+        unfold eqEN. simpl.
+        assert (has_edge o e0 d (edges g) -> d <> fresh g).
+        { repeat intro ; subst; eauto. }
+        destruct (eq_dec o n); intuition try congruence.
+        destruct (eq_dec d (fresh g));
+          intuition try congruence.
+        subst; tauto.
+      + simpl.
+        intros.
+        rewrite has_edge_add_gen in H0 by auto.
+        rewrite HAS in H0.
+        simpl in H0.
+        rewrite En in H0.
+        rewrite and_False_r in H0.
+        rewrite or_False_r in H0.
+        assert (exists lb1,
+                   d <> n /\ (has_node_label d lb1 (edges g) \/ d = fresh g /\ lb1 = lb) \/
+                     d = n /\  lb1 = nl).
+        {
+          intuition subst.
+          - apply wf_lb in H4 ; auto.
+            destruct H4 as (lb1 & HASL).
+            destruct (eq_dec d n).
+            + exists nl. right. split;auto.
+            + exists lb1. tauto.
+          -  destruct (eq_dec (fresh g) n).
+             exists nl. intuition congruence.
+             exists lb. intuition congruence.
+          - apply wf_lb in H3 ; auto.
+            destruct H3 as (lb1 & HASL).
+            destruct (eq_dec d n).
+            + exists nl. right. split;auto.
+            + exists lb1. tauto.
+        }
+        destruct H1 as (lb1 & H1).
+        exists lb1.
+        rewrite has_node_label_add.
+        rewrite NL.
+        tauto.
+      + simpl.
+        intros.
+        rewrite has_node_label_add; auto.
+        rewrite NL.
+        rewrite <- wf_nl by auto.
+        rewrite NL.
+        intuition subst.
+        { left; auto.
+        }
+        { destruct (eq_dec o n); [right|left].
+          - split; auto.
+            subst.
+            eapply has_node_label_inj; eauto.
+          - split; auto.
+        }
+        {
+          destruct (eq_dec (fresh g) n).
+          subst.
+          apply has_node_label_has_node in NLB.
+          apply wf_fresh in NLB;auto.
+          lia.
+          left ; split; auto.
+        }
+      + simpl.
+        intros.
+        destruct (EdgeLabel.eq_dec e0 e).
+        { unfold EdgeLabel.eq in e1.
+          subst.
+          rewrite ELMap.findl_eq by auto.
+          split; intros.
+          - simpl in H0.
+            destruct H0; subst.
+            + exists (fresh g).
+            rewrite has_edge_add_gen by auto.
+            right; split; auto. simpl. left.
+            split; simpl; auto.
+            +
+              rewrite wf_el in H0 by auto.
+              destruct H0 as (d1 & EDGE).
+              rewrite HAS in EDGE.
+              simpl in EDGE. rewrite and_False_r in EDGE.
+              rewrite or_False_r in EDGE.
+              destruct (eq_dec o n).
+              subst.
+              eexists d1.
+              rewrite has_edge_add_gen by auto.
+              simpl.
+              rewrite En.
+              tauto.
+              eexists d1.
+              rewrite has_edge_add_gen by auto.
+              left.
+              rewrite HAS.
+              tauto.
+          - simpl.
+            rewrite wf_el.
+            destruct (eq_dec n o); try tauto.
+            right.
+            destruct H0 as (d & EDGE).
+            rewrite has_edge_add_gen in EDGE by auto.
+            destruct EDGE.
+            exists d; tauto.
+            intuition congruence.
+            auto.
+        }
+        {
+          rewrite ELMap.findl_neq by auto.
+          rewrite wf_el by auto.
+          split ; intros (d & EDGE).
+          - rewrite HAS in EDGE.
+          simpl in EDGE.
+          rewrite and_False_r in EDGE.
+          rewrite or_False_r in EDGE.
+          eexists d.
+          rewrite has_edge_add_gen by auto.
+          simpl. rewrite! En.
+          rewrite HAS.
+          simpl.
+          rewrite and_False_r.
+          rewrite or_False_r.
+          destruct (eq_dec o n); intuition congruence.
+          - rewrite has_edge_add_gen in EDGE by auto.
+            rewrite HAS in EDGE.
+            simpl in EDGE.
+            rewrite En in EDGE.
+            unfold eqEN in EDGE.
+            simpl in EDGE.
+            exists d.
+            rewrite HAS.
+            simpl. intuition congruence.
+        }
+      + simpl.
+        intros.
+        destruct H0.
+        rewrite has_node_label_add in H0 by auto.
+        destruct H0. destruct H0.
+        apply has_node_label_has_node in H1.
+        apply wf_fresh in H1 ; auto.
+        destruct H0 ; subst.
+        apply has_node_label_has_node in NLB.
+        apply wf_fresh in NLB;auto.
+        lia.
+  Qed.
+
+  Lemma create_edge_spec : forall n e g g' n' lb',
+      wf g ->
+      create_edge n e g = OK (g',(n',lb')) ->
+      (has_edge n e n' (edges g'))
+      /\
+        ( has_node_label n' lb' (edges g'))
+      /\
+        (forall o e1 d,
+            has_edge o e1 d (edges g') <->
+              (has_edge o e1 d (edges g) \/
+                 (~ has_edge o e1 d (edges g) /\ ~ has_node d (edges g) /\ d = fresh g /\ o = n /\  e1 = e /\ d = n')))
+      /\
+        (forall nd lb1, has_node_label nd lb1 (edges g') <->
+                          (has_node_label nd lb1 (edges g) \/
+                             nd = n' /\ lb' = lb1))
+      /\ ((fresh g <=? fresh g' = true)%uint63).
+  Proof.
+    intros.
+    exploit wf_create_edge; eauto.
+    intro WF.
+    unfold create_edge in H0.
+    destruct (IntMap.find
+        (elt:=NodeLabel.t * list (EdgeLabel.t * int)) n
+        (edges g)
+             ) eqn:FIND ; try discriminate.
+    destruct p as (nl, succs).
+    destruct (find_edgelabel e succs) eqn:FLABEL; try discriminate.
+    - (* The edge already exists *)
+      destruct (get_label (edges g) i) eqn:GL ; try discriminate.
+      simpl in H0. inv H0;auto.
+      repeat apply conj.
+      + do 2 eexists ; repeat split; eauto.
+        apply find_label_Some in FLABEL.
+        auto.
+      + unfold has_node_label. auto.
+      + intuition subst.
+        apply find_label_Some in FLABEL.
+        do 2 eexists. split; eauto.
+      + intuition subst.
+        unfold has_node_label.
+        auto.
+      + lia.
+    - (* Add the edge *)
+      destruct (next_label nl e) as [lb|] eqn:NXT ; try discriminate.
+      simpl in H0.
+      destruct (create_node lb [] g) eqn:CNODE ; try discriminate.
+      simpl in H0. destruct p as (g1,n1).
+      destruct (add_edge n e n1 g1) as [g2|] eqn:ADD;
+        try discriminate.
+      simpl in H0.
+      inv H0.
+      exploit  wf_create_node; eauto.
+      { simpl ; constructor. }
+      { simpl ; constructor. }
+      { simpl ; tauto. }
+      { simpl ; tauto. }
+      intros (WF1 & FR & HAS & NL & FRG).
+      exploit find_create_node; eauto.
+      intro FINDG1.
+      unfold add_edge in ADD.
+      rewrite FINDG1 in ADD.
+      inv ADD.
+      assert (En : forall e d, In (e,d) succs <-> has_edge n e d (edges g)).
+      {
+        split;intros.
+        do 2 eexists.
+        split; eauto.
+        destruct H0 as (lb1 & l & FIND2).
+        rewrite FIND in FIND2.
+        intuition congruence.
+      }
+      assert (NLB : has_node_label n nl (edges g)).
+      {
+        unfold has_node_label,get_label.
+        rewrite FIND. reflexivity.
+      }
+      assert (FRD : forall o e, has_edge o e (fresh g) (edges g) -> False).
+      {
+        intros.
+        apply wf_lb in H0; auto.
+        apply wf_fresh in H0;auto.
+        lia.
+      }
+      assert (FRO : forall d e, has_edge (fresh g) e d (edges g) -> False).
+      {
+        intros.
+        apply has_edge_node_d in H0.
+        apply wf_fresh in H0;auto.
+        lia.
+      }
+      simpl.
+      repeat apply conj.
+      + rewrite has_edge_add_gen by auto.
+        simpl. tauto.
+      + rewrite has_node_label_add.
+        rewrite NL.
+        destruct (eqs (fresh g) n).
+        subst. apply has_node_label_has_node in NLB.
+        apply wf_fresh in NLB ; auto. lia.
+        tauto.
+      + intros.
+        rewrite has_edge_add_gen by auto.
+        rewrite HAS.
+        simpl. rewrite and_False_r. rewrite or_False_r.
+        rewrite En.
+        intuition try congruence.
+        inv H3.
+        right. repeat split;eauto.
+        intro ND.
+        apply wf_fresh in ND ; auto. lia.
+        destruct (eq_dec o n); intuition congruence.
+      + intros.
+        rewrite has_node_label_add.
+        rewrite NL.
+        intuition subst; try tauto.
+        destruct (eq_dec nd n).
+        subst.
+        right. split; auto.
+        eapply has_node_label_inj; eauto.
+        tauto.
+        *  destruct (eq_dec (fresh g) n).
+           subst.
+           apply has_node_label_has_node in NLB.
+           apply wf_fresh in NLB; auto.
+           lia.
+           left;split; auto.
+      + lia.
+  Qed.
+
+  Lemma create_edge_le :
+    forall  n e g g' n' lb'
+      (WF : wf g),
+      create_edge n e g = OK (g',(n',lb')) ->
+      le_graph g g'.
+  Proof.
+    intros.
+    exploit create_edge_spec;eauto.
+    intros (E & N & S1 & S2 & S3).
+    constructor; auto.
+    - intros.
+      rewrite S2. tauto.
+    - intros.
+      rewrite S1. tauto.
+  Qed.
+
+
+  End S.
 
 End Make.
