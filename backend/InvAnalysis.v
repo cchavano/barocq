@@ -1,12 +1,10 @@
 (** Invalid Path for imp1 *)
 Require Import Uint63.
 Require Import String FMapInterface FMapList ZArith Int ListSet.
-From BarocqComp Require Import Error Maps2 Types Imp1 Graph Typing Utils Pp Printer.
+From BarocqComp Require Import Error Maps2 Types Syntax Imp1 Graph Typing Utils Pp Printer.
 From BarocqComp Require Import Imp1ElimAlias.
 From Coq Require Import FMapPositive.
-Require Import Syntax.
-Import Typed.
-Import Imp1.Typed.
+
 (** The analysis requires an alias analysis.
     We have the [Imp1ElimAlias] and this is hardcoded.
     The analysis makes sure that all the function are purely functional.
@@ -154,7 +152,7 @@ Definition check (str: string) (e1:InvMap.t) (e2:InvMap.t) :=
 Definition show_path_above_alias (te:tenv) (ge:aenv) (d:domain) (env:InvMap.t) (a1:atom) (env': InvMap.t): res unit :=
   let pd := pp_domain d in
   let pe := InvMap.pp env in
-  let a  := Typed.pp_atom a1 in
+  let a  := pp_atom a1 in
   let* res := path_above_alias te ge d a1 in
   let args := Pp.seq (Bstr "path_above_alias:" :: Bstr "alias domain" :: Bframe "-" "|" pd :: Bstr "invalid" :: Bframe "-" "|" pe :: Bstr "atom " :: a :: nil) in
   Error (msg (Pp.pp (Bstack args

@@ -109,16 +109,104 @@ Section S.
                    end
     end.
 
-
-
   End MMAP.
+
+  Lemma mmap_ext:
+    forall (f g: forall ty, B -> res (Ftyp ty)),
+      (forall b ty, f ty b = g ty b) ->
+      (forall l lt, mmap f l lt = mmap g l lt).
+  Proof.
+    induction l; intros.
+    - reflexivity.
+    - simpl. destruct lt.
+      + reflexivity.
+      + rewrite H. rewrite IHl. reflexivity.
+  Qed.
+
+  Lemma mmap_ext_In:
+    forall (f g: forall ty, B -> res (Ftyp ty)) (l: list B),
+      (forall b ty, List.In b l -> f ty b = g ty b) ->
+      (forall lt, mmap f l lt = mmap g l lt).
+  Proof.
+    induction l; intros.
+    - reflexivity.
+    - simpl. destruct lt.
+      + reflexivity.
+      + rewrite H.
+        destruct (g a0 a); simpl; try reflexivity.
+        erewrite IHl; eauto.
+        intros. specialize (H b ty).
+        simpl in H. pose proof (@or_intror (a = b) (In b l) H0).
+        apply H in H1. exact H1. apply List.in_eq. 
+  Qed.
+
+  Lemma mmap_ext_OK:
+    forall (f g: forall ty, B -> res (Ftyp ty)),
+      (forall b ty v, f ty b = OK v -> g ty b = OK v) ->
+      (forall l lt l',
+        mmap f l lt = OK l' ->
+        mmap g l lt = OK l').
+  Proof.
+    induction l; intros.
+    - simpl in H0. destruct lt; exact H0.
+    - simpl in H0. destruct lt; try discriminate.
+      monadInv H0. inv EQ2. simpl.
+      specialize (H a a0 x EQ). rewrite H; simpl.
+      erewrite IHl; eauto. reflexivity.
+  Qed.
+
+  Lemma mmap_ext_In_OK:
+    forall (f g: forall ty, B -> res (Ftyp ty)) (l: list B),
+      (forall b ty v, List.In b l -> f ty b = OK v -> g ty b = OK v) ->
+      (forall lt l',
+        mmap f l lt = OK l' ->
+        mmap g l lt = OK l').
+  Proof.
+    induction l; intros.
+    - simpl in H0. destruct lt; simpl; exact H0.
+    - simpl in H0. destruct lt; try discriminate.
+      monadInv H0. inv EQ2. simpl.
+      pose proof (H a a0 x (in_eq a l) EQ). rewrite H0; simpl.
+      erewrite IHl; eauto. simpl. reflexivity.
+      intros. specialize (H b ty v).
+      pose proof (in_cons a b l H1).
+      apply (H H3 H2). 
+  Qed.
+
+  Lemma mmap_ext_In_Error:
+    forall (f g: forall ty, B -> res (Ftyp ty)) (l: list B),
+      (forall b ty v, List.In b l -> f ty b = OK v -> g ty b = OK v) ->
+      (forall b ty e, List.In b l -> f ty b = Error e -> g ty b = Error e) ->
+      (forall lt e,
+        mmap f l lt = Error e ->
+        mmap g l lt = Error e).
+  Proof.
+    induction l; intros.
+    - simpl in H. destruct lt; simpl; exact H1.
+    - simpl in H1. destruct lt.
+      + unfold efail in H1. inv H1. reflexivity.
+      + simpl. destruct (f a0 a) eqn:Efta.
+        * simpl in H1. eapply H in Efta; try (apply List.in_eq).
+          rewrite Efta; simpl.
+          destruct (mmap f l lt) eqn:Emmap; simpl in H1; simpl.
+          -- inv H1.
+          -- inv H1. eapply IHl in Emmap; eauto.
+             rewrite Emmap. simpl. reflexivity.
+             intros. specialize (H b ty v).
+             destruct H. simpl. right. exact H1.
+             exact H2. reflexivity.
+             intros. specialize (H0 b ty e0).
+             destruct H0. simpl. right. exact H1.
+             exact H2. reflexivity.
+        * simpl in H1. inv H1. eapply H0 in Efta; try (apply List.in_eq).
+          rewrite Efta. simpl. reflexivity.
+  Qed.
 
   Variable P : forall (ty:A) (v1 v2: Ftyp ty), Prop.
 
   Inductive Forall2 : forall (lt:list A) (d1 d2: dlist lt), Prop :=
   | ForallDNIL : Forall2 nil DNIL DNIL
   | ForallDCONS : forall ty v1 v2, P ty v1 v2 -> forall lt d1 d2, Forall2 lt d1 d2 -> Forall2 (ty::lt) (DCONS v1 d1) (DCONS v2 d2).
-
 
   Lemma  Forall2_mmap : forall F G l lt,
       List.Forall2 (fun x  ty =>  res_rel (P ty) (F ty x) (G ty x)) l lt ->

@@ -1,19 +1,9 @@
 From Coq Require Import Bool List String PArith Lia.
-From compcert Require Import Integers Coqlib.
-From BarocqComp Require Import  Barocq Benum  Barray Brecord Error Maps2 Utils Syntax Types Typing Pp.
+From compcert Require Import Integers Maps.
+From BarocqComp Require Import  Barocq Benum Barray Brecord Error Maps2 Utils Syntax Types Typing Pp Denot.
 From BarocqComp Require Printer.
 
-
-
 (** * Abstract syntax *)
-
-(** ** Literals *)
-
-Definition literal : Type := Syntax.literal.
-
-(** ** Atoms *)
-
-Definition atom : Type := Syntax.atom.
 
 (** ** Statements *)
  
@@ -23,8 +13,7 @@ Inductive statement : Type :=
   | StSwitch : atom -> list (pattern * statement) -> statement
   | StSequence : statement -> statement -> statement
   | StReturn : atom -> statement
-  | StAttr   : ident -> statement -> statement
-.
+  | StAttr   : ident -> statement -> statement.
 
 (** ** Functions *)
 
@@ -32,63 +21,25 @@ Definition function : Type := Syntax.function statement btyp.
 
 (** ** Global definitions *)
 
-Definition globdef : Type := Syntax.globdef literal function btyp.
+Definition globdef : Type := Syntax.globdef statement btyp literal.
 
 (** ** Programs *)
 
-Definition program : Type := Syntax.program globdef field_descr.
+Definition program : Type := Syntax.program statement btyp literal.
 
-Module Typed.
-
-  (** * Typed abstract syntax *)
-
-  (** ** Literals *)
-
-  Definition literal : Type := Syntax.literal.
-
-  (** ** Atoms *)
-    
-  Definition atom : Type := Syntax.Typed.atom.
-
-  (** ** Computations *)
-
-  Definition comp : Type := Syntax.Typed.comp.
-  
-  (** ** Statements *)
-
-  Inductive statement : Type :=
-    | StSet : ident -> comp -> statement
-    | StIfThenElse : atom -> statement -> statement -> statement
-    | StSwitch : atom -> list (pattern * statement) -> statement
-    | StSequence : statement -> statement -> statement
-    | StReturn : atom -> statement
-    | StAttr : ident -> statement -> statement.
-
-  (** ** Functions *)
-
-  Definition function : Type := Syntax.function statement btyp.
-
-  (** ** Global definitions *)
-
-  Definition globdef : Type := Syntax.globdef literal function btyp.
-
-  (** ** Programs *)
-
-  Definition program : Type := Syntax.program globdef field_descr.
-
+(** * Pretty-printing *)
 
 Module Pp.
   Import String.
   Import ListNotations.
-  Import Typed.
 
   Fixpoint pp_statement (s:statement) :=
     match s with
-    | StSet i c => Bcat (Bstr i) (Bcat (Bstr "=") (Printer.Typed.pp_comp c))
+    | StSet i c => Bcat (Bstr i) (Bcat (Bstr "=") (Printer.pp_comp c))
     | StIfThenElse a s1 s2 =>
         let s1 := Bcat (Bstr " then ") (pp_statement s1) in
         let s2 := Bcat (Bstr " else ") (pp_statement s2) in
-        let c  := Printer.Typed.pp_atom a in
+        let c  := Printer.pp_atom a in
         let cd := Bcat (Bstr "if ") c in
         Bstack cd (Bstack s1 s2 Left) Left
     | StSwitch a l => Bstr "case..."
@@ -97,7 +48,7 @@ Module Pp.
         let s2 := pp_statement s2 in
         Bstack (Bcat s1 (Bstr ";"))
                s2 Left
-    | StReturn a => Bcat (Bstr "return ") (Printer.Typed.pp_atom a)
+    | StReturn a => Bcat (Bstr "return ") (Printer.pp_atom a)
     | StAttr a s => Bcat (Bstr "[#") (Bcat (Bstr a) (Bcat (Bstr "]") (pp_statement s)))
     end.
 
@@ -105,185 +56,191 @@ Module Pp.
 
 End Pp.
 
-  Section TRANSF.
-    Variable trans_statement : statement -> res statement.
+Section TRANSF.
+  Variable trans_statement : statement -> res statement.
 
-    Definition trans_function (f:function) :=
-      let* b := trans_statement (fn_body f) in
-      OK {| fn_return := fn_return f;
-           fn_params := fn_params f;
-           fn_body   := b
-        |}.
-
-    Definition trans_globdef (gd : globdef) : res globdef :=
-      match gd with
-      | DefFun id f    => let* f' := trans_function f in
-                          OK (DefFun id f')
-      | _ => OK gd
-      end.
-
-    Definition trans_program (p:program) : res program :=
-      let* gd' :=  mmap trans_globdef (prog_defs p) in
-      OK {|
-        prog_defs := gd';
-        prog_types := prog_types p;
-        prog_tabs := prog_tabs p;
+  Definition trans_function (f:function) :=
+    let* b := trans_statement (fn_body f) in
+    OK {| fn_return := fn_return f;
+          fn_params := fn_params f;
+          fn_body   := b
       |}.
 
-  End TRANSF.
+  Definition trans_globdef (gd : globdef) : res globdef :=
+    match gd with
+    | DefFun id f    => let* f' := trans_function f in
+                        OK (DefFun id f')
+    | _ => OK gd
+    end.
 
-  Module UnType.
-(*    Fixpoint untype_atom (a:atom) : Imp1.atom :=
-      match
-    ATrue : btyp -> Syntax.Typed.atom
-  | AFalse : btyp -> Syntax.Typed.atom
-  | AInt32 : int -> btyp -> Syntax.Typed.atom
-  | AInt64 : int64 -> btyp -> Syntax.Typed.atom
-  | AConstr : ident -> btyp -> Syntax.Typed.atom
-  | AVar : ident -> btyp -> Syntax.Typed.atom
-  | ACast : Syntax.Typed.atom -> btyp -> Syntax.Typed.atom
-  | AUnaryOp : unary_op -> Syntax.Typed.atom -> btyp -> Syntax.Typed.atom
-  | ABinaryOp : binary_op ->
-                Syntax.Typed.atom ->
-                Syntax.Typed.atom -> btyp -> Syntax.Typed.atom.
-*)
+  Definition trans_program (p:program) : res program :=
+    let* gd' :=  mmap trans_globdef (prog_defs p) in
+    OK {|
+      prog_defs := gd';
+      prog_types := prog_types p;
+      prog_tabs := prog_tabs p;
+    |}.
 
-  End UnType.
+End TRANSF.
 
-End Typed.
+(** * Denotational functional semantics *)
 
-Module Aliasing_AST.
+Section DENOT.
 
-  (** * Typed abstract syntax with aliasing information *)
+  Variable arch : Target.archi.
 
-  Parameter ABSDOM : Type.
+  Variable tabs : PMap.t Type.
 
-  (** ** Literals *)
+  Notation genv := (@Denot.genv tabs).
 
-  Definition literal : Type := Syntax.literal.
+  Notation lenv := (@Denot.lenv tabs).
 
-  (** ** Atoms *)
-    
-  Definition atom : Type := Syntax.Typed.atom.
+  Notation value := (@Denot.value tabs).
 
-  (** ** Computations *)
+  Notation eval_typ := (@Denot.eval_typ tabs).
 
-  Definition comp : Type := Syntax.Typed.comp.
+  Notation eval_atom := (@Denot.eval_atom arch tabs).
 
-  (** ** Statements *)
+  Notation eval_comp := (@Denot.eval_comp arch tabs).
 
-  Inductive statement : Type :=
-    | StSet : ident -> comp -> ABSDOM -> ABSDOM -> statement
-    | StIfThenElse : atom -> statement -> statement -> ABSDOM -> ABSDOM -> statement
-    | StSwitch : atom -> list (pattern * statement) -> ABSDOM -> ABSDOM -> statement
-    | StSequence : statement -> statement -> statement
-    | StReturn : atom -> ABSDOM -> ABSDOM -> statement.
+  Definition typ_of_statement (ty: option typ) : Type :=
+    match ty with
+    | Some ty => eval_typ ty
+    | None => lenv
+    end.
 
-  (** ** Functions *)
+  Definition eval_match (tv:typ) (v: eval_typ tv) (tr: option typ) (cases: list (pattern * res (typ_of_statement tr))) : res (typ_of_statement tr) :=
+    (match tv as t0 return (eval_typ t0 -> res (typ_of_statement tr)) with
+    | TEnum _ elems => 
+        (fun v0 => match_with_err v0 cases)
+    | _ => (fun _ => fail)
+    end) v.
 
-  Definition function : Type := Syntax.function statement btyp.
+  Fixpoint eval_statement_rec (te: tenv) (ge: genv) (le: lenv) (ty: option typ) (s: statement) : res (typ_of_statement ty) :=
+    match s with
+    | StSet x c =>
+        match ty with
+        | None =>
+            let* tyc := btyp_to_typ te (typof_comp c) in
+            let* vc := eval_comp te ge le tyc c in
+            ret (lenv_update tabs le x (Val tabs tyc vc))
+        | _ => fail
+        end
+    | StIfThenElse a s1 s2 =>
+        let* va := eval_atom te ge le TBool a in
+        if va then eval_statement_rec te ge le ty s1
+        else eval_statement_rec te ge le ty s2
+    | StSwitch a cases =>
+        let* ta := typof_atom te a in
+        let* va := eval_atom te ge le ta a in
+        let vcases := MapList.map (eval_statement_rec te ge le ty) cases in
+        eval_match ta va ty vcases
+    | StSequence s1 s2 =>
+        let* le1 := eval_statement_rec te ge le None s1 in
+        eval_statement_rec te ge le1 ty s2
+    | StReturn a =>
+        match ty with
+        | Some ty => eval_atom te ge le ty a
+        | None => fail
+        end
+    | StAttr _ s1 => eval_statement_rec te ge le ty s1
+    end.
 
-  (** ** Global definitions *)
+  Definition eval_statement (te: tenv) (ge: genv) (le: lenv) (tr: typ) (body: statement) : res (eval_typ tr) :=
+    eval_statement_rec te ge le (Some tr) body.
 
-  Definition globdef : Type := Syntax.globdef literal function btyp.
+  Definition eval_prog (impl: genv) (prog: program) : res (tenv * genv) :=
+    Denot.eval_prog tabs statement eval_statement impl prog.
 
-  (** ** Programs *)
-
-  Definition program : Type := Syntax.program globdef field_descr.
-
-End Aliasing_AST.
-
-Module Imp1Typed := Imp1.Typed.
+End DENOT.
 
 Module Typing.
 
-  Import Syntax.Typed.
-  Import Imp1Typed.
   Import ListNotations.
 
   Section ARCHI.
 
   Variable arch : Target.archi.
 
-  Fixpoint typecheck_atom (be: benv) (gx: gcontext) (lx: lcontext) (a: Syntax.atom) : res Syntax.Typed.atom :=
+  Fixpoint typecheck_atom (be: benv) (gx: gcontext) (lx: lcontext) (a: atom) : res atom :=
     match a with
     | Syntax.ATrue => ret ATrue
     | Syntax.AFalse => ret AFalse
     | Syntax.AInt32 i s => ret (AInt32 i s)
     | Syntax.AInt64 i s => ret (AInt64 i s)
-    | Syntax.AConstr x =>
+    | Syntax.AConstr x i1 ty =>
         let* t := typof_constr be x in
         let* z := zval_of_constr be t x in
         ret (AConstr x (Int.repr z) t)
-    | Syntax.AVar x =>
+    | Syntax.AVar x _ =>
         let* t := typof_var gx lx x in
         ret (AVar x t)
     | Syntax.ACast a1 ty =>
         let* a1' := typecheck_atom be gx lx a1 in
-        let* t := typecheck_cast (typof_atom a1') ty in
+        let* t := typecheck_cast (Syntax.typof_atom a1') ty in
         ret (ACast a1' t)
-    | Syntax.AUnaryOp op a1 =>
+    | Syntax.AUnaryOp op a1 _ =>
         let* a1' := typecheck_atom be gx lx a1 in
-        let ty1 := typof_atom a1' in
+        let ty1 := Syntax.typof_atom a1' in
         let* t := typecheck_unary_op op ty1 in
         ret (AUnaryOp op a1' t)
-    | Syntax.ABinaryOp op a1 a2 =>
+    | Syntax.ABinaryOp op a1 a2 _ =>
         let* a1' := typecheck_atom be gx lx a1 in
         let* a2' := typecheck_atom be gx lx a2 in
-        let ty1 := typof_atom a1' in
-        let ty2 := typof_atom a2' in
+        let ty1 := Syntax.typof_atom a1' in
+        let ty2 := Syntax.typof_atom a2' in
         let* t := typecheck_binary_op op ty1 ty2 in
         ret (ABinaryOp op a1' a2' t)
-    | Syntax.AArrayGet a i =>
+    | Syntax.AArrayGet a i _ _ =>
         let* a' := typecheck_atom be gx lx a in
         let* i' := typecheck_atom be gx lx i in
-        let ta := typof_atom a' in
-        let ti := typof_atom i' in
+        let ta := Syntax.typof_atom a' in
+        let ti := Syntax.typof_atom i' in
         let* (ty, ly) := typecheck_array_get2 arch ta ti in
         ret (AArrayGet a' i' ly ty)
-    | Syntax.ARecordProj a f =>
+    | Syntax.ARecordProj a f _ _ =>
         let* a' := typecheck_atom be gx lx a in
-        let ta := typof_atom a' in
+        let ta := Syntax.typof_atom a' in
         let* (ty, ly) := typecheck_record_proj2 be ta f in
         ret (ARecordProj a' f ly ty)
-    | Syntax.APureCall f args =>
+    | Syntax.APureCall f _ args _ =>
         let* tf := typof_var gx lx f in
         let* args' := mmap (typecheck_atom be gx lx) args in
-        let targs := map typof_atom args' in
+        let targs := map Syntax.typof_atom args' in
         let* ty := typecheck_call tf targs in
         ret (APureCall f tf args' ty)
     end.
 
-  Definition typecheck_comp (be: benv) (gx: gcontext) (lx: lcontext) (c: Syntax.comp) : res Imp1Typed.comp :=
+  Definition typecheck_comp (be: benv) (gx: gcontext) (lx: lcontext) (c: comp) : res comp :=
     match c with
-    | Syntax.CpAtom a =>
+    | Syntax.CpAtom a _ =>
         let* a' := typecheck_atom be gx lx a in
-        ret (CpAtom a' (typof_atom a'))
-    | Syntax.CpArraySet a1 a2 a3 =>
+        ret (CpAtom a' (Syntax.typof_atom a'))
+    | Syntax.CpArraySet a1 a2 a3 _ =>
         let* a1' := typecheck_atom be gx lx a1 in
         let* a2' := typecheck_atom be gx lx a2 in
         let* a3' := typecheck_atom be gx lx a3 in
-        let ty1 := typof_atom a1' in
-        let ty2 := typof_atom a2' in
-        let ty3 := typof_atom a3' in
+        let ty1 := Syntax.typof_atom a1' in
+        let ty2 := Syntax.typof_atom a2' in
+        let ty3 := Syntax.typof_atom a3' in
         let* ty := typecheck_array_set arch ty1 ty2 ty3 in
         ret (CpArraySet a1' a2' a3' ty)
-    | Syntax.CpRecordUpdate a1 x a2 =>
+    | Syntax.CpRecordUpdate a1 x a2 _ =>
         let* a1' := typecheck_atom be gx lx a1 in
         let* a2' := typecheck_atom be gx lx a2 in
-        let ty1 := typof_atom a1' in
-        let ty2 := typof_atom a2' in
+        let ty1 := Syntax.typof_atom a1' in
+        let ty2 := Syntax.typof_atom a2' in
         let* ty := typecheck_record_update be ty1 ty2 x in
         ret (CpRecordUpdate a1' x a2' ty)
-    | Syntax.CpCall f args =>
+    | Syntax.CpCall f _ args _ =>
         let* tf := typof_var gx lx f in
         let* args' := mmap (typecheck_atom be gx lx) args in
-        let targs := map typof_atom args' in
+        let targs := map Syntax.typof_atom args' in
         let* ty := typecheck_call tf targs in
         ret (CpCall f tf args' ty)
     end.
 
-  (* Should be checked if the context contains the same set of set variables. ? *)
+  (* Should be checked if the contexts contains the same set of set variables. ? *)
   Definition merge_contexts (lx1 lx2: lcontext) : res lcontext :=
     STree.fold
       (fun acc k v =>
@@ -292,9 +249,9 @@ Module Typing.
       lx2
       (ret lx1).
 
-  Fixpoint typecheck_statement (be: benv) (gx: gcontext) (lx: lcontext) (tret: btyp) (s: Imp1.statement) : res (Imp1Typed.statement * lcontext) :=
+  Fixpoint typecheck_statement (be: benv) (gx: gcontext) (lx: lcontext) (tret: btyp) (s: statement) : res (statement * lcontext) :=
     let fix typecheck_match_rec (be: benv) (gx: gcontext) (lx: lcontext) (te: btyp) (tret: btyp) (elems: list ident) (unmatched: list ident)
-      (cases: list (Benum.pattern * Imp1.statement)) : res (list (pattern * Imp1Typed.statement) * lcontext) :=
+      (cases: list (Benum.pattern * statement)) : res (list (pattern * statement) * lcontext) :=
       match cases with
       | nil => fail
       | (x, sx) :: nil =>
@@ -313,7 +270,7 @@ Module Typing.
       end
     in
     let typecheck_match (be: benv) (gx: gcontext) (lx: lcontext) (tret: btyp) (ty: btyp)
-      (cases: list (Benum.pattern * Imp1.statement)) : res (list (pattern * Imp1Typed.statement) * lcontext) :=
+      (cases: list (Benum.pattern * statement)) : res (list (pattern * statement) * lcontext) :=
       match ty with
       | BEnum te =>
           let* elems := TEnv.get_edef be te in
@@ -330,7 +287,7 @@ Module Typing.
         let* (s1', lx1) := typecheck_statement be gx lx tret s1 in
         let* (s2', lx2) := typecheck_statement be gx lx tret s2 in
         let* a' := typecheck_atom be gx lx a in
-        match typof_atom a' with
+        match Syntax.typof_atom a' with
         | BBool =>
             let* lx' := merge_contexts lx1 lx2 in
             ret (StIfThenElse a' s1' s2', lx')
@@ -338,7 +295,7 @@ Module Typing.
         end
     | Imp1.StSwitch a cases =>
         let* a' := typecheck_atom be gx lx a in
-        let* (cases_typed, lx') := typecheck_match be gx lx tret (typof_atom a') cases in
+        let* (cases_typed, lx') := typecheck_match be gx lx tret (Syntax.typof_atom a') cases in
         ret (StSwitch a' cases_typed, lx')
     | Imp1.StSequence s1 s2 =>
         let* (s1', lx1) := typecheck_statement be gx lx tret s1 in
@@ -346,7 +303,7 @@ Module Typing.
         ret (StSequence s1' s2', lx2)
     | Imp1.StReturn a =>
         let* a' := typecheck_atom be gx lx a in
-        let ty := typof_atom a' in
+        let ty := Syntax.typof_atom a' in
         if btyp_eq_dec ty tret then
           ret (StReturn a', lx)
         else
@@ -356,7 +313,7 @@ Module Typing.
         ret (StAttr a s',lx')
     end.
 
-  Definition typecheck_function (be: benv) (gx: gcontext) (f: Imp1.function) : res Imp1Typed.function :=
+  Definition typecheck_function (be: benv) (gx: gcontext) (f: function) : res function :=
     let* lx :=
       list_fold_left_err
         (fun acc '(x, tx) => lcontext_update acc x tx)
@@ -370,7 +327,7 @@ Module Typing.
       fn_body := body
     |}.
   
-  Fixpoint typecheck_globdefs_rec (be: benv) (gx: gcontext) (defs: list Imp1.globdef) : res (list Imp1Typed.globdef) :=
+  Fixpoint typecheck_globdefs_rec (be: benv) (gx: gcontext) (defs: list globdef) : res (list globdef) :=
     match defs with
     | nil => ret nil
     | d :: defs' =>
@@ -399,10 +356,10 @@ Module Typing.
         end
     end.
 
-  Definition typecheck_globdefs (be: benv) (defs: list Imp1.globdef) : res (list Imp1Typed.globdef) :=
+  Definition typecheck_globdefs (be: benv) (defs: list globdef) : res (list globdef) :=
     typecheck_globdefs_rec be STree.empty defs.
 
-  Definition typecheck_program (prog: Imp1.program) : res Imp1Typed.program :=
+  Definition typecheck_program (prog: program) : res program :=
     let* be := TEnv.build (prog_types prog) in
     let* defs := typecheck_globdefs be (prog_defs prog) in
     ret {|

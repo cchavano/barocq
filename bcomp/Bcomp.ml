@@ -129,12 +129,6 @@ let options =
     ( "-gen-corres-all",
       Arg.Set opt_gen_corres_all,
       "\t\t\tGenerate the embeddings and the correspondence theorems" );
-    ( "-gen-call-state-of",
-      Arg.Set_string opt_gen_alias_call_state_of,
-      "<fun_name>\t\tGenerate the aliasing call state of <fun_name>" );
-    ( "-gen-return-state-of",
-      Arg.Set_string opt_gen_alias_return_state_of,
-      "<fun_name>\tGenerate the aliasing return state of <fun_name>" );
     ( "-target-arch",
       Arg.String set_target_arch,
       "\t\t\t\tSet the target architecture for which the generated C will be \
@@ -269,86 +263,6 @@ let () =
         | Errors.Error msg -> raise @@ CompilerError (C2C.string_of_errmsg msg)
         end;
         exit 0
-      end;
-
-      if !opt_gen_alias_call_state_of <> "" then begin
-        let imp1 = Compiler.compile_to_imp1 !target_arch prog in
-        begin match imp1 with
-        | Errors.OK prog -> begin
-            match Imp1.Typing.typecheck_program !target_arch prog with
-            | Errors.OK prog -> begin
-                let fid = !opt_gen_alias_call_state_of in
-                match Aliasing_impl.get_fun_descr prog fid with
-                | Some fdescr ->
-                    let callstate = fdescr.Aliasing_defs.fd_callstate in
-                    let dotfile = get_full_filename fid "_call_state.dot" in
-                    let dotfile_rev =
-                      get_full_filename fid "_call_state_rev.dot"
-                    in
-                    let out = open_out dotfile in
-                    let out_rev = open_out dotfile_rev in
-                    Aliasing_impl.DotExport.print_state
-                      out
-                      (Aliasing_defs.AbsDom.AbsState callstate);
-                    Aliasing_impl.DotExport.print_rev_state
-                      out_rev
-                      (Aliasing_defs.AbsDom.AbsState callstate);
-                    close_out out;
-                    close_out out_rev;
-                    let _ = Unix.system (dot_png_cmd dotfile dotfile) in
-                    let _ = Unix.system (dot_png_cmd dotfile_rev dotfile_rev) in
-                    ()
-                | _ ->
-                    eprintf "Error: function \"%s\" is not defined" fid;
-                    exit 1
-              end
-            | Errors.Error msg ->
-                raise
-                @@ UnexpectedError
-                     (sprintf
-                        "Imp1 typing failed: %s"
-                        (C2C.string_of_errmsg msg))
-          end
-        | Errors.Error msg -> raise @@ CompilerError (C2C.string_of_errmsg msg)
-        end
-      end;
-
-      if !opt_gen_alias_return_state_of <> "" then begin
-        let imp1 = Compiler.compile_to_imp1 !target_arch prog in
-        begin match imp1 with
-        | Errors.OK prog -> begin
-            match Imp1.Typing.typecheck_program !target_arch prog with
-            | Errors.OK prog -> begin
-                let fid = !opt_gen_alias_return_state_of in
-                match Aliasing_impl.get_fun_descr prog fid with
-                | Some fdescr ->
-                    let returnstate = fdescr.Aliasing_defs.fd_returnstate in
-                    let dotfile = get_full_filename fid "_return_state.dot" in
-                    let dotfile_rev =
-                      get_full_filename fid "_return_state_rev.dot"
-                    in
-                    let out = open_out dotfile in
-                    let out_rev = open_out dotfile_rev in
-                    Aliasing_impl.DotExport.print_state out returnstate;
-                    Aliasing_impl.DotExport.print_rev_state out_rev returnstate;
-                    close_out out;
-                    close_out out_rev;
-                    let _ = Unix.system (dot_png_cmd dotfile dotfile) in
-                    let _ = Unix.system (dot_png_cmd dotfile_rev dotfile_rev) in
-                    ()
-                | _ ->
-                    eprintf "function \"%s\" is not defined" fid;
-                    exit 1
-              end
-            | Errors.Error msg ->
-                raise
-                @@ UnexpectedError
-                     (sprintf
-                        "Imp1 typing failed: %s"
-                        (C2C.string_of_errmsg msg))
-          end
-        | Errors.Error msg -> raise @@ CompilerError (C2C.string_of_errmsg msg)
-        end
       end;
 
       if !opt_gen_corres_all then begin
@@ -543,8 +457,6 @@ let () =
     | CompilerError msg -> eprintf "Compilation error: %s\n" msg
     | UnexpectedError msg ->
         eprintf "Unexpected error: %s\nPlease, make a bug report.\n" msg
-    | Aliasing_impl.UnsupportedFeature msg ->
-        eprintf "Compilation error: %s\n" msg
     | UnknownTargetArch ->
         eprintf "Error: the target architecture must be \"ptr32\" or \"ptr64\""
   end;

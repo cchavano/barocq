@@ -319,8 +319,8 @@ module HelperTactics = struct
         register_records_hints out records'
 
   let register_types_hints (out : out_channel) (prog : program) : unit =
-    let enums = Syntax.get_enum_typedefs prog.prog_types in
-    let records = Syntax.get_record_typedefs prog.prog_types in
+    let enums = get_enum_typedefs prog.prog_types in
+    let records = get_record_typedefs prog.prog_types in
     register_enums_constuctors_hints out enums;
     register_enums_op_hints out enums;
     fprintf out "\n";
@@ -488,7 +488,7 @@ module HelperTactics = struct
             eid)
         enums
     in
-    let enums = Syntax.get_enum_typedefs prog.prog_types in
+    let enums = get_enum_typedefs prog.prog_types in
     fprintf
       out
       "Ltac corres_rb_match P :=\n\
@@ -620,7 +620,7 @@ module HelperTactics = struct
       !coqlib
 
   let print (out : out_channel) (rprog : program) (bprog : program) : unit =
-    let enums = Syntax.get_enum_typedefs rprog.prog_types in
+    let enums = get_enum_typedefs rprog.prog_types in
     fprintf out "%s" (imports ());
     fprintf out "\n";
     create_databases out rprog;
@@ -666,7 +666,7 @@ let print_opaque_defs (out : out_channel) (prog : program) : unit =
      Opaque Brecord.upd.\n\
      Opaque Barray.get.\n\
      Opaque Barray.set.\n";
-  let enums = Syntax.get_enum_typedefs prog.prog_types in
+  let enums = get_enum_typedefs prog.prog_types in
   print_list
     out
     ~delim:("", "\n")

@@ -5,11 +5,11 @@ COMMON=\
 	Types.v Syntax.v Typing.v Intop.v Ident.v Target.v MergeSort.v DList.v Graph.v ExtOrdered.v Pp.v Printer.v
 
 FRONTEND=\
-	Barocq.v BarocqBNF.v BarocqBNFgen.v\
+	Denot.v Barocq.v Renaming.v BarocqBNF.v BarocqBNFgen.v\
 	BarocqShallow.v BarocqShallowgen.v BarocqVC.v CorresBD_Tactics.v
 
 BACKEND=\
-	ImpBNF.v ImpBNFgen.v Imp1.v Imp1gen2.v Imp1ElimAlias.v InvAnalysis.v\
+	ImpBNF.v ImpBNFgen.v Imp1.v Imp1gen.v Imp1ElimAlias.v InvAnalysis.v\
 	Unboxing.v Imp2.v Imp2gen.v GlobRewrite.v Csyntaxgen.v Imp1Imp.v
 
 BCOMP=Compiler.v

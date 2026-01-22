@@ -1,6 +1,5 @@
 From Coq Require Import List Bool.
 From BarocqComp Require Import Utils Syntax Types Typing Imp1 Maps2.
-Import Syntax.Typed Imp1Typed.
 
 Fixpoint check_statement (s: statement) : bool :=
   match s with

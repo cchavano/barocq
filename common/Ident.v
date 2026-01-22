@@ -14,6 +14,10 @@ Definition of_str_nat (n: nat) : ident :=
   let s := NilEmpty.string_of_uint (Nat.to_uint n) in
   of_string s.
 
+Definition of_str_pos (p: positive) : ident :=
+  let s := NilEmpty.string_of_uint (Pos.to_uint p) in
+  of_string s.
+
 Definition of_pos (p: positive) : ident :=
   Ctypesdefs.string_of_ident p.
 
@@ -24,10 +28,6 @@ Definition concat (i1 i2: ident) : ident :=
   let s1 := to_string i1 in
   let s2 := to_string i2 in
   of_string (String.append s1 s2).
-
-Definition prefix_with (str: string) (i: ident) : ident :=
-  let s := to_string i in
-  of_string (String.append str s).
 
 Definition eq_dec := string_dec.
 

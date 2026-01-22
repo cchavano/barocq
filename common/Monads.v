@@ -1,8 +1,8 @@
 (** * A collection of useful monads *)
 
-From Coq Require Import String.
+From Coq Require Import PArith String.
 From Coq Require Import RelationClasses.
-From compcert Require Import AST Errors Coqlib.
+From compcert Require Import AST Maps Errors Coqlib.
 
 Module Type MONAD.
 
@@ -52,6 +52,16 @@ Module MonError <: MONAD.
   Qed.
 
   
+  Remark ok_imp_some:
+    forall (A: Type) (o: option A) (v: A),
+    err_of_opt o = OK v ->
+    o = Some v.
+  Proof.
+    unfold err_of_opt; intros.
+    destruct o; try discriminate.
+    inv H. reflexivity.
+  Qed.
+
   Inductive res_rel {A B : Type} (R : A -> B -> Prop) : res A -> res B -> Prop :=
     res_rel_error : forall m, res_rel R (Error m) (Error m)
   | res_rel_ok : forall (x : A) (y : B), R x y -> res_rel R (OK x) (OK y).
@@ -84,15 +94,15 @@ Module MonError <: MONAD.
 
   Notation efail := fail.
 
-  Notation "'let*' X := A 'in' B" := (MonError.bind A (fun X => B))
+  Notation "'let*' X := A 'in' B" := (bind A (fun X => B))
     (at level 200, X name, A at level 100, B at level 200)
     : error_monad_scope.
 
-  Notation "'let*' ( X , Y ) := A 'in' B" := (MonError.bind2 A (fun X Y => B))
+  Notation "'let*' ( X , Y ) := A 'in' B" := (bind2 A (fun X Y => B))
     (at level 200, X name, Y name, A at level 100, B at level 200)
     : error_monad_scope.
 
-  Notation "let/catch X := A '/>' M 'in' B" := (MonError.bind_catch A (fun X => B) M)
+  Notation "let/catch X := A '/>' M 'in' B" := (bind_catch A (fun X => B) M)
     (at level 200, X name, A at level 100, M at level 100, B at level 200)
     : error_monad_scope.
 
@@ -188,18 +198,18 @@ Module MonStateErr (S: STATE_TYPE) <: MONAD.
 End MonStateErr.
 
 Module StateCounter <: STATE_TYPE.
-  Definition t : Type := nat.
+  Definition t : Type := positive.
 End StateCounter.
 
 Module MonCounter.
 
   Include MonState(StateCounter).
 
-  Definition incr {A: Type} (a: A) : M A :=
+  Definition incr : M positive :=
     fun (s: StateCounter.t) =>
-      (a, s + 1)%nat.
+      (s, s + 1)%positive.
 
-  Notation cmon := MonCounter.M.
+  Notation cmon := M.
 
 End MonCounter.
 
@@ -207,10 +217,11 @@ Module MonCounterErr.
 
   Include MonStateErr(StateCounter).
 
-  Definition incr {A: Type} (a: A) : M A :=
+  Definition incr : M positive :=
     fun (s: StateCounter.t) =>
-      OK (a, s + 1)%nat.
+      OK (s, s + 1)%positive.
 
-  Notation crmon := MonCounterErr.M.
+  Notation crmon := M.
 
 End MonCounterErr.
+

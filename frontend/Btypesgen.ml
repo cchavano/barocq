@@ -81,10 +81,11 @@ let record_def_to_rocq (rd_name : ident) (rd_fields : mtyp Maps2.smaplist) :
     rid
     rid
 
-let type_def_to_rocq ((tname, td) : ident * mtyp type_def) : string =
+let type_def_to_rocq ((tname, td) : ident * (mtyp * Types.layout) type_def) :
+    string =
   match td with
   | TdEnum elems -> enum_def_to_rocq tname elems
-  | TdRecord fields -> record_def_to_rocq tname fields
+  | TdRecord fields -> record_def_to_rocq tname (Maps2.MapList.map fst fields)
 
 let print_btypes (out : out_channel) (prog : program) : unit =
   print_list out ~delim:("", "\n") ~sep:"\n\n" type_def_to_rocq prog.prog_types
@@ -492,9 +493,11 @@ module RecordConv = struct
       rd_fields
       "tt"
 
-  let gen_rconv_RtoB ((rd_name, rd_fields) : ident * mtyp Maps2.smaplist) :
+  let gen_rconv_RtoB
+      ((rd_name, rd_fields) : ident * (mtyp * Types.layout) Maps2.smaplist) :
       string =
     let rid = ident_to_string rd_name in
+    let fields = Maps2.MapList.map fst rd_fields in
     sprintf
       "Definition rconv_%s_RtoB (r: %s.%s) : %s :=\n%s%s."
       rid
@@ -502,7 +505,7 @@ module RecordConv = struct
       rid
       rid
       indent
-      (rconv_RtoB rid rd_fields "r")
+      (rconv_RtoB rid fields "r")
 
   (* Barocq to Rocq *)
 
@@ -548,21 +551,23 @@ module RecordConv = struct
       mk_record
       indent
 
-  let gen_rconv_BtoR ((rd_name, rd_fields) : ident * mtyp Maps2.smaplist) :
+  let gen_rconv_BtoR
+      ((rd_name, rd_fields) : ident * (mtyp * Types.layout) Maps2.smaplist) :
       string =
     let rid = ident_to_string rd_name in
+    let fields = Maps2.MapList.map fst rd_fields in
     sprintf
       "Definition rconv_%s_BtoR (r: %s) : %s.%s :=\n%s."
       rid
       rid
       !shallowR_file
       rid
-      (rconv_BtoR rid rd_fields)
+      (rconv_BtoR rid fields)
 
   (* Main printing function *)
 
   let print_conversions (out : out_channel)
-      (records : mtyp Maps2.smaplist Maps2.smaplist) : unit =
+      (records : (mtyp * Types.layout) Maps2.smaplist Maps2.smaplist) : unit =
     fprintf out "(** * Barocq <-> Rocq record conversions **)\n\n";
     print_list out ~delim:("", "\n\n") ~sep:"\n\n" gen_rconv_RtoB records;
     print_list out ~delim:("", "\n") ~sep:"\n\n" gen_rconv_BtoR records
@@ -604,7 +609,8 @@ module RecordConv = struct
       proof *)
 
   let print_rconv_RtoB_proj_correctness_thm (out : out_channel)
-      ((rd_name, rd_fields) : ident * mtyp Maps2.smaplist) : unit =
+      ((rd_name, rd_fields) : ident * (mtyp * Types.layout) Maps2.smaplist) :
+      unit =
     let rid = ident_to_string rd_name in
     let field_proj_thm ((fid, fty) : ident * mtyp) : string =
       let rproj =
@@ -640,10 +646,12 @@ module RecordConv = struct
         proj_correct
         indent
     in
-    print_list out ~delim:("", "\n\n") ~sep:"\n\n" field_proj_thm rd_fields
+    let fields = Maps2.MapList.map fst rd_fields in
+    print_list out ~delim:("", "\n\n") ~sep:"\n\n" field_proj_thm fields
 
   let print_rconv_RtoB_update_correctness_thm (out : out_channel)
-      ((rd_name, rd_fields) : ident * mtyp Maps2.smaplist) : unit =
+      ((rd_name, rd_fields) : ident * (mtyp * Types.layout) Maps2.smaplist) :
+      unit =
     let rid = ident_to_string rd_name in
     let field_update_thm ((fid, fty) : ident * mtyp) =
       let update_correct =
@@ -676,10 +684,12 @@ module RecordConv = struct
         update_correct
         indent
     in
-    print_list out ~delim:("", "\n\n") ~sep:"\n\n" field_update_thm rd_fields
+    let fields = Maps2.MapList.map fst rd_fields in
+    print_list out ~delim:("", "\n\n") ~sep:"\n\n" field_update_thm fields
 
   let gen_rconv_BtoR_correctness_thm
-      ((rd_name, rd_fields) : ident * mtyp Maps2.smaplist) : string =
+      ((rd_name, rd_fields) : ident * (mtyp * Types.layout) Maps2.smaplist) :
+      string =
     let rid = ident_to_string rd_name in
     let forall = sprintf "forall (b: %s) (r: %s.%s)," rid !shallowR_file rid in
     let conv_call = sprintf "rconv_%s_BtoR b = r" rid in
@@ -707,7 +717,7 @@ module RecordConv = struct
       list_to_string
         ~sep:" /\\\n"
         (fun (fname, fty) -> field_conv fname fty)
-        rd_fields
+        (Maps2.MapList.map fst rd_fields)
     in
     let proof =
       sprintf
@@ -745,16 +755,18 @@ module RecordConv = struct
         sprintf "apply rconv_%s_inv%s." (ident_to_string rid) inv_kind
     | _ -> ""
 
-  let gen_rconv_inv1_thm ((rd_name, rd_fields) : ident * mtyp Maps2.smaplist) :
+  let gen_rconv_inv1_thm
+      ((rd_name, rd_fields) : ident * (mtyp * Types.layout) Maps2.smaplist) :
       string =
     let rid = ident_to_string rd_name in
+    let fields = Maps2.MapList.map fst rd_fields in
     let proof =
       sprintf
         "%sintro. destruct r; simpl. f_equal.\n%s"
         indent
         (list_to_string
            (fun s -> if s <> "" then sprintf "%s- %s\n" indent s else s)
-           (List.map (fun (_, fty) -> rconv_field_proof_inv "1" fty) rd_fields))
+           (List.map (fun (_, fty) -> rconv_field_proof_inv "1" fty) fields))
     in
     sprintf
       "Theorem rconv_%s_inv1 :\n\
@@ -771,7 +783,8 @@ module RecordConv = struct
       rid
       proof
 
-  let gen_rconv_inv2_thm ((rd_name, rd_fields) : ident * mtyp Maps2.smaplist) :
+  let gen_rconv_inv2_thm
+      ((rd_name, rd_fields) : ident * (mtyp * Types.layout) Maps2.smaplist) :
       string =
     let rec field_need_conv (fty : mtyp) : bool =
       match fty with
@@ -780,9 +793,10 @@ module RecordConv = struct
       | _ -> false
     in
     let rid = ident_to_string rd_name in
+    let fields = Maps2.MapList.map fst rd_fields in
     let proof =
       let refl_of_f_equal =
-        if List.exists (fun (_, fty) -> field_need_conv fty) rd_fields then
+        if List.exists (fun (_, fty) -> field_need_conv fty) fields then
           "simpl; repeat f_equal"
         else "reflexivity"
       in
@@ -794,7 +808,7 @@ module RecordConv = struct
         refl_of_f_equal
         (list_to_string
            (fun s -> if s <> "" then sprintf "%s- %s\n" indent s else s)
-           (List.map (fun (_, fty) -> rconv_field_proof_inv "2" fty) rd_fields))
+           (List.map (fun (_, fty) -> rconv_field_proof_inv "2" fty) fields))
     in
     sprintf
       "Theorem rconv_%s_inv2 :\n\
@@ -811,7 +825,7 @@ module RecordConv = struct
       proof
 
   let print_correctness_lemmas (out : out_channel)
-      (records : mtyp Maps2.smaplist Maps2.smaplist) : unit =
+      (records : (mtyp * Types.layout) Maps2.smaplist Maps2.smaplist) : unit =
     List.iter (print_rconv_RtoB_proj_correctness_thm out) records;
     List.iter (print_rconv_RtoB_update_correctness_thm out) records;
     print_list
@@ -840,7 +854,7 @@ module RecordConv = struct
       indent
 
   let print_inversibility (out : out_channel)
-      (records : mtyp Maps2.smaplist Maps2.smaplist) : unit =
+      (records : (mtyp * Types.layout) Maps2.smaplist Maps2.smaplist) : unit =
     print_array_conv_inversibility out;
     fprintf out "\n";
     print_list out ~delim:("", "\n\n") ~sep:"\n\n" gen_rconv_inv1_thm records;

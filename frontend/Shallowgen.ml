@@ -427,7 +427,11 @@ and match_case_to_string (prefix : string) ((p, ep) : Benum.pattern * expr) :
   | BarocqShallowgen.ShallowB ->
       let case =
         match p with
-        | Benum.PIdent (i, z) -> sprintf "PIdent %s %i" (Deepgen.ident_to_deep i) (Camlcoq.Z.to_int z)
+        | Benum.PIdent (i, z) ->
+            sprintf
+              "PIdent %s %i"
+              (Deepgen.ident_to_deep i)
+              (Camlcoq.Z.to_int z)
         | Benum.PWildcard -> "PWildcard"
       in
       sprintf "%s(%s,\n%s)" prefix case (expr_to_rocq_rec (prefix ^ indent) ep)
@@ -487,7 +491,8 @@ module SR = struct
          (fun e -> sprintf "%s| %s" indent (ident_to_string e))
          ed_elems)
 
-  let field_typ_to_rocq (rid : string) ((fname, fty) : ident * mtyp) : string =
+  let field_typ_to_rocq (rid : string)
+      ((fname, (fty, _)) : ident * (mtyp * layout)) : string =
     sprintf
       "%s%s_%s: %s"
       indent
@@ -495,8 +500,8 @@ module SR = struct
       (ident_to_string fname)
       (mtyp_to_rocq fty)
 
-  let record_def_to_rocq (rd_name : ident) (rd_fields : mtyp Maps2.smaplist) :
-      string =
+  let record_def_to_rocq (rd_name : ident)
+      (rd_fields : (mtyp * layout) Maps2.smaplist) : string =
     let rid = ident_to_string rd_name in
     sprintf
       "Record %s := mk_%s {\n%s\n}."
@@ -504,7 +509,8 @@ module SR = struct
       rid
       (list_to_string ~sep:";\n" (field_typ_to_rocq rid) rd_fields)
 
-  let type_def_to_rocq ((tname, td) : ident * mtyp type_def) : string =
+  let type_def_to_rocq ((tname, td) : ident * (mtyp * layout) type_def) : string
+      =
     match td with
     | TdEnum elems -> enum_def_to_rocq tname elems
     | TdRecord fields -> record_def_to_rocq tname fields
@@ -525,8 +531,8 @@ module SR = struct
         let ty = MFun (List.map snd tparams, tret) in
         sprintf "Parameter %s : %s." (ident_to_string x) (mtyp_to_rocq ty)
 
-  let gen_record_eta_update ((rd_name, rd_fields) : ident * mtyp Maps2.smaplist)
-      : string =
+  let gen_record_eta_update
+      ((rd_name, rd_fields) : ident * (mtyp * layout) Maps2.smaplist) : string =
     let rid = ident_to_string rd_name in
     let fnames =
       List.map

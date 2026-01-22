@@ -1,7 +1,6 @@
 From Coq Require Import List String ZArith Bool.
 From BarocqComp Require Import Error Maps2 Utils Types Syntax Barray Benum.
 Import ListNotations.
-Import Syntax.Typed.
 
 (** * Environments of types *)
 
@@ -124,40 +123,6 @@ Fixpoint xtenv_of_type_defs (te:tenv) (tds: smaplist (type_def field_descr)) : r
 
 Definition tenv_of_type_defs (tds: smaplist (type_def field_descr)) : res tenv :=
   xtenv_of_type_defs TEnv.empty tds.
-
-Definition typof_literal (l: literal) : btyp :=
-  match l with
-  | LTrue
-  | LFalse => BBool
-  | LInt32 _ s => BInt32 s
-  | LInt64 _ s => BInt64 s
-  | LArray _ ta ly => BArray ta ly
-  | LRecord rc ub rid => BRecord rid ub
-  end.
-
-Definition typof_atom (a: atom) : btyp :=
-  match a with
-  | ATrue
-  | AFalse => BBool
-  | AInt32 _ s => BInt32 s
-  | AInt64 _ s => BInt64 s
-  | AConstr _ _ ty
-  | AVar _ ty
-  | ACast _ ty
-  | AUnaryOp _ _ ty
-  | ABinaryOp _ _ _ ty
-  | AArrayGet _ _ _ ty
-  | ARecordProj _ _ _ ty 
-  | APureCall _ _ _ ty => ty 
-  end.
-
-Definition typof_comp (c: comp) : btyp :=
-  match c with
-  | CpAtom _ ty
-  | CpArraySet _ _ _ ty
-  | CpRecordUpdate _ _ _ ty
-  | CpCall _ _ _ ty => ty
-  end.
 
 Definition gcontext : Type := STree.t btyp.
 

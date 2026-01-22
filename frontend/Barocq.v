@@ -4,7 +4,6 @@ From BarocqComp Require Import Error Maps2 Utils Intop Barray Brecord Benum Type
 From BarocqComp Require  DList.
 Import ListNotations.
 
-
 (** * Abstract syntax *)
 
 (** ** Expressions *)
@@ -117,55 +116,6 @@ Module Pp.
 
 End Pp.
 
-Section PURITY.
-
-  Variable pure_funs: SSet.t.
-
-  Fixpoint expr_is_pure (e: expr) : bool :=
-    match e with
-    | ETrue | EFalse | EInt32 _ _ | EInt64 _ _
-    | EConstr _ | EVar _ => true
-    | ECast e1 _
-    | ERecordProj e1 _
-    | EUnaryOp _ e1 => expr_is_pure e1
-    | EBinaryOp _ e1 e2
-    | EArrayGet e1 e2
-    | ELetIn _ e1 e2 => (expr_is_pure e1) && (expr_is_pure e2)
-    | EApp e1 args =>
-        match e1 with
-        | EVar f =>
-            SSet.mem f pure_funs
-            && (List.forallb expr_is_pure args)
-        | _ => false
-        end
-    | EArraySet _ _ _
-    | ERecordUpdate _ _ _ => false
-    | EIfThenElse e1 e2 e3 =>
-        (expr_is_pure e1)
-        && (expr_is_pure e2)
-        && (expr_is_pure e3)
-    | EMatch e cases =>
-        (expr_is_pure e) && List.forallb (fun '(_, ei) => expr_is_pure ei) cases
-    | EAttr _ e => expr_is_pure e
-    end.
-
-  Definition func_is_pure (f: function) : bool :=
-    btyp_is_prim (fn_return f) && expr_is_pure (fn_body f).
-
-End PURITY.
-
-Definition pure_functions (prog: program) : SSet.t :=
-  List.fold_left
-    (fun acc def =>
-      match def with
-      | DefFun x f =>
-          if func_is_pure acc f then (SSet.add x acc)
-          else acc
-      | _ => acc
-      end)
-    prog
-    SSet.empty.
-
 Module Typed.
 
   (** * Typed abstract syntax *)
@@ -177,19 +127,41 @@ Module Typed.
     | EFalse : expr
     | EInt32 : int -> signedness -> expr
     | EInt64 : int64 -> signedness -> expr
-    | EConstr : ident -> btyp -> expr
+    | EConstr : ident -> int -> btyp -> expr
     | EVar : ident -> btyp -> expr
     | ECast : expr -> btyp -> expr
     | EUnaryOp : unary_op -> expr -> btyp -> expr
     | EBinaryOp : binary_op -> expr -> expr -> btyp -> expr
-    | EArrayGet : expr -> expr -> btyp -> expr
+    | EArrayGet : expr -> expr -> layout -> btyp -> expr
     | EArraySet : expr -> expr -> expr -> btyp -> expr
-    | ERecordProj : expr -> ident -> btyp -> expr
+    | ERecordProj : expr -> ident -> layout -> btyp -> expr
     | ERecordUpdate : expr -> ident -> expr -> btyp -> expr
     | EApp : expr -> list expr -> btyp -> expr
     | EIfThenElse : expr -> expr -> expr -> btyp -> expr
     | EMatch : expr -> list (pattern * expr) -> btyp -> expr
-    | ELetIn : ident -> expr -> expr -> btyp -> expr.
+    | ELetIn : ident -> expr -> expr -> btyp -> expr
+    | EAttr : ident -> expr -> expr.
+
+  Fixpoint typof_expr (e: expr) : btyp :=
+    match e with
+    | ETrue | EFalse => BBool
+    | EInt32 _ s     => BInt32 s
+    | EInt64 _ s     => BInt64 s
+    | EConstr _ _ ty
+    | EVar _ ty
+    | ECast _ ty
+    | EUnaryOp _ _ ty
+    | EBinaryOp _ _ _ ty
+    | EArrayGet _ _ _ ty
+    | EArraySet _ _ _ ty
+    | ERecordProj _ _ _ ty
+    | ERecordUpdate _ _ _ ty
+    | EMatch _ _ ty 
+    | EApp _ _ ty
+    | EIfThenElse _ _ _ ty
+    | ELetIn _ _ _ ty => ty
+    | EAttr _ e1 => typof_expr e1
+    end.
 
   (** ** Functions *)
 
@@ -235,6 +207,55 @@ Module Typed.
       end.
 
  End Pp. *)
+
+  Section PURITY.
+
+  Variable pure_funs: SSet.t.
+
+  Fixpoint expr_is_pure (e: expr) : bool :=
+    match e with
+    | ETrue | EFalse | EInt32 _ _ | EInt64 _ _
+    | EConstr _ _ _ | EVar _ _ => true
+    | ECast e1 _
+    | ERecordProj e1 _ _ _
+    | EUnaryOp _ e1 _ => expr_is_pure e1
+    | EBinaryOp _ e1 e2 _
+    | EArrayGet e1 e2 _ _
+    | ELetIn _ e1 e2 _ => (expr_is_pure e1) && (expr_is_pure e2)
+    | EApp e1 args _ =>
+        match e1 with
+        | EVar f _ =>
+            SSet.mem f pure_funs
+            && (List.forallb expr_is_pure args)
+        | _ => false
+        end
+    | EArraySet _ _ _ _
+    | ERecordUpdate _ _ _ _ => false
+    | EIfThenElse e1 e2 e3 _ =>
+        (expr_is_pure e1)
+        && (expr_is_pure e2)
+        && (expr_is_pure e3)
+    | EMatch e cases _ =>
+        (expr_is_pure e) && List.forallb (fun '(_, ei) => expr_is_pure ei) cases
+    | EAttr _ e => expr_is_pure e
+    end.
+
+  Definition func_is_pure (f: function) : bool :=
+    btyp_is_prim (fn_return f) && expr_is_pure (fn_body f).
+
+  End PURITY.
+
+  Definition pure_functions (prog: program) : SSet.t :=
+    List.fold_left
+      (fun acc def =>
+        match def with
+        | DefFun x f =>
+            if func_is_pure acc f then (SSet.add x acc)
+            else acc
+        | _ => acc
+        end)
+      prog
+      SSet.empty.
   
 End Typed.
 
@@ -248,26 +269,6 @@ Module Typing.
 
   Variable arch : Target.archi.
 
-  Definition typof_expr (e: expr) : btyp :=
-    match e with
-    | ETrue | EFalse => BBool
-    | EInt32 _ s     => BInt32 s
-    | EInt64 _ s     => BInt64 s
-    | EConstr _ ty
-    | EVar _ ty
-    | ECast _ ty
-    | EUnaryOp _ _ ty
-    | EBinaryOp _ _ _ ty
-    | EArrayGet _ _ ty
-    | EArraySet _ _ _ ty
-    | ERecordProj _ _ ty
-    | ERecordUpdate _ _ _ ty
-    | EMatch _ _ ty 
-    | EApp _ _ ty
-    | EIfThenElse _ _ _ ty
-    | ELetIn _ _ _ ty => ty
-    end.
-
   Fixpoint typecheck_expr (be: benv) (gx: gcontext) (lx: lcontext) (e: Barocq.expr) : res BarocqTyped.expr :=
     match e with
     | Barocq.ETrue => ret ETrue
@@ -276,7 +277,8 @@ Module Typing.
     | Barocq.EInt64 i s => ret (EInt64 i s)
     | Barocq.EConstr x =>
         let* t := typof_constr be x in
-        ret (EConstr x t)
+        let* z := zval_of_constr be t x in
+        ret (EConstr x (Int.repr z) t)
     | Barocq.EVar x =>
         let* t := typof_var gx lx x in
         ret (EVar x t)
@@ -296,8 +298,8 @@ Module Typing.
     | Barocq.EArrayGet e1 e2 =>
         let* e1' := typecheck_expr be gx lx e1 in
         let* e2' := typecheck_expr be gx lx e2 in
-        let* t := typecheck_array_get arch (typof_expr e1') (typof_expr e2') in
-        ret (EArrayGet e1' e2' t)
+        let* (t, ly) := typecheck_array_get2 arch (typof_expr e1') (typof_expr e2') in
+        ret (EArrayGet e1' e2' ly t)
     | Barocq.EArraySet e1 e2 e3 =>
         let* e1' := typecheck_expr be gx lx e1 in
         let* e2' := typecheck_expr be gx lx e2 in
@@ -306,8 +308,8 @@ Module Typing.
         ret (EArraySet e1' e2' e3' t)
     | Barocq.ERecordProj e1 x =>
         let* e1' := typecheck_expr be gx lx e1 in
-        let* t := typecheck_record_proj be (typof_expr e1') x in
-        ret (ERecordProj e1' x t)
+        let* (t, ly) := typecheck_record_proj2 be (typof_expr e1') x in
+        ret (ERecordProj e1' x ly t)
     | Barocq.ERecordUpdate e1 x e2 =>
         let* e1' := typecheck_expr be gx lx e1 in
         let* e2' := typecheck_expr be gx lx e2 in
@@ -368,7 +370,7 @@ Module Typing.
         ret (be', gx, (DefType x td))
     | Barocq.DefConst x l ty =>
         let* l' := typecheck_literal be l in
-        if btyp_eq_dec ty (Typing.typof_literal l') then
+        if btyp_eq_dec ty (typof_literal l') then
           let* gx' := gcontext_update gx x ty in
           ret (be,gx',DefConst x l ty)
         else
@@ -1093,10 +1095,8 @@ Lemma typof_field_is_type :
       apply (fun x => eval_app_res _ _ (f x) args ty).
   Defined.
 
-
-
   Definition typof_expr (te:tenv) (e:expr) : res typ :=
-    btyp_to_typ te (Typing.typof_expr e).
+    btyp_to_typ te (typof_expr e).
 
   Definition cast_int (t:typ) (i:int) : res (eval_typ t) :=
     match t with
@@ -1117,7 +1117,7 @@ Lemma typof_field_is_type :
     | EFalse => @cast_typ TBool false ty
     | EInt32 i s => @cast_typ (TInt32 s) i ty
     | EInt64 i s => @cast_typ (TInt64 s) i ty
-    | EConstr x _  => eval_constr te x ty
+    | EConstr x _ _  => eval_constr te x ty
     | EVar x _ => eval_var ge le x ty
     | ECast e1 tr =>
         let* tr' := btyp_to_typ te tr in
@@ -1134,7 +1134,7 @@ Lemma typof_field_is_type :
         let* v1 := eval_expr te ge le tye1 e1  in
         let* v2 := eval_expr te ge le tye2 e2  in
         eval_binary_op op tye1 tye2 v1 v2 ty
-    | EArrayGet e1 e2 _ =>
+    | EArrayGet e1 e2 _ _ =>
         let* tye1 := typof_expr te e1 in
         let* tye2 := typof_expr te e2 in
         let* v1 := eval_expr te ge le tye1 e1  in
@@ -1148,7 +1148,7 @@ Lemma typof_field_is_type :
         let* v2 := eval_expr te ge le tye2 e2 in
         let* v3 := eval_expr te ge le tye3 e3 in
         eval_array_set tye1 v1 tye2 v2 tye3 v3 ty
-    | ERecordProj e k _ =>
+    | ERecordProj e k _ _ =>
         let* tye := typof_expr te e in
         let* v := eval_expr te ge le tye e in
         eval_record_project tye v k ty
@@ -1184,6 +1184,7 @@ Lemma typof_field_is_type :
         let* v1 := eval_expr te ge le te1 e1 in
         let le' := lenv_update le x (Val te1 v1) in
         eval_expr te ge le' ty e2
+    | EAttr _ e1 => eval_expr te ge le ty e1
     end.
 
   Lemma eval_expr_rew : forall (te: tenv) (ge: genv) (le: lenv) (ty:typ) (e: expr),
@@ -1193,7 +1194,7 @@ Lemma typof_field_is_type :
     | EFalse => @cast_typ TBool false ty
     | EInt32 i s => @cast_typ (TInt32 s) i ty
     | EInt64 i s => @cast_typ (TInt64 s) i ty
-    | EConstr x _  => eval_constr te x ty
+    | EConstr x _ _  => eval_constr te x ty
     | EVar x _ => eval_var ge le x ty
     | ECast e1 tr =>
         let* tr' := btyp_to_typ te tr in
@@ -1210,7 +1211,7 @@ Lemma typof_field_is_type :
         let* v1 := eval_expr te ge le tye1 e1  in
         let* v2 := eval_expr te ge le tye2 e2  in
         eval_binary_op op tye1 tye2 v1 v2 ty
-    | EArrayGet e1 e2 _ =>
+    | EArrayGet e1 e2 _ _ =>
         let* tye1 := typof_expr te e1 in
         let* tye2 := typof_expr te e2 in
         let* v1 := eval_expr te ge le tye1 e1  in
@@ -1224,7 +1225,7 @@ Lemma typof_field_is_type :
         let* v2 := eval_expr te ge le tye2 e2 in
         let* v3 := eval_expr te ge le tye3 e3 in
         eval_array_set tye1 v1 tye2 v2 tye3 v3 ty
-    | ERecordProj e k _ =>
+    | ERecordProj e k _ _ =>
         let* tye := typof_expr te e in
         let* v := eval_expr te ge le tye e in
         eval_record_project tye v k ty
@@ -1260,6 +1261,7 @@ Lemma typof_field_is_type :
         let* v1 := eval_expr te ge le te1 e1 in
         let le' := lenv_update le x (Val te1 v1) in
         eval_expr te ge le' ty e2
+    | EAttr _ e1 => eval_expr te ge le ty e1
     end.
   Proof.
     destruct e; reflexivity.
@@ -1344,7 +1346,7 @@ Lemma typof_field_is_type :
       | [] =>
           fun _ => eval_expr te ge (lenv_update le (fst p) (Val (snd p) y)) tret e
       | p0 :: l0 =>
-          fun
+          fun 
             build_funval_rec  => build_funval_rec
       end (build_funval_rec te ge (lenv_update le (fst p) (Val (snd p) y)) l tret e)
   end.

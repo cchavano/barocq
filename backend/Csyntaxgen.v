@@ -280,10 +280,28 @@ Section TRANSL.
         end
     end.
 
+  Fixpoint all_locals (s: Imp2.statement) : smaplist typ2 :=
+    match s with
+    | Imp2.StSkip
+    | Imp2.StReturn _
+    | Imp2.StEcomp _
+    | Imp2.StCall None _ _ _ _ => MapList.empty
+    | Imp2.StCall (Some x) _ _ _ ty => MapList.add Ident.eq_dec x ty MapList.empty 
+    | Imp2.StSet x a => MapList.add Ident.eq_dec x (typof_atom a) MapList.empty
+    | Imp2.StIfThenElse _ s1 s2
+    | Imp2.StSequence s1 s2 => MapList.merge Ident.eq_dec (all_locals s1) (all_locals s2)
+    | Imp2.StSwitch _ cases =>
+        MapList.fold_left
+          (fun acc _ si => MapList.merge Ident.eq_dec (all_locals si) acc)
+          cases
+          MapList.empty
+      
+    end.
+
   Definition transl_function (f: Imp2.function) : res Csyntax.function :=
     let ty := transl_typ2 (fn_return f) in
     let params := List.map (fun '(pid, pty) => (Ident.to_pos pid, transl_typ2 pty)) (fn_params f) in
-    let vars := List.map (fun '(pid, pty) => (Ident.to_pos pid, transl_typ2 pty)) (fn_vars f) in
+    let vars := List.map (fun '(pid, pty) => (Ident.to_pos pid, transl_typ2 pty)) (all_locals (fn_body f)) in
     let* body := transl_statement (fn_body f) ty in
     ret {|
       Csyntax.fn_return := ty;

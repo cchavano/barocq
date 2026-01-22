@@ -12,3 +12,4 @@ dune-project
 .depend.extr
 *_old.*
 .lia.cache
+archives

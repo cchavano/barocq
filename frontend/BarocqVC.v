@@ -677,15 +677,14 @@ Section S.
 
   Fixpoint vars_of_expr (vars : STree.t unit) (e:expr)  : STree.t unit :=
     match e with
-    | ETrue  | EFalse  |EInt32 _ _ | EInt64 _ _ | EConstr _ _ => vars
+    | ETrue  | EFalse  |EInt32 _ _ | EInt64 _ _ | EConstr _ _ _ => vars
     | EVar id _ => STree.set id tt vars
     | ECast e _ => vars_of_expr vars e
     | EUnaryOp _ e _ => vars_of_expr vars e
-    | EBinaryOp _ e1 e2 _ | EArrayGet e1 e2 _ => vars_of_expr (vars_of_expr vars e1) e2
+    | EBinaryOp _ e1 e2 _ | EArrayGet e1 e2 _ _ => vars_of_expr (vars_of_expr vars e1) e2
     | EArraySet e1 e2 e3 _ => vars_of_expr (vars_of_expr (vars_of_expr vars e1) e2) e3
-    | ERecordProj e _ _ => vars_of_expr vars e
+    | ERecordProj e _ _ _ => vars_of_expr vars e
     | ERecordUpdate e1 _ e2 _ => vars_of_expr (vars_of_expr vars e1) e2
-    (* | EDeepAccess e acc _ => vars_of_expr (List.fold_left vars_of_access acc vars) e *)
     | EApp e l _   => List.fold_left vars_of_expr l (vars_of_expr vars e)
     | EIfThenElse e1 e2 e3 _ => vars_of_expr (vars_of_expr (vars_of_expr vars e1) e2) e3
     | EMatch e1 cases _  =>
@@ -696,12 +695,8 @@ Section S.
           | Some _ => vars_of_expr vars e2
           | None   => STree.remove x (vars_of_expr vars e2)
           end in vars_of_expr vars_e2 e1
+    | EAttr _ e => vars_of_expr vars e
     end.
-  (* with vars_of_access (vars: STree.t unit) (acc:access) : STree.t unit :=
-         match acc with
-         | AcRecordField _ _ => vars
-         | AcArrayIndex e _ => vars_of_expr vars e
-         end. *)
 
   Definition has_var (s:string) (vars:STree.t unit) :=
     match STree.get s vars with
@@ -1661,6 +1656,7 @@ Section S.
         symmetry.
         rewrite get_var_of_expr_case.
         tauto.
+    - apply get_var_of_expr_case.
   Qed.
 
   Definition eq_env_vars_of_expr_acc (e:expr) : forall acc le le' ge ge',
@@ -1882,7 +1878,7 @@ Section S.
     destruct e; intros; simpl; try (apply res_rel_cast_typ_refl;reflexivity).
     - unfold eval_constr.
       destruct (Typing.TEnv.get_constr_typ te i); try constructor.
-      simpl. destruct (Typing.TEnv.get_edef te i0); try constructor.
+      simpl. destruct (Typing.TEnv.get_edef te i1); try constructor.
       simpl. destruct (bool_dec (existsb (String.eqb i) l) true);try constructor.
       apply res_rel_cast_typ_refl;reflexivity.
     - unfold eval_var.
@@ -1903,7 +1899,7 @@ Section S.
       simpl. apply same_value_cast_value; auto.
     - destruct (Typing.btyp_to_typ te b); try reflexivity.
       simpl.
-      destruct (typof_expr te e); try constructor.
+      destruct (Barocq.typof_expr te e); try constructor.
       simpl.
       specialize (eq_genv_eval_expr t0 e le le' H H0).
       inv eq_genv_eval_expr.
@@ -1921,8 +1917,8 @@ Section S.
       apply ext_equal_eval_unary_op; auto.
     -
       simpl in H.
-      destruct (typof_expr te e1); try constructor.
-      destruct (typof_expr te e2); try constructor.
+      destruct (Barocq.typof_expr te e1); try constructor.
+      destruct (Barocq.typof_expr te e2); try constructor.
       simpl.
       generalize (eq_genv_eval_expr t e1 le le' (eq_env_vars_of_expr_acc _ _ _ _ _ _ H) H0).
       generalize (eq_genv_eval_expr t0 e2 le le' (eq_env_vars_of_expr _ _ _ _ _ _ H) H0).
@@ -1932,8 +1928,8 @@ Section S.
       simpl.
       apply ext_equal_eval_binary_op; auto.
     - simpl in H.
-      destruct (typof_expr te e1); try constructor.
-      destruct (typof_expr te e2); try constructor.
+      destruct (Barocq.typof_expr te e1); try constructor.
+      destruct (Barocq.typof_expr te e2); try constructor.
       simpl.
       generalize (eq_genv_eval_expr t e1 le le' (eq_env_vars_of_expr_acc _ _ _ _ _ _ H) H0).
       generalize (eq_genv_eval_expr t0 e2 le le' (eq_env_vars_of_expr _ _ _ _ _ _ H) H0).
@@ -1946,9 +1942,9 @@ Section S.
       apply eq_env_split in H.
       destruct H as (EQ1 & EQ2).
       apply eq_env_split in EQ2 as (EQ2 & EQ3).
-      destruct (typof_expr te e1); try constructor.
-      destruct (typof_expr te e2); try constructor.
-      destruct (typof_expr te e3); try constructor.
+      destruct (Barocq.typof_expr te e1); try constructor.
+      destruct (Barocq.typof_expr te e2); try constructor.
+      destruct (Barocq.typof_expr te e3); try constructor.
       simpl.
       generalize (eq_genv_eval_expr t e1 le le' EQ3 H0).
       generalize (eq_genv_eval_expr t0 e2 le le' EQ2 H0).
@@ -1960,7 +1956,7 @@ Section S.
       simpl.
       apply ext_equal_array_set; auto.
     -
-      destruct (typof_expr te e); try constructor.
+      destruct (Barocq.typof_expr te e); try constructor.
       simpl.
       specialize (eq_genv_eval_expr t e le le' H H0).
       inv eq_genv_eval_expr; try constructor.
@@ -1969,8 +1965,8 @@ Section S.
     -
       simpl in H.
       apply eq_env_split in H as (EQ1 & EQ2).
-      destruct (typof_expr te e1);try constructor.
-      destruct (typof_expr te e2);try constructor.
+      destruct (Barocq.typof_expr te e1);try constructor.
+      destruct (Barocq.typof_expr te e2);try constructor.
       simpl.
       generalize (eq_genv_eval_expr t e1 le le' EQ2 H0).
       generalize (eq_genv_eval_expr t0 e2 le le' EQ1 H0).
@@ -1981,7 +1977,7 @@ Section S.
       apply ext_equal_eval_record_update; auto.
     -
       simpl in H.
-      destruct (typof_expr te e); try constructor.
+      destruct (Barocq.typof_expr te e); try constructor.
       simpl.
       apply eq_env_exprs in H as (EQ1 & EQ2).
       destruct t; try constructor.
@@ -2021,8 +2017,8 @@ Section S.
       generalize (eq_genv_eval_expr TBool e1 _ _ EQ3 H0).
       intros E1 ; inv E1; try constructor.
       simpl.
-      destruct (typof_expr te e2); try constructor.
-      destruct (typof_expr te e3); try constructor.
+      destruct (Barocq.typof_expr te e2); try constructor.
+      destruct (Barocq.typof_expr te e3); try constructor.
       simpl.
       generalize (eq_genv_eval_expr t e2 _ _ EQ2 H0).
       generalize (eq_genv_eval_expr t0 e3 _ _ EQ1 H0).
@@ -2030,7 +2026,7 @@ Section S.
       apply res_rel_ifthenelse; auto.
     - simpl in H.
       apply eq_env_pattern in H.
-      destruct (typof_expr te e); try constructor.
+      destruct (Barocq.typof_expr te e); try constructor.
       destruct H as (EQ1 & EQ2).
       simpl.
       generalize (eq_genv_eval_expr t e _ _ EQ2 H0).
@@ -2052,7 +2048,7 @@ Section S.
         apply IHl.
         tauto.
     - simpl in H.
-      destruct (typof_expr te e1); try constructor.
+      destruct (Barocq.typof_expr te e1); try constructor.
       simpl.
       apply eq_env_split in H as (EQ1 & EQ2).
       generalize (eq_genv_eval_expr t e1 le le' EQ1 H0).
@@ -2074,6 +2070,7 @@ Section S.
         apply H0.
       }
       eapply eq_env_remove in EQ2;eauto.
+    - apply eq_genv_eval_expr; tauto.
   Qed.
 
   Lemma eq_env_all_empty : eq_env_all STree.empty STree.empty.
@@ -2131,8 +2128,7 @@ Section S.
       constructor.
       constructor.
       auto.
-    -
-      change (map snd (a :: lt))
+    - change (map snd (a :: lt))
         with  (snd a :: map snd lt).
       intros.
       rewrite ext_fun_rw.

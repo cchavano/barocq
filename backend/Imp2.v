@@ -28,6 +28,17 @@ Inductive literal :=
   | LArray : list literal -> typ2 -> layout -> literal
   | LRecord : list (ident * literal) -> list ident -> ident -> literal.
 
+Definition typof_literal (l: literal) : typ2 :=
+  match l with
+  | LTrue
+  | LFalse => TBool
+  | LInt32 _ s => TInt32 s
+  | LInt64 _ s => TInt64 s
+  | LVar _ ty => ty
+  | LArray _ ta ly => TArray ta ly
+  | LRecord _ _ rid => TRecord rid
+  end.
+
 (** ** Atoms *)
 
 Inductive atom :=
@@ -43,6 +54,22 @@ Inductive atom :=
   | AArrayGet : atom -> atom -> layout -> typ2 -> atom
   | ARecordProj : atom -> ident -> layout -> typ2 -> atom
   | APureCall : ident -> typ2 -> list atom -> typ2 -> atom.
+
+Definition typof_atom (a: atom) : typ2 :=
+  match a with
+  | ATrue
+  | AFalse => TBool
+  | AInt32 _ s => TInt32 s
+  | AInt64 _ s => TInt64 s
+  | AConstr _ _ ty
+  | AVar _ ty
+  | ACast _ ty
+  | AUnaryOp _ _ ty
+  | ABinaryOp _ _ _ ty
+  | AArrayGet _ _ _ ty
+  | ARecordProj _ _ _ ty
+  | APureCall _ _ _ ty => ty
+  end.
 
 (** ** "Effectul" computations *)
 
@@ -64,33 +91,12 @@ Inductive statement : Type :=
 
 (** ** Functions *)
 
-Record function : Type := mk_function {
-  fn_return: typ2;
-  fn_params: list (ident * typ2);
-  fn_vars: list (ident * typ2);
-  fn_body: statement
-}.
+Definition function : Type := Syntax.function statement typ2.
 
 (** ** Global definitions *)
 
-Definition globdef : Type := Syntax.globdef literal function typ2.
+Definition globdef : Type := Syntax.globdef statement typ2 literal.
 
 (** ** Programs *)
 
-Definition program : Type := Syntax.program globdef (typ2 * layout).
-
-Definition typof_atom (a: atom) : typ2 :=
-  match a with
-  | ATrue
-  | AFalse => TBool
-  | AInt32 _ s => TInt32 s
-  | AInt64 _ s => TInt64 s
-  | AConstr _ _ ty
-  | AVar _ ty
-  | ACast _ ty
-  | AUnaryOp _ _ ty
-  | ABinaryOp _ _ _ ty
-  | AArrayGet _ _ _ ty
-  | ARecordProj _ _ _ ty
-  | APureCall _ _ _ ty => ty
-  end.
+Definition program : Type := Syntax.program statement typ2 literal.

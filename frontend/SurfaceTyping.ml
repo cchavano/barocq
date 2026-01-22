@@ -478,11 +478,7 @@ let gtenv_update_local_constr_types (gte : gtenv) (elem : ident) (eid : string)
 
 let gcontext_empty = { gx_local = IdentMap.empty; gx_extern = IdentMap.empty }
 
-type var_kind =
-  | VarLocal
-  | VarParam
-
-type lcontext = (btyp * var_kind) IdentMap.t
+type lcontext = btyp IdentMap.t
 
 let lcontext_empty = IdentMap.empty
 
@@ -544,7 +540,7 @@ let cenv_empty : cenv =
   { cenv_local = IdentMap.empty; cenv_extern = IdentMap.empty }
 
 let prefix_ident (prefix : string) (x : string) : string =
-  sprintf "%s_%s" prefix x
+  if prefix = "" then x else sprintf "%s_%s" prefix x
 
 let eval_cunop (op : unary_op) (v : cvalue) : cvalue =
   match (op, v) with
@@ -919,10 +915,10 @@ let gcontext_update_local (gte : gtenv) (gx : gcontext) (x : ident) (ty : btyp)
 
 let lcontext_update (lx : lcontext) (x : ident) (ty : btyp) : lcontext =
   match IdentMap.find_opt x.content lx with
-  | Some (ty1, _) ->
-      if ty1 = ty then IdentMap.add x.content (ty, VarLocal) lx
+  | Some ty1 ->
+      if ty1 = ty then IdentMap.add x.content ty lx
       else error (Variable_shadowing_diff_type (x.content, ty)) ~loc:(Some x)
-  | None -> IdentMap.add x.content (ty, VarLocal) lx
+  | None -> IdentMap.add x.content ty lx
 
 let cident_to_string (cid : cident) : string =
   match cid with
@@ -942,7 +938,7 @@ let typof_var (imports : ident list) (gx : gcontext) (lx : lcontext)
   match x with
   | IdSimple x' -> begin
       match IdentMap.find_opt x'.content lx with
-      | Some (ty, _) -> ty
+      | Some ty -> ty
       | None -> gcontext_get imports gx x
     end
   | IdPrefixed _ -> gcontext_get imports gx x
@@ -1039,8 +1035,7 @@ let transl_var_name (imports : ident list) (gte : gtenv) (gx : gcontext)
     | IdSimple x ->
         let prefix =
           match IdentMap.find_opt x.content lx with
-          | Some (_, VarLocal) -> "u"
-          | Some (_, VarParam) -> "p"
+          | Some _ -> ""
           | None -> begin
               match IdentMap.find_opt x.content gx.gx_local with
               | Some _ -> !curr_mname
@@ -1433,7 +1428,7 @@ and typecheck_match (imports : ident list) (gte : gtenv) (ce : cenv)
 and typecheck_let_in (imports : ident list) (gte : gtenv) (ce : cenv)
     (gx : gcontext) (lx : lcontext) (x : ident) (e1 : expr) (e2 : expr) :
     Barocq.expr * btyp =
-  let x' = PrintUtils.ident_of_string ("u_" ^ x.content) in
+  let x' = PrintUtils.ident_of_string ("" ^ x.content) in
   let e1', t1 = typecheck_expr imports gte ce gx lx e1 in
   let lx' = lcontext_update lx x t1 in
   let e2', t2 = typecheck_expr imports gte ce gx lx' e2 in
@@ -1602,7 +1597,7 @@ let typecheck_function (imports : ident list) (gte : gtenv) (ce : cenv)
       let ty = BFun (List.map snd params, tret) in
       let lx =
         List.fold_left
-          (fun acc (pid, ptyp) -> IdentMap.add pid (ptyp, VarParam) acc)
+          (fun acc (pid, pty) -> IdentMap.add pid pty acc)
           lcontext_empty
           params
       in
@@ -1618,10 +1613,10 @@ let typecheck_function (imports : ident list) (gte : gtenv) (ce : cenv)
       in
       let bparams =
         List.map
-          (fun (pid, ptyp) ->
-            let pid' = PrintUtils.ident_of_string ("p_" ^ pid) in
-            let ptyp' = transl_btyp ptyp in
-            (pid', ptyp'))
+          (fun (pid, pty) ->
+            let pid' = PrintUtils.ident_of_string pid in
+            let pty' = transl_btyp pty in
+            (pid', pty'))
           params
       in
       let bf =

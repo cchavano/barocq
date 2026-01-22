@@ -42,11 +42,11 @@ Module BNF.
 
   (** ** Global definitions *)
 
-  Definition globdef : Type := Syntax.globdef literal function btyp.
+  Definition globdef : Type := Syntax.globdef expr btyp literal.
 
   (** ** Programs *)
 
-  Definition program : Type := Syntax.program globdef btyp.
+  Definition program : Type := Syntax.program expr btyp literal.
 
 End BNF.
 
@@ -107,8 +107,7 @@ Module Monadic.
     | ELetIn : ident -> expr -> expr -> mtyp -> expr
     | ELetMon : ident -> expr -> expr -> mtyp -> expr
     | ERet : expr -> mtyp -> expr
-    | EAttr : ident -> expr -> mtyp -> expr
-  .
+    | EAttr : ident -> expr -> mtyp -> expr.
 
   (** ** Functions *)
 
@@ -116,10 +115,23 @@ Module Monadic.
 
   (** ** Global definitions *)
 
-  Definition globdef : Type := Syntax.globdef literal function mtyp.
+  Definition globdef : Type := Syntax.globdef expr mtyp literal.
 
   (** ** Programs *)
 
-  Definition program : Type := Syntax.program globdef mtyp.
+  Definition program : Type := Syntax.program expr mtyp literal.
+
+  (** Override the definition of Syntax.get_record_typedefs to avoid
+      breaking the OCaml code. *)
+
+  Definition get_record_typedefs (types: smaplist (type_def (mtyp * Types.layout))) : smaplist (smaplist mtyp) :=
+    MapList.fold_right
+      (fun tid td acc =>
+        match td with
+        | TdRecord fields => cons (tid, (MapList.map fst fields)) acc
+        | _ => acc
+        end)
+      nil
+      types.
 
 End Monadic.

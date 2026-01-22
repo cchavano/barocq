@@ -1,39 +1,101 @@
-From BarocqComp Require Import Types Syntax Benum.
+From Coq Require Import List.
+From compcert Require Import Maps.
+From BarocqComp Require Import Maps2 Types Syntax Benum Error Typing Denot.
 From BarocqComp Require Pp Printer.
 
-(** * Abstract syntax *)
+  (** * Abstract syntax *)
 
-(** ** Literals *)
-
-Definition literal : Type := Syntax.literal.
-
-(** ** Atoms *)
-
-Definition atom : Type := Syntax.atom.
-
-(** ** Expressions *)
+  (** ** Expressions *)
 
 Inductive expr : Type :=
-  | EAtom : atom -> expr
-  | EArraySet : atom -> atom -> atom -> expr
-  | ERecordUpdate : atom -> ident -> atom -> expr
-  | EApp : atom -> list atom -> expr
-  | EIfThenElse : atom -> expr -> expr -> expr
-  | EMatch : atom -> list (pattern * expr) -> expr
-  | ELetIn : ident -> expr -> expr -> expr
-  | EAttr  : ident -> expr -> expr.
+  | EAtom : atom -> btyp -> expr
+  | EArraySet : atom -> atom -> atom -> btyp -> expr
+  | ERecordUpdate : atom -> ident -> atom -> btyp -> expr
+  | EApp : atom -> list atom -> btyp -> expr
+  | EIfThenElse : atom -> expr -> expr -> btyp -> expr
+  | EMatch : atom -> list (pattern * expr) -> btyp -> expr
+  | ELetIn : ident -> expr -> expr -> btyp -> expr
+  | EAttr : ident -> expr -> expr.
 
+Fixpoint btypof_expr (e: expr) : btyp :=
+  match e with
+  | EAtom _ ty
+  | EArraySet _ _ _ ty
+  | ERecordUpdate _ _ _ ty
+  | EApp _ _ ty
+  | EIfThenElse _ _ _ ty
+  | EMatch _ _ ty
+  | ELetIn _ _ _ ty => ty
+  | EAttr _ e1 => btypof_expr e1
+  end.
+  
 (** ** Functions *)
 
 Definition function : Type := Syntax.function expr btyp.
 
 (** ** Global definitions *)
 
-Definition globdef : Type := Syntax.globdef literal function btyp.
+Definition globdef : Type := Syntax.globdef expr btyp literal.
 
 (** ** Programs *)
 
-Definition program : Type := Syntax.program globdef field_descr.
+Definition program : Type := Syntax.program expr btyp literal.
+
+(** * Expression well-formdness *)
+
+(** An expression [e] is well-formed w.r.t. a set of global and local symbols [globs] and [locals]
+    if all of the following conditions are met:
+    - Bindings in [e] don't shadow identifiers in [globs] and [locals];
+    - There is no variable shadowing in [e];
+    - [e] is closed. *)
+
+Section WF.
+  
+  Variable globs: SSet.t.
+
+  Definition var_defined (locals: SSet.t) (x: ident) : bool :=
+    (SSet.mem x locals) || (SSet.mem x globs).
+
+  Fixpoint wf_atom (locals: SSet.t) (a: atom) : bool :=
+    match a with
+    | ATrue | AFalse
+    | AInt32 _ _ | AInt64 _ _
+    | AConstr _ _ _ => true
+    | AVar x _ => var_defined locals x
+    | ACast a1 _
+    | AUnaryOp _ a1 _
+    | ARecordProj a1 _ _ _ => wf_atom locals a1
+    | ABinaryOp _ a1 a2 _
+    | AArrayGet a1 a2 _ _ =>
+        (wf_atom locals a1) && (wf_atom locals a2)
+    | APureCall f _ args _ =>
+        (var_defined locals f) && (List.forallb (wf_atom locals) args)
+  end.
+
+  Fixpoint wf_expr (locals: SSet.t) (e: expr) : bool :=
+    match e with
+    | EAtom a _ => wf_atom locals a
+    | EArraySet a1 a2 a3 _ =>
+        (wf_atom locals a1) && (wf_atom locals a2) && (wf_atom locals a3)
+    | ERecordUpdate a1 _ a2 _ =>
+        (wf_atom locals a1) && (wf_atom locals a2)
+    | EApp f args _ =>
+        (wf_atom locals f) && (List.forallb (wf_atom locals) args)
+    | EIfThenElse a e1 e2 _ =>
+        (wf_atom locals a) && (wf_expr locals e1) && (wf_expr locals e2)
+    | EMatch a cases _ =>
+        (wf_atom locals a) && List.forallb (fun '(_, ei) => (wf_expr locals) ei) cases
+    | ELetIn x e1 e2 _ =>
+        negb (SSet.mem x globs)
+        && negb (SSet.mem x locals)
+        && (wf_expr locals e1)
+        && (wf_expr (SSet.add x locals) e2)
+    | EAttr _ e1 => wf_expr locals e1
+    end.
+
+End WF.
+
+(** * Pretty-printing *)
 
 Module Pp.
   Import Pp.
@@ -41,16 +103,16 @@ Module Pp.
 
   Fixpoint pp_expr (e:expr) : box :=
     match e with
-    | EAtom a => Printer.pp_atom a
-    | EArraySet a i v => Pp.seq (Printer.pp_atom a :: Bstr "[" :: Printer.pp_atom i :: Bstr "] <- " :: Printer.pp_atom v :: nil)
-    | ERecordUpdate a fd v => Pp.seq (Printer.pp_atom a :: Bstr "." :: Bstr fd :: Bstr " <- " :: Printer.pp_atom v :: nil)
-    | EApp a l => Pp.seq (Printer.pp_atom a :: Bstr "(" :: pp_list (Bstr ", ") Printer.pp_atom l :: Bstr ")" :: nil)
-    | EMatch a l => Bstr "match ... "
-    | EIfThenElse c t e => Bstack
+    | EAtom a _ => Printer.pp_atom a
+    | EArraySet a i v _ => Pp.seq (Printer.pp_atom a :: Bstr "[" :: Printer.pp_atom i :: Bstr "] <- " :: Printer.pp_atom v :: nil)
+    | ERecordUpdate a fd v _ => Pp.seq (Printer.pp_atom a :: Bstr "." :: Bstr fd :: Bstr " <- " :: Printer.pp_atom v :: nil)
+    | EApp a l _ => Pp.seq (Printer.pp_atom a :: Bstr "(" :: pp_list (Bstr ", ") Printer.pp_atom l :: Bstr ")" :: nil)
+    | EMatch a l _ => Bstr "match ... "
+    | EIfThenElse c t e _ => Bstack
                              (Bcat (Bstr "if ") (Printer.pp_atom c))
                              (Bstack (Bcat (Bstr "then ") (pp_expr t))
                                      (Bcat (Bstr "else ") (pp_expr e)) Left) Left
-    | ELetIn id e1 e2 => Bcat (Bstr "let") (Bstack (Pp.seq (Bstr id :: Bstr " := " :: pp_expr e1 :: Bstr " in " :: nil))
+    | ELetIn id e1 e2 _ => Bcat (Bstr "let") (Bstack (Pp.seq (Bstr id :: Bstr " := " :: pp_expr e1 :: Bstr " in " :: nil))
                                               (pp_expr e2) Left)
     | EAttr id e => Pp.seq (Bstr "#[ " :: Bstr id :: Bstr " ]"  :: pp_expr e :: nil)
     end.
@@ -59,3 +121,112 @@ Module Pp.
     Printer.pp_program Printer.pp_btyp  pp_expr p.
 
 End Pp.
+
+(** * Denotational semantics *)
+
+Section DENOT.
+
+  Variable arch : Target.archi.
+
+  Variable tabs : PMap.t Type.
+
+  Notation genv := (@Denot.genv tabs).
+
+  Notation lenv := (@Denot.lenv tabs).
+
+  Notation value := (@Denot.value tabs).
+
+  Notation eval_typ := (@Denot.eval_typ tabs).
+
+  Notation eval_atom := (@Denot.eval_atom arch tabs).
+
+  Definition typof_expr (te:tenv) (e:expr) : res typ :=
+    btyp_to_typ te (btypof_expr e).
+
+  Fixpoint eval_expr (te: tenv) (ge: genv) (le: lenv) (ty:typ) (e: expr)  : res (eval_typ ty) :=
+    match e with
+    | EAtom a _ => eval_atom te ge le ty a
+    | EArraySet a1 a2 a3 _ =>
+        let* ta1 := typof_atom te a1 in
+        let* ta2 := typof_atom te a2 in
+        let* ta3 := typof_atom te a3 in
+        let* v1 := eval_atom te ge le ta1 a1 in
+        let* v2 := eval_atom te ge le ta2 a2 in
+        let* v3 := eval_atom te ge le ta3 a3 in
+        eval_array_set arch tabs ta1 v1 ta2 v2 ta3 v3 ty
+    | ERecordUpdate a1 k a2 _ =>
+        let* ta1 := typof_atom te a1 in
+        let* ta2 := typof_atom te a2 in
+        let* v1 := eval_atom te ge le ta1 a1 in
+        let* v2 := eval_atom te ge le ta2 a2 in
+        eval_record_update tabs ta1 v1 k ta2 v2 ty
+    | EApp f args tr =>
+        let* tf := typof_atom te f in
+        match tf with
+        | TFun tparams tret =>
+            let* f := eval_atom te ge le  (TFun tparams tret) f in
+            (* let* vargs := DList.map2 _ (eval_atom te ge le) args tparams in
+            eval_app_res tabs tparams tret f vargs ty *)
+            let* vargs := DList.mmap _ (eval_atom te ge le) args tparams in
+            eval_app tabs tparams tret f vargs ty
+        |  _  => fail
+        end
+    | EIfThenElse a1 e2 e3 _ =>
+        let* v1 := eval_atom te ge le TBool a1  in
+        if v1 then eval_expr te ge le ty e2
+        else eval_expr te ge le ty e3
+    | EMatch a1 cases _  =>
+        let* ta1:= typof_atom te a1 in
+        let* v1 := eval_atom te ge le ta1 a1 in
+        let vcases := MapList.map (eval_expr te ge le ty) cases in
+        eval_match tabs ta1 v1 ty vcases
+    | ELetIn x e1 e2 _ =>
+        let* te1 := typof_expr te e1 in
+        let* v1 := eval_expr te ge le te1 e1 in
+        let le' := lenv_update tabs le x (Val tabs te1 v1) in
+        eval_expr te ge le' ty e2
+    | EAttr _ e1 => eval_expr te ge le ty e1
+    end.
+
+  Fixpoint eval_def_rec (te: tenv) (ge: genv) (defs: list globdef) (x: ident) : res value :=
+    match defs with
+    | nil => fail
+    | d :: defs' =>
+        match d with
+        | DefConst y l ty =>
+            let* ge' := eval_def_const tabs te ge y l ty in
+            if Ident.eq_dec x y then genv_get tabs ge' x
+            else eval_def_rec te ge' defs' x
+        | DefFun y f =>
+            let* ge':= eval_def_fun tabs expr eval_expr te ge y f in
+            if Ident.eq_dec x y then genv_get tabs ge' x
+            else eval_def_rec te ge' defs' x
+        | DeclConst y _
+        | DeclFun y _ _ =>
+            if Ident.eq_dec x y then genv_get tabs ge x
+            else eval_def_rec te ge defs' x
+        end
+    end.
+
+  Definition eval_value_err_typ (rv: res value) : Type :=
+    match rv with
+    | OK (Val _ tv _) => eval_typ tv
+    | Error _ => unit
+    end.
+
+  Definition eval_def (impl: genv) (prog: program) (x: ident) : res value :=
+    let* te := tenv_of_type_defs (prog_types prog) in
+    eval_def_rec te impl (prog_defs prog) x.
+
+  (** Evaluation of a whole program *)
+
+  Definition eval_prog (impl: genv) (prog: program) : res (tenv * genv) :=
+    Denot.eval_prog tabs expr eval_expr impl prog.
+
+  (** Redefinition of eval_def by computing the whole global environment first *)
+
+  Definition eval_def2 (impl: genv) (prog: program) (x: ident) : res value :=
+    let* (_, ge) := eval_prog impl prog in
+    genv_get tabs ge x.
+
+End DENOT.

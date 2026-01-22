@@ -2,9 +2,11 @@ From Coq Require Import PeanoNat Lia.
 From compcert Require Import Integers Ctypes.
 From BarocqComp Require Import Utils Ident Types Maps2 ExtOrdered.
 
+(** * Syntax shared by some of the intermediate representations. *)
+
 Definition ident := Ident.ident.
 
-(** * Constant literals *)
+(** ** Constant literals *)
 
 Inductive literal :=
   | LTrue : literal
@@ -14,7 +16,17 @@ Inductive literal :=
   | LArray : list literal -> btyp -> layout -> literal
   | LRecord : smaplist literal -> list ident -> ident -> literal.
 
-(** * Operators *)
+Definition typof_literal (l: literal) : btyp :=
+  match l with
+  | LTrue
+  | LFalse => BBool
+  | LInt32 _ s => BInt32 s
+  | LInt64 _ s => BInt64 s
+  | LArray _ ta ly => BArray ta ly
+  | LRecord rc ub rid => BRecord rid ub
+  end.
+
+(** ** Operators *)
 
 Inductive unary_op : Type :=
   | UopNotbool : unary_op
@@ -43,214 +55,221 @@ Inductive binary_op : Type :=
   | BopLe : binary_op
   | BopGe : binary_op.
 
-(** * Atoms *)
+(** ** Atoms *)
 
 (** Atoms are pure computations in C *)
+(** For AArrayGet and ARecordProj, we store the layout of the result. *)
 
-Inductive atom : Type :=
+Inductive atom :=
   | ATrue : atom
   | AFalse : atom
   | AInt32 : int -> signedness -> atom
   | AInt64 : int64 -> signedness -> atom
-  | AConstr : ident -> atom
-  | AVar : ident -> atom
+  | AConstr : ident -> int -> btyp -> atom
+  | AVar : ident -> btyp -> atom
   | ACast : atom -> btyp -> atom
-  | AUnaryOp : unary_op -> atom -> atom
-  | ABinaryOp : binary_op -> atom -> atom -> atom
-  | AArrayGet : atom -> atom -> atom
-  | ARecordProj : atom -> ident -> atom
-  | APureCall : ident -> list atom -> atom.
+  | AUnaryOp : unary_op -> atom -> btyp -> atom
+  | ABinaryOp : binary_op -> atom -> atom -> btyp -> atom
+  | AArrayGet : atom -> atom -> layout -> btyp -> atom
+  | ARecordProj : atom -> ident -> layout -> btyp -> atom
+  | APureCall : ident -> btyp -> list atom -> btyp -> atom.
 
-(** * Computations with atomic operands *)
+Definition typof_atom (a: atom) : btyp :=
+  match a with
+  | ATrue | AFalse => BBool
+  | AInt32 i s => BInt32 s
+  | AInt64 i s => BInt64 s
+  | AConstr _ _ ty
+  | AVar _ ty
+  | ACast _ ty
+  | AUnaryOp _ _ ty
+  | ABinaryOp _ _ _ ty
+  | AArrayGet _ _ _ ty
+  | ARecordProj _ _ _ ty
+  | APureCall _ _ _ ty => ty
+  end.
+
+Section ATOMIND.
+
+Fixpoint atom_depth (a: atom) : nat :=
+  match a with
+  | ATrue | AFalse | AInt32 _ _ | AInt64 _ _ | AConstr _ _ _ | AVar _ _ => 0
+  | ACast a _ | AUnaryOp _ a _ | ARecordProj a _ _ _ => 1 + (atom_depth a)
+  | ABinaryOp _ a1 a2 _ | AArrayGet a1 a2 _ _ => 1 + (max (atom_depth a1) (atom_depth a2))
+  | APureCall _ _ args _ =>
+      1 + (List.fold_right (fun a acc => max (atom_depth a) acc)) 0 args
+  end.
+
+Variable P : atom -> Prop.
+
+Variable PATrue : P ATrue.
+
+Variable PFalse : P AFalse.
+
+Variable PAInt32 : forall i s, P (AInt32 i s).
+
+Variable PAInt64 : forall i s, P (AInt64 i s).
+
+Variable PAConstr : forall i n t, P (AConstr i n t).
+
+Variable PAVar : forall i t, P (AVar i t).
+
+Variable PACast : forall a t, P a -> P (ACast a t).
+
+Variable PAUnaryOp : forall op a t, P a -> P (AUnaryOp op a t).
+
+Variable PABinaryOp : forall op a1 a2 t, P a1 -> P a2 -> P (ABinaryOp op a1 a2 t).
+
+Variable PAArrayGet : forall a1 a2 ly t, P a1 -> P a2 -> P (AArrayGet a1 a2 ly t).
+
+Variable PARecordProj : forall a f ly t, P a -> P (ARecordProj a f ly t).
+
+Variable PAPureCall : forall i tf args tr, (forall x, List.In x args -> P x) -> P (APureCall i tf args tr).
+
+Lemma atom_depth_ind : forall a, P a.
+Proof.
+  intro. remember (atom_depth a) as n.
+  revert a Heqn.
+  induction n using Wf_nat.lt_wf_ind.
+  destruct n.
+  - destruct a; (auto || discriminate).
+  - destruct a; try (tauto || discriminate);
+    simpl; intros.
+    + apply PACast. specialize (H n).
+      apply H. lia. inversion Heqn. reflexivity.
+    + apply PAUnaryOp. specialize (H n).
+      apply H. lia. inversion Heqn. reflexivity.
+    + inversion Heqn. clear Heqn.
+      assert (Hinf1: (atom_depth a1) < S n). lia.
+      assert (Hinf2: (atom_depth a2) < S n). lia.
+      apply PABinaryOp.
+      * apply (H (atom_depth a1) Hinf1 a1). reflexivity.
+      * apply (H (atom_depth a2) Hinf2 a2). reflexivity.
+    + inversion Heqn. clear Heqn.
+      assert (Hinf1: (atom_depth a1) < S n). lia.
+      assert (Hinf2: (atom_depth a2) < S n). lia.
+      apply PAArrayGet.
+      * apply (H (atom_depth a1) Hinf1 a1). reflexivity.
+      * apply (H (atom_depth a2) Hinf2 a2). reflexivity.
+    + apply PARecordProj. specialize (H n).
+      apply H. lia. inversion Heqn. reflexivity.
+    + apply PAPureCall. inversion Heqn. clear Heqn.
+      intros. apply H with (m := (atom_depth x)).
+      rewrite H1. clear - H0.
+      {
+        induction l.
+        - destruct H0.
+        - simpl in *. destruct H0.
+          + rewrite H. lia.
+          + apply IHl in H. lia.
+      }
+      reflexivity.
+Qed.
+
+End ATOMIND.
+
+(** ** Computations with atomic operands *)
 
 Inductive comp : Type := 
-  | CpAtom : atom -> comp
-  | CpArraySet : atom -> atom -> atom -> comp
-  | CpRecordUpdate : atom -> ident -> atom -> comp
-  | CpCall : ident -> list atom -> comp
-.
+  | CpAtom : atom -> btyp -> comp
+  | CpArraySet : atom -> atom -> atom -> btyp -> comp
+  | CpRecordUpdate : atom -> ident -> atom -> btyp -> comp
+  | CpCall : ident -> btyp -> list atom -> btyp -> comp.
 
-(** * Typed syntax *)
+Definition typof_comp (c: comp) : btyp :=
+  match c with
+  | CpAtom _ ty
+  | CpArraySet _ _ _ ty
+  | CpRecordUpdate _ _ _ ty
+  | CpCall _ _ _ ty => ty
+  end.
 
-Module Typed.
+Section PROGRAMS.
 
-  Inductive atom :=
-    | ATrue : atom
-    | AFalse : atom
-    | AInt32 : int -> signedness -> atom
-    | AInt64 : int64 -> signedness -> atom
-    | AConstr : ident -> int -> btyp -> atom
-    | AVar : ident -> btyp -> atom
-    | ACast : atom -> btyp -> atom
-    | AUnaryOp : unary_op -> atom -> btyp -> atom
-    | ABinaryOp : binary_op -> atom -> atom -> btyp -> atom
-    | AArrayGet : atom -> atom -> layout -> btyp -> atom
-    | ARecordProj : atom -> ident -> layout -> btyp -> atom
-    | APureCall : ident -> btyp -> list atom -> btyp -> atom.
+  Variable BODY : Type.
+  Variable TYP : Type.
+  Variable LIT : Type.
 
-  Section ATOMIND.
+  Record function : Type := mk_function {
+    fn_return : TYP;
+    fn_params : list (ident * TYP);
+    fn_body : BODY
+  }.
 
-  Fixpoint atom_depth (a: atom) : nat :=
-    match a with
-    | ATrue | AFalse | AInt32 _ _ | AInt64 _ _ | AConstr _ _ _ | AVar _ _ => 0
-    | ACast a _ | AUnaryOp _ a _ | ARecordProj a _ _ _ => 1 + (atom_depth a)
-    | ABinaryOp _ a1 a2 _ | AArrayGet a1 a2 _ _ => 1 + (max (atom_depth a1) (atom_depth a2))
-    | APureCall _ _ args _ =>
-        1 + (List.fold_right (fun a acc => max (atom_depth a) acc)) 0 args
+  Inductive param_attr :=
+    | AttrReadonly
+    | AttrWrite
+    | AttrNone.
+
+  Inductive globdef : Type :=
+    | DefConst : ident -> LIT -> TYP -> globdef
+    | DefFun : ident -> function -> globdef
+    | DeclConst : ident -> TYP -> globdef
+    | DeclFun : ident -> list (param_attr * TYP) -> TYP -> globdef.
+
+  Definition globdef_id (def: globdef) : ident :=
+    match def with
+    | DefConst x _ _
+    | DefFun x _
+    | DeclConst x _
+    | DeclFun x _ _ => x
     end.
 
-  Variable P : atom -> Prop.
+  Inductive struct_or_union : Type :=
+    | SU_struct
+    | SU_union.
 
-  Variable PATrue : P ATrue.
+  Inductive type_def (T: Type) : Type :=
+    | TdEnum : list ident -> type_def T
+    | TdRecord : smaplist T -> type_def T.
 
-  Variable PFalse : P AFalse.
+  Definition get_enum_typedefs {T} (types: smaplist (type_def T)) : smaplist (list ident) :=
+  MapList.fold_right
+    (fun tid td acc =>
+      match td with
+      | TdEnum _ elems => cons (tid, elems) acc
+      | _ => acc
+      end)
+    nil
+    types.
 
-  Variable PAInt32 : forall i s, P (AInt32 i s).
+  Definition get_record_typedefs  {T} (types: smaplist (type_def T)) : smaplist (smaplist T) :=
+    MapList.fold_right
+      (fun tid td acc =>
+        match td with
+        | TdRecord _ fields => cons (tid, fields) acc
+        | _ => acc
+        end)
+      nil
+      types.
 
-  Variable PAInt64 : forall i s, P (AInt64 i s).
+  Record program : Type := mk_program {
+    prog_defs : list globdef;
+    prog_types : smaplist (type_def (TYP * layout));
+    prog_tabs : smaplist struct_or_union;
+  }.
 
-  Variable PAConstr : forall i n t, P (AConstr i n t).
+End PROGRAMS.
 
-  Variable PAVar : forall i t, P (AVar i t).
+Arguments mk_function {BODY TYP}.
+Arguments fn_return {BODY TYP}.
+Arguments fn_params {BODY TYP}.
+Arguments fn_body {BODY TYP}.
 
-  Variable PACast : forall a t, P a -> P (ACast a t).
-  
-  Variable PAUnaryOp : forall op a t, P a -> P (AUnaryOp op a t).
+Arguments DefConst {BODY TYP LIT}.
+Arguments DefFun {BODY TYP LIT}.
+Arguments DeclConst {BODY TYP LIT}.
+Arguments DeclFun {BODY TYP LIT}.
 
-  Variable PABinaryOp : forall op a1 a2 t, P a1 -> P a2 -> P (ABinaryOp op a1 a2 t).
-
-  Variable PAArrayGet : forall a1 a2 ly t, P a1 -> P a2 -> P (AArrayGet a1 a2 ly t).
-
-  Variable PARecordProj : forall a f ly t, P a -> P (ARecordProj a f ly t).
-
-  Variable PAPureCall : forall i tf args tr, (forall x, List.In x args -> P x) -> P (APureCall i tf args tr).
-
-  Lemma atom_depth_ind : forall a, P a.
-  Proof.
-    intro. remember (atom_depth a) as n.
-    revert a Heqn.
-    induction n using Wf_nat.lt_wf_ind.
-    destruct n.
-    - destruct a; (auto || discriminate).
-    - destruct a; try (tauto || discriminate);
-      simpl; intros.
-      + apply PACast. specialize (H n).
-        apply H. lia. inversion Heqn. reflexivity.
-      + apply PAUnaryOp. specialize (H n).
-        apply H. lia. inversion Heqn. reflexivity.
-      + inversion Heqn. clear Heqn.
-        assert (Hinf1: (atom_depth a1) < S n). lia.
-        assert (Hinf2: (atom_depth a2) < S n). lia.
-        apply PABinaryOp.
-        * apply (H (atom_depth a1) Hinf1 a1). reflexivity.
-        * apply (H (atom_depth a2) Hinf2 a2). reflexivity.
-      + inversion Heqn. clear Heqn.
-        assert (Hinf1: (atom_depth a1) < S n). lia.
-        assert (Hinf2: (atom_depth a2) < S n). lia.
-        apply PAArrayGet.
-        * apply (H (atom_depth a1) Hinf1 a1). reflexivity.
-        * apply (H (atom_depth a2) Hinf2 a2). reflexivity.
-      + apply PARecordProj. specialize (H n).
-        apply H. lia. inversion Heqn. reflexivity.
-      + apply PAPureCall. inversion Heqn. clear Heqn.
-        intros. apply H with (m := (atom_depth x)).
-        rewrite H1. clear - H0.
-        {
-          induction l.
-          - destruct H0.
-          - simpl in *. destruct H0.
-            + rewrite H. lia.
-            + apply IHl in H. lia.
-        }
-        reflexivity.
-  Qed.
-
-  End ATOMIND.
-
-  Inductive comp : Type := 
-    | CpAtom : atom -> btyp -> comp
-    | CpArraySet : atom -> atom -> atom -> btyp -> comp
-    | CpRecordUpdate : atom -> ident -> atom -> btyp -> comp
-    | CpCall : ident -> btyp -> list atom -> btyp -> comp.
-
-End Typed.
-
-(** * Syntax shared by some of the intermediate representations. *)
-
-(** ** Functions *)
-
-Record function (B T: Type) : Type := mk_function {
-  fn_return : T;
-  fn_params : list (ident * T);
-  fn_body : B
-}.
-
-(** ** Global definitions *)
-
-Inductive param_attr :=
-  | AttrReadonly
-  | AttrWrite
-  | AttrNone.
-
-Inductive globdef (L F T: Type) : Type :=
-  | DefConst : ident -> L -> T -> globdef L F T
-  | DefFun : ident -> F -> globdef L F T
-  | DeclConst : ident -> T -> globdef L F T
-  | DeclFun : ident -> list (param_attr * T) -> T -> globdef L F T.
-
-(** ** Programs *)
-
-Inductive struct_or_union : Type :=
-  | SU_struct
-  | SU_union.
-
-Inductive type_def (T: Type) : Type :=
-  | TdEnum : list ident -> type_def T
-  | TdRecord : smaplist T -> type_def T.
+Arguments globdef_id {BODY TYP LIT}.
 
 Arguments TdEnum {T}.
 Arguments TdRecord {T}.
 
-Record program (G T: Type) : Type := mk_program {
-  prog_defs : list G;
-  prog_types : smaplist (type_def T);
-  prog_tabs : smaplist struct_or_union;
-}.
-
-Definition get_enum_typedefs {T} (types: smaplist (type_def T)) : smaplist (list ident) :=
-  MapList.fold_right
-    (fun tid td acc =>
-      match td with
-      | TdEnum elems => cons (tid, elems) acc
-      | _ => acc
-      end)
-    nil
-    types.
-
-Definition get_record_typedefs {T} (types: smaplist (type_def T)) : smaplist (smaplist T) :=
-  MapList.fold_right
-    (fun tid td acc =>
-      match td with
-      | TdRecord fields => cons (tid, fields) acc
-      | _ => acc
-      end)
-    nil
-    types.
-
-Arguments DefConst {L} {F} {T}.
-Arguments DefFun {L} {F} {T}.
-Arguments DeclConst {L} {F} {T}.
-Arguments DeclFun {L} {F} {T}.
-
-Arguments mk_function {B} {T}.
-Arguments fn_return {B} {T}.
-Arguments fn_params {B} {T}.
-Arguments fn_body {B} {T}.
-
-Arguments mk_program {G T}.
-Arguments prog_defs {G T}.
-Arguments prog_types {G T}.
-Arguments prog_tabs {G T}.
+Arguments mk_program {BODY TYP LIT}.
+Arguments prog_defs {BODY TYP LIT}.
+Arguments prog_types {BODY TYP LIT}.
+Arguments prog_tabs {BODY TYP LIT}.
 
 Require Import OrderedType.
 Require Import Datatypes.
@@ -371,7 +390,6 @@ End IntOrderded.
 
 
 Module AtomOrdered <: OrderedType.
-  Import Typed.
   Import IntOrderded.
 
   Definition unary_op_compare (o1 o2:unary_op) : comparison :=
@@ -473,7 +491,7 @@ Module AtomOrdered <: OrderedType.
     destruct x,y; reflexivity.
   Qed.
 
-  Fixpoint atom_compare (t1 t2:Typed.atom) : comparison :=
+  Fixpoint atom_compare (t1 t2: atom) : comparison :=
     match t1 , t2 with
     | ATrue, ATrue => Eq
     | ATrue,   _       => Lt
@@ -523,7 +541,7 @@ Module AtomOrdered <: OrderedType.
             ((f1, bf1), (args1, br1)) ((f2, bf2), (args2, br2))
     end.
 
-  Definition t := Typed.atom.
+  Definition t := atom.
 
   Definition eq : t -> t -> Prop := @eq t.
 

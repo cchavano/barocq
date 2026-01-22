@@ -88,7 +88,6 @@ Section REWRITE.
     {|
       fn_return := rewrite_typ (fn_return f);
       fn_params := List.filter (fun '(_, pty) => negb (is_glob_typ pty)) (fn_params f);
-      fn_vars := List.filter (fun '(_, pty) => negb (is_glob_typ pty)) (fn_vars f);
       fn_body := rewrite_statement (fn_body f)
     |}.
 

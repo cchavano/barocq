@@ -101,7 +101,6 @@ Module Normalization.
           let* (li1, a1) := norm_expr_aux e1 in
           let* (li2, a2) := norm_expr_aux e2 in
           ret (li1 ++ li2, ARecordUpdate a1 f a2)
-      (* | Barocq.EDeepAccess _ _ => fail *)
       | Barocq.EApp e1 args =>
           let* (li1, a1) := norm_expr_aux e1 in
           let* (l_args, a_args) :=
@@ -179,7 +178,6 @@ Module Normalization.
         norm_exprlist e [e1]
     | Barocq.ERecordUpdate e1 k e2 =>
         norm_exprlist e [e1; e2]
-    (* | Barocq.EDeepAccess _ _ => fail *)
     | Barocq.EApp e1 args =>
         norm_exprlist e (e1 :: args)
     | Barocq.EIfThenElse e1 e2 e3 =>
@@ -203,7 +201,7 @@ Module Normalization.
   Close Scope state_err_monad_scope.
 
   Definition norm_expr (e: Barocq.expr) : res BNF.expr :=
-    let* ne := norm_expr_rec e 0 in
+    let* ne := norm_expr_rec e 1%positive in
     eret (fst ne).
 
   Definition norm_function (f: Barocq.function) : res BNF.function :=
@@ -222,14 +220,7 @@ Module Normalization.
         let '(mk_program b_defs b_types b_tabs) := b_prog in
         match d with
         | Barocq.DefType x td =>
-            let td' :=
-              match td with
-              | TdEnum elems => TdEnum elems
-              | TdRecord fields =>
-                  TdRecord (MapList.map fst fields)
-              end
-            in
-            eret (mk_program b_defs ((x, td') :: b_types) b_tabs)
+            eret (mk_program b_defs ((x, td) :: b_types) b_tabs)
         | Barocq.DefConst x l ty =>
             let b_defs' := Syntax.DefConst x l ty :: b_defs in
             eret (mk_program b_defs' b_types b_tabs)
@@ -292,7 +283,7 @@ Module Normalization2.
 
   Open Scope state_err_monad_scope.
 
-  Definition fresh_var : crmon ident := Utils.fresh_var_err "b".
+  Definition fresh_var : crmon ident := Normalization.fresh_var.
 
   Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BNF.expr :=
     let fix norm_exprlist_rec (e: Barocq.expr) (la: list atom) (le: list Barocq.expr) : crmon BNF.expr :=
@@ -348,7 +339,6 @@ Module Normalization2.
         norm_exprlist e [e1]
     | Barocq.ERecordUpdate e1 k e2 =>
         norm_exprlist e [e1; e2]
-    (* | Barocq.EDeepAccess _ _ => fail *)
     | Barocq.EApp e1 args =>
         norm_exprlist e (e1 :: args)
     | Barocq.EIfThenElse e1 e2 e3 =>
@@ -382,7 +372,7 @@ Module Normalization2.
   Close Scope state_err_monad_scope.
 
   Definition norm_expr (e: Barocq.expr) : res BNF.expr :=
-    let* ne := norm_expr_rec e 0 in
+    let* ne := norm_expr_rec e 1%positive in
     eret (fst ne).
 
   Definition norm_function (f: Barocq.function) : res BNF.function :=
@@ -401,14 +391,7 @@ Module Normalization2.
         let '(mk_program b_defs b_types b_tabs) := b_prog in
         match d with
         | Barocq.DefType x td =>
-            let td' :=
-              match td with
-              | TdEnum elems => TdEnum elems
-              | TdRecord fields =>
-                  TdRecord (MapList.map fst fields)
-              end
-            in
-            eret (mk_program b_defs ((x, td') :: b_types) b_tabs)
+            eret (mk_program b_defs ((x, td) :: b_types) b_tabs)
         | Barocq.DefConst x l ty =>
             let b_defs' := Syntax.DefConst x l ty :: b_defs in
             eret (mk_program b_defs' b_types b_tabs)
@@ -533,7 +516,7 @@ Module Monadification.
 
   Open Scope state_err_monad_scope.
 
-  Definition fresh_var : crmon ident := Utils.fresh_var_err "x".
+  Definition fresh_var : crmon ident := Utils.fresh_var_err "b".
 
   Fixpoint make_lambda_args (n: nat) : crmon (list ident) :=
     match n with
@@ -589,7 +572,7 @@ Module Monadification.
   Close Scope state_err_monad_scope.
 
   Definition eta_expand (f: ident) (ty1: mtyp) (ty2: mtyp) : res atom :=
-    match eta_expand_rec f ty1 ty2 nil 0 with
+    match eta_expand_rec f ty1 ty2 nil 1%positive with
     | OK (a, _) => OK a
     | Error e => Error e
     end.
@@ -1168,20 +1151,31 @@ Module Monadification.
   Definition monadify_globdefs (me: menv) (defs: list BNF.globdef) : res (list globdef) :=
     monadify_globdefs_rec me STree.empty defs.
 
-  Definition monadify_type_defs (types: smaplist (type_def btyp)) : smaplist (type_def mtyp) :=
+  Definition monadify_type_defs (types: smaplist (type_def field_descr)) : smaplist (type_def (mtyp * layout)) :=
     MapList.map
       (fun td =>
         match td with
-        | Syntax.TdEnum elems => TdEnum elems
-        | Syntax.TdRecord fields =>
-            let fields' := MapList.map monadify_btyp fields in
+        | TdEnum elems => TdEnum elems
+        | TdRecord fields =>
+            let fields' := MapList.map (fun '(bt, ly) => (monadify_btyp bt, ly)) fields in
             TdRecord fields'
         end)
       types.
 
   Definition monadify_program (prog: BNF.program) : res program :=
     let types := monadify_type_defs (prog_types prog) in
-    let* me := Typing.TEnv.build types in
+    let* me :=
+      let types :=
+        MapList.map
+          (fun td =>
+            match td with
+            | TdEnum elems => TdEnum elems
+            | TdRecord fields => TdRecord (MapList.map fst fields)
+            end)
+          types
+      in
+      Typing.TEnv.build types
+    in
     let* defs := monadify_globdefs me (prog_defs prog) in
     eret {|
       prog_defs := defs;

@@ -51,6 +51,47 @@ Module SSet.
   Definition union (s1 s2:t) := _Set.combine union_elt s1 s2.
 End SSet.
 
+Module PTree.
+  Include Maps.PTree.
+
+  Lemma map1'_set0:
+    forall (A B: Type) (f: A -> B) k x,
+    map1' f (set0 k x) = set0 k (f x).
+  Proof.
+    induction k; intros; simpl.
+    - rewrite IHk. reflexivity.
+    - rewrite IHk. reflexivity.
+    - reflexivity.
+  Qed.
+
+  Lemma map1'_set':
+    forall (A B: Type) (f: A -> B) (m: tree' A) (k: BinNums.positive) (x: A),
+    map1' f (set' k x m) = set' k (f x) (map1' f m).
+  Proof.
+    intros A. induction m; intros;
+    destruct k; simpl; try (reflexivity || rewrite map1'_set0; reflexivity).
+    - rewrite IHm; reflexivity.
+    - rewrite IHm; reflexivity.
+    - rewrite IHm; reflexivity.
+    - rewrite IHm2; reflexivity.
+    - rewrite IHm1; reflexivity.
+    - rewrite IHm; reflexivity.
+    - rewrite IHm2; reflexivity.
+    - rewrite IHm1; reflexivity.
+  Qed.
+
+  Theorem map1_set:
+    forall (A B: Type) (f: A -> B) (m: tree A) (k: BinNums.positive) (x: A),
+    map1 f (set k x m) = set k (f x) (map1 f m).
+  Proof.
+    destruct m; intros.
+    - simpl. unfold set. rewrite map1'_set0. reflexivity.
+    - unfold map1. unfold set.
+      rewrite map1'_set'. reflexivity.
+  Qed.
+
+End PTree.
+
 Module STree.
 
   Include ITree(StringIndexed).
@@ -58,8 +99,71 @@ Module STree.
   Definition fold {A B} (f: B -> StringIndexed.t -> A -> B) (m: STree.t A) (v: B) : B :=
     PTree.fold (fun acc ki vi => f acc (Ident.of_pos ki) vi) m v.
 
-  Definition map {A B} (f : BinNums.positive -> A -> B) (m : STree.t A) : STree.t B :=
-    PTree.map f m.
+  Definition map {A B} (f : StringIndexed.t -> A -> B) (m : STree.t A) : STree.t B :=
+    PTree.map (fun ki vi => f (Ident.of_pos ki) vi) m.
+
+  Definition map1 {A B} (f: A -> B) (m: STree.t A) : STree.t B :=
+    PTree.map1 f m.
+
+  Definition keys {A: Type} (m: STree.t A) : SSet.t :=
+    map1 (fun _ => tt) m.
+    
+  Lemma keys_get_some_mem:
+    forall (A: Type) (m: STree.t A) k v,
+    STree.get k m = Some v ->
+    SSet.mem k (keys m) = true.
+  Proof.
+    unfold keys, SSet.mem, SSet._Set.get; intros.
+    rewrite PTree.gmap1. unfold get in H. rewrite H.
+    reflexivity.
+  Qed.
+
+  Lemma keys_mem_true_get:
+    forall (A: Type) (m: STree.t A) k,
+    SSet.mem k (keys m) = true ->
+    (exists v, STree.get k m = Some v).
+  Proof.
+    unfold keys, SSet.mem, SSet._Set.get; intros.
+    destruct (map1 (fun _ : A => tt) m) ! (StringIndexed.index k) eqn:Emem.
+    - unfold STree.map1 in Emem. rewrite PTree.gmap1 in Emem.
+      unfold Coqlib.option_map in Emem.
+      destruct (m!(StringIndexed.index k)) eqn:Eget; try discriminate.
+      exists a. exact Eget.
+    - unfold STree.map1 in Emem. rewrite PTree.gmap1 in Emem.
+      unfold Coqlib.option_map in Emem.
+      destruct (m!(StringIndexed.index k)) eqn:Eget; discriminate.
+  Qed.
+
+  Lemma keys_get_none_iff:
+    forall (A: Type) (m: STree.t A) k,
+    STree.get k m = None <->
+    STree.get k (keys m) = None.
+  Proof.
+    unfold keys, STree.get, STree.map1; split; intros.
+    - rewrite PTree.gmap1. rewrite H. reflexivity.
+    - rewrite PTree.gmap1 in H.
+      destruct (m!(StringIndexed.index k)); try discriminate.
+      reflexivity.
+  Qed.
+
+  Lemma keys_get_mem_false_iff:
+    forall (A: Type) (m: STree.t A) k,
+    STree.get k m = None <->
+    SSet.mem k (keys m) = false.
+  Proof.
+    unfold SSet.mem, SSet._Set.get. split; intros.
+    - rewrite keys_get_none_iff in H. unfold get in H.
+      rewrite H. reflexivity.
+    - destruct ((keys m)!(StringIndexed.index k)) eqn:Eget; try discriminate.
+      apply keys_get_none_iff in Eget. exact Eget. 
+  Qed.
+
+  Lemma keys_set:
+    forall (A: Type) (m: STree.t A) k v,
+      STree.keys (STree.set k v m) = SSet.add k (STree.keys m).
+  Proof.
+    intros. apply PTree.map1_set.
+  Qed.
 
   Definition mem {A} (e:elt) (m: STree.t A) :=
     match get e m with
@@ -75,7 +179,6 @@ Module STree.
 
   Definition setl {A: Type} (s:string) (e:A) (m:STree.t (list A)) : STree.t (list A) :=
     set s (e::getl s m) m.
-
 
   Definition pp {A: Type} (sep:box) (pp_elt : A -> box) (s:STree.t A) : box :=
     STree.fold (fun acc k v => Bstack acc (Bcat (Bstr k)
@@ -124,10 +227,10 @@ Module MapList.
     end.
 
   Definition map (A: Type) (f: V -> A) (l: t V) : t A :=
-    map (fun xv => (fst xv, f (snd xv))) l.
+    List.map (fun kv => (fst kv, f (snd kv))) l.
 
   Definition map_err (A: Type) (f: V -> res A) (l: t V) : res (t A) :=
-    mmap (fun '(x, v) => let* a := f v in ret (x, a)) l.
+    Errors.mmap (fun '(x, v) => let* a := f v in ret (x, a)) l.
 
   Fixpoint mem (k: key) (l: t V) : bool :=
     match l with

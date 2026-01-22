@@ -50,8 +50,8 @@ module Deeptypes = struct
   and opt_parens (ty : mtyp) : string =
     PrintUtils.opt_parens is_simpl_mtyp mtyp_to_typ_string ty
 
-  let type_def_to_string (indent : string) ((tname, td) : ident * mtyp type_def)
-      : string =
+  let type_def_to_string (indent : string)
+      ((tname, td) : ident * (mtyp * Types.layout) type_def) : string =
     match td with
     | TdEnum elems ->
         let eid = ident_to_string tname in
@@ -77,7 +77,7 @@ module Deeptypes = struct
             indent
             rid
             (list_to_string_bracket
-               (fun (fname, fty) ->
+               (fun (fname, (fty, _)) ->
                  sprintf
                    "(%s, %s)"
                    (Deepgen.ident_to_deep fname)
@@ -106,8 +106,8 @@ module Deeptypes = struct
     in
     sprintf "Definition typof_%s." dt
 
-  let print_typedefs (out : out_channel) (types : mtyp type_def Maps2.smaplist)
-      : unit =
+  let print_typedefs (out : out_channel)
+      (types : (mtyp * Types.layout) type_def Maps2.smaplist) : unit =
     print_list
       out
       ~delim:("", "\n")
@@ -354,9 +354,10 @@ let print_properties_envs (out : out_channel) (defs : globdef list) : unit =
     gen_def_property
     defs
 
-let print_typing_env (out : out_channel) (types : mtyp type_def Maps2.smaplist)
-    : unit =
-  let type_def_to_string (tname : ident) (td : mtyp type_def) : string =
+let print_typing_env (out : out_channel)
+    (types : (mtyp * Types.layout) type_def Maps2.smaplist) : unit =
+  let type_def_to_string (tname : ident) (td : (mtyp * Types.layout) type_def) :
+      string =
     match td with
     | TdEnum _ ->
         sprintf
@@ -370,7 +371,7 @@ let print_typing_env (out : out_channel) (types : mtyp type_def Maps2.smaplist)
           (ident_to_string tname)
   in
   let rec tenv_defs_to_string (indent : string)
-      (types : mtyp type_def Maps2.smaplist) : string =
+      (types : (mtyp * Types.layout) type_def Maps2.smaplist) : string =
     match types with
     | [] -> "STree.empty"
     | (tname, td) :: types' ->
@@ -397,7 +398,7 @@ let print_typing_env (out : out_channel) (types : mtyp type_def Maps2.smaplist)
              next)
   in
   let rec tenv_constr_types_to_string (indent : string)
-      (types : mtyp type_def Maps2.smaplist) : string =
+      (types : (mtyp * Types.layout) type_def Maps2.smaplist) : string =
     match types with
     | [] -> "STree.empty"
     | (tname, TdEnum elems) :: types' ->

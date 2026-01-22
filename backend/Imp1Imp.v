@@ -1,13 +1,9 @@
 (* Imperative Imp1 *)
 From Coq Require Import Bool List String PArith Lia.
 From compcert Require Import Integers Coqlib.
-From BarocqComp Require Import  Barocq Benum  Barray Brecord Error Maps2 Utils Syntax Types Typing.
-Import Syntax.Typed.
-From BarocqComp Require Imp1.
+From BarocqComp Require Import Barocq Benum  Barray Brecord Error Maps2 Utils Syntax Types Typing.
+From BarocqComp Require Import Imp1.
 From BarocqComp Require Printer Pp.
-Import Imp1.Typed.
-
-
 
 Section MAPOPT.
   Context {A B: Type}.
@@ -772,7 +768,7 @@ Section S.
 
 
   Definition typof_atom (te:tenv) (a: atom) : res typ :=
-    btyp_to_typ te (Typing.typof_atom a).
+    btyp_to_typ te (typof_atom a).
 
   Definition eval_val {ty:typ} (v : val ty) : res (eval_typ abs ty) :=
     match v with
@@ -1044,7 +1040,7 @@ Section S.
     end.
 
   Definition typof_comp (te:tenv) (c: comp) : res typ :=
-    btyp_to_typ te (Typing.typof_comp c).
+    btyp_to_typ te (typof_comp c).
 
   Definition env_set (id:ident) {ty:typ} (v:val ty) (e:env) : env :=
     fun x => if Ident.eq_dec x id then OK (existT _ ty v) else e x.

@@ -33,28 +33,21 @@ Proof.
   auto.
 Qed.
 
-
-
 (** * Identifiers *)
-
-Definition transl_user_ident (i: ident) : ident :=
-  Ident.prefix_with "u_" i.
 
 Open Scope state_monad_scope.
 
-Definition fresh_var (prefix: string) : cmon ident :=
-  let* ctr := MonCounter.get in
-  let var := Ident.prefix_with prefix (Ident.of_str_nat ctr) in
-  MonCounter.incr var.
+Definition fresh_var (pre: string) : cmon ident :=
+  let* n := MonCounter.incr in
+  MonCounter.ret (Ident.concat pre (Ident.of_str_pos n)).
 
 Close Scope state_monad_scope.
 
 Open Scope state_err_monad_scope.
 
-Definition fresh_var_err (prefix: string) : crmon ident :=
-  let* ctr := MonCounterErr.get in
-  let var := Ident.prefix_with prefix (Ident.of_str_nat ctr) in
-  MonCounterErr.incr var.
+Definition fresh_var_err (pre: string) : crmon ident :=
+  let* n := MonCounterErr.incr in
+  MonCounterErr.ret (Ident.concat pre (Ident.of_str_pos n)).
 
 Close Scope state_err_monad_scope.
 
@@ -84,6 +77,25 @@ Fixpoint list_fold_left_err {A B: Type} (f: A -> B -> res A) (l: list B) (a0: re
       list_fold_left_err f l' (f a0 x)
   end.
 
+Lemma list_fold_left_err_ext:
+  forall {A B: Type} (f g: A -> B -> res A),
+  (forall a b, f a b = g a b) ->
+  forall (l: list B) (a0: res A), list_fold_left_err f l a0 = list_fold_left_err g l a0.
+Proof.
+  induction l; intros.
+  - simpl. reflexivity.
+  - simpl. destruct a0; try reflexivity. simpl.
+    specialize (H a0 a). rewrite H.
+    apply IHl.
+Qed.
+
+Lemma list_fold_right_err_err:
+  forall (A B: Type) (f: A -> B -> res A) (l: list B) e,
+  list_fold_left_err f l (Error e) = Error e.
+Proof.
+  intros; destruct l; reflexivity.
+Qed.
+
 Fixpoint list_fold_right_err {A B: Type} (f: B -> A -> res A) (a0: res A) (l: list B) : res A :=
   match l with
   | nil => a0
@@ -91,6 +103,32 @@ Fixpoint list_fold_right_err {A B: Type} (f: B -> A -> res A) (a0: res A) (l: li
       let* r := list_fold_right_err f a0 l' in
       f x r
   end.
+
+Lemma list_fold_right_err_ext:
+  forall {A B: Type} (f g: B -> A -> res A),
+  (forall b a, f b a = g b a) ->
+  forall (l: list B) (a0: res A), list_fold_right_err f a0 l = list_fold_right_err g a0 l.
+Proof.
+  induction l; intros.
+  - simpl. reflexivity.
+  - simpl. rewrite IHl.
+    destruct (list_fold_right_err g a0 l); simpl; try reflexivity.
+    apply H.
+Qed.
+
+Lemma list_fold_right_err_ext_OK:
+  forall {A B: Type} (f g: B -> A -> res A),
+  (forall b a r, f b a = OK r -> g b a = OK r) ->
+  forall (l: list B) (a0: res A) (r: A),
+    list_fold_right_err f a0 l = OK r ->
+    list_fold_right_err g a0 l = OK r.
+Proof.
+  induction l; intros.
+  - simpl in H0. simpl. exact H0.
+  - simpl. simpl in H0. monadInv H0.
+    rewrite IHl with (r := x); simpl. apply H.
+    exact EQ0. exact EQ. 
+Qed.
 
 Definition list_is_empty {A: Type} (l: list A) : bool :=
   match l with
@@ -101,6 +139,19 @@ Definition list_is_empty {A: Type} (l: list A) : bool :=
 Definition list_mem {A: Type} (EqDec: forall (x y: A), {x = y} + {x <> y}) (a: A) (l: list A) : bool :=
   List.existsb (fun x => if EqDec x a then true else false) l.
 
+Lemma list_map_transl_err_same:
+  forall (A B C: Type) (l: list A) (l': list B) (transl: A -> res B) (f: A -> C) (g: B -> C)
+  (transl_correct: forall a b, transl a = OK b -> g b = f a),
+    Errors.mmap transl l = OK l' ->
+    map g l' = map f l.
+Proof.
+  induction l; intros.
+  - simpl in H. inversion H. reflexivity.
+  - simpl in H. monadInv H. simpl.
+    f_equal. apply transl_correct. exact EQ.
+    eapply IHl; eauto.
+Qed.
+  
 Section S.
   (** is-it already defined elsewhere? *)
   Context {A B: Type}.
@@ -254,3 +305,20 @@ Section MERGE.
     end.
 
 End MERGE.
+
+(* Tactics *)
+
+Ltac destruct_conj H :=
+  match type of H with
+  | _ && _ = _ =>
+      apply andb_prop in H;
+      destruct_conj H
+  | _ /\ _ =>
+      let c1 := fresh "C" in
+      let c2 := fresh "C" in
+      destruct H as [c1 c2];
+      destruct_conj c1;
+      destruct_conj c2
+  | _ => idtac
+  end.
+      

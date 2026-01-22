@@ -2,12 +2,8 @@
 From compcert Require Import Maps.
 Require Import Uint63.
 Require Import String FMapInterface FMapList ZArith Int ListSet.
-From BarocqComp Require Import Error Maps2 Types Imp1 Graph Typing Utils Pp.
+From BarocqComp Require Import Error Maps2 Types Syntax Imp1 Graph Typing Utils Pp.
 From Coq Require Import FMapPositive.
-Require Import Syntax.
-Import Typed.
-Import Imp1.Typed.
-
 
 (** WARNING: Known limitations.
     - The use of global variables is limited to primitive types.
@@ -60,7 +56,7 @@ Inductive edge :=
 Definition pp (e:edge) :=
   match e with
   | Field id => Bcat (Bstr ".") (Bstr id)
-  | Index a  => Bcat (Bstr "[") (Bcat (Printer.Typed.pp_atom a)
+  | Index a  => Bcat (Bstr "[") (Bcat (Printer.pp_atom a)
                                    (Bstr "]"))
   | Top      => Bstr "T"
   end.
@@ -275,7 +271,7 @@ Module GEXPR.
 
   Fixpoint pp (e:t) :=
     match e with
-    (*| Atm a => Printer.Typed.pp_atom a*)
+    (*| Atm a => Printer.pp_atom a*)
     | Var id => Bstr id
     | Get e fd => Bcat (pp e) (EdgeLabel.pp fd)
     end.
@@ -300,7 +296,7 @@ Proof.
   apply GEXPR.eq_dec.
 Defined.
 
-Definition afunction := Syntax.function (sfunction*bool)  typ.
+Definition afunction := Syntax.function (sfunction*bool) typ.
 
 Definition afunction_eq_dec (f1 f2:afunction) : {f1 = f2} + {f1 <> f2}.
 apply function_dec.
@@ -673,10 +669,10 @@ Section EVALATOM.
 
   Definition array_get (te:tenv) (env:aenv) (d:domain) (ar:atom) (id:atom) (*(bt:btyp)*)  :=
     match aeval_atom te env d ar  with
-    | Error e  => Error (MSG "Wrong array :" :: MSG (Pp.pp (Printer.Typed.pp_atom ar)) :: MSG Pp.nl :: e)
+    | Error e  => Error (MSG "Wrong array :" :: MSG (Pp.pp (Printer.pp_atom ar)) :: MSG Pp.nl :: e)
     | OK (d,vr) =>
         match aeval_atom te env d id with
-        | Error e => Error (MSG "Wrong array index:" :: MSG (Pp.pp (Printer.Typed.pp_atom id)) :: MSG Pp.nl :: e)
+        | Error e => Error (MSG "Wrong array index:" :: MSG (Pp.pp (Printer.pp_atom id)) :: MSG Pp.nl :: e)
         | OK (d,idx) =>
             match vr with
             | KDead => Error (MSG "(dead) This should be a reference " :: nil)
@@ -695,7 +691,7 @@ Section EVALATOM.
 
   Definition record_proj_get (te:tenv) (env:aenv) (d:domain) (ar:atom) (fd:ident) (*(bt:btyp)*)  :=
     match aeval_atom te env d ar  with
-    | Error e  => Error (MSG "Wrong record :" :: MSG (Pp.pp (Printer.Typed.pp_atom ar)) :: MSG Pp.nl :: e)
+    | Error e  => Error (MSG "Wrong record :" :: MSG (Pp.pp (Printer.pp_atom ar)) :: MSG Pp.nl :: e)
     | OK (d,vr) =>
             match vr with
             | KDead => Error (MSG "(dead) This should be a reference " :: nil)
@@ -750,14 +746,14 @@ Section CALL.
                 | (i1,ty)::params1 =>
                     match aeval_atom te env d a1 with
                     | Error _ =>
-                        Error (MSG (Pp.pp (seq (Bstr "Expression ":: Printer.Typed.pp_atom a1:: Bstr " is invalid."::nil))) ::nil)
+                        Error (MSG (Pp.pp (seq (Bstr "Expression ":: Printer.pp_atom a1:: Bstr " is invalid."::nil))) ::nil)
                     | OK (d,k) =>
                         let* b := compat_typ d k ty in
                         let* bargs := bind_args te env d args1 params1 in
                         if b
                         then OK ((i1,k)::bargs)
                         else
-                          Error (MSG (Pp.pp (seq (Bstr "Expression " :: Printer.Typed.pp_atom a1 ::
+                          Error (MSG (Pp.pp (seq (Bstr "Expression " :: Printer.pp_atom a1 ::
                                                     Bstr " has incompatible types."::nil))) :: nil)
                     end
                  end
@@ -801,8 +797,6 @@ Fixpoint aeval_expr (te:tenv) (env:aenv) (vars : list (ident * KVar)) (d:domain)
                        | Error _ => Error (MSG id :: nil)
                        end
   end.
-
-Check bind_args.
 
 Definition call (te:tenv) (env: aenv) (d:domain) (id:ident) (bt: btyp) (args:list atom) : res (domain* KVar) :=
   match get_function env (Vars d) id with
@@ -910,7 +904,7 @@ Definition update_var (l:list int) (k:KVar)  :=
   mkdom (STree.map (fun _ x => (update_var l) x) (Vars d)) (Pto d) (Atoms d). *)
 
 Definition pp_write (a:atom) (l:list EdgeLabel.t) (vl:atom) :=
-  Pp.seq (Printer.Typed.pp_atom a :: (pp_list (Bstr ".") EdgeLabel.pp l) :: Bstr " <- " :: Printer.Typed.pp_atom vl :: nil).
+  Pp.seq (Printer.pp_atom a :: (pp_list (Bstr ".") EdgeLabel.pp l) :: Bstr " <- " :: Printer.pp_atom vl :: nil).
 
 
 Definition write (te:tenv) (env:aenv) (d:domain) (a:atom) (l:list EdgeLabel.t) (vl:atom)  : res (domain * KVar * bool) :=
@@ -929,9 +923,9 @@ Definition write (te:tenv) (env:aenv) (d:domain) (a:atom) (l:list EdgeLabel.t) (
                     | OK _ =>  OK (d,KNode n,true)
                     | Error _ =>
                         let reason := Bstr "The written value is a reference but no MUST alias is found." in
-                        let l1 := Pp.seq (Printer.Typed.pp_atom a ::
+                        let l1 := Pp.seq (Printer.pp_atom a ::
                                             Bstr " is mapped to node n" :: Bstr (string_of_int n) :: nil) in
-                        let l2 := Pp.seq (Printer.Typed.pp_atom vl ::
+                        let l2 := Pp.seq (Printer.pp_atom vl ::
                                             Bstr " is mapped to node n" :: Bstr (string_of_int n') :: nil) in
                         Error (msg (Pp.pp (Pp.stack Left (reason :: l1 :: l2 :: pp_domain d :: nil))))
                     end
@@ -1282,7 +1276,7 @@ Definition init_domain (l:list (ident * typ)) :=
   end.
  *)
 
-Definition domain_of_function (te:tenv)(f:function) : res domain :=
+Definition domain_of_function (te:tenv) (f:function) : res domain :=
   let* params := MapList.map_err (btyp_to_typ te) (fn_params f) in
   if MapList.nodup  Ident.eq_dec params
   then let modified := assigned (fn_body f) in

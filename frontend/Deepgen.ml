@@ -123,8 +123,12 @@ let rec expr_to_deep (prefix : string) (e : Typed.expr) : string =
         sprintf "EInt32 (%s) %s" (int_to_deep i s) (signedness_to_deep s)
     | EInt64 (i, s) ->
         sprintf "EInt64 (%s) %s" (int64_to_deep i s) (signedness_to_deep s)
-    | EConstr (x, bt) ->
-        sprintf "EConstr %s (%s)" (ident_to_deep x) (btyp_to_deep bt)
+    | EConstr (x, n, bt) ->
+        sprintf
+          "EConstr %s %s (%s)"
+          (ident_to_deep x)
+          (Camlcoq.Z.to_string n)
+          (btyp_to_deep bt)
     | EVar (x, bt) -> sprintf "EVar %s (%s)" (ident_to_deep x) (btyp_to_deep bt)
     | ECast (e1, ty) ->
         sprintf "ECast (%s) (%s)" (expr_to_deep prefix e1) (btyp_to_deep ty)
@@ -141,11 +145,12 @@ let rec expr_to_deep (prefix : string) (e : Typed.expr) : string =
           (expr_to_deep "" e1)
           (expr_to_deep "" e2)
           (btyp_to_deep bt)
-    | EArrayGet (e1, e2, bt) ->
+    | EArrayGet (e1, e2, ly, bt) ->
         sprintf
-          "EArrayGet (%s) (%s) (%s)"
+          "EArrayGet (%s) (%s) %s (%s)"
           (expr_to_deep "" e1)
           (expr_to_deep "" e2)
+          (layout_to_deep ly)
           (btyp_to_deep bt)
     | EArraySet (e1, e2, e3, bt) ->
         sprintf
@@ -154,11 +159,12 @@ let rec expr_to_deep (prefix : string) (e : Typed.expr) : string =
           (expr_to_deep "" e2)
           (expr_to_deep "" e3)
           (btyp_to_deep bt)
-    | ERecordProj (e1, x, bt) ->
+    | ERecordProj (e1, x, ly, bt) ->
         sprintf
-          "ERecordProj (%s) %s (%s)"
+          "ERecordProj (%s) %s %s (%s)"
           (expr_to_deep "" e1)
           (ident_to_deep x)
+          (layout_to_deep ly)
           (btyp_to_deep bt)
     | ERecordUpdate (e1, x, e2, bt) ->
         sprintf
@@ -208,7 +214,9 @@ let rec expr_to_deep (prefix : string) (e : Typed.expr) : string =
               prefix'
               (expr_to_deep prefix' e2)
               (btyp_to_deep bt)
-      end)
+      end
+    | EAttr (x, e1) ->
+        sprintf "EAttr %s (%s)" (ident_to_deep x) (expr_to_deep prefix e1))
 
 and match_case_to_string (prefix : string)
     ((p, ep) : Benum.pattern * Typed.expr) : string =

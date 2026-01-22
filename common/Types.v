@@ -445,6 +445,13 @@ Proof.
   subst t1. exact x.
 Defined.
 
+Remark typ_cast_id:
+  forall t am (x: eval_typ am t),
+  typ_cast am eq_refl x = x.
+Proof.
+  intros. unfold typ_cast. reflexivity.
+Qed.
+
 (** Ordered Type *)
 Require Import OrderedType.
 

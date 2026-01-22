@@ -1,7 +1,7 @@
-From BarocqComp Require Import Error Utils Ident Barocq BarocqBNFgen.
-From BarocqComp Require Import ImpBNFgen Imp1 Imp1gen2 Imp1ElimAlias InvAnalysis Unboxing Imp2gen GlobRewrite Csyntaxgen.
-From BarocqComp Require Import Pp.
 From Coq Require Import String.
+From BarocqComp Require Import Error Utils Ident Pp Barocq Imp1.
+From BarocqComp Require Import Renaming BarocqBNFgen ImpBNFgen Imp1gen Unboxing Imp2gen GlobRewrite Csyntaxgen.
+From BarocqComp Require Import Imp1ElimAlias InvAnalysis.
 
 (** Debug flags *)
 Inductive ir_name :=
@@ -39,12 +39,14 @@ Definition compile (opt : compiler_opt) (arch: Target.archi) (globinfo: option (
     else l
   in
   let log := insert_log Barocq.Pp.pp_program Barocq prog Log.empty in
-  let* bbnf := BarocqBNFgen.norm_program arch prog in
+  let prog := Renaming.rename_program prog in
+  let* btyped := Barocq.Typing.typecheck_program arch prog in
+  let* bbnf := BarocqBNFgen.norm_program arch btyped in
   let log   := insert_log BarocqBNF.Pp.pp_program BBNF bbnf log in
-  let ibnf := ImpBNFgen.transl_program bbnf in
-  let* imp1 := Imp1gen2.norm_program ibnf in
+  let* ibnf := ImpBNFgen.transl_program bbnf in
+  let* imp1 := Imp1gen.norm_program ibnf in
   let* imp1_typed := Imp1Typing.typecheck_program arch imp1 in
-  let log := insert_log  Imp1Typed.Pp.pp_program Imp1 imp1_typed log in
+  let log := insert_log  Imp1.Pp.pp_program Imp1 imp1_typed log in
   let* (te,age) := InvAnalysis.check_program imp1_typed in (* Maybe, we could reuse the analysis result *)
   if (dbg_analysis opt)
   then Error (msg (Pp.pp (InvAnalysis.pp_inv (snd age))))
@@ -63,13 +65,15 @@ Definition compile (opt : compiler_opt) (arch: Target.archi) (globinfo: option (
     else fail.
 
 Definition compile_to_imp1 (arch: Target.archi) (prog: Barocq.program) : res Imp1.program :=
-  let* bbnf := BarocqBNFgen.norm_program arch prog in
-  let ibnf := ImpBNFgen.transl_program bbnf in
-  let* imp1 := Imp1gen2.norm_program ibnf in
+  let prog := Renaming.rename_program prog in
+  let* btyped := Barocq.Typing.typecheck_program arch prog in
+  let* bbnf := BarocqBNFgen.norm_program arch btyped in
+  let* ibnf := ImpBNFgen.transl_program bbnf in
+  let* imp1 := Imp1gen.norm_program ibnf in
   eret imp1.
 
-Definition aliascheck_program (show_debug: bool) (arch: Target.archi) (prog: Barocq.program) : res Imp1Typed.program :=
+Definition aliascheck_program (show_debug: bool) (arch: Target.archi) (prog: Barocq.program) : res Imp1.program :=
   let* imp1 := compile_to_imp1 arch prog in
   let* imp1_typed := Imp1Typing.typecheck_program arch imp1 in
-  let* imp1_alias := Imp1gen2.gen_aliasing_program show_debug imp1_typed in
-  Imp1gen2.check_program_aliasing imp1_alias.
+  let* (te,age) := InvAnalysis.check_program imp1_typed in
+  Error (msg (Pp.pp (InvAnalysis.pp_inv (snd age)))).

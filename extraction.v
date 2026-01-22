@@ -5,7 +5,7 @@ From Coq Require Import ExtrOCamlInt63.
 From Coq Require BinInt BinPos.
 From compcert Require Integers Floats Machregs Archi AST Memdata Csyntax Initializers.
 From compcert Require Import Ctyping Ctypes Clight Ctypesdefs Values Cabs Parser.
-From BarocqComp Require Imp1 Imp1gen2 Barocq Compiler BarocqShallowgen BarocqVC.
+From BarocqComp Require Imp1 Imp1gen Barocq Compiler BarocqShallowgen BarocqVC.
 
 (* Extraction language *)
 Extraction Language OCaml.
@@ -25,9 +25,9 @@ Extraction Blacklist List String Int Array.
 (* Extraction directory *)
 Set Extraction Output Directory "_build/extraction_tmp".
 
-Extract Constant Imp1.Aliasing_AST.ABSDOM => "Aliasing_defs.AbsDom.t".
-Extract Constant Imp1gen2.gen_aliasing_program => "Aliasing_impl.gen_aliasing_program".
-Extract Constant Imp1gen2.check_program_aliasing => "Aliasing_check.check_program".
+(* Extract Constant Imp1.Aliasing_AST.ABSDOM => "Aliasing_defs.AbsDom.t".
+Extract Constant Imp1gen.gen_aliasing_program => "Aliasing_impl.gen_aliasing_program".
+Extract Constant Imp1gen.check_program_aliasing => "Aliasing_check.check_program". *)
 
 (* Cabs *)
 Extract Constant Cabs.loc =>
@@ -80,13 +80,13 @@ Separate Extraction
   Compiler.aliascheck_program
   Compiler.compile_to_imp1
   Compiler.compile Compiler.ir_name
+  BarocqShallow.Monadic.get_record_typedefs
   BarocqShallowgen.monadify_norm_program
   BarocqShallowgen.monadify_norm2_program
   Syntax.get_enum_typedefs
   Syntax.get_record_typedefs
   Syntax.get_record_typedefs
   Types.btyp_is_prim
-  Imp1.Aliasing_AST.program
   Ident
   BarocqVC Pp.Log.pp
   Cabs
