@@ -8,6 +8,133 @@ Require Import Syntax.
 From BarocqComp Require Import Imp1Imp Imp1ElimAlias.
 Import Typed.
 Import Imp1.Typed.
+Import Relation_Operators.
+
+Section CLOS_N.
+  Context {A:Type}.
+
+  Section DEF.
+
+  Variable R : A -> A -> Prop.
+
+  Inductive clos_sn : nat -> A -> A -> Prop :=
+  | clos_sn0 : forall x, clos_sn O x x
+  | clos_sn1 : forall x y, R x y -> clos_sn 1%nat x y
+  | clos_sns : forall x y z n, R x y -> clos_sn n y z -> clos_sn (S n) x z.
+
+
+  Inductive clos_ns : nat -> A -> A -> Prop :=
+  | clos_ns0 : forall x, clos_ns O x x
+  | clos_ns1 : forall x y, R x y -> clos_ns 1%nat x y
+  | clos_nss : forall x y z n, clos_ns n x y -> R y z -> clos_ns (S n) x z.
+
+  Lemma clos_ns_trans : forall i j x  y z,
+      clos_ns i x y ->
+      clos_ns j y z ->
+      clos_ns (i + j) x z.
+  Proof.
+    intros i j. revert i.
+    induction j; intros.
+    - inv H0. replace (i + 0)%nat with i by lia.
+      auto.
+    - inv H0.
+      replace (i + 1)%nat with (S i) by lia.
+      eapply clos_nss.
+      eauto. auto.
+      replace (i + S j)%nat with (S (i + j))%nat by lia.
+      eapply clos_nss.
+      eapply IHj. eauto. eauto. auto.
+  Qed.
+
+
+  Lemma clos_sn_trans : forall i j x  y z,
+      clos_sn i x y ->
+      clos_sn j y z ->
+      clos_sn (i + j) x z.
+  Proof.
+    induction i; intros.
+    - inv H. replace (0 + j)%nat with j by lia.
+      auto.
+    - inv H.
+      replace (1 + j)%nat with (S j) by lia.
+      eapply clos_sns.
+      eauto. auto.
+      replace (S i + j)%nat with (S (i +  j))%nat by lia.
+      eapply clos_sns. eauto.
+      eapply IHi. eauto. eauto.
+  Qed.
+
+
+  Lemma clos_sn_ns : forall n x y,
+      clos_sn n x y -> clos_ns n x y.
+  Proof.
+    intro.
+    induction n; intros.
+    - inv H. constructor.
+    - inv H.
+      + constructor; auto.
+      + replace (S n) with (1 + n)%nat by lia.
+        eapply clos_ns_trans.
+        constructor. eauto.
+        auto.
+  Qed.
+
+  Lemma clos_ns_sn : forall n x y,
+      clos_ns n x y -> clos_sn n x y.
+  Proof.
+    intro.
+    induction n; intros.
+    - inv H. constructor.
+    - inv H.
+      + constructor; auto.
+      + replace (S n) with (n + 1)%nat by lia.
+        eapply clos_sn_trans.
+        eauto.
+        constructor. eauto.
+  Qed.
+
+  Lemma clos_sn_inv : forall n1 n2 x z,
+      clos_ns (n1+n2) x z -> exists y, clos_ns n1 x y /\ clos_ns n2 y z.
+  Proof.
+    intro.
+    induction n1; intros.
+    - exists x. split.  constructor.
+      apply H.
+    - replace (S n1 + n2)%nat with (n1 + S n2)%nat in H by lia.
+      apply IHn1 in H.
+      destruct H as (y & N1 & N2).
+
+
+
+      inv H.
+      + constructor; auto.
+      + replace (S n) with (n + 1)%nat by lia.
+        eapply clos_sn_trans.
+        eauto.
+        constructor. eauto.
+  Qed.
+
+
+
+  End DEF.
+
+  Lemma clos_n_morph : forall  (E1 E2: A -> A -> Prop),
+      inclusion _ E1 E2 ->
+      forall i, inclusion _ (clos_sn E1 i) (clos_sn E2 i).
+  Proof.
+    unfold inclusion.
+    intros.
+    induction H0.
+    - apply clos_sn0.
+    - apply clos_sn1; auto.
+    -  econstructor.
+       apply H. eauto.
+       auto.
+  Qed.
+
+End CLOS_N.
+
+
 
 
 Section TREE.
@@ -17,7 +144,7 @@ Section TREE.
     forall ty1 p1 ty1' p1' e1 e1' ty2 p2,
       Edge ty1 p1 e1 ty2 p2 ->
       Edge ty1' p1' e1' ty2 p2 ->
-      exists EQ, cast (f_equal ptr EQ) p1' = p1.
+      exists EQ, cast (f_equal ptr EQ) p1' = p1 /\ e1 = e1'.
 
 
 (*  Inductive is_tree : forall (ty:typ) (p1:ptr ty), Prop :=
@@ -25,17 +152,31 @@ Section TREE.
           (forall ty2 e p2, Edge ty1 p1 e ty2 p2 -> unique_parent ty1 p1 ty2 p2 -> is_tree ty2 p2) ->
           is_tree ty1 p1. *)
 
-  Inductive clo : forall (tyi : typ) (pi:ptr tyi)  (tyr:typ) (pr:ptr tyr), Prop :=
-  | clo_refl : forall tyi (pi:ptr tyi), clo tyi pi tyi pi
-  | clo_step : forall tyi (pi:ptr tyi) e tyr (pr:ptr tyr),
-      Edge tyi pi e tyr pr -> clo tyi pi  tyr pr
-  | clo_trans : forall tyi pi ty' p' tyr pr,
-      clo tyi pi ty' p' ->
-      clo ty' p' tyr pr ->
-      clo tyi pi tyr pr.
+  Inductive clo_t : forall (tyi : typ) (pi:ptr tyi)  (tyr:typ) (pr:ptr tyr), Prop :=
+(*  | clo_refl : forall tyi (pi:ptr tyi), clo tyi pi tyi pi*)
+  | t_step : forall tyi (pi:ptr tyi) e tyr (pr:ptr tyr),
+      Edge tyi pi e tyr pr -> clo_t tyi pi  tyr pr
+  | t_trans : forall tyi pi ty' p' tyr pr,
+      clo_t tyi pi ty' p' ->
+      clo_t ty' p' tyr pr ->
+      clo_t tyi pi tyr pr.
+
+  Inductive clo_rt : forall (tyi : typ) (pi:ptr tyi)  (tyr:typ) (pr:ptr tyr), Prop :=
+  | rt_refl : forall tyi (pi:ptr tyi), clo_rt tyi pi tyi pi
+  | rt_step : forall tyi (pi:ptr tyi) e tyr (pr:ptr tyr),
+      Edge tyi pi e tyr pr -> clo_rt tyi pi  tyr pr
+  | rt_trans : forall tyi pi ty' p' tyr pr,
+      clo_rt tyi pi ty' p' ->
+      clo_rt ty' p' tyr pr ->
+      clo_rt tyi pi tyr pr.
+
+
+  Definition no_loop :=
+    forall t1 p1, clo_t t1 p1 t1 p1 -> False.
+
 
   Definition disjoint (ty1:typ) (p1: ptr ty1) (ty2: typ) (p2 : ptr ty2) : Prop :=
-    forall ty p, clo ty1 p1 ty p -> clo ty2 p2 ty p -> False.
+    forall ty p, clo_rt ty1 p1 ty p -> clo_rt ty2 p2 ty p -> False.
 
 End TREE.
 
@@ -48,6 +189,8 @@ Section S.
 
   Variable arch: Target.archi.
   Variable abs : Maps.PMap.t Type.
+  Variable abs_dec : forall x,
+    forall (v1 v2: SMap.get x abs), {v1 = v2} + {v1 <> v2}.
   Variable te  : tenv.
 
   Section GAMMA.
@@ -64,15 +207,13 @@ Section S.
                         | EdgeLabel.Field fid =>
                             eval_mem_access abs m e (CField fid) tyr
                         | EdgeLabel.Index i  =>
-                            let* i := eval_atom arch abs te ge ev m tyr i in
+                            let* i := eval_atom arch abs abs_dec te ge ev m tyr i in
                             let* i  := index_of_val arch i in
                             eval_mem_access  abs m e (CIndex i) tyr
                         end
     end.
 
   Definition empty_genv : genv abs := fun _ => fail.
-
-
 
   Inductive ptr_of_memval : forall (ty:typ) (mv:mval abs ty) (e:cedge) (ty': typ) (p:ptr ty'), Prop :=
   | PtrArray : forall ty a i vl p, Barray.get a i = OK vl -> isptr vl = OK p ->
@@ -150,20 +291,25 @@ Section S.
                end
     end.
 
-  Definition gamma_sfunction  (fargs : list ident) (args : list typ) (rt:typ) (f:sfunction) (fct : Fun abs args rt) : Prop :=
+
+  Definition gamma_sfunction  (fargs : list ident) (args : list typ) (rt:typ) (f:sfunction) (pure:bool) (fct : Fun abs args rt) : Prop :=
     is_function args rt fct /\
       match f with
       | RPrim => typ_is_prim rt = true
       | RDeep a => forall (args: DList.dlist val args) (m:mem abs) r m',
           app_fun _ _ args (fct m) = OK (r,m') ->
           eval_expr empty_genv  (make_env fargs args) m' rt a = OK r
+          /\ (pure = true -> m = m')
       end.
 
 
   Definition gamma_afunction (af:afunction) (targs : list typ) (rt:typ) (f:Fun abs targs rt) :=
     targs = List.map snd (fn_params af) /\
       rt    = fn_return af /\
-      gamma_sfunction (List.map fst (fn_params af)) targs rt (fst (fn_body af)) f.
+      gamma_sfunction (List.map fst (fn_params af)) targs rt (fst (fn_body af)) (snd (fn_body af)) f.
+
+
+
 
   Inductive gamma_defs : aglobdef -> defs abs -> Prop :=
   | IsLit : forall ty vl, gamma_defs (ALit (typ_is_prim ty)) (DeclLit abs ty vl)
@@ -182,7 +328,7 @@ Section S.
 
 
   (** Mapping from abstract nodes to pointers *)
-  Definition ptr_memT (g:G.t) := forall (n:int) (ty: typ), G.has_node_label n ty (G.edges g) -> ptr ty.
+  Definition ptr_memT (g:G.t) := forall (n:int) (ty: typ), G.has_node_label (G.edges g) n ty  -> ptr ty.
 
   Definition gamma_KVar (g: G.t) (ptr_mem : ptr_memT g) (age:aenv) (v:KVar) : forall (ty:typ), val ty -> Prop :=
     match v with
@@ -193,7 +339,7 @@ Section S.
                                 isptr v = OK p /\
                                   exists id, get_addr_of_ptr p = inr id /\
                                                STree.get id age = Some (AFun f)
-    | KNode n => fun ty v => exists (P: G.has_node_label n ty (G.edges g)), v = Vptr ty (ptr_mem n ty P)
+    | KNode n => fun ty v => exists (P: G.has_node_label (G.edges g) n ty ), v = Vptr ty (ptr_mem n ty P)
     end.
 
 
@@ -205,15 +351,27 @@ Section S.
               |  _   , _ => False
               end.
 
-  Definition gamma_edge (e:env) (m:mem abs) (el:EdgeLabel.t) (ce:cedge) : Prop :=
+  Definition gamma_must_edge (e:env) (m:mem abs) (el:EdgeLabel.t) (ce:cedge) : Prop :=
     match el with
     | EdgeLabel.Field fd => ce = CField fd
     | EdgeLabel.Top      => False (* because it is used for must alias *)
     | EdgeLabel.Index i  =>
         exists pv i',
-        eval_atom arch abs te ge e m (arr_index_typ arch) i = OK (Vprim (arr_index_typ arch) pv) /\
+        eval_atom arch abs abs_dec te ge e m (arr_index_typ arch) i = OK (Vprim (arr_index_typ arch) pv) /\
           index_of_pval arch pv = OK i' /\ ce = CIndex i'
     end.
+
+  Definition gamma_may_edge (e:env) (m:mem abs) (el:EdgeLabel.t) (ce:cedge) : Prop :=
+    match el with
+    | EdgeLabel.Field fd => ce = CField fd
+    | EdgeLabel.Top      => exists i, ce = CIndex i (* any index *)
+    | EdgeLabel.Index i  =>
+        exists pv i',
+        eval_atom arch abs abs_dec te ge e m (arr_index_typ arch) i = OK (Vprim (arr_index_typ arch) pv) /\
+          index_of_pval arch pv = OK i' /\ ce = CIndex i'
+    end.
+
+
 
   Definition is_get_field (e:env) (m:mem abs) (ty:typ) (mv: mval abs ty) (el:cedge) (ty':typ) (v:val ty') : Prop :=
     match el with
@@ -237,17 +395,63 @@ Section S.
     forall i t1 j t2 P1 P2, get_addr_of_ptr (ptr_mem i t1 P1) =
                               get_addr_of_ptr (ptr_mem j t2 P2) -> i = j /\ t1 = t2.
 
+  Definition is_parent (g:G.t) : nat -> int -> int -> Prop :=
+    clos_sn (G.edge (G.edges g)).
+
+  Definition may_alias (g:G.t) (n1 n2:int) :=
+    n1 = n2 \/
+      exists i n e1 o1 e2 o2, G.has_edge (G.edges g) n e1 o1  /\
+                              G.has_edge (G.edges g) n e2 o2  /\
+                              EdgeLabel.classify_edge e1 e2 = MAY /\
+                              is_parent g i o1 n1 /\ is_parent g i o2 n2.
+
+  Definition may_alias_compat (g:G.t) (ptr_mem : ptr_memT g) :=
+      forall n1 n2 t1 P1 t2 P2,
+        get_addr_of_ptr (ptr_mem n1 t1 P1) =  get_addr_of_ptr (ptr_mem n2 t2 P2) ->
+        may_alias g n1 n2.
+
+
   Definition gamma_must (g:G.t) (ptr_mem: ptr_memT g) (e:env)  (m:mem abs) : Prop :=
     forall n el ce n' ty  ty',
       G.root g <> n ->
-      G.has_edge n el n' (G.edges g) ->
-      forall (NL1 : G.has_node_label n ty (G.edges g))
-             (NL2 : G.has_node_label n' ty' (G.edges g)),
-      gamma_edge e m el ce ->
+      G.has_edge (G.edges g) n el n'  ->
+      forall (NL1 : G.has_node_label (G.edges g) n ty )
+             (NL2 : G.has_node_label (G.edges g) n' ty' ),
+      gamma_must_edge e m el ce ->
       graph_of_memory m ty (ptr_mem n ty NL1) ce ty' (ptr_mem n' ty' NL2).
 
+
+
+  Definition may_edge (g:G.t) (o:int) (ce:EdgeLabel.t) (d:int) :=
+    exists o' ce' d', G.has_edge (G.edges g) o' ce' d' /\
+                        may_alias g o o' /\ may_alias g d d' /\
+                        EdgeLabel.le_edge ce ce'.
+
+
+  Record gamma_may (g:G.t) (ptr_mem: ptr_memT g) (e:env) (m:mem abs) : Prop :=
+    {
+      gamma_mayE :
+      forall ty  ce ty',
+      forall n (NL1 : G.has_node_label (G.edges g) n ty )
+             n' (NL2 : G.has_node_label (G.edges g) n' ty' ),
+        graph_of_memory m ty (ptr_mem n ty NL1) ce ty' (ptr_mem n' ty' NL2) ->
+        exists ace, may_edge g n ace n' /\ gamma_may_edge e m ace ce;
+      gamma_mayN : forall ty ty' ty1 ptr1,
+      forall n (NL1 : G.has_node_label (G.edges g) n ty )
+             n' (NL2 : G.has_node_label (G.edges g) n' ty' ),
+        clo_rt (graph_of_memory m) ty (ptr_mem n ty NL1) ty1 ptr1   ->
+        clo_rt (graph_of_memory m) ty1 ptr1  ty' (ptr_mem n' ty' NL2) ->
+        exists n1 (ND1 : G.has_node_label (G.edges g) n1   ty1), ptr_mem n1 ty1 ND1 = ptr1
+      }.
+
+
+
+
+
+
+
   Definition leaf_node (g: G.t) (n:int)  :=
-    forall o n', ~ G.has_edge n o n' (G.edges g).
+    forall o n', ~ G.has_edge (G.edges g) n o n' .
 
 (*  Definition gamma_sep (g:G.t) (ptr_mem: ptr_memT g) (e:env) (m:mem abs) : Prop :=
     forall n ty n' ty'
@@ -268,7 +472,7 @@ Section S.
   End GAMMA.
 
   Definition wf_edges (g:G.t) (atms:SMap.t (list atom)) :=
-    forall o a d, G.has_edge o (EdgeLabel.Index a) d (G.edges g) ->
+    forall o a d, G.has_edge (G.edges g) o (EdgeLabel.Index a) d  ->
     forall i, List.In i (AtomOrdered.vars_of_atom a) ->
               List.In a (SMap.get i atms ).
 
@@ -280,8 +484,10 @@ Section S.
         wf_atoms : wf_edges (Pto d) (Atoms d)
       }.
 
-  Definition is_tree_mem (m:mem abs) :=
-    is_global_tree (graph_of_memory m).
+  Record is_tree_mem (m:mem abs) :=
+    { mem_uniq_pred : is_global_tree (graph_of_memory m);
+      mem_no_loop   :  no_loop (graph_of_memory m)
+                           }.
 
   Definition le_vars (v1 v2: Vars.t) : Prop :=
     forall x, option_rel le_KVar (Vars.get x v1) (Vars.get x v2).
@@ -297,9 +503,10 @@ Section S.
     mk_gamma {
         gwf   : wf_domain d;
         gtree : is_tree_mem m;
-        (*is_inj  : is_injective (Pto d) ptr_mem ;*)
+        alias_compat : may_alias_compat (Pto d) ptr_mem ;
         gvars   : gamma_vars (Pto d) ptr_mem age (Vars d) e;
-        gmem    : gamma_must ge (Pto d) ptr_mem e m
+        gmem     : gamma_must ge (Pto d) ptr_mem e m;
+        gmem_may : gamma_may ge (Pto d) ptr_mem e m;
       }.
 
   Definition gamma_with_var (age:aenv) (d:domain) (ptr_mem' : ptr_memT (Pto d)) (ge:genv abs) (e:env) (m:mem abs) (kv:KVar) (ty:typ) (v:val ty) : Prop :=
@@ -390,22 +597,23 @@ Section S.
       eapply has_ecast; eauto.
     - (* global var *)
       unfold eval_var in AEVAL.
+      unfold get_gvar in EVAL.
       destruct (Vars.get v avr); try tauto.
       specialize (GAMMAE v).
       destruct (STree.get v age) eqn:G, (ge v); try discriminate ; try tauto.
+      unfold bind,Errors.bind in EVAL.
       inv GAMMAE.
-      + (* this is a primitive *)
-        destruct (typ_eq_dec ty tyr); try discriminate.
-        subst. inv EVAL.
+      + destruct (typ_eq_dec ty tyr); try discriminate.
+        subst. simpl in EVAL; inv EVAL.
         destruct (typ_is_prim tyr) eqn:PRIM; try discriminate.
         inv AEVAL.
         apply gamma_KVar_KPrim; auto.
       + (* this is a function *)
-        inv AEVAL.
         destruct (typ_eq_dec (TFun targs rt) tyr);
           try discriminate.
         subst.
         inv EVAL.
+        inv AEVAL.
         simpl.
         unfold gamma_afunction in H.
         split.
@@ -617,7 +825,7 @@ Section S.
 
   Lemma gamma_with_var_typing : forall ae d ptr_mem ge e m n ty v,
       gamma_with_var ae d ptr_mem ge e m (KNode n) ty v ->
-      G.has_node_label n ty (G.edges (Pto d)).
+      G.has_node_label (G.edges (Pto d)) n ty .
   Proof.
     intros.
     destruct H.
@@ -675,8 +883,8 @@ gamma ae d1 ge e m
 
   Definition is_augmented (g1: G.t) (ptr_mem1 : ptr_memT g1)
     (g2: G.t) (ptr_mem2 : ptr_memT g2) : Prop :=
-    forall n ty (N1: G.has_node_label n ty (G.edges g1))
-           (N2 : G.has_node_label n ty (G.edges g2)),
+    forall n ty (N1: G.has_node_label (G.edges g1) n ty )
+           (N2 : G.has_node_label (G.edges g2) n ty ),
       ptr_mem1 n ty N1 = ptr_mem2 n ty N2.
 
   Definition le_domaing (d1 d2: domain) :=
@@ -747,6 +955,149 @@ gamma ae d1 ge e m
     constructor; auto.
   Qed.
 
+
+
+ Definition Atoms_le (atm1 atm2 : SMap.t (list atom)) :=
+   forall v, (forall a, List.In a (SMap.get v atm1) -> List.In a (SMap.get v atm2)).
+
+ Lemma wf_edges_le : forall pto a1 a2,
+     wf_edges pto a1 ->
+     Atoms_le a1 a2 -> wf_edges pto a2.
+ Proof.
+   intros.
+   unfold wf_edges in *.
+   intros.
+   eapply H in H1; eauto.
+ Qed.
+
+ Lemma Atoms_le_refl : forall a,
+     Atoms_le a a.
+ Proof.
+   unfold Atoms_le.
+   tauto.
+ Qed.
+
+ Lemma Atoms_le_register : forall ed a,
+  Atoms_le a (register_vars_of_edge ed a).
+ Proof.
+   destruct ed; simpl; auto.
+   - apply Atoms_le_refl.
+   - unfold register_vars_of_atom.
+     induction (AtomOrdered.vars_of_atom a); simpl.
+     + apply Atoms_le_refl.
+     + intros. unfold SMap_setl.
+       repeat intro.
+       rewrite SMap.gsspec.
+       destruct (StringIndexed.eq v a0).
+       * simpl. subst.
+         right.
+         apply IHl; auto.
+       * apply IHl;auto.
+   -  apply Atoms_le_refl.
+ Qed.
+
+
+ Lemma wf_domain_set_atom : forall d ed,
+     wf_domain d ->
+     wf_domain (set_atom (register_vars_of_edge ed (Atoms d)) d).
+ Proof.
+   intros.
+   destruct H; constructor ; auto.
+   simpl.
+   eapply wf_edges_le;eauto.
+   apply Atoms_le_register.
+ Qed.
+
+ Lemma wf_domain_set_pto : forall g d,
+     wf_domain d ->
+     G.wf EdgeLabel.next_label g ->
+     wf_edges g (Atoms d) ->
+     wf_domain  (set_pto g d).
+ Proof.
+   intros.
+   destruct H; constructor ;auto.
+ Qed.
+
+ Lemma wf_edges_stable :
+   forall pto  a pto' ed
+          (EDGE : forall o e d, G.has_edge (G.edges pto') o e d  ->
+                           G.has_edge (G.edges pto) o e d  \/
+                             e = ed)
+          (ED : forall atm,  EdgeLabel.Index atm = ed ->
+                           forall i, List.In i (AtomOrdered.vars_of_atom atm) ->
+                                     List.In atm (SMap.get i a))
+          (WF : wf_edges pto a),
+     wf_edges pto' a.
+ Proof.
+   intros.
+   unfold wf_edges in *; auto.
+   intros.
+   apply EDGE in H.
+   destruct H.
+   - eauto.
+   - eauto.
+ Qed.
+
+
+ Lemma register_vars_of_edge_In : forall atm ed a,
+     EdgeLabel.Index atm = ed ->
+     forall i : ident, List.In i (AtomOrdered.vars_of_atom atm) ->
+                       List.In atm (SMap.get i (register_vars_of_edge ed a)).
+ Proof.
+   intros.
+   subst. simpl.
+   unfold register_vars_of_atom.
+   revert i H0.
+   induction (AtomOrdered.vars_of_atom atm).
+   - simpl. tauto.
+   - simpl.
+     intros.
+     simpl in H0; destruct H0; subst.
+     + unfold SMap_setl at 1. rewrite SMap.gss.
+       simpl. tauto.
+     + apply IHl in H.
+       unfold SMap_setl at 1. rewrite SMap.gsspec.
+       destruct (StringIndexed.eq i a0); subst.
+       simpl; tauto.
+       auto.
+ Qed.
+
+
+  Lemma bind_path_wf_domain : forall d n e d' av,
+      wf_domain d ->
+      bind_path d n e = OK (d', av) ->
+      wf_domain d'.
+  Proof.
+    unfold bind_path. intros.
+    destruct (IntMap.Facts.eq_dec n (G.root (Pto d))); try discriminate.
+    destruct (G.create_edge EdgeLabel.next_label n e (Pto d)) eqn:C ; try discriminate.
+    destruct p. destruct p.
+    simpl in *.
+    destruct (typ_is_prim t0); try discriminate.
+    - inv H0.  auto.
+    - inv H0.
+      apply wf_domain_set_pto; auto.
+      apply wf_domain_set_atom; auto.
+      { eapply G.wf_create_edge; eauto. destruct H;auto. }
+      { change (Atoms (set_atom (register_vars_of_edge e (Atoms d)) d))
+                 with (register_vars_of_edge e (Atoms d)).
+        apply wf_edges_stable with (ed:=e) (pto := Pto d).
+        - intros.
+        exploit G.create_edge_spec;eauto.
+        destruct H; auto.
+        intros (S1 & S2 & S3 & S4 & S5 & S).
+        rewrite S3 in H0.
+        tauto.
+        - intros;
+          eapply register_vars_of_edge_In; eauto.
+        - apply wf_edges_le with (a1:= (Atoms d)) ;eauto.
+          destruct H; auto.
+          apply Atoms_le_register.
+      }
+  Qed.
+
+
+
   Lemma gamma_KVar_augment : forall pto1 pto2 ptr_mem1 ae ptr_mem2 kv ty v,
       gamma_KVar pto1 ptr_mem1 ae  kv ty v ->
       G.le_graph pto1 pto2 ->
@@ -770,11 +1121,11 @@ gamma ae d1 ge e m
 
   Definition new_node_case (g g' : G.t) (n:int) (ty:typ) (n':int) (ty':typ)
     (P : forall (nd : int) (lb1 : TypOrdered.t),
-        G.has_node_label nd lb1 (G.edges g') <-> G.has_node_label nd lb1 (G.edges g) \/ nd = n' /\ ty' = lb1)
-    (NODE : G.has_node_label n ty (G.edges g'))
+        G.has_node_label (G.edges g') nd lb1  <-> G.has_node_label (G.edges g) nd lb1  \/ nd = n' /\ ty' = lb1)
+    (NODE : G.has_node_label (G.edges g') n ty )
     :
 
-    ({G.has_node_label n ty (G.edges g)} + {~ G.has_node_label n ty (G.edges g) /\  n = n' /\ ty' = ty}).
+    ({G.has_node_label (G.edges g) n ty } + {~ G.has_node_label (G.edges g) n ty  /\  n = n' /\ ty' = ty}).
   Proof.
     rewrite P in NODE.
     unfold G.has_node_label in NODE.
@@ -792,7 +1143,7 @@ gamma ae d1 ge e m
   Definition ptr_mem_set (g:G.t) (ptr_mem : ptr_memT g) (g': G.t) (n': int) (ty': typ)
     (LBEL :
       forall (nd : int) (lb1 : TypOrdered.t),
-        G.has_node_label nd lb1 (G.edges g') <-> G.has_node_label nd lb1 (G.edges g) \/
+        G.has_node_label (G.edges g') nd lb1  <-> G.has_node_label (G.edges g) nd lb1  \/
                                                    nd = n' /\ ty' = lb1)
     (p':ptr ty') : ptr_memT g'.
   Proof.
@@ -834,7 +1185,7 @@ gamma ae d1 ge e m
  Lemma is_injective_set :
    forall pto pto' ptr_mem n' ty' NODE pty'
           (INJ: is_injective pto ptr_mem)
-          (OLD : forall n ty (NL : G.has_node_label n ty (G.edges pto)),
+          (OLD : forall n ty (NL : G.has_node_label (G.edges pto) n ty ),
               get_addr_of_ptr (ptr_mem n ty NL) = get_addr_of_ptr pty' -> n = n' /\ ty = ty'),
       is_injective pto' (ptr_mem_set pto ptr_mem pto' n' ty' NODE pty').
  Proof.
@@ -894,12 +1245,12 @@ gamma ae d1 ge e m
           (WF1   : G.wf EdgeLabel.next_label pto)
           (WF2   : G.wf EdgeLabel.next_label pto')
           (LE    : G.le_graph pto pto')
-          (NEW  : forall o fd d, G.has_edge o fd d (G.edges pto') ->
-                                 ~ G.has_edge o fd d (G.edges pto) ->
+          (NEW  : forall o fd d, G.has_edge (G.edges pto') o fd d  ->
+                                 ~ G.has_edge (G.edges pto) o fd d  ->
                                 forall ty ty' ce
-                                       (N1 : G.has_node_label o ty (G.edges pto'))
-                                       (N2 : G.has_node_label d ty' (G.edges pto')),
-                                       gamma_edge ge e m fd ce ->
+                                       (N1 : G.has_node_label (G.edges pto') o ty )
+                                       (N2 : G.has_node_label (G.edges pto') d ty' ),
+                                       gamma_must_edge ge e m fd ce ->
                                        graph_of_memory m ty (ptr_mem' o ty N1) ce ty' (ptr_mem' d ty' N2))
    ,
      gamma_must ge pto' ptr_mem' e m.
@@ -919,12 +1270,12 @@ gamma ae d1 ge e m
      eapply NEW;eauto.
  Qed.
 
-Lemma gamma_edge_inj : forall ge e m ed ce ce',
-    gamma_edge ge e m ed ce' ->
-    gamma_edge ge e m ed ce  -> ce' = ce.
+Lemma gamma_must_edge_inj : forall ge e m ed ce ce',
+    gamma_must_edge ge e m ed ce' ->
+    gamma_must_edge ge e m ed ce  -> ce' = ce.
 Proof.
   intros.
-  unfold gamma_edge in *.
+  unfold gamma_must_edge in *.
   destruct ed.
   - congruence.
   - destruct H as (pv1 & e1 & EA1 & IND1 & EQ1).
@@ -956,10 +1307,6 @@ Proof.
   apply typ_eq_dec.
 Qed.
 
-
-
-
-
  Lemma gamma_must_set :
    forall pto pto' ptr_mem ge  e m n ty ed ce n' ty' NODE pty'
           (WF    : G.wf EdgeLabel.next_label pto)
@@ -968,15 +1315,14 @@ Qed.
           (GMEM : gamma_must ge pto ptr_mem e m)
           (EDGE :
           forall      (o : int) (e1 : EdgeLabel.t) (d0 : int),
-            G.has_edge o    e1 d0 (G.edges pto') <->
-              G.has_edge o e1 d0 (G.edges pto) \/ ~ G.has_edge o e1 d0 (G.edges pto) /\ o = n /\ e1 = ed /\ d0 = n')
-          (EDGEN : G.has_edge n ed n' (G.edges pto'))
+            G.has_edge (G.edges pto') o e1 d0  <->
+              G.has_edge (G.edges pto) o e1 d0  \/ ~ G.has_edge (G.edges pto) o e1 d0  /\ o = n /\ e1 = ed /\ d0 = n')
+          (EDGEN : G.has_edge (G.edges pto') n ed n' )
           (NXT : EdgeLabel.next_label ty ed = OK ty')
-          (GE : gamma_edge ge e m ed ce)
-          (ND : G.has_node_label n ty (G.edges pto))
-          (PTY : forall (ND': G.has_node_label n' ty' (G.edges pto)), ptr_mem n' ty' ND' = pty')
+          (GE : gamma_must_edge ge e m ed ce)
+          (ND : G.has_node_label (G.edges pto) n ty )
+          (PTY : forall (ND': G.has_node_label (G.edges pto) n' ty' ), ptr_mem n' ty' ND' = pty')
           (CMEM : graph_of_memory m ty (ptr_mem n ty ND) ce ty' pty')
-
    ,
      gamma_must ge pto' (ptr_mem_set pto ptr_mem pto' n' ty' NODE pty') e m.
  Proof.
@@ -997,7 +1343,7 @@ Qed.
    - (* n -[ed]-> n' *)
      destruct H0 as (EN & ED & EN').
      destruct EN'; subst.
-     assert (ce0 = ce) by (eapply gamma_edge_inj; eauto).
+     assert (ce0 = ce) by (eapply gamma_must_edge_inj; eauto).
      subst.
      (* The edge does not exists by maybe the nodes are already there *)
      unfold ptr_mem_set.
@@ -1032,6 +1378,492 @@ Qed.
        eexists ; eauto.
  Qed.
 
+ Lemma edge_inclusion :
+   forall pto pto',
+     (G.le_graph pto pto') ->
+     inclusion _ (G.edge (G.edges pto)) (G.edge (G.edges pto')).
+ Proof.
+   repeat intro.
+   destruct H0.
+   eexists.
+   eapply H in H0. eauto.
+ Qed.
+
+
+ Lemma is_parent_le : forall pto pto',
+     G.le_graph pto pto' ->
+     forall i n1 n2, is_parent pto i n1 n2  -> is_parent pto' i n1 n2.
+ Proof.
+   unfold is_parent.
+   intros pto pto' LE n1 n2.
+   apply clos_n_morph.
+   apply edge_inclusion;auto.
+ Qed.
+
+
+ Lemma may_alias_le : forall pto pto',
+     G.le_graph pto pto' ->
+     forall n1 n2, may_alias pto n1 n2 -> may_alias pto' n1 n2.
+ Proof.
+   unfold may_alias.
+   intros.
+   destruct H0. tauto.
+   destruct H0 as (i& no & e1 & o1 & e2 & o2 & E1 & E2 & CL & P1  &P2).
+   right.
+   exists i,no, e1, o1, e2, o2.
+   repeat split.
+   - eapply H; eauto.
+   - eapply H; eauto.
+   - auto.
+   - eapply is_parent_le; eauto.
+   - eapply is_parent_le; eauto.
+ Qed.
+
+ Lemma may_edge_le : forall pto pto' o e d,
+     G.le_graph pto pto' ->
+     may_edge pto o e d ->
+     may_edge pto' o e d.
+ Proof.
+   unfold may_edge in *.
+   intros.
+   destruct H0 as (o' & ce'& d' & E & M1 & M2 & LE).
+   exists o',ce',d'.
+   repeat split.
+   eapply  H ; eauto.
+   eapply may_alias_le;eauto.
+   eapply may_alias_le;eauto.
+   auto.
+ Qed.
+
+
+ 
+ Lemma may_alias_refl : forall pto n,
+     may_alias pto n n.
+ Proof.
+   unfold may_alias.
+   tauto.
+ Qed.
+
+ Lemma classify_edge_may : forall e1 e2,
+     EdgeLabel.classify_edge e1 e2 = MAY ->
+     EdgeLabel.classify_edge e2 e1 = MAY.
+ Proof.
+   destruct e1 eqn:E1, e2 eqn:E2; simpl; auto.
+   destruct (Ident.eq_dec id id0);intuition congruence.
+   destruct (AtomOrdered.eq_dec a a0);
+     destruct (AtomOrdered.eq_dec a0 a);
+     intuition try congruence.
+ Qed.
+
+ Lemma may_alias_sym : forall pto n m,
+     may_alias pto n m  -> may_alias pto m n.
+ Proof.
+   unfold may_alias.
+   intuition.
+   destruct H0 as (i&n0&e1&o1&e2&o2&E1 & E2 & L & P1 & P2).
+   right.
+   do 6 eexists; repeat split.
+   apply E2. apply E1.
+   apply classify_edge_may; auto.
+   eauto. eauto.
+ Qed.
+
+ Lemma decomp_same_target_path : forall g (WF : G.is_tree (G.edges g)),
+     forall i j o1 o2 n,
+     is_parent g i o1 n -> is_parent g j o2 n ->
+     ((j = i /\ o1 = o2) \/
+       (i < j /\ is_parent g (j - i) o2 o1) \/
+       (j < i /\ is_parent g (i - j) o1 o2))%nat.
+ Proof.
+   unfold is_parent.
+   intros g WF i j o1 o2 n CLO.
+   assert (j = i \/ i < j \/ i > j)%nat by lia.
+   destruct H as [H | [H| H]]; subst.
+   - intros. left. split; auto.
+     admit.
+   - intros. right.
+     left ; split; auto.
+     replace j with ((j - i) + i)%nat in H0 by lia.
+
+
+   induction CLO; intros.
+   - apply clos_sn_ns in H.
+   { - inv H.
+     + tauto.
+     + right. left.
+       replace (1 - 0)%nat with 1%nat by lia.
+       split; auto. constructor. auto.
+     + right. left. split. lia.
+       replace (S n - 0)%nat with (n + 1)%nat by lia.
+       eapply clos_sn_trans; eauto.
+       apply clos_ns_sn in H0; eauto.
+       constructor ; auto.
+   }
+   - apply clos_sn_ns in H0.
+     inv H0.
+     + right. right.
+       split. lia. constructor. auto.
+     + left ; split;auto.
+       eapply G.is_tree_uniq_pred; eauto.
+     + assert (y0 = x).
+       eapply G.is_tree_uniq_pred; eauto.
+       subst.
+       assert (n = 0 \/ n <> 0)%nat by lia.
+       destruct H0. subst. inv H1. tauto.
+       right; left; split.
+       lia. replace (S n - 1)%nat with n  by lia.
+       auto.
+       apply clos_ns_sn in H1; eauto.
+   - assert (j = S n \/
+
+     apply IHCLO in H0.
+      destruct H0 as [H0 | [H0 | H0]]; clear IHCLO.
+      + destruct H0; subst.
+        right. right.
+        split. lia.
+        replace (S n - n)%nat with 1%nat by lia.
+        constructor ;auto.
+      + destruct H0.
+        assert (j = S n \/ S n < j)%nat by  lia.
+        destruct H2. subst.
+        replace (S n - n)%nat with 1%nat in H1 by lia.
+        inv H1.
+        left.  split; auto.
+        eapply G.is_tree_uniq_pred; eauto.
+        inv H4.
+        left ; split; auto.
+        eapply G.is_tree_uniq_pred; eauto.
+        right. left.
+        split; auto.
+
+
+      
+
+       specialize (IHi j n o2 n).
+     apply IHi in H0.
+     destruct H0. destruct H ; subst.
+     right. right.
+     split; try lia.
+     apply clos_1; auto.
+     destruct H.
+     destruct H.
+
+
+
+   - intros.
+     apply Operators_Properties.clos_rt_rtn1 in H0.
+     inv H0.
+     + left.
+       apply Relation_Operators.rt_step; auto.
+     + assert (x = y0).
+       eapply G.is_tree_uniq_pred; eauto.
+       subst.
+       apply Operators_Properties.clos_rtn1_rt in H2. tauto.
+   - tauto.
+   - intros.
+     apply IHCLO2 in H.
+     destruct H.
+     + left.
+       eapply Relation_Operators.rt_trans; eauto.
+     + apply IHCLO1; auto.
+ Qed.
+
+
+ Lemma classify_edge_trans : forall e1 e2 e3,
+     EdgeLabel.classify_edge e1 e2 = MAY ->
+     EdgeLabel.classify_edge e2 e3 = MAY ->
+     EdgeLabel.classify_edge e1 e3 = MAY \/ (e1 = e3 /\ EdgeLabel.classify_edge e1 e3 = MUST).
+ Proof.
+   destruct e1 eqn:E1,  e2 eqn:E2, e3 eqn:E3; simpl; try congruence; try tauto.
+   - destruct (Ident.eq_dec id id0);
+       destruct (Ident.eq_dec id0 id1); try congruence.
+   - destruct (AtomOrdered.eq_dec a a0);
+     destruct (AtomOrdered.eq_dec a0 a1);
+     destruct (AtomOrdered.eq_dec a a1);
+       intuition congruence.
+   - destruct (AtomOrdered.eq_dec a a0); intuition congruence.
+ Qed.
+
+
+ Lemma may_alias_trans : forall pto n m o
+                                (WF: G.is_tree (G.edges pto))
+   ,
+     may_alias pto n m  -> may_alias pto m o -> may_alias pto n o.
+ Proof.
+   intros.
+   unfold may_alias in H.
+   destruct H; subst; auto.
+   - destruct H0.
+     + subst.
+       right; auto.
+     + destruct H as (n1&e1&o1&e2&o2 & E1 & E2 & C1 & P1& P2).
+       destruct H0 as (n2&e3&o3&e4&o4 & E3 & E4 & C3 & P3& P4).
+       unfold may_alias.
+       (*assert (P2': is_parent pto n1 m).
+       { unfold is_parent.
+         eapply Relation_Operators.rt_trans.
+         eapply Relation_Operators.rt_step.
+         econstructor; eauto.
+         auto.
+       }
+       assert (P3': is_parent pto n2 m).
+       { unfold is_parent.
+         eapply Relation_Operators.rt_trans.
+         eapply Relation_Operators.rt_step.
+         econstructor. apply E3.
+         auto.
+       } *)
+       destruct (decomp_same_target_path pto WF _ _ _ P2 P3).
+       * inv H.
+         {
+           assert (o2 = n2).
+           { eapply G.is_tree_uniq_pred.
+             eauto.
+             apply H0.
+             eexists ; eauto.
+           }
+           subst.
+           right.
+           exists n1.
+           exists e1.
+           exists o1.
+           exists e2.
+           exists n2.
+           repeat split; auto.
+           unfold is_parent.
+           eapply Relation_Operators.rt_trans.
+           eapply Relation_Operators.rt_step.
+           econstructor; eauto.
+           auto.
+         }
+         {
+           assert (n1 = n2 /\ e2 = e3).
+           {
+             eapply G.tree_parent.
+             eauto. eauto.
+             eauto.
+           }
+           destruct H; subst.
+           destruct (classify_edge_trans _ _ _ C1 C3).
+           - right.
+           exists n2.
+           exists e1.
+           exists o1.
+           exists e4.
+           exists o4.
+           repeat split ;auto.
+           - destruct H.
+           right.
+           exists n2.
+           exists e3.
+           exists o1.
+           exists e4.
+           exists o4.
+           repeat split ;auto.
+
+
+         
+     right.
+     do 5 eexists; repeat split.
+     apply E2. apply E1.
+   apply classify_edge_may; auto.
+   auto. auto.
+ Qed.
+
+
+
+
+
+
+
+ Lemma may_edge_left  :
+   forall pto o o' ed d,
+     may_alias pto o o' ->
+     may_edge pto o ed d ->
+     may_edge pto o' ed d.
+ Proof.
+   unfold may_edge.
+   intros.
+   destruct H0 as (o1& ce1 &d'&E1& M1& M2& LE1).
+   exists o1,ce1,d'.
+   repeat split; auto.
+   eapply may_alias_trans;eauto.
+
+
+
+
+
+
+ Lemma gamma_may_set :
+   forall pto pto' ptr_mem ge  e ce m ty n ed n' ty' NODE pty'
+          (WF    : G.wf EdgeLabel.next_label pto)
+          (WF'   : G.wf EdgeLabel.next_label pto')
+          (LE    : G.le_graph pto pto')
+          (TREE  : is_tree_mem m)
+          (COMPAT : may_alias_compat pto ptr_mem)
+          (GMEM : gamma_may ge pto ptr_mem e m)
+          (EDGE :
+          forall      (o : int) (e1 : EdgeLabel.t) (d0 : int),
+            G.has_edge (G.edges pto') o e1 d0  <->
+              G.has_edge (G.edges pto) o e1 d0 \/ ~ G.has_edge (G.edges pto) o e1 d0  /\ o = n /\ e1 = ed /\ d0 = n')
+          (PMEM : forall ND' : G.has_node_label (G.edges pto) n' ty' , ptr_mem n' ty' ND' = pty')
+          (ND : G.has_node_label (G.edges pto) n ty )
+          (GEDGE : gamma_may_edge ge e m ed ce)
+          (NN' : graph_of_memory m ty (ptr_mem n ty ND) ce ty' pty')
+          (NEW : ~ G.has_node (G.edges pto) n' )
+   ,
+     gamma_may ge pto' (ptr_mem_set pto ptr_mem pto' n' ty' NODE pty') e m.
+ Proof.
+   intros.
+   constructor ; repeat intro.
+   {
+     unfold ptr_mem_set in H.
+     destruct (new_node_case pto pto' n0 ty0 n' ty' NODE NL1).
+     destruct (new_node_case pto pto' n'0 ty'0 n' ty' NODE NL2).
+     - (* old memory edge *)
+       destruct GMEM.
+       exploit gamma_mayE0;eauto.
+       intros  (ace & ME & GE).
+       eapply may_edge_le in ME;eauto.
+   - destruct a. destruct a. subst.
+     destruct (eqs n' n'); try congruence.
+     simpl in H.
+     destruct TREE.
+     exploit mem_uniq_pred0.
+     { eapply NN'. }
+     { eapply H. }
+     intros (TEQ & EQ1 & EQ2).
+     subst. simpl in EQ1.
+     unfold may_alias_compat in COMPAT.
+     apply (f_equal get_addr_of_ptr) in EQ1.
+     eapply COMPAT in EQ1; eauto.
+     exists ed; split; auto.
+
+     destruct (G.has_edge_dec  n0 ed n' (G.edges pto)).
+     + exists n0,n',ed.
+       rewrite EDGE.
+       repeat split ; try tauto.
+       apply may_alias_refl.
+       apply may_alias_refl.
+     + exists n,n',ed.
+       rewrite EDGE.
+       repeat split ; try tauto.
+       eapply may_alias_le;eauto.
+       apply may_alias_refl.
+   - destruct a. destruct a; subst.
+     destruct (eqs n' n'); try congruence.
+     destruct (new_node_case pto pto' n'0 ty'0 n' ty0 NODE NL2).
+     + simpl in H.
+       assert (CLO1 : clo_rt (graph_of_memory m) ty
+                       (ptr_mem n ty ND) ty0 pty').
+       {
+         eapply rt_step. eauto.
+       }
+       assert (CLO2 : clo_rt (graph_of_memory m) ty0 pty'
+                       ty'0 (ptr_mem n'0 ty'0 h)).
+       {
+         eapply rt_step. eauto.
+       }
+       exploit gamma_mayN. eauto.
+       eauto. eauto.
+       intros (n2 & ND2 & EQ).
+       subst.
+       exploit gamma_mayE. eauto.
+       apply H.
+       intros (n3
+
+
+
+       admit.
+     + destruct a ; destruct a ; subst.
+       destruct (eqs n' n'); try congruence.
+       simpl in H.
+       destruct TREE.
+       exploit mem_no_loop0;eauto.
+       eapply t_step. eauto.
+       tauto.
+ Admitted.
+
+
+(*
+
+   assert (CEDGE := H0).
+   rewrite EDGE in H0.
+   destruct H0.
+   - (* old edge *)
+     exploit G.has_edge_node_label_le; eauto.
+     intros (NDn & NDn').
+     unfold is_augmented in AUG.
+     rewrite <- AUG with (N1 := NDn).
+     rewrite <- AUG with (N1 := NDn').
+     eapply GMEM; eauto.
+     destruct LE ; congruence.
+   - (* n -[ed]-> n' *)
+     destruct H0 as (EN & ED & EN').
+     destruct EN'; subst.
+     assert (ce0 = ce) by (eapply gamma_must_edge_inj; eauto).
+     subst.
+     (* The edge does not exists by maybe the nodes are already there *)
+     unfold ptr_mem_set.
+     destruct (new_node_case pto pto' n ty0 n' ty' NODE NL1).
+     + (* n -> ty *)
+       assert (ty0 = ty).
+       { eapply G.has_node_label_inj; eauto. }
+       subst.
+       assert (h = ND).
+       eapply same_node; eauto.
+       subst.
+       destruct (new_node_case pto pto' n' ty'0 n' ty' NODE NL2).
+       *
+         assert (ty'0 = ty').
+         {
+           eapply G.wf_nxt in EDGEN; eauto.
+           congruence.
+         }
+         subst.
+         rewrite PTY. auto.
+       * destruct (eqs n' n'); try congruence.
+         destruct a. destruct a.
+         subst. simpl.
+         auto.
+     + destruct a.
+       destruct a ; subst.
+       destruct (eqs n' n'); try congruence.
+       exfalso.
+       eapply G.tree_no_loop with (E:= G.edges pto') (n:= n').
+       eapply G.wf_tree ; eauto.
+       eapply Relation_Operators.t_step.
+       eexists ; eauto.
+ Qed.
+*)
+
+
+ (* NON!!!
+
+Lemma is_injective_ptr_mem_set :
+   forall g ptr_mem g' n' ty' pty'
+          (LE   : G.le_graph g g')
+          (INJ  : is_injective g ptr_mem)
+          (NODE : forall (nd : int) (lb1 : TypOrdered.t),
+              G.has_node_label nd lb1 (G.edges g') <-> G.has_node_label nd lb1 (G.edges g) \/ nd = n' /\ ty' = lb1)
+   ,
+  is_injective g' (ptr_mem_set g ptr_mem g' n' ty' NODE pty').
+ Proof.
+   intros.
+   unfold is_injective.
+   intros.
+   unfold ptr_mem_set in H.
+   destruct (new_node_case g g' i t1 n' ty' NODE P1).
+   destruct (new_node_case g g' j t2 n' ty' NODE P2).
+   - destruct LE.
+     eapply INJ; eauto.
+   - destruct a. destruct a. subst.
+     destruct (eqs n' n') ; try congruence.
+     simpl in H.
+Admitted.
+*)
+
+ 
  Lemma gamma_set_pto :
    forall ae ge e m g d ptr_mem n ty ed n' ty' ND NODE pty' ce
           (GAMMA : gamma ae d ptr_mem ge e m)
@@ -1046,13 +1878,11 @@ Qed.
                     o = n /\ e1 = ed /\ d0 = n')
           (NODES : forall (nd : int) (lb1 : TypOrdered.t),
               G.has_node_label nd lb1 (G.edges g) <-> G.has_node_label nd lb1 (G.edges (Pto d)) \/ nd = n' /\ ty' = lb1)
-(*          (GET : forall m (ty : TypOrdered.t)
-                        (NL : G.has_node_label m ty (G.edges (Pto d))),
-              get_addr_of_ptr (ptr_mem m ty NL) =  get_addr_of_ptr pty' -> m = n' /\ ty = ty')  *)
           (NXT : EdgeLabel.next_label ty ed = OK ty')
-          (GE : gamma_edge ge e m ed ce)
+          (GE : gamma_must_edge ge e m ed ce)
           (PMEM : forall ND' : G.has_node_label n' ty' (G.edges (Pto d)), ptr_mem n' ty' ND' = pty')
           (NN' : graph_of_memory m ty (ptr_mem n ty ND) ce ty' pty')
+          (NEW : ~ G.has_node n' (G.edges (Pto d)))
    ,
           gamma ae (set_pto g d)
             (ptr_mem_set (Pto d) ptr_mem g n' ty' NODE pty') ge e m.
@@ -1069,7 +1899,7 @@ Qed.
    - eapply gamma_must_set; eauto.
      + destruct gwf0; auto.
      + rewrite HAS. tauto.
- Qed.
+Qed.
 
 
 Ltac ET := repeat (match goal with
@@ -1214,55 +2044,6 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
 *)
 
 
- Definition Atoms_le (atm1 atm2 : SMap.t (list atom)) :=
-   forall v, (forall a, List.In a (SMap.get v atm1) -> List.In a (SMap.get v atm2)).
-
- Lemma wf_edges_le : forall pto a1 a2,
-     wf_edges pto a1 ->
-     Atoms_le a1 a2 -> wf_edges pto a2.
- Proof.
-   intros.
-   unfold wf_edges in *.
-   intros.
-   eapply H in H1; eauto.
- Qed.
-
- Lemma Atoms_le_refl : forall a,
-     Atoms_le a a.
- Proof.
-   unfold Atoms_le.
-   tauto.
- Qed.
-
- Lemma Atoms_le_register : forall ed a,
-  Atoms_le a (register_vars_of_edge ed a).
- Proof.
-   destruct ed; simpl; auto.
-   - apply Atoms_le_refl.
-   - unfold register_vars_of_atom.
-     induction (AtomOrdered.vars_of_atom a); simpl.
-     + apply Atoms_le_refl.
-     + intros. unfold SMap_setl.
-       repeat intro.
-       rewrite SMap.gsspec.
-       destruct (StringIndexed.eq v a0).
-       * simpl. subst.
-         right.
-         apply IHl; auto.
-       * apply IHl;auto.
-   -  apply Atoms_le_refl.
- Qed.
-   
- Lemma wf_domain_set_atom : forall d ed,
-     wf_domain d ->
-     wf_domain (set_atom (register_vars_of_edge ed (Atoms d)) d).
- Proof.
-   intros.
-   destruct H; constructor ; auto.
-   simpl.
-   eapply wf_edges_le;eauto.
-   apply Atoms_le_register.
- Qed.
 
  Definition vars_of_edge (e:EdgeLabel.t) :=
    match e with
@@ -1274,48 +2055,7 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
 
 
 
- Lemma wf_edges_stable :
-   forall pto  a pto' ed
-          (EDGE : forall o e d, G.has_edge o e d (G.edges pto') ->
-                           G.has_edge o e d (G.edges pto) \/
-                             e = ed)
-          (ED : forall atm,  EdgeLabel.Index atm = ed ->
-                           forall i, List.In i (AtomOrdered.vars_of_atom atm) ->
-                                     List.In atm (SMap.get i a))
-          (WF : wf_edges pto a),
-     wf_edges pto' a.
- Proof.
-   intros.
-   unfold wf_edges in *; auto.
-   intros.
-   apply EDGE in H.
-   destruct H.
-   - eauto.
-   - eauto.
- Qed.
 
- Lemma register_vars_of_edge_In : forall atm ed a,
-     EdgeLabel.Index atm = ed ->
-     forall i : ident, List.In i (AtomOrdered.vars_of_atom atm) ->
-                       List.In atm (SMap.get i (register_vars_of_edge ed a)).
- Proof.
-   intros.
-   subst. simpl.
-   unfold register_vars_of_atom.
-   revert i H0.
-   induction (AtomOrdered.vars_of_atom atm).
-   - simpl. tauto.
-   - simpl.
-     intros.
-     simpl in H0; destruct H0; subst.
-     + unfold SMap_setl at 1. rewrite SMap.gss.
-       simpl. tauto.
-     + apply IHl in H.
-       unfold SMap_setl at 1. rewrite SMap.gsspec.
-       destruct (StringIndexed.eq i a0); subst.
-       simpl; tauto.
-       auto.
- Qed.
 
    
  Lemma bind_path_correct :
@@ -1323,7 +2063,7 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
            (BIND:bind_path d n ed = OK (d', av))
            (EVAL:eval_mem_access abs m r ce tyr = OK v)
            (D  : wf_domain d)
-           (GE : gamma_edge ge e m ed ce)
+           (GE : gamma_must_edge ge e m ed ce)
            (G  : gamma ae d ptr_mem ge e m)
            (GV : gamma_KVar (Pto d) ptr_mem ae (KNode n) ty r),
     exists ptr_mem' : ptr_memT (Pto d'),
@@ -1381,7 +2121,7 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
     destruct p as (g1,(n',ty')).
     exploit G.create_edge_spec;eauto.
     destruct D; eauto.
-    intros (EDGEN & LBN' & EDGE & LBEL & FRESH).
+    intros (EDGEN & LBN' & EDGE & LBEL & FRESH & ROOT1).
     simpl in BIND.
     assert (EdgeLabel.next_label ty ed = OK ty').
     {
@@ -1509,6 +2249,7 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
           exfalso.
           apply NONODE.
           eexists ; eauto.
+        - simpl. tauto.
       }
       simpl.
       exists LBN'.
@@ -1546,12 +2287,480 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
   Qed.
 
 
-  Lemma aeval_atom_correct :
-    forall a ge e m tyr ae d ptr_mem d' av v
+  Definition same_mem (m m':mem abs) := forall a, _mem abs m a = _mem abs m' a.
+
+  Lemma same_mem_sym : forall m m', same_mem m m' -> same_mem m' m.
+  Proof.
+    unfold same_mem. intros.
+    rewrite H ; auto.
+  Qed.
+
+
+  Lemma eq_mem_same_mem : forall m m',
+      eq_mem abs abs_dec m m' = true -> same_mem m m'.
+  Proof.
+    repeat intro.
+    destruct m, m'; simpl in *.
+    unfold eq_mem in H. simpl in H.
+    assert (a <= Pos.max _fresh _fresh0
+            \/ a > Pos.max _fresh _fresh0)%positive by lia.
+    destruct H0.
+    assert (_mem a = _mem0 a).
+    {
+      revert H H0.
+      generalize (Pos.max _fresh _fresh0) as i.
+      intro.
+      generalize (Plt_wf i) as P.
+      revert a.
+      induction i using (well_founded_induction Plt_wf).
+      intros.
+      destruct P.
+      simpl in H0.
+      destruct (res_eq_dec {ty : typ & mval abs ty} (sig_mval_eq_dec abs abs_dec) (_mem i) (_mem0 i)).
+      destruct (Pos.eq_dec i 1).
+      - assert (a = 1%positive) by lia; congruence.
+      - destruct (Pos.eq_dec a i). congruence.
+        eapply H; eauto.
+        + unfold Plt. lia.
+        + lia.
+      - discriminate.
+    }
+    { rewrite H1. reflexivity. }
+    { rewrite _wf_fresh.
+      rewrite _wf_fresh0.
+      reflexivity.
+      lia.
+      lia.
+    }
+  Qed.
+
+  Lemma get_same_mem : forall m m',
+      same_mem m m' ->
+      forall ty (p:ptr ty), get abs p m = get abs p m'.
+  Proof.
+    unfold get. intros.
+    destruct (addr_of_ptr  p); try reflexivity.
+    simpl.
+    rewrite H by auto.
+    reflexivity.
+  Qed.
+
+  Lemma le_domaing_set_pure : forall pure d d1,
+      le_domaing d d1 ->
+      le_domaing d (set_pure pure d1).
+  Proof.
+    unfold le_domaing.
+    intros. destruct d1 ; simpl in *.
+    auto.
+  Qed.
+
+  Lemma aeval_expr_le_domaing : forall ae lenv ex d d' av,
+      wf_domain d ->
+      aeval_expr te ae lenv d ex = OK (d', av) ->
+      le_domaing d d' /\ wf_domain d'.
+  Proof.
+    induction ex; simpl; auto.
+    - intros.
+      destruct (MapList.find_err string_dec id lenv); try discriminate.
+      inv H0. split;auto. apply le_domaing_refl.
+    - intros. destruct (aeval_expr te ae lenv d ex)eqn:AE; try discriminate.
+      simpl in H0. destruct p.
+      destruct k; try discriminate.
+      apply IHex in AE;eauto.
+      destruct AE.
+      split.
+      eapply bind_path_le_domain in H0;eauto.
+      eapply le_domaing_trans;eauto.
+      eapply bind_path_wf_domain; eauto.
+  Qed.
+
+  Lemma wf_domain_set_pure : forall d p,
+      wf_domain d -> wf_domain (set_pure p d).
+  Proof.
+    intros.
+    destruct H ; constructor ; auto.
+  Qed.
+
+  Lemma graph_of_memory_same_mem : forall m m',
+      same_mem m m' ->
+      forall ty1 p1 e1 ty2 p2,
+      graph_of_memory m ty1 p1 e1 ty2 p2 ->
+      graph_of_memory m' ty1 p1 e1 ty2 p2.
+  Proof.
+    unfold graph_of_memory.
+    intros.
+    destruct H0.
+    destruct H0.
+    exists x. split; auto.
+    erewrite get_same_mem in H0 ; eauto.
+  Qed.
+
+
+  Lemma is_tree_mem_same_mem : forall m m',
+      same_mem m m' ->
+      is_tree_mem m ->
+      is_tree_mem m'.
+  Proof.
+    unfold is_tree_mem, is_global_tree.
+    intros.
+    eapply  H0; eauto.
+    apply same_mem_sym in H.
+    eapply graph_of_memory_same_mem;eauto.
+    eapply graph_of_memory_same_mem;eauto.
+    apply same_mem_sym;auto.
+  Qed.
+
+  Lemma eval_mem_access_same_mem : forall m m' tv v ce tyr,
+      same_mem m m' ->
+      @eval_mem_access abs m tv v ce tyr =
+        @eval_mem_access abs m' tv v ce tyr.
+  Proof.
+    unfold eval_mem_access.
+    intros.
+    destruct (isptr v); try reflexivity.
+    simpl.
+    erewrite get_same_mem by eauto.
+    reflexivity.
+  Qed.
+
+(*  Fixpoint eval_atom_same_mem (m m': mem abs) (EQ: same_mem m m') (a:atom) : forall ge e tyr,
+      eval_atom arch abs abs_dec te ge e m tyr a =
+        eval_atom arch abs abs_dec te ge e m' tyr a.
+  Proof.
+    destruct a; simpl; auto.
+    - intros.
+      destruct (btyp_to_typ te b); try reflexivity.
+      simpl.
+      destruct (typof_atom te a); try reflexivity.
+      simpl.
+      erewrite eval_atom_same_mem; eauto; try reflexivity.
+    - intros.
+      destruct (btyp_to_typ te b); try reflexivity.
+      simpl.
+      erewrite eval_atom_same_mem; eauto; try reflexivity.
+    - intros.
+      destruct (typof_atom te a1); try discriminate.
+      simpl.
+      destruct (typof_atom te a2); try discriminate.
+      simpl.
+      erewrite eval_atom_same_mem by eauto.
+      destruct (eval_atom arch abs abs_dec te ge e m' t a1); try reflexivity.
+      simpl.
+      erewrite eval_atom_same_mem by eauto.
+      reflexivity.
+      reflexivity.
+      reflexivity.
+    - intros.
+      destruct (typof_atom te a1); try reflexivity.
+      simpl.
+      erewrite eval_atom_same_mem by eauto.
+      destruct (eval_atom arch abs abs_dec te ge e m' t a1);
+        try reflexivity.
+      simpl.
+      erewrite eval_atom_same_mem by eauto.
+      destruct (eval_atom arch abs abs_dec te ge e m');
+        try reflexivity.
+      simpl.
+      destruct (index_of_val arch v0); try reflexivity.
+      simpl.
+      apply eval_mem_access_same_mem; auto.
+    - intros.
+      destruct (typof_atom te a); try reflexivity.
+      simpl.
+      erewrite eval_atom_same_mem by eauto.
+      destruct (eval_atom arch abs abs_dec te ge e m' t a);
+        try reflexivity.
+      simpl.
+      apply eval_mem_access_same_mem; auto.
+    - intros.
+      unfold eval_call.
+      destruct (btyp_to_typ te b); try reflexivity.
+      simpl.
+      destruct t; try reflexivity.
+      destruct (Imp1Imp.get_function abs ge e i (TFun l0 tyr)); try reflexivity.
+      simpl.
+      destruct (load_fun abs ge v); try reflexivity.
+      simpl.
+      assert (map2 val (eval_atom arch abs abs_dec te ge e m) l
+            l0 = map2 val (eval_atom arch abs abs_dec te ge e m') l
+            l0).
+      {
+        clear - eval_atom_same_mem EQ.
+        revert l0.
+        induction l; simpl; auto.
+        - destruct l0; simpl; auto.
+          rewrite IHl.
+          destruct (map2 val (eval_atom arch abs abs_dec te ge e m') l l0); try reflexivity.
+          simpl.
+          erewrite eval_atom_same_mem; eauto.
+      }
+      rewrite H.
+      destruct (map2 val (eval_atom arch abs abs_dec te ge e m') l
+            l0); try reflexivity.
+      simpl.
+      destruct (eval_rapp abs l0 tyr d (t0 m)); try reflexivity.
+      simpl.
+
+
+
+
+      destruct (eval_call abs (eval_atom arch abs abs_dec) te ge e m i
+        b l tyr) eqn:ECALL.
+      destruct p ; simpl.
+
+      destruct (eq_mem abs abs_dec m m0) eqn:EQM.
+      apply eq_mem_same_mem in EQM.
+*)
+
+
+
+(*  Lemma gamma_must_edge_same_mem : forall
+      ge e el ce m m',
+      same_mem m m' ->
+      gamma_must_edge ge e m el ce ->
+      gamma_must_edge ge e m' el ce.
+  Proof.
+    intros.
+    destruct el ; simpl in *; auto.
+    destruct H0 as (pv & i' & EA & ID & EQ).
+    exists pv, i'. split.
+
+    destruct H0; econstructor ; eauto.
+*)
+
+
+(*  Lemma gamma_must_same_mem :forall ge g ptr_mem e m m',
+      same_mem m m' ->
+      gamma_must ge g ptr_mem e m ->
+      gamma_must ge g ptr_mem e m'.
+  Proof.
+    intros.
+    unfold gamma_must in *; repeat intro.
+    eapply graph_of_memory_same_mem;eauto.
+    eapply H0; eauto.
+
+    eapply graph.int.eq_dec
+
+  Lemma gamma_same_mem : forall m m' age d ptr_mem ge e,
+      same_mem m m'->
+      gamma age d ptr_mem ge e m <->
+        gamma age d ptr_mem ge e m'.
+  Proof.
+    intros.
+    split ; intros.
+    destruct H0 ; constructor ;auto.
+    eapply same_mem_is_tree_mem; eauto.
+
+*)
+  
+  Lemma get_function_inv : forall ge e fid targs tret v,
+      get_function abs ge e fid (TFun targs tret) = OK v ->
+      isError (e fid) /\
+        exists fct, ge fid = OK (DeclFun abs targs tret fct) /\
+                      Vptr _ (PtrF fid targs tret) = v.
+  Proof.
+    unfold get_function.
+    intros.
+    destruct (e fid); try discriminate.
+    split.
+    exists e0 ; reflexivity.
+    destruct (ge fid); try discriminate.
+    unfold bind in H.
+    unfold Errors.bind in H.
+    destruct d; try discriminate.
+    destruct (typ_eq_dec (TFun args tret0) (TFun targs tret));
+      try discriminate.
+    inv H.
+    assert (args = targs) by congruence.
+    assert (tret = tret0) by congruence.
+    subst.
+    eexists; split.
+    reflexivity.
+    assert (e1 = eq_refl).
+    { apply Eqdep_dec.UIP_dec. apply typ_eq_dec. }
+    subst. reflexivity.
+  Qed.
+
+  Lemma aget_function_inv : forall ae e fid a,
+      aget_function ae e fid = OK a ->
+      Vars.get fid e = None /\
+        STree.get fid ae = Some (AFun a).
+  Proof.
+    unfold aget_function.
+    intros. destruct (Vars.get fid e); try discriminate.
+    destruct (STree.get fid ae);try discriminate.
+    destruct a0; try discriminate.
+    intuition congruence.
+  Qed.
+
+
+
+  Section EVALCALL.
+
+    Variable aeval_atom_correct :
+    forall (a : atom) (ge : genv abs) (e : env)
+      (m : mem abs)  (ae : aenv)
+      (d : domain) (ptr_mem : ptr_memT (Pto d))
+      (d' : domain) (av : KVar),
+    gamma_genv ae ge ->
+    gamma ae d ptr_mem ge e m ->
+    aeval_atom te ae d a = OK (d', av) ->
+    le_domaing d d' /\
+    (exists ptr_mem' : ptr_memT (Pto d'),
+       is_augmented (Pto d) ptr_mem (Pto d') ptr_mem' /\
+         gamma ae d' ptr_mem' ge e m /\
+         forall tyr v, eval_atom arch abs abs_dec te ge e m tyr a = OK v ->
+                         gamma_KVar (Pto d') ptr_mem' ae av tyr v).
+
+
+    Inductive amatch_args (d:domain) (ptr_mem : ptr_memT (Pto d)) (ae:aenv):
+      forall (lt:list typ) (dl : DList.dlist (resFtyp val) lt) (l:list (ident * KVar)), Prop :=
+    | amatch_args_nil : amatch_args d ptr_mem ae nil (DNIL _) nil
+    | amatch_cons : forall ty id v kv lt dl l, res_pred (gamma_KVar (Pto d) ptr_mem ae kv ty) v ->
+                                               amatch_args d ptr_mem ae lt dl l ->
+                                               amatch_args d ptr_mem ae (ty::lt) (DList.DCONS _ v dl) ((id,kv)::l).
+
+
+    
+(*    Lemma aeval_call_correct :
+      forall  ae ge e m d f tf l tyr d' av v m'  ptr_mem
+              (GAMMAE : gamma_genv ae ge)
+              (GAMMA : gamma ae d ptr_mem ge e m)
+              (ACALL : aeval_call aeval_atom te ae d f tf l = OK (d', av))
+              (CALL  : eval_call abs (eval_atom arch abs abs_dec) te ge e m f tf
+                         l tyr = OK (v, m')),
+      exists ptr_mem' : ptr_memT (Pto d'),
+        is_augmented (Pto d) ptr_mem (Pto d') ptr_mem' /\
+          gamma_with_var ae d' ptr_mem' ge e m' av tyr v.
+    Proof.
+      intros.
+      unfold aeval_call in ACALL.
+      destruct (aget_function ae (Vars d) f) eqn:AGET;
+        try discriminate.
+      unfold eval_call in CALL.
+      destruct (btyp_to_typ te tf) eqn:BT ; try discriminate.
+      simpl in CALL.
+      destruct t ; try discriminate.
+      destruct (get_function abs ge e f (TFun l0 tyr)) eqn:GE ; try discriminate.
+      simpl in CALL.
+      destruct (load_fun abs ge v0) eqn:LF; try discriminate.
+      simpl in CALL.
+      apply get_function_inv in GE.
+      destruct GE  as (ERR & (fct & EQ & VPTR)).
+      subst.
+      apply aget_function_inv in AGET.
+      destruct AGET as (VGET & AGET).
+      unfold load_fun in LF.
+      unfold decomp_ptr,decomp_val in LF.
+      rewrite EQ in LF.
+      unfold bind in LF.
+      unfold Errors.bind in LF.
+      destruct (typ_eq_dec (TFun l0 tyr) (TFun l0 tyr));
+        try discriminate.
+      inv LF.
+      assert (e0 = eq_refl).
+      { apply Eqdep_dec.UIP_dec. apply typ_eq_dec. }
+      subst.
+      change (cast_function abs eq_refl fct m) with (fct m) in CALL.
+      assert (GAMMAE' := GAMMAE).
+      specialize (GAMMAE f).
+      rewrite AGET in GAMMAE.
+      rewrite EQ in GAMMAE.
+      simpl in GAMMAE.
+      inv GAMMAE.
+      apply Eqdep_dec.inj_pair2_eq_dec in H3;
+        [ | intros; apply (list_eq_dec typ_eq_dec)].
+      apply Eqdep_dec.inj_pair2_eq_dec in H3; [| apply typ_eq_dec].
+      subst.
+      unfold gamma_afunction in H1.
+      destruct H1 as (PARAMS & RET & GAMMAFUN).
+      subst.
+      destruct (map2 val (eval_atom arch abs abs_dec te ge e m) l (map snd (fn_params a))) eqn:MAP2; try discriminate.
+      simpl in CALL.
+      destruct (bind_args aeval_atom te ae d l (fn_params a)) eqn:BIND ; try discriminate.
+      destruct p as (d1,params').
+      destruct (no_alias d1 params') eqn:ALIAS.
+      assert (ARGS : le_domaing d d1 /\ exists ptr_mem' : ptr_memT (Pto d1),
+          is_augmented (Pto d) ptr_mem (Pto d1) ptr_mem' /\
+            gamma ae d1 ptr_mem' ge e m /\
+            amatch_args d1 ptr_mem' ae (map snd (fn_params a)) d0 params').
+      {
+        clear ACALL CALL EQ GAMMAFUN.
+        revert GAMMA MAP2 BIND.
+        clear ALIAS BT fct.
+        revert d0.
+        generalize (fn_params a) as tparams.
+        intros tparams eargs.
+        revert eargs.
+        revert d1 params'.
+        clear - aeval_atom_correct GAMMAE'.
+        revert d ptr_mem tparams.
+        induction l ; simpl.
+        - destruct tparams; try discriminate.
+          simpl. intros.
+          inv BIND. inv MAP2.
+          split. apply le_domaing_refl.
+          exists ptr_mem.
+          split.
+          apply is_augmented_refl.
+          split; auto.
+          constructor.
+        - intros.
+          destruct tparams; try discriminate.
+          destruct p as (i1,ty).
+          simpl in MAP2.
+          destruct (aeval_atom te ae d a) eqn:AEVAL;
+            try discriminate.
+          destruct p as (d2,k2).
+          destruct (compat_typ d2 k2 ty) eqn:COMPAT;
+            try discriminate.
+          simpl in BIND.
+          destruct (map2 val (eval_atom arch abs abs_dec te ge e m) l
+          (map snd tparams)) eqn:MAP2'; try discriminate.
+          simpl in MAP2. inv MAP2.
+          destruct (bind_args aeval_atom te ae d2 l tparams) eqn: BIND2; try discriminate.
+          simpl in BIND. destruct p as (d3,params2).
+          destruct b ; try discriminate.
+          inv BIND.
+          assert (le_domaing d d2 /\  exists ptr_mem' : ptr_memT (Pto d2),
+                     is_augmented (Pto d) ptr_mem (Pto d2) ptr_mem' /\
+                       gamma ae d2 ptr_mem' ge e m /\
+                       res_pred (gamma_KVar (Pto d2) ptr_mem' ae k2 ty) (eval_atom arch abs abs_dec te ge e m ty a)).
+          {
+            exploit aeval_atom_correct;eauto.
+            intros (LE & (ptr_mem' & AUG & GAMMAD & GAMMAV)).
+            split; auto.
+            exists ptr_mem'.
+            repeat apply conj; eauto.
+            destruct (eval_atom arch abs abs_dec te ge e m ty a) eqn:EQ; simpl; auto.
+          }
+          destruct H as (LE2 &(ptr_mem' & AUG & GAMMA2 & RP)).
+          exploit IHl;eauto.
+          intros (LED3 & (ptr_mem2 & AUG2 & GAMMA3 & RPALL)).
+          split.
+          eapply le_domaing_trans;eauto.
+          exists ptr_mem2; repeat apply conj.
+          eapply is_augmented_trans;eauto.
+          destruct LE2 ; eauto.
+          destruct LED3;eauto.
+          auto.
+          constructor; auto.
+          destruct (eval_atom arch abs abs_dec te ge e m ty a); simpl in *; auto.
+          eapply gamma_KVar_augment; eauto.
+          destruct LED3;auto.
+      }
+      clear MAP2 BIND.
+      unfold gamma_sfunction in GAMMAFUN.
+*)
+    End EVALCALL.
+
+
+  Fixpoint aeval_atom_correct (a:atom):
+    forall ge e m tyr ae d ptr_mem d' av v
            (GAMMAE : gamma_genv ae ge)
            (GAMMA : gamma  ae d ptr_mem ge e m)
            (AEVAL : aeval_atom te ae d a = OK (d',av))
-           (EVAL  : eval_atom arch abs te ge e m tyr a = OK v),
+           (EVAL  : eval_atom arch abs abs_dec te ge e m tyr a = OK v),
       le_domaing d d' /\
         exists ptr_mem', is_augmented (Pto d) ptr_mem (Pto d') ptr_mem' /\
                            gamma_with_var ae d' ptr_mem' ge e m av tyr v.
@@ -1622,7 +2831,7 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
       simpl in EVAL.
       destruct (typof_atom te a) eqn:TA; try discriminate.
       simpl in EVAL.
-      destruct (eval_atom arch abs te ge e m t0 a) eqn:EA; try discriminate.
+      destruct (eval_atom arch abs abs_dec te ge e m t0 a) eqn:EA; try discriminate.
       simpl in EVAL.
       destruct v0 ; try discriminate.
       (* This is a primitive value *)
@@ -1648,7 +2857,7 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
       apply is_augmented_refl.
       destruct (btyp_to_typ te b) eqn: BT; try discriminate.
       simpl in EVAL.
-      destruct (eval_atom arch abs te ge e m t a) eqn:EA;try discriminate.
+      destruct (eval_atom arch abs abs_dec te ge e m t a) eqn:EA;try discriminate.
       simpl in EVAL.
       destruct (eval_val abs v0) eqn:EV; try discriminate.
       simpl in EVAL.
@@ -1670,9 +2879,9 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
       simpl in EVAL.
       destruct (typof_atom te a2) eqn: A2; try discriminate.
       simpl in EVAL.
-      destruct (eval_atom arch abs te ge e m t a1) eqn:EA1;try discriminate.
+      destruct (eval_atom arch abs abs_dec te ge e m t a1) eqn:EA1;try discriminate.
       simpl in EVAL.
-      destruct (eval_atom arch abs te ge e m t0 a2) eqn:EA2;try discriminate.
+      destruct (eval_atom arch abs abs_dec te ge e m t0 a2) eqn:EA2;try discriminate.
       simpl in EVAL.
       destruct (eval_val abs v0) eqn:EV0; try discriminate.
       simpl in EVAL.
@@ -1685,9 +2894,9 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
       simpl in EVAL.
       destruct (typof_atom te a1) eqn:TA1; try discriminate.
       simpl in EVAL.
-      destruct (eval_atom arch abs te ge e m t a1) eqn:EA1 ; try discriminate.
+      destruct (eval_atom arch abs abs_dec te ge e m t a1) eqn:EA1 ; try discriminate.
       simpl in EVAL.
-      destruct (eval_atom arch abs te ge e m (Barocq.typof_index arch) a2) eqn:EA2 ; try discriminate.
+      destruct (eval_atom arch abs abs_dec te ge e m (Barocq.typof_index arch) a2) eqn:EA2 ; try discriminate.
       simpl in EVAL.
       destruct (index_of_val arch v1) eqn:IDX; try discriminate.
       simpl in EVAL.
@@ -1719,7 +2928,7 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
           destruct GAMMA_ARR ; auto.
           destruct LED2 ; auto.
         }
-        assert (GEDGE : gamma_edge ge e m
+        assert (GEDGE : gamma_must_edge ge e m
                           (EdgeLabel.Index a2) (CIndex i)).
         {
           simpl.
@@ -1760,7 +2969,7 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
       simpl in EVAL.
       destruct (typof_atom te a) eqn:TA; try discriminate.
       simpl in EVAL.
-      destruct (eval_atom arch abs te ge e m t a) eqn:EA1 ; try discriminate.
+      destruct (eval_atom arch abs abs_dec te ge e m t a) eqn:EA1 ; try discriminate.
       simpl in EVAL.
       simpl in AEVAL.
       unfold record_proj_get in AEVAL.
@@ -1781,7 +2990,7 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
         {
           destruct GAMMA_ARR ; auto.
         }
-        assert (GEDGE : gamma_edge ge e m
+        assert (GEDGE : gamma_must_edge ge e m
                           (EdgeLabel.Field i) (CField i)).
         {
           simpl. reflexivity.
@@ -1799,4 +3008,45 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
         }
     - (* Pure Call *)
       simpl in AEVAL.
+      destruct (aeval_call aeval_atom te ae d i b l) eqn:CALL;
+        try discriminate.
+      simpl in AEVAL.
+      destruct p as (d1 & av1); simpl in AEVAL.
+      destruct (IsPure d1) eqn:D1; try discriminate.
+      inv AEVAL.
       simpl in EVAL.
+      destruct (eval_call abs (eval_atom arch abs abs_dec) te ge e m
+          i b l tyr) eqn:ECALL ; try discriminate.
+      simpl in EVAL.
+      destruct p as (v',m').
+      destruct (eq_mem abs abs_dec m m') eqn:EQM; try discriminate.
+      inv EVAL.
+      split.
+      + unfold aeval_call in CALL.
+        destruct (get_function ae (Vars d) i) eqn:GF; try discriminate.
+        destruct (bind_args aeval_atom te ae d l (fn_params a)) eqn: BIND ; try discriminate.
+        destruct (no_alias d l0) eqn:NOALIAS; try discriminate.
+        destruct (fn_body a).
+        destruct s.
+        * inv CALL.
+          apply le_domaing_set_pure.
+          apply le_domaing_refl.
+        * exploit aeval_expr_le_domaing ; eauto.
+          apply wf_domain_set_pure;auto.
+         destruct GAMMA ; auto.
+         intros.
+         destruct H.
+         eapply le_domaing_trans;eauto.
+         apply le_domaing_refl.
+      +
+
+
+
+
+        unfold eval_call in ECALL.
+        destruct (btyp_to_typ te b) eqn:BT; try discriminate.
+        simpl in ECALL.
+        destruct t; try discriminate.
+        destruct (get_gvar abs ge i (TFun l0 tyr)) eqn:GV; try discriminate.
+        simpl in ECALL.
+        Print load_fun.
