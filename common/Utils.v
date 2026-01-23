@@ -323,3 +323,16 @@ Ltac destruct_conj H :=
   | _ => idtac
   end.
       
+Section FORALL3.
+  Context {A B C: Type}.
+
+  Variable P : A -> B -> C -> Prop.
+
+  Inductive Forall3 : list A -> list B -> list C -> Prop :=
+  | Forall3_nil : Forall3 nil nil nil
+  | Forall3_cons : forall x y z lx ly lz,
+      P x y z ->
+      Forall3 lx ly lz ->
+      Forall3 (cons x lx) (cons y ly) (cons z lz).
+
+End FORALL3.

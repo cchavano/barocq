@@ -1677,34 +1677,35 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Qed.
 
 
-  Definition has_edge (o:int) (e:EdgeLabel.t) (d:int) (E:Edge) :=
+  Definition has_edge (E:Edge) (o:int) (e:EdgeLabel.t) (d:int)  :=
     exists nl l, IntMap.find o E = Some (nl,l)
                  /\ In (e,d) l.
 
 
-  Definition has_edge_rev (o:int) (e:EdgeLabel.t) (d:int) (m:IntMap.t (EdgeLabel.t * int)) :=
+  Definition has_edge_rev (m:IntMap.t (EdgeLabel.t * int)) (o:int) (e:EdgeLabel.t) (d:int)  :=
     IntMap.find d m = Some (e, o).
 
-  Definition has_node_label (o:int) (nl:NodeLabel.t) (E:Edge) :=
+
+  Definition has_node_label (E:Edge) (o:int) (nl:NodeLabel.t)  :=
     get_label E o = OK nl.
 
-  Definition has_node (o:int) (E:Edge) :=
-    exists nl, has_node_label o nl E.
+  Definition has_node (E:Edge) (o:int)  :=
+    exists nl, has_node_label E o nl.
 
-  Lemma has_node_label_has_node : forall o nl E, has_node_label o nl E -> has_node o E.
+  Lemma has_node_label_has_node : forall o nl E, has_node_label E o nl -> has_node E o.
   Proof.
     intros. eexists; eauto.
   Qed.
 
   
-  Definition has_node_label_rev (o:int) (nl:NodeLabel.t) (lbs:NLMap.t (list int)) :=
+  Definition has_node_label_rev (lbs:NLMap.t (list int)) (o:int) (nl:NodeLabel.t)  :=
     In o (NLMap.findl nl lbs).
 
   Record le_graph (g1 g2:t) := mk_le
       {
         le_root : root g1 = root g2;
-        le_node : forall n lb, has_node_label n lb (edges g1) -> has_node_label n lb (edges g2);
-        le_edge : forall o e d, has_edge o e d (edges g1) -> has_edge o e d (edges g2);
+        le_node : forall n lb, has_node_label (edges g1) n lb  -> has_node_label (edges g2) n lb ;
+        le_edge : forall o e d, has_edge (edges g1) o e d  -> has_edge (edges g2) o e d ;
         le_fresh : (fresh g1 <=? fresh g2)%uint63 = true
       }.
 
@@ -1724,7 +1725,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Qed.
 
   Definition has_edge_dec : forall o e d E,
-      {has_edge o e d E} + { ~has_edge o e d E }.
+      {has_edge E o e d} + { ~has_edge E o e d }.
   Proof.
     unfold has_edge.
     intros.
@@ -1745,15 +1746,27 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Definition gpath := (int * list (EdgeLabel.t * int))%type.
 
   Definition edge (E: Edge) (o:int) (d:int) :=
-    exists e, has_edge o e d E.
+    exists e, has_edge E o e d.
 
 
 
   Record is_tree (E : Edge) := {
     tree_no_loop : forall n, Relation_Operators.clos_trans _ (edge E) n n -> False;
-    tree_parent  : forall o1 o2 e1 e2 d, has_edge o1 e1 d E -> has_edge o2 e2 d E -> o1 = o2 /\  e1 = e2;
+    tree_parent  : forall o1 o2 e1 e2 d, has_edge E o1 e1 d -> has_edge E o2 e2 d -> o1 = o2 /\  e1 = e2;
     }.
 
+  Lemma is_tree_uniq_pred : forall E p1 p2 n,
+      is_tree E ->
+      edge E p1 n ->
+      edge E p2 n -> p1 = p2.
+  Proof.
+    intros.
+    destruct H0.
+    destruct H1.
+    exploit tree_parent.
+    eauto.
+    apply H0. apply H1. tauto.
+  Qed.
 
   Section S.
 
@@ -1762,17 +1775,17 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
 
     Record wf  (g:t) :=
     {
-      wf_nodup  : forall o e d1 d2, has_edge o e d1 (edges g) -> has_edge o e d2 (edges g) -> d1 = d2;
+      wf_nodup  : forall o e d1 d2, has_edge (edges g) o e d1  -> has_edge (edges g) o e d2  -> d1 = d2;
       wf_tree   : is_tree (edges g);
-      wf_nxt    : forall o e d lbo lbd, has_edge o e d (edges g)  ->
-                                        has_node_label o lbo (edges g) ->
-                                        has_node_label d lbd (edges g) ->
+      wf_nxt    : forall o e d lbo lbd, has_edge (edges g) o e d   ->
+                                        has_node_label (edges g) o lbo  ->
+                                        has_node_label (edges g) d lbd  ->
                                         next_label lbo e = OK lbd;
-      wf_parent : forall o e d, has_edge o e d (edges g) <-> has_edge_rev o e d (parent g);
-      wf_lb     : forall o e d, has_edge o e d (edges g) -> has_node d (edges g);
-      wf_nl     : forall o nl, has_node_label o nl (edges g) <-> has_node_label_rev o nl (nodelabels g);
-      wf_el     : forall o e, In o (ELMap.findl e (edgelabels g)) <-> exists d, has_edge o e d (edges g);
-      wf_fresh  : forall o, has_node o (edges g) -> (ltb o (fresh g) = true)%int63
+      wf_parent : forall o e d, has_edge (edges g) o e d  <-> has_edge_rev (parent g) o e d ;
+      wf_lb     : forall o e d, has_edge (edges g) o e d  -> has_node (edges g) d ;
+      wf_nl     : forall o nl, has_node_label (edges g) o nl <-> has_node_label_rev (nodelabels g) o nl ;
+      wf_el     : forall o e, In o (ELMap.findl e (edgelabels g)) <-> exists d, has_edge (edges g) o e d ;
+      wf_fresh  : forall o, has_node (edges g) o -> (ltb o (fresh g) = true)%int63
     }.
 
 
@@ -1833,7 +1846,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       (IntMap.add 0%int63 (lb,nil) (IntMap.empty _))
       (IntMap.empty _) (NLMap.add lb (0::nil)%int63 (NLMap.empty _)) (ELMap.empty _) 1.
 
-  Lemma has_edge_empty : forall o e d, has_edge o e d (IntMap.empty _)  <-> False.
+  Lemma has_edge_empty : forall o e d, has_edge (IntMap.empty _) o e d   <-> False.
   Proof.
     split ; [| tauto].
     unfold has_edge.
@@ -1845,7 +1858,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     discriminate.
   Qed.
 
-  Lemma has_edge_rev_empty : forall o e d, has_edge_rev o e d (IntMap.empty _) <-> False.
+  Lemma has_edge_rev_empty : forall o e d, has_edge_rev (IntMap.empty _) o e d  <-> False.
   Proof.
     split ; [| tauto].
     unfold has_edge_rev.
@@ -1855,7 +1868,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Qed.
 
 
-  Lemma has_node_label_empty : forall o nl, has_node_label o nl (IntMap.empty _) <-> False.
+  Lemma has_node_label_empty : forall o nl, has_node_label (IntMap.empty _) o nl  <-> False.
   Proof.
     split ; [| tauto].
     unfold has_node_label.
@@ -1864,7 +1877,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     unfold efail. discriminate.
   Qed.
 
-  Lemma has_node_label_rev_empty : forall o nl, has_node_label_rev o nl (NLMap.empty _) <-> False.
+  Lemma has_node_label_rev_empty : forall o nl, has_node_label_rev (NLMap.empty _) o nl  <-> False.
   Proof.
     split ; [| tauto].
     unfold has_node_label_rev.
@@ -1873,7 +1886,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Qed.
 
     Lemma has_edge_node_d : forall o e d E,
-      has_edge o e d E -> has_node o E.
+      has_edge E o e d -> has_node E o.
   Proof.
     intros.
     destruct H.
@@ -1883,8 +1896,8 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Qed.
 
   Lemma has_node_label_inj : forall n lb1 lb2 E,
-      has_node_label n lb1 E ->
-      has_node_label n lb2 E ->
+      has_node_label E n lb1 ->
+      has_node_label E n lb2 ->
       lb1 = lb2.
   Proof.
     unfold has_node_label.
@@ -1894,11 +1907,11 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Lemma has_edge_node_label_le  :
     forall n ty el n' ty' g g'
            (LE  : le_graph g g')
-           (E2 :has_edge n el n' (edges g))
+           (E2 :has_edge (edges g) n el n' )
            (WFG : wf g)
-           (N1 :has_node_label n ty (edges g'))
-           (N2 :has_node_label n' ty' (edges g')),
-      has_node_label n ty (edges g) /\ has_node_label n' ty' (edges g).
+           (N1 :has_node_label (edges g') n ty )
+           (N2 :has_node_label (edges g') n' ty' ),
+      has_node_label (edges g) n ty  /\ has_node_label (edges g) n' ty' .
   Proof.
     intros.
     split.
@@ -1923,10 +1936,10 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Lemma has_edge_next_label :
     forall g
            (WF: wf g) n ty ed n' ty'
-           (EDGE : has_edge n ed n' (edges g))
-           (ND    : has_node_label n ty (edges g))
+           (EDGE : has_edge (edges g) n ed n' )
+           (ND    : has_node_label (edges g) n ty )
            (NXT : next_label ty ed = OK ty'),
-      has_node_label n' ty' (edges g).
+      has_node_label (edges g) n' ty' .
   Proof.
       intros.
       exploit wf_lb ; eauto.
@@ -1940,8 +1953,8 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Lemma has_edge_add :
     forall  o e d1 g nl l
            (WF : wf  g),
-      has_edge o e d1 (IntMap.add (fresh g) (nl, l) (edges g)) <->
-        has_edge o e d1 (edges g) \/
+      has_edge (IntMap.add (fresh g) (nl, l) (edges g)) o e d1  <->
+        has_edge (edges g) o e d1  \/
           (o = fresh g /\ In (e,d1) l).
   Proof.
     unfold has_edge ; intros.
@@ -1959,7 +1972,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       rewrite IntMap.find_add.
       destruct (Int.eq_dec o (fresh g)).
       * subst.
-      assert (E : has_edge (fresh g) e d1 (edges g)).
+      assert (E : has_edge (edges g) (fresh g) e d1 ).
       {
         do 2 eexists. split; eauto.
       }
@@ -1975,7 +1988,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
 
 
   Lemma has_edge_mkroot : forall o e d1 lb,
-      has_edge o e d1 (edges (mkroot lb)) <-> False.
+      has_edge (edges (mkroot lb)) o e d1  <-> False.
   Proof.
     intros.
     unfold mkroot.
@@ -1992,7 +2005,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Qed.
 
   Lemma has_edge_rev_mkroot : forall o e d lb,
-      has_edge_rev o e d (parent (mkroot lb)) <-> False.
+      has_edge_rev (parent (mkroot lb)) o e d  <-> False.
   Proof.
     intros.
     unfold mkroot.
@@ -2004,7 +2017,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Qed.
 
   Lemma has_node_label_mkroot : forall o nl lb,
-      has_node_label o nl (edges (mkroot lb)) <-> o = 0%int63 /\ nl = lb.
+      has_node_label (edges (mkroot lb)) o nl  <-> o = 0%int63 /\ nl = lb.
   Proof.
     unfold has_node_label.
     intros. unfold get_label,mkroot; simpl.
@@ -2015,7 +2028,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Qed.
 
   Lemma has_node_label_rev_mkroot : forall o nl lb,
-      has_node_label_rev o nl (nodelabels (mkroot lb)) <-> o = 0%int63 /\ nl = lb.
+      has_node_label_rev (nodelabels (mkroot lb)) o nl  <-> o = 0%int63 /\ nl = lb.
   Proof.
     unfold has_node_label_rev.
     intros.
@@ -2152,10 +2165,10 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     forall g l
             (WF : wf g)
             (NODUP2 : forall e1 e2 d, In (e1,d) l -> In (e2,d) l -> e1 = e2)
-            (NOPARENT : forall o e1 e2 n, In (e1,n) l -> has_edge o e2 n (edges g) -> False)
+            (NOPARENT : forall o e1 e2 n, In (e1,n) l -> has_edge (edges g) o e2 n  -> False)
            o e d,
-    has_edge_rev o e d (register_parents (fresh g) l (parent g)) <->
-      (has_edge_rev o e d (parent g) \/ (o = fresh g /\ In (e,d) l)).
+    has_edge_rev (register_parents (fresh g) l (parent g)) o e d  <->
+      (has_edge_rev (parent g) o e d  \/ (o = fresh g /\ In (e,d) l)).
   Proof.
     unfold has_edge_rev at 1.
     intros.
@@ -2183,8 +2196,8 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Qed.
 
   Lemma has_node_label_add : forall o o' lb lb' l g,
-      has_node_label o lb (IntMap.add o' (lb', l) (edges g))  <->
-        (o <> o' /\ has_node_label o lb (edges g) \/ (o = o' /\ lb = lb')).
+      has_node_label (IntMap.add o' (lb', l) (edges g)) o lb   <->
+        (o <> o' /\ has_node_label (edges g) o lb \/ (o = o' /\ lb = lb')).
   Proof.
     intros.
     unfold has_node_label at 1.
@@ -2223,8 +2236,8 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     forall o lb lb' g
            (WF: wf g)
     ,
-      has_node_label_rev o lb (NLMap.addl lb' (fresh g) (nodelabels g)) <->
-        (has_node_label_rev o lb (nodelabels g) \/ (o = fresh g /\ NodeLabel.eq lb lb')).
+      has_node_label_rev (NLMap.addl lb' (fresh g) (nodelabels g)) o lb  <->
+        (has_node_label_rev (nodelabels g) o lb  \/ (o = fresh g /\ NodeLabel.eq lb lb')).
   Proof.
     intros.
     unfold has_node_label_rev at 1.
@@ -2318,7 +2331,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Lemma clos_refl_trans_has_node : forall g,
       wf g ->
       forall n m, clos_refl_trans int (edge (edges g)) n m ->
-                (has_node n (edges g) /\ has_node  m (edges g)) \/ (n = m).
+                (has_node (edges g) n  /\ has_node (edges g) m ) \/ (n = m).
   Proof.
     intros.
     induction H0.
@@ -2352,7 +2365,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
 
   Lemma clos_trans_has_node : forall g,
       wf g ->
-      forall n m, clos_trans int (edge (edges g)) n m -> has_node n (edges g) /\ has_node m (edges g).
+      forall n m, clos_trans int (edge (edges g)) n m -> has_node (edges g) n  /\ has_node (edges g) m.
   Proof.
     intros.
     induction H0.
@@ -2385,19 +2398,19 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
            (NODUP1 : NoDup (map fst l))
            (NODUP2 : NoDup (map snd l))
            (NODUP2 : forall e1 e2 d, In (e1,d) l -> In (e2,d) l -> e1 = e2)
-           (NOEDGE : forall e1 e2 o d, has_edge o e1 d (edges g) -> In (e2,d) l -> False)
-           (DEDGE  : forall e d, In (e,d) l -> exists lb, has_node_label d lb (edges g) /\ next_label nl e = OK lb)
+           (NOEDGE : forall e1 e2 o d, has_edge (edges g) o e1 d  -> In (e2,d) l -> False)
+           (DEDGE  : forall e d, In (e,d) l -> exists lb, has_node_label  (edges g) d lb /\ next_label nl e = OK lb)
            (WF : wf g)
     ,
       wf g1 /\ n = fresh g /\
         (forall o e d,
-            has_edge o e d (edges g1) <->
-              (has_edge o e d (edges g)
+            has_edge (edges g1) o e d  <->
+              (has_edge (edges g) o e d
                \/
                  (o = n /\ In (e,d) l)))
       /\
-        (forall o lb, has_node_label o lb (edges g1) <->
-           (has_node_label o lb (edges g)
+        (forall o lb, has_node_label (edges g1) o lb  <->
+           (has_node_label (edges g) o lb
             \/
               o = n /\  lb =  nl))
       /\ (fresh g <> max_int /\ fresh g1 =  fresh g + 1)%uint63
@@ -2575,7 +2588,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
         rewrite has_node_label_add by auto.
         rewrite has_node_label_rev_add by auto.
         rewrite <- wf_nl by auto.
-        assert (has_node_label o nl0 (edges g) -> o <> fresh g).
+        assert (has_node_label (edges g) o nl0 -> o <> fresh g).
         { intros. apply has_node_label_has_node in H.
           apply wf_fresh in H;auto. lia. }
         tauto.
@@ -2906,6 +2919,8 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Definition get_parent (n:int) (g:t) :=
     IntMap.find n (parent g).
 
+
+
   Fixpoint is_parent_rec (g:t) (fuel:nat) (p:int) (n:int)  :=
     if eqb p n then OK true
     else
@@ -2984,7 +2999,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     inv H. simpl.
     rewrite IntMap.Facts.add_o.
     destruct (IntMap.M.E.eq_dec (fresh g) n).
-    - assert (has_node_label n nl (edges g)).
+    - assert (has_node_label (edges g) n nl ).
       { unfold has_node_label.
         unfold get_label.
         rewrite H1. reflexivity.
@@ -2998,8 +3013,8 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Lemma has_edge_add_gen :
     forall o e d1 g n nl l
            (WF : wf g),
-      has_edge o e d1 (IntMap.add n (nl, l) (edges g)) <->
-        ( (o <> n /\ has_edge o e d1 (edges g))
+      has_edge (IntMap.add n (nl, l) (edges g)) o e d1  <->
+        ( (o <> n /\ has_edge (edges g) o e d1 )
           \/
           (o =  n /\ In (e,d1) l)).
   Proof.
@@ -3036,11 +3051,10 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Qed.
 
   Lemma has_edge_rev_add_gen : forall o e d o1 e1 d1 g,
-      has_edge_rev o e d
-        (IntMap.add d1 (e1, o1) (parent g))
+      has_edge_rev (IntMap.add d1 (e1, o1) (parent g)) o e d
       <->
         ((d <> d1 /\
-            has_edge_rev o e d (parent g)) \/
+            has_edge_rev (parent g) o e d ) \/
            ( o = o1 /\ e = e1 /\ d = d1)).
   Proof.
     intros.
@@ -3126,7 +3140,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       unfold add_edge in ADD.
       rewrite FINDG1 in ADD.
       inv ADD.
-      assert (En : forall e d, In (e,d) succs <-> has_edge n e d (edges g)).
+      assert (En : forall e d, In (e,d) succs <-> has_edge (edges g) n e d ).
       {
         split;intros.
         do 2 eexists.
@@ -3135,20 +3149,20 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
         destruct H0 as (lb1 & l & FIND2).
         intuition congruence.
       }
-      assert (NLB : has_node_label n nl (edges g)).
+      assert (NLB : has_node_label (edges g) n nl ).
       {
         unfold has_node_label.
         unfold get_label. rewrite FIND.
         reflexivity.
       }
-      assert (FRD : forall o e, has_edge o e (fresh g) (edges g) -> False).
+      assert (FRD : forall o e, has_edge (edges g) o e (fresh g)  -> False).
       {
         intros.
         apply wf_lb in H0; auto.
         apply wf_fresh in H0;auto.
         lia.
       }
-      assert (FRO : forall d e, has_edge (fresh g) e d (edges g) -> False).
+      assert (FRO : forall d e, has_edge (edges g) (fresh g) e d  -> False).
       {
         intros.
         apply has_edge_node_d in H0.
@@ -3344,7 +3358,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
         rewrite! or_False_r.
         rewrite En.
         unfold eqEN. simpl.
-        assert (has_edge o e0 d (edges g) -> d <> fresh g).
+        assert (has_edge (edges g) o e0 d  -> d <> fresh g).
         { repeat intro ; subst; eauto. }
         destruct (eq_dec o n); intuition try congruence.
         destruct (eq_dec d (fresh g));
@@ -3359,7 +3373,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
         rewrite and_False_r in H0.
         rewrite or_False_r in H0.
         assert (exists lb1,
-                   d <> n /\ (has_node_label d lb1 (edges g) \/ d = fresh g /\ lb1 = lb) \/
+                   d <> n /\ (has_node_label (edges g) d lb1  \/ d = fresh g /\ lb1 = lb) \/
                      d = n /\  lb1 = nl).
         {
           intuition subst.
@@ -3489,17 +3503,17 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Lemma create_edge_spec : forall n e g g' n' lb',
       wf g ->
       create_edge n e g = OK (g',(n',lb')) ->
-      (has_edge n e n' (edges g'))
+      (has_edge (edges g') n e n' )
       /\
-        ( has_node_label n' lb' (edges g'))
+        ( has_node_label (edges g') n' lb' )
       /\
         (forall o e1 d,
-            has_edge o e1 d (edges g') <->
-              (has_edge o e1 d (edges g) \/
-                 (~ has_edge o e1 d (edges g) /\ ~ has_node d (edges g) /\ d = fresh g /\ o = n /\  e1 = e /\ d = n')))
+            has_edge (edges g') o e1 d  <->
+              (has_edge (edges g) o e1 d  \/
+                 (~ has_edge (edges g) o e1 d  /\ ~ has_node (edges g) d  /\ d = fresh g /\ o = n /\  e1 = e /\ d = n')))
       /\
-        (forall nd lb1, has_node_label nd lb1 (edges g') <->
-                          (has_node_label nd lb1 (edges g) \/
+        (forall nd lb1, has_node_label (edges g') nd lb1  <->
+                          (has_node_label (edges g) nd lb1  \/
                              nd = n' /\ lb' = lb1))
       /\ ((fresh g <=? fresh g' = true)%uint63)
      /\ (root g = root g').
@@ -3550,7 +3564,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       unfold add_edge in ADD.
       rewrite FINDG1 in ADD.
       inv ADD.
-      assert (En : forall e d, In (e,d) succs <-> has_edge n e d (edges g)).
+      assert (En : forall e d, In (e,d) succs <-> has_edge (edges g) n e d).
       {
         split;intros.
         do 2 eexists.
@@ -3559,19 +3573,19 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
         rewrite FIND in FIND2.
         intuition congruence.
       }
-      assert (NLB : has_node_label n nl (edges g)).
+      assert (NLB : has_node_label (edges g) n nl ).
       {
         unfold has_node_label,get_label.
         rewrite FIND. reflexivity.
       }
-      assert (FRD : forall o e, has_edge o e (fresh g) (edges g) -> False).
+      assert (FRD : forall o e, has_edge (edges g) o e (fresh g)  -> False).
       {
         intros.
         apply wf_lb in H0; auto.
         apply wf_fresh in H0;auto.
         lia.
       }
-      assert (FRO : forall d e, has_edge (fresh g) e d (edges g) -> False).
+      assert (FRO : forall d e, has_edge (edges g) (fresh g) e d  -> False).
       {
         intros.
         apply has_edge_node_d in H0.

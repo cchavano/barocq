@@ -1153,27 +1153,64 @@ Section S.
     | Error m => Error m
     end.
 
+  Definition get_gvar (ge:genv) (id:ident) (tyr: typ) : res (val tyr) :=
+    let* d := ge id in
+    match d with
+    | DeclFun args tret _ => match typ_eq_dec (TFun args tret) tyr with
+                             | left EQ => OK (cast (f_equal val EQ) (mk_fptr id args tret))
+                             | _  => fail
+                             end
+    | DeclLit ty v => match typ_eq_dec ty tyr with
+                      | left EQ => OK (cast (f_equal val EQ) v)
+                      | right _ => efail
+                      end
+    end.
+
+
   Definition get_var (te:tenv) (ge:genv) (e:env) (id:ident) (bt:btyp) (tyr:typ) : res (val tyr) :=
     let* ty := btyp_to_typ te bt in
     if typ_eq_dec ty tyr
     then
       match e id with
       | OK (existT _ ty' v') => ecast v' tyr
-      | Error _ =>
-          let* d := ge id in
-          match d with
-          | DeclFun args tret _ => match typ_eq_dec (TFun args tret) tyr with
-                                   | left EQ => OK (cast (f_equal val EQ) (mk_fptr id args tret))
-                                   | _  => fail
-                                   end
-          | DeclLit ty v => match typ_eq_dec ty tyr with
-                            | left EQ => OK (cast (f_equal val EQ) v)
-                            | right _ => efail
-                            end
-          end
+      | Error _ => get_gvar ge id tyr
       end
     else fail.
 
+  Definition get_function (ge:genv) (e:env) (id:ident) (tyr: typ) : res (val tyr) :=
+    match e id with
+    | OK _ => efail (* shadowing, we do not do that *)
+    |  _    =>
+         let* d := ge id in
+         match d with
+         | DeclFun args tret _ =>
+             match typ_eq_dec (TFun args tret) tyr with
+             | left EQ => OK (cast (f_equal val EQ) (mk_fptr id args tret))
+             | _  => fail
+             end
+         | _ => fail
+         end
+    end
+  .
+
+
+  Section S.
+    Variable eval_atom :  tenv -> genv -> env -> mem -> forall (tyr: typ), atom -> res (val tyr).
+
+    Definition eval_call (te:tenv) (ge:genv) (e:env) (m:mem) (f:ident)
+      (btf:btyp) (args: list atom) (tyr:typ) : res (val tyr * mem) :=
+        let* tyf := btyp_to_typ te btf in
+        match tyf with
+        | TFun tparams tret =>
+            (* A bit weird to bypass the local environment *)
+            let* f := get_function ge e f (TFun tparams tyr) in
+            let* f := load_fun ge f in
+            let* vargs := DList.map2 _ (eval_atom te ge e m) args tparams in
+            eval_rapp tparams tyr vargs (f m)
+        | _  => fail
+        end.
+
+  End S.
 
   Fixpoint eval_atom (te: tenv) (ge: genv) (e:env) (m: mem) (tyr:typ) (a:atom) {struct a} : res (val tyr) :=
     match a with
@@ -1226,19 +1263,9 @@ Section S.
         let* r := eval_atom te ge e m t r in
         eval_mem_access m r (CField id) tyr
     | APureCall f btf args bt =>
-        let* vf := e f in
-        let (tf, vf) := vf in
-        match tf with
-        | TFun tparams tret =>
-            let* vf := cast_val vf (TFun tparams tyr) in
-            let* f := @load_fun ge tparams tyr vf in
-            let* vargs := DList.map2 _ (eval_atom te ge e m) args tparams in
-            let* m'    := copy_args m vargs in
-            let* (vret, m2) := eval_rapp tparams tyr vargs (f m') in
-            if eq_mem m' m2
-            then ret vret else fail
-        | _  => fail
-        end
+        let*(vret,m') := eval_call eval_atom te ge e m f btf args tyr in
+        if eq_mem m m'
+        then ret vret else fail
     end.
 
   Definition eval_array_set (m:mem) {ta:typ} (a:val ta) {ti:typ} (i:val ti) {te:typ} (v:val te): res mem :=

@@ -44,6 +44,9 @@ Module MonError <: MONAD.
   Definition isOK {A: Type} (v: M A) : Prop :=
     exists x, v = OK x.
 
+  Definition isError {A: Type}(v: M A) :Prop :=
+    exists e, v = Error e.
+
   Lemma isOK_Error : forall {A: Type} (v : M A),
       isOK v -> forall e, v = Error e -> False.
   Proof.
@@ -51,7 +54,6 @@ Module MonError <: MONAD.
     intros. destruct H. congruence.
   Qed.
 
-  
   Remark ok_imp_some:
     forall (A: Type) (o: option A) (v: A),
     err_of_opt o = OK v ->
@@ -61,6 +63,13 @@ Module MonError <: MONAD.
     destruct o; try discriminate.
     inv H. reflexivity.
   Qed.
+
+  Definition res_pred {A : Type} (P : A -> Prop) (r:res A) :=
+    match r with
+    | OK a => P a
+    | Error _ => True
+    end.
+
 
   Inductive res_rel {A B : Type} (R : A -> B -> Prop) : res A -> res B -> Prop :=
     res_rel_error : forall m, res_rel R (Error m) (Error m)

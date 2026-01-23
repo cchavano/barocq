@@ -174,10 +174,19 @@ Qed.
   Definition classify_edge (e1 e2:EdgeLabel.t) :=
     match e1 , e2 with
     | EdgeLabel.Field x , EdgeLabel.Field y => if Ident.eq_dec x y then MUST else NOTMAY
+    | _ , EdgeLabel.Field _ | EdgeLabel.Field _ , _ => NOTMAY
     | EdgeLabel.Index a1 , EdgeLabel.Index a2 => if AtomOrdered.eq_dec a1 a2 then MUST else MAY
-    | EdgeLabel.Index _ , EdgeLabel.Field _ => NOTMAY
     |  _ , _ => MAY
     end.
+
+  Definition le_edge (e1 e2: EdgeLabel.t) :=
+    match e1, e2 with
+    | EdgeLabel.Field x, EdgeLabel.Field y => x = y
+    | EdgeLabel.Index _ , EdgeLabel.Top    => True
+    | EdgeLabel.Index i , EdgeLabel.Index  j      => i = j (* Could try to do better *)
+    | _ , _ => False
+    end.
+
 
 
 
@@ -721,17 +730,19 @@ End EVALATOM.
 
 
 
-Definition get_function (env:aenv) (vars: Vars.t) (id:ident) :=
+Definition aget_function (env:aenv) (vars: Vars.t) (id:ident) :=
   match Vars.get id vars with
-  | Some _ => fail
-  | None   => match STree.get id env with
-              | None => fail
-              | Some ad => match ad with
-                           | AFun af => OK af
-                           |  _      => fail
-                           end
-              end
-  end.
+  | Some _ => fail (* We have shadowing, that looks bad *)
+  | None   =>
+      match STree.get id env with
+      | None => fail
+      | Some ad => match ad with
+                   | AFun af => OK af
+                   |  _      => fail
+                   end
+      end
+  end
+  .
 
 Definition typ_of_afunction (a:afunction) : typ :=
   TFun (List.map snd (fn_params a)) (fn_return a).
@@ -753,7 +764,7 @@ Section CALL.
   Fixpoint bind_args (te:tenv) (env:aenv) (d:domain) (args: list atom) (params : list (ident * typ)) {struct args} :=
   match args with
   | nil => match params with
-           | nil => OK nil
+           | nil => OK (d,nil)
            |  _  => fail
            end
   | a1::args1 => match params with
@@ -764,9 +775,9 @@ Section CALL.
                         Error (MSG (Pp.pp (seq (Bstr "Expression ":: Printer.pp_atom a1:: Bstr " is invalid."::nil))) ::nil)
                     | OK (d,k) =>
                         let* b := compat_typ d k ty in
-                        let* bargs := bind_args te env d args1 params1 in
+                        let* (d,bargs) := bind_args te env d args1 params1 in
                         if b
-                        then OK ((i1,k)::bargs)
+                        then OK (d, (i1,k)::bargs)
                         else
                           Error (MSG (Pp.pp (seq (Bstr "Expression " :: Printer.pp_atom a1 ::
                                                     Bstr " has incompatible types."::nil))) :: nil)
@@ -817,11 +828,11 @@ Fixpoint aeval_expr (te:tenv) (env:aenv) (vars : list (ident * KVar)) (d:domain)
   end.
 
 Definition aeval_call(te:tenv) (env: aenv) (d:domain) (id:ident) (bt: btyp) (args:list atom) : res (domain* KVar) :=
-  match get_function env (Vars d) id with
+  match aget_function env (Vars d) id with
     | OK af =>
         let fret := fn_body af in
         match bind_args te env d args (fn_params af) with
-        | OK params =>
+        | OK (d,params) =>
             match no_alias  d params with
             | OK _ =>
                 (* Apply the function summary *)
