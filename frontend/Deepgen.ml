@@ -113,6 +113,9 @@ let rec btyp_to_deep (ty : btyp) : string =
 and opt_parens_btyp (ty : btyp) : string =
   PrintUtils.opt_parens is_simpl_btyp btyp_to_deep ty
 
+module Barocq =
+struct 
+
 let rec expr_to_deep (prefix : string) (e : Typed.expr) : string =
   let prefix' = prefix ^ indent in
   Typed.(
@@ -461,3 +464,133 @@ let print_program (out : out_channel) (prog : Typed.program) : unit =
     fprintf out "\n";
     print_decomp_remark out
   end
+
+end 
+
+module BarocqBNF =
+struct 
+  open BarocqBNF
+
+  let rec atom_to_deep (prefix: string)  (o:out_channel) (a:atom) : unit =
+    match a with
+    | ATrue -> output_string o "ATrue"
+    | AFalse -> output_string o "AFalse"
+    | AInt32 (i,s) -> Printf.fprintf o "AInt32 (%s) %s" (int_to_deep i s) (signedness_to_deep s)
+    | AInt64 (i,s) -> Printf.fprintf o "AInt64 (%s) %s" (int64_to_deep i s) (signedness_to_deep s)
+    | AConstr (x,n, bt) -> Printf.fprintf o "AConstr %s %s (%s)"
+        (ident_to_deep x)
+        (Camlcoq.Z.to_string n)
+        (btyp_to_deep bt)
+    | AVar(x,bt) -> Printf.fprintf o "AVar %s (%s)" (ident_to_deep x) (btyp_to_deep bt)
+    | ACast(a,bt) -> Printf.fprintf o "ACast (%a) (%s)" (atom_to_deep prefix) a (btyp_to_deep bt)
+    | AUnaryOp(op,a,bt) -> Printf.fprintf o 
+          "AUnaryOp %s (%a) (%s)"
+          (unary_op_to_deep op)
+          (atom_to_deep "") a
+          (btyp_to_deep bt)
+    | ABinaryOp(bop,a1,a2,bt) ->
+      Printf.fprintf o
+          "ABinaryOp %s (%a) (%a) (%s)"
+          (binary_op_to_deep bop)
+          (atom_to_deep "") a1
+          (atom_to_deep "") a2
+          (btyp_to_deep bt)
+    | AArrayGet (e1, e2, ly, bt) ->
+      Printf.fprintf o
+          "AArrayGet (%a) (%a) %s (%s)"
+          (atom_to_deep "") e1
+          (atom_to_deep "") e2
+          (layout_to_deep ly)
+          (btyp_to_deep bt)  
+    | ARecordProj(a1, x, ly, bt) ->
+      Printf.fprintf o
+          "ARecordProj (%a1) %s %s (%s)"
+          (atom_to_deep "") a1
+          (ident_to_deep x)
+          (layout_to_deep ly)
+          (btyp_to_deep bt)
+    | APureCall (f , bt, args, btr) -> 
+      Printf.fprintf o
+        "APureCall %s (%s) (%a) %s"
+          (ident_to_deep f)
+          (btyp_to_deep bt)
+          (output_list ~delim:("[","]") ~sep:";" (atom_to_deep "")) args  (btyp_to_deep btr)
+
+  let rec expr_to_deep (prefix:string) (o:out_channel) (e:expr) = 
+  let prefix' = prefix ^ indent in
+    match e with
+    | EAtom(a,bt) -> Printf.fprintf o "EAtom (%a) (%s)" (atom_to_deep "") a (btyp_to_deep bt)
+    | EArraySet (e1, e2, e3, bt) ->
+      Printf.fprintf o
+          "EArraySet (%a) (%a) (%a) (%s)"
+          (atom_to_deep "") e1
+          (atom_to_deep "") e2
+          (atom_to_deep "") e3
+          (btyp_to_deep bt)
+    | ERecordUpdate(e1,id,e2, bt) ->  Printf.fprintf o
+          "ERecordUpdate (%a) %s (%a) (%s)"
+          (atom_to_deep "") e1
+          (ident_to_deep id)
+          (atom_to_deep "") e2
+          (btyp_to_deep bt)
+    | EApp (e1, args, bt) ->
+      Printf.fprintf o
+          "EApp (%a) %a (%s)"
+          (atom_to_deep "") e1
+          (output_list ~delim:("[","]") ~sep:";" (atom_to_deep "")) args
+          (btyp_to_deep bt)
+    | EIfThenElse (a1, e2, e3, bt) ->
+      Printf.fprintf o
+          "EIfThenElse (%a)\n%s(%a)\n%s(%a) (%s)"
+          (atom_to_deep "") a1
+          prefix'
+          (expr_to_deep prefix') e2
+          prefix'
+          (expr_to_deep prefix') e3
+          (btyp_to_deep bt)
+    | EMatch (a1, cases, bt) ->
+      Printf.fprintf o
+          "EMatch (%a) [\n%a\n%s] (%s)"
+          (atom_to_deep "") a1
+          (output_list ~sep:";\n" (match_case_to_deep prefix')) cases
+          prefix
+          (btyp_to_deep bt)
+    | ELetIn (x, e1, e2, bt) -> begin
+        match e1 with
+        | EIfThenElse _ | EMatch _ ->
+          Printf.fprintf o
+              "ELetIn %s\n%s(%a)\n%s(%a) (%s)"
+              (ident_to_deep x)
+              prefix'
+              (expr_to_deep prefix') e1
+              prefix'
+              (expr_to_deep prefix') e2
+              (btyp_to_deep bt)
+        | _ ->
+          Printf.fprintf o
+              "ELetIn %s (%a)\n%s(%a) (%s)"
+              (ident_to_deep x)
+              (expr_to_deep "") e1
+              prefix'
+              (expr_to_deep prefix') e2
+              (btyp_to_deep bt)
+      end
+    | EAttr (x, e1) ->
+      Printf.fprintf o "EAttr %s (%a)" (ident_to_deep x) (expr_to_deep prefix) e1
+  and match_case_to_deep (prefix : string) (o:out_channel)
+    ((p, ep) : Benum.pattern * expr)  =
+  let prefix' = prefix ^ indent in
+  let case o p =
+    match p with
+    | Benum.PIdent (i, z) ->
+      Printf.fprintf o "PIdent %s %s" (ident_to_deep i) (i32_to_string z)
+    | Benum.PWildcard -> Printf.fprintf o  "PWildcard"
+  in
+  Printf.fprintf o "%s(%a,\n%s%a)" prefix case p prefix' (expr_to_deep prefix') ep
+
+  
+end 
+
+
+
+

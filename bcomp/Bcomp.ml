@@ -303,7 +303,7 @@ let () =
           | Errors.OK prog -> prog
           | _ -> assert false
         in
-        Deepgen.print_program oc dprog;
+        Deepgen.Barocq.print_program oc dprog;
         close_out oc;
         printf "Deep embedding generated at %s\n" (clean_filename file)
       end;

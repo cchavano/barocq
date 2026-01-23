@@ -66,6 +66,19 @@ let print_list (out : out_channel) ?(delim : string * string = ("", ""))
   fprintf out "%s" (fst delim);
   aux l
 
+let output_list ?(delim : string * string = ("", "")) ?(sep : string = "")
+    (f : out_channel -> 'a -> unit) (o:out_channel) (l : 'a list) : unit =
+  let rec aux (o:out_channel) (l : 'a list) =
+    match l with
+    | [] -> Printf.fprintf o "%s" (snd delim)
+    | x :: [] -> Printf.fprintf o "%a%s" f x (snd delim)
+    | x :: r -> Printf.fprintf o "%a%s%a" f x sep aux r
+  in
+  Printf.fprintf o "%s%a" (fst delim) aux l
+
+
+
+
 let opt_parens (is_simpl : 'a -> bool) (to_string : 'a -> string) (x : 'a) :
     string =
   if is_simpl x then to_string x else sprintf "(%s)" (to_string x)
