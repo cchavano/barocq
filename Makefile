@@ -6,7 +6,7 @@ COMMON=\
 
 FRONTEND=\
 	Denot.v Barocq.v Renaming.v BarocqBNF.v BarocqBNFgen.v\
-	BarocqShallow.v BarocqShallowgen.v BarocqVC.v CorresBD_Tactics.v
+	BarocqShallow.v BarocqShallowgen.v ExtEqual.v BarocqVC.v CorresBD_Tactics.v
 
 BACKEND=\
 	ImpBNF.v ImpBNFgen.v Imp1.v Imp1gen.v Imp1ElimAlias.v InvAnalysis.v\

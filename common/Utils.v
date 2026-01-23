@@ -276,6 +276,7 @@ Fixpoint forall_err {A: Type} (P : A -> res bool) (l:list A) : res bool :=
             OK (b && b1)
   end.
 
+
 Fixpoint forall_check {A: Type} (P : A -> res unit) (l:list A) : res unit :=
   match l with
   | nil => OK tt

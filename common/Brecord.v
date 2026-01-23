@@ -8,6 +8,15 @@ Definition key_eq := Ident.eq_dec.
 Inductive field (k: key) (A: Type) : Type :=
   Field : forall (a: A), field k A.
 
+Definition field_eq_dec {A: Type} (eq_dec : forall (a1 a2: A), {a1 = a2} + {a1 <> a2})
+  (k: key) (f1 : field k A) (f2 : field k A) : { f1 = f2} + {f1 <> f2} .
+Proof.
+  destruct f1, f2.
+  destruct (eq_dec a a0).
+  - subst. left ; reflexivity.
+  -  right ; congruence.
+Qed.
+
 Arguments Field k {A}.
 
 Polymorphic Fixpoint find_type_of_field {A: Type}  (k: key) (fields: smaplist A) : res A :=
@@ -36,6 +45,22 @@ Polymorphic Fixpoint grecord {A: Type} (F: A -> Type) (fields: smaplist A) : Typ
   | nil => unit
   | kt::fields' => prod (field (fst kt) (F (snd kt))) (grecord F fields')
   end.
+
+Fixpoint grecord_eq_dec {A: Type} {F: A -> Type} (eq_dec : forall (a:A) (e1 e2: F a), {e1 = e2} + {e1 <> e2})
+  {fields : smaplist A} (r1 r2 : grecord F fields) {struct fields}: {r1 = r2} + {r1 <> r2}.
+Proof.
+  destruct fields.
+  - simpl in *.
+    left. destruct r1,r2.
+    reflexivity.
+  - simpl in *.
+    destruct r1,r2.
+    destruct (field_eq_dec (eq_dec (snd p)) _ f f0).
+    destruct (grecord_eq_dec _ _ eq_dec _ g g0).
+    left ; congruence.
+    right; congruence.
+    right ; congruence.
+Defined.
 
 Fixpoint grecord_map {A: Type} (F1 : A -> Type) (F2 : A -> Type) (F : forall (x:A), F1 x -> F2 x)
   (fields : smaplist A) : grecord F1 fields -> grecord F2 fields:=
@@ -150,7 +175,7 @@ Proof.
       apply (gtypeof_field A F k fields).
 Defined.
 
-Fixpoint gproject {A: Type} (F : A -> Type) {fields:smaplist A} (rc:grecord F fields) (k:key) : forall (GP : good_proj k fields = true), gtypeof_field F k fields GP.
+Polymorphic Fixpoint gproject {A: Type} (F : A -> Type) {fields:smaplist A} (rc:grecord F fields) (k:key) : forall (GP : good_proj k fields = true), gtypeof_field F k fields GP.
 Proof.
   destruct fields.
   - intros. exfalso.
@@ -196,7 +221,7 @@ Proof.
 Defined.
 
 
-Fixpoint gupd {A: Type} (F: A -> Type) {fields:smaplist A} (rc: grecord F fields) (k:key) (T:A) (v: F T)
+Polymorphic Fixpoint gupd {A: Type} (F: A -> Type) {fields:smaplist A} (rc: grecord F fields) (k:key) (T:A) (v: F T)
   (EQ: find_type_of_field k fields = OK T)
   {struct fields} : grecord F fields.
 Proof.

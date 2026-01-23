@@ -11,7 +11,7 @@ Require Import Unsigned63.
 
 From BarocqComp Require Import Error Maps2 Utils Pp.
 
-Inductive classify_edge :=
+Inductive kalias :=
 | MUST
 | MAY
 | NOTMAY.
@@ -553,6 +553,8 @@ Module Type EdgeLabelT.
   Axiom eq_dec : forall (x y:t),{eq x y} + {not (eq x y)}.
 
   Axiom pp : t -> box.
+
+  Axiom classify_edge  :t -> t -> kalias.
 
 End EdgeLabelT.
 
@@ -1700,6 +1702,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
 
   Record le_graph (g1 g2:t) := mk_le
       {
+        le_root : root g1 = root g2;
         le_node : forall n lb, has_node_label n lb (edges g1) -> has_node_label n lb (edges g2);
         le_edge : forall o e d, has_edge o e d (edges g1) -> has_edge o e d (edges g2);
         le_fresh : (fresh g1 <=? fresh g2)%uint63 = true
@@ -1716,7 +1719,8 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Proof.
     intros.
     destruct H,H0;constructor;auto.
-    lia.
+    - congruence.
+    - lia.
   Qed.
 
   Definition has_edge_dec : forall o e d E,
@@ -2397,6 +2401,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
             \/
               o = n /\  lb =  nl))
       /\ (fresh g <> max_int /\ fresh g1 =  fresh g + 1)%uint63
+      /\ (root g1 = root g)
   .
   Proof.
     unfold create_node.
@@ -2771,24 +2776,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
         OK (g2, List.app l1 l2)
     end.
 
-  Section UPDATE.
-    Variable classify_edge : EdgeLabel.t -> EdgeLabel.t -> classify_edge.
-
-    Fixpoint partition_edges (e: EdgeLabel.t) (l: list (EdgeLabel.t * int)) :
-      (list (EdgeLabel.t * int) * list (EdgeLabel.t * int) * list (EdgeLabel.t * int)) :=
-      match l with
-      | nil => (nil,nil,nil)
-      | cons e' l' =>
-          let '((mst,may),nmay) := partition_edges e l' in
-          match classify_edge e (fst e') with
-          | MUST => (cons e' mst,may,nmay)
-          | MAY  => (mst,cons e' may, nmay)
-          | NOTMAY => (mst, may,nmay)
-          end
-      end.
-
-
-
 
     Fixpoint check_must_alias (fuel:nat) (o:int) (l:list EdgeLabel.t) (n:int) (g:t) : res unit :=
       match l with
@@ -2806,8 +2793,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
               end
           end
       end.
-
-  End UPDATE.
 
   Definition merge_edge (e1 e2: NodeLabel.t * list (EdgeLabel.t * int)) :=
     (fst e1, List.app (snd e1) (snd e2)).
@@ -2950,10 +2935,32 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
              end
          end.
 
+  Definition get_path_from_top (g:t) (n:int) :=
+    let* lb := get_label (edges g) (root g) in
+    get_upward_path_rec (NodeLabel.depth lb) g n.
+
   Definition get_path (g:t) (n:int) :=
     let* lb := get_label (edges g) (root g) in
     let* path := get_upward_path_rec (NodeLabel.depth lb) g n in
     OK (List.rev path).
+
+
+  Fixpoint path_may_alias  (l1 l2:list EdgeLabel.t) : bool :=
+    match l1 , l2 with
+    | fd1 :: l1 , fd2:: l2 =>
+        match EdgeLabel.classify_edge fd1 fd2 with
+        | MUST => path_may_alias l1 l2
+        | MAY  => true
+        | NOTMAY => false
+        end
+    | _ , _ => true
+    end.
+
+  Definition may_alias (g:t) (n1:int) (n2:int) : res bool :=
+    let* p1 := get_path_from_top g n1 in
+    let* p2 := get_path_from_top g n2 in
+    OK (path_may_alias p1 p2).
+
 
 (*  Inductive is_tree_node (g:t) : int -> Prop :=
   | Leaf : forall n,
@@ -3316,11 +3323,11 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
           try (eapply wf_nxt with (g:=g) ; eauto;fail);
           try (exfalso ; eapply  FRD; eauto;fail);
           try (exfalso ; eapply  FRO; eauto;fail).
-        * inv H5.
-          apply has_node_label_has_node in H6.
-          apply wf_fresh in H6; auto.
+        * inv H3.
+          apply has_node_label_has_node in H7.
+          apply wf_fresh in H7; auto.
           lia.
-        * inv H5.
+        * inv H3.
           apply has_node_label_has_node in NLB.
           apply wf_fresh in NLB;auto.
           lia.
@@ -3356,16 +3363,16 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
                      d = n /\  lb1 = nl).
         {
           intuition subst.
-          - apply wf_lb in H4 ; auto.
-            destruct H4 as (lb1 & HASL).
+          - apply wf_lb in H5 ; auto.
+            destruct H5 as (lb1 & HASL).
             destruct (eq_dec d n).
             + exists nl. right. split;auto.
             + exists lb1. tauto.
           -  destruct (eq_dec (fresh g) n).
              exists nl. intuition congruence.
              exists lb. intuition congruence.
-          - apply wf_lb in H3 ; auto.
-            destruct H3 as (lb1 & HASL).
+          - apply wf_lb in H1 ; auto.
+            destruct H1 as (lb1 & HASL).
             destruct (eq_dec d n).
             + exists nl. right. split;auto.
             + exists lb1. tauto.
@@ -3494,7 +3501,8 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
         (forall nd lb1, has_node_label nd lb1 (edges g') <->
                           (has_node_label nd lb1 (edges g) \/
                              nd = n' /\ lb' = lb1))
-      /\ ((fresh g <=? fresh g' = true)%uint63).
+      /\ ((fresh g <=? fresh g' = true)%uint63)
+     /\ (root g = root g').
   Proof.
     intros.
     exploit wf_create_edge; eauto.
@@ -3521,6 +3529,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
         unfold has_node_label.
         auto.
       + lia.
+      + reflexivity.
     - (* Add the edge *)
       destruct (next_label nl e) as [lb|] eqn:NXT ; try discriminate.
       simpl in H0.
@@ -3535,7 +3544,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       { simpl ; constructor. }
       { simpl ; tauto. }
       { simpl ; tauto. }
-      intros (WF1 & FR & HAS & NL & FRG).
+      intros (WF1 & FR & HAS & NL & FRG & R).
       exploit find_create_node; eauto.
       intro FINDG1.
       unfold add_edge in ADD.
@@ -3606,6 +3615,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
            lia.
            left;split; auto.
       + lia.
+      + congruence.
   Qed.
 
   Lemma create_edge_le :
@@ -3616,7 +3626,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Proof.
     intros.
     exploit create_edge_spec;eauto.
-    intros (E & N & S1 & S2 & S3).
+    intros (E & N & S1 & S2 & S3 & S4).
     constructor; auto.
     - intros.
       rewrite S2. tauto.

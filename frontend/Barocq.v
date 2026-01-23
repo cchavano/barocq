@@ -930,21 +930,6 @@ Proof.
 Defined.
 
 
-Fixpoint no_TFun (t:typ) :=
-  match t with
-  | TFun _ _ => false
-  | TArray t => no_TFun t
-  | TRecord _ l => List.forallb (fun x => no_TFun (snd x)) l
-  | _  => true
-  end.
-
-Definition fo_typ (t:typ) :=
-  match t with
-  | TFun l r => List.forallb no_TFun l && no_TFun r
-  | TArray t => no_TFun t
-  | TRecord _ l => List.forallb (fun x => no_TFun (snd x)) l
-  |   _         => true
-  end.
 
 Definition cast_etyp {k:key} {fields : smaplist typ} {tv: typ} (v:  eval_typ tv)
   (EQ : find_type_of_field k fields = OK tv):

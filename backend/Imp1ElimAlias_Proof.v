@@ -239,26 +239,26 @@ Section S.
 
   Definition gamma_must (g:G.t) (ptr_mem: ptr_memT g) (e:env)  (m:mem abs) : Prop :=
     forall n el ce n' ty  ty',
+      G.root g <> n ->
       G.has_edge n el n' (G.edges g) ->
       forall (NL1 : G.has_node_label n ty (G.edges g))
              (NL2 : G.has_node_label n' ty' (G.edges g)),
       gamma_edge e m el ce ->
       graph_of_memory m ty (ptr_mem n ty NL1) ce ty' (ptr_mem n' ty' NL2).
 
-  Definition gamma_sep (g:G.t) (ptr_mem: ptr_memT g) (e:env) (m:mem abs) : Prop :=
+  Definition leaf_node (g: G.t) (n:int)  :=
+    forall o n', ~ G.has_edge n o n' (G.edges g).
+
+(*  Definition gamma_sep (g:G.t) (ptr_mem: ptr_memT g) (e:env) (m:mem abs) : Prop :=
     forall n ty n' ty'
-      (N : G.has_node_label n ty (G.edges g))
-      (L : forall o n', ~ G.has_edge n o n' (G.edges g))
-      (N': G.has_node_label n' ty' (G.edges g)),
+           (LEAF : leaf_node g n)
+           (N : G.has_node_label n ty (G.edges g))
+           (N': G.has_node_label n' ty' (G.edges g)),
       clo (graph_of_memory m) ty (ptr_mem n ty N) ty' (ptr_mem n' ty' N') -> False.
-
-
-  Definition gamma_mem (g:G.t) (ptr_mem: ptr_memT g) (e:env) (m:mem abs) : Prop :=
-    gamma_must g ptr_mem e m.
+*)
 
 (*  Record gamma_mem (g:G.t) (ptr_mem: ptr_memT g) (e:env) (m:mem abs) : Prop :=
     {
-      gsep  : gamma_sep g ptr_mem e m;
       gmust : gamma_must g ptr_mem e m;
     }.
 *)
@@ -702,16 +702,6 @@ gamma ae d1 ge e m
   Qed.
 
 
-  Lemma res_eq_dec (T: Type) (eq_dec : forall (x y: T), {x = y} + { x <> y})
-                   (x y: res T) : {x = y} + {x <> y}.
-  Proof.
-    decide equality.
-    apply list_eq_dec.
-    decide equality.
-    apply string_dec.
-    apply Pos.eq_dec.
-    apply Pos.eq_dec.
-  Qed.
 
 
 
@@ -744,6 +734,7 @@ gamma ae d1 ge e m
       le_domaing d d'.
   Proof.
     unfold bind_path. intros.
+    destruct (IntMap.Facts.eq_dec n (G.root (Pto d))); try discriminate.
     destruct (G.create_edge EdgeLabel.next_label n e (Pto d)) eqn:C ; try discriminate.
     destruct p. destruct p.
     destruct H.
@@ -898,7 +889,7 @@ gamma ae d1 ge e m
 
  Lemma gamma_augment :
    forall pto pto' ptr_mem ge  e m ptr_mem'
-          (GMEM : gamma_mem ge pto ptr_mem e m)
+          (GMEM : gamma_must ge pto ptr_mem e m)
           (AUG  : is_augmented pto ptr_mem pto' ptr_mem')
           (WF1   : G.wf EdgeLabel.next_label pto)
           (WF2   : G.wf EdgeLabel.next_label pto')
@@ -911,19 +902,20 @@ gamma ae d1 ge e m
                                        gamma_edge ge e m fd ce ->
                                        graph_of_memory m ty (ptr_mem' o ty N1) ce ty' (ptr_mem' d ty' N2))
    ,
-     gamma_mem ge pto' ptr_mem' e m.
+     gamma_must ge pto' ptr_mem' e m.
  Proof.
    intros.
-   unfold gamma_mem in *; repeat intro.
-   unfold is_augmented in AUG.
-   destruct (G.has_edge_dec n el n' (G.edges pto)).
-   - (* old edge *)
+   unfold gamma_must in *.
+   repeat intro.
+     destruct (G.has_edge_dec n el n' (G.edges pto)).
+     +  (* old edge *)
      exploit G.has_edge_node_label_le; eauto.
      intros (NL1'& NL2').
      rewrite <- AUG with (N1:= NL1').
      rewrite <- AUG with (N1:= NL2').
      eapply GMEM; eauto.
-   - (* new edge *)
+     destruct LE; congruence.
+     + (* new edge *)
      eapply NEW;eauto.
  Qed.
 
@@ -968,12 +960,12 @@ Qed.
 
 
 
- Lemma gamma_mem_set :
+ Lemma gamma_must_set :
    forall pto pto' ptr_mem ge  e m n ty ed ce n' ty' NODE pty'
           (WF    : G.wf EdgeLabel.next_label pto)
           (WF'   : G.wf EdgeLabel.next_label pto')
           (LE    : G.le_graph pto pto')
-          (GMEM : gamma_mem ge pto ptr_mem e m)
+          (GMEM : gamma_must ge pto ptr_mem e m)
           (EDGE :
           forall      (o : int) (e1 : EdgeLabel.t) (d0 : int),
             G.has_edge o    e1 d0 (G.edges pto') <->
@@ -986,23 +978,24 @@ Qed.
           (CMEM : graph_of_memory m ty (ptr_mem n ty ND) ce ty' pty')
 
    ,
-     gamma_mem ge pto' (ptr_mem_set pto ptr_mem pto' n' ty' NODE pty') e m.
+     gamma_must ge pto' (ptr_mem_set pto ptr_mem pto' n' ty' NODE pty') e m.
  Proof.
    intros.
-   unfold gamma_mem in *; repeat intro.
+   unfold gamma_must in *; repeat intro.
    assert (AUG := is_augmented_ptr_mem_set pto ptr_mem pto' n' ty' NODE pty').
-   assert (CEDGE := H).
-   rewrite EDGE in H.
-   destruct H.
+   assert (CEDGE := H0).
+   rewrite EDGE in H0.
+   destruct H0.
    - (* old edge *)
      exploit G.has_edge_node_label_le; eauto.
      intros (NDn & NDn').
      unfold is_augmented in AUG.
      rewrite <- AUG with (N1 := NDn).
      rewrite <- AUG with (N1 := NDn').
-     eauto.
+     eapply GMEM; eauto.
+     destruct LE ; congruence.
    - (* n -[ed]-> n' *)
-     destruct H as (EN & ED & EN').
+     destruct H0 as (EN & ED & EN').
      destruct EN'; subst.
      assert (ce0 = ce) by (eapply gamma_edge_inj; eauto).
      subst.
@@ -1073,7 +1066,7 @@ Qed.
      apply is_injective_set; auto. *)
    - destruct d; simpl in *.
      eapply gamma_vars_set; eauto.
-   - eapply gamma_mem_set; eauto.
+   - eapply gamma_must_set; eauto.
      + destruct gwf0; auto.
      + rewrite HAS. tauto.
  Qed.
@@ -1382,6 +1375,7 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
         reflexivity.
     }
     unfold bind_path in BIND.
+    destruct (IntMap.Facts.eq_dec n (G.root (Pto d))) eqn:ROOT ; try discriminate.
     destruct (G.create_edge EdgeLabel.next_label n ed)
       eqn:C.
     destruct p as (g1,(n',ty')).
@@ -1458,7 +1452,7 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
       assert (EDGEN':= EDGEN).
       destruct EDGEN as [EDGEN
                          | EDGEN].
-      +  apply create_edge_same_graph in C.
+      +  apply create_edge_same_graph in C; auto.
          subst.
          exists ptr_mem.
          split.
@@ -1484,7 +1478,6 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
             subst.
             eapply ptr_of_memval_inv; eauto.
          }
-         auto.
       + (* We really add a new edge *)
       exists (ptr_mem_set _ ptr_mem g1 n' ty' LBEL p).
       split.
@@ -1745,7 +1738,8 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
           do 2 eexists; repeat apply conj ; eauto.
         }
         exploit bind_path_correct  ; eauto.
-        * destruct H; auto.
+        *
+          destruct H; auto.
         * intros (ptr_memd' & AUG & G).
         exists ptr_memd'.
         { split; auto.

@@ -101,6 +101,9 @@ Section S.
   Variable arch : Target.archi.
   Variable abs : Maps.PMap.t Type.
 
+  Variable abs_dec : forall x,
+    forall (v1 v2: SMap.get x abs), {v1 = v2} + {v1 <> v2}.
+
   (* The semantics is dynamically typed.
    *)
 
@@ -120,6 +123,256 @@ Section S.
     | Vptr ty ptr => Some (existT _ ty ptr)
     end.
 
+  Definition decompose_mval_t (ty:typ) :=
+    match ty with
+    | TArray ty' => array (val ty')
+    | TRecord i l => grecord val l
+    | TAbs   t    => eval_typ abs (TAbs t)
+    | _           => (False:Type)
+    end.
+
+  Definition decomp_mval (ty: typ) (v:mval ty) : decompose_mval_t ty.
+  Proof.
+    destruct v.
+    - apply a.
+    - apply r.
+    - apply g.
+  Defined.
+
+  Definition decomp_val_t (ty:typ) : Type :=
+    match ty with
+    | TArray ty' => ptr  ty
+    | TRecord i l => ptr ty
+    | TFun _ _    => ptr ty
+    | TAbs  _     => ptr ty
+    | TBool  | TInt32 _ | TInt64 _ | TEnum _ _ => pval ty
+    end.
+
+  Definition decomp_val (ty: typ) (v:val ty) : decomp_val_t ty.
+  Proof.
+    destruct v.
+    - destruct ty; auto.
+      inv p. inv p.
+      inv p. inv p.
+    - destruct ty; auto.
+      inv p. inv p.
+      inv p. inv p.
+  Defined.
+
+  Definition decomp_pval_t (ty:typ) : Type :=
+    match ty with
+    | TBool  => bool
+    | TInt32 _ => Int.int
+    | TInt64 _ => Int64.int
+    | TEnum i l => enum l
+    |  _        => (False:Type)
+    end.
+
+  Definition decomp_pval (ty: typ) (v:pval ty) : decomp_pval_t ty.
+  Proof.
+    destruct v.
+    - exact b.
+    - exact i.
+    - exact i.
+    - exact c.
+  Defined.
+
+  Lemma pval_eq_dec_cast : forall (ty1:typ) (v1: pval ty1)  (ty2:typ) (v2: pval ty2)
+                                (EQ: ty2 = ty1), {v1 = cast (f_equal pval EQ) v2 } +
+                                                   {v1 <> (cast (f_equal pval EQ) v2)}.
+  Proof.
+    destruct v1, v2; intros; try discriminate.
+    -
+      assert (EQ = eq_refl).
+      { apply Eqdep_dec.UIP_dec. apply typ_eq_dec. }
+      subst.
+      destruct (bool_dec b b0).
+      + left.
+        subst. reflexivity.
+      + right. simpl. congruence.
+    - destruct (signedness_eq_dec s0 s); try congruence.
+      subst.
+      assert (EQ = eq_refl).
+      { apply Eqdep_dec.UIP_dec. apply typ_eq_dec. }
+      subst.
+      destruct (Int.eq_dec i i0).
+      + left.
+        subst. reflexivity.
+      + right. simpl. congruence.
+    - destruct (signedness_eq_dec s0 s); try congruence.
+      subst.
+      assert (EQ = eq_refl).
+      { apply Eqdep_dec.UIP_dec. apply typ_eq_dec. }
+      subst.
+      destruct (Int64.eq_dec i i0).
+      + left.
+        subst. reflexivity.
+      + right. simpl. congruence.
+    - destruct (Ident.eq_dec id0 id); try congruence.
+      destruct (list_eq_dec Ident.eq_dec l0 l); try congruence.
+      subst.
+      assert (EQ = eq_refl).
+      { apply Eqdep_dec.UIP_dec. apply typ_eq_dec. }
+      subst.
+      destruct (enum_eq_dec c c0).
+      + left. subst ; reflexivity.
+      + right ; simpl.  intro.
+        inversion H.
+        apply Eqdep_dec.inj_pair2_eq_dec in H1.
+        congruence.
+        apply (list_eq_dec Ident.eq_dec).
+  Qed.
+
+  Lemma pval_eq_dec : forall (ty1:typ) (v1 v2 : pval ty1), {v1 = v2 } +
+                                                   {v1 <> v2}.
+  Proof.
+    intros.
+    change v2 with (cast (f_equal pval eq_refl) v2).
+    apply (pval_eq_dec_cast  _ v1 _ v2 eq_refl).
+  Defined.
+
+
+
+  Lemma ptr_eq_dec_cast : forall (ty1:typ) (v1: ptr ty1)  (ty2:typ) (v2: ptr ty2)
+                                (EQ: ty2 = ty1), {v1 = cast (f_equal ptr EQ) v2 } +
+                                                   {v1 <> (cast (f_equal ptr EQ) v2)}.
+  Proof.
+    destruct v1, v2; intros; try discriminate.
+    - assert (ty0 = ty) by congruence ; subst.
+      assert (EQ = eq_refl).
+      { apply Eqdep_dec.UIP_dec. apply typ_eq_dec. }
+      subst.
+      destruct (Pos.eq_dec a a0).
+      + left.
+        subst. reflexivity.
+      + right. simpl. congruence.
+    - assert (id0 = id) by congruence.
+      assert (l0 = l) by congruence.
+      subst.
+      assert (EQ = eq_refl).
+      { apply Eqdep_dec.UIP_dec. apply typ_eq_dec. }
+      subst.
+      destruct (Pos.eq_dec a a0).
+      left; simpl. congruence.
+      simpl. right ; congruence.
+    - assert (l0 = l) by congruence.
+      assert (r0 = r) by congruence.
+      subst.
+      assert (EQ = eq_refl).
+      { apply Eqdep_dec.UIP_dec. apply typ_eq_dec. }
+      subst.
+      simpl.
+      destruct (Ident.eq_dec id id0); subst.
+      left ; reflexivity.
+      right. congruence.
+    - assert (id0 = id) by congruence.
+      subst.
+      assert (EQ = eq_refl).
+      { apply Eqdep_dec.UIP_dec. apply typ_eq_dec. }
+      subst. simpl.
+      destruct (Pos.eq_dec a a0).
+      left ; congruence.
+      right; congruence.
+  Qed.
+
+  Lemma ptr_eq_dec : forall (ty1:typ) (v1: ptr ty1) (v2: ptr ty1)
+    , {v1 = v2 } + {v1 <> v2}.
+  Proof.
+    intros.
+    change v2 with (cast (f_equal ptr eq_refl) v2).
+    apply (ptr_eq_dec_cast  _ v1 _ v2 eq_refl).
+  Defined.
+
+  Lemma val_eq_dec_cast : forall (ty1:typ) (v1: val ty1)  (ty2:typ) (v2: val ty2)
+                                (EQ: ty2 = ty1), {v1 = cast (f_equal val EQ) v2 } +
+                                                   {v1 <> (cast (f_equal val EQ) v2)}.
+  Proof.
+    destruct v1, v2; intros; try discriminate.
+    - destruct (pval_eq_dec_cast _ p _ p0 EQ).
+      + left.
+        subst. reflexivity.
+      + right.
+        subst. simpl in *.
+        intro.
+        inv H.
+        apply Eqdep_dec.inj_pair2_eq_dec in H1; auto.
+        apply typ_eq_dec.
+    -  subst.
+       right. simpl.
+       congruence.
+    - subst.
+      simpl. right ; congruence.
+    - subst.
+      simpl.
+      destruct (ptr_eq_dec _ p p0).
+      left ; congruence.
+      right. repeat intro.
+      inv H.
+      apply Eqdep_dec.inj_pair2_eq_dec in H1; auto.
+      apply typ_eq_dec.
+  Qed.
+
+  Lemma val_eq_dec : forall (ty1:typ) (v1: val ty1) (v2: val ty1)
+    , {v1 = v2 } + {v1 <> v2}.
+  Proof.
+    intros.
+    change v2 with (cast (f_equal val eq_refl) v2).
+    apply (val_eq_dec_cast  _ v1 _ v2 eq_refl).
+  Defined.
+
+
+  Lemma mval_eq_dec_cast : forall (ty1:typ) (v1: mval ty1)  (ty2:typ) (v2: mval ty2)
+                                (EQ: ty2 = ty1), {v1 = cast (f_equal mval EQ) v2 } +
+                                                   {v1 <> (cast (f_equal mval EQ) v2)}.
+  Proof.
+    destruct v1, v2; intros; try discriminate.
+    - assert (ty0 = ty) by congruence ; subst.
+      assert (EQ = eq_refl).
+      {  apply Eqdep_dec.UIP_dec. apply typ_eq_dec. }
+      subst.
+      destruct (list_eq_dec (val_eq_dec _) a a0).
+      subst.
+      left ; reflexivity.
+      right.  simpl.
+      intro.
+      inv H.
+      apply Eqdep_dec.inj_pair2_eq_dec in H1; auto.
+      apply typ_eq_dec.
+    - assert (id0 = id) by congruence.
+      assert (rty = rty0) by congruence.
+      subst.
+      assert (EQ = eq_refl).
+      {  apply Eqdep_dec.UIP_dec. apply typ_eq_dec. }
+      subst.
+      simpl.
+      destruct (grecord_eq_dec val_eq_dec r r0).
+      left ; congruence.
+      right. intro. inv H.
+      apply Eqdep_dec.inj_pair2_eq_dec in H1; auto.
+      apply list_eq_dec. decide equality.
+      apply typ_eq_dec.
+      apply string_dec.
+    - assert (id0 = id) by congruence ; subst.
+      assert (EQ = eq_refl).
+      {  apply Eqdep_dec.UIP_dec. apply typ_eq_dec. }
+      subst. simpl.
+      destruct (abs_dec id g g0).
+      left ; congruence.
+      right. intro. inv H.
+      apply Eqdep_dec.inj_pair2_eq_dec in H1; auto.
+      apply Ident.eq_dec.
+  Qed.
+
+  Lemma mval_eq_dec : forall (ty1:typ) (v1: mval ty1) (v2: mval ty1)
+    , {v1 = v2 } + {v1 <> v2}.
+  Proof.
+    intros.
+    change v2 with (cast (f_equal mval eq_refl) v2).
+    apply (mval_eq_dec_cast  _ v1 _ v2 eq_refl).
+  Defined.
+
+
+
   Definition memt := addr -> res {ty : typ & mval ty}.
 
   Record mem : Type := mkmem {
@@ -128,8 +381,34 @@ Section S.
                            _wf_fresh : (forall a, (_fresh <= a)%positive -> _mem a  = fail);
                          }.
 
+  Definition sig_mval_eq_dec (v1 v2: {ty:typ & mval ty}) : { v1 = v2} + { v1 <> v2}.
+  Proof.
+    destruct v1, v2.
+    destruct (typ_eq_dec x x0).
+    - subst.
+      destruct (mval_eq_dec _ m  m0).
+      left ; congruence.
+      right; repeat intro.
+      apply Eqdep_dec.inj_pair2_eq_dec in H; auto.
+      apply typ_eq_dec.
+    - right ; repeat intro.
+      destruct m,m0; try congruence.
+  Defined.
 
-  Fixpoint typ_of_fun (l:list typ) (r:typ) :=
+  Program Fixpoint xeq_mem (f1 f2:memt) (mx:positive) (DEC : Acc Pos.lt mx) : bool:=
+    if res_eq_dec _ sig_mval_eq_dec (f1 mx) (f2 mx)
+    then
+      if Pos.eq_dec mx xH then true
+      else xeq_mem f1 f2 (Pos.pred mx) (Acc_inv DEC _)
+    else false.
+  Next Obligation.
+  lia.
+  Defined.
+
+  Definition eq_mem (m1 m2: mem) :=
+    xeq_mem (_mem m1) (_mem m2) (Pos.max (_fresh m1) (_fresh m2)) (Plt_wf (Pos.max (_fresh m1) (_fresh m2))).
+
+    Fixpoint typ_of_fun (l:list typ) (r:typ) :=
     match l with
     | nil => unit -> res (val r * mem)
     | tx::tparams' => val tx ->
@@ -171,10 +450,10 @@ Section S.
 
   Definition eval_pval {ty:typ} (p:pval ty) : eval_typ abs ty :=
     match p with
-    | PBool b     => b
-    | PInt32 s i  => i
-    | PInt64 s i  => i
-    | PEnum i l e => e
+    | PBool b => b
+    | PInt32 _ i => i
+    | PInt64 _ i => i
+    | PEnum _ _ e => e
     end.
 
   Definition eval_val_pval {ty:typ} (p:val ty) : res (eval_typ abs ty) :=
@@ -183,25 +462,6 @@ Section S.
     |  _        => efail
     end.
 
-  Definition decomp_val_t (ty:typ) : Type :=
-    match ty with
-    | TArray ty' => ptr  ty
-    | TRecord i l => ptr ty
-    | TFun _ _    => ptr ty
-    | TAbs  _     => ptr ty
-    | TBool  | TInt32 _ | TInt64 _ | TEnum _ _ => pval ty
-    end.
-
-  Definition decomp_val (ty: typ) (v:val ty) : decomp_val_t ty.
-  Proof.
-    destruct v.
-    - destruct ty; auto.
-      inv p. inv p.
-      inv p. inv p.
-    - destruct ty; auto.
-      inv p. inv p.
-      inv p. inv p.
-  Defined.
 
   Definition decomp_ptr_t (ty: typ)  :=
     match ty with
@@ -219,13 +479,6 @@ Section S.
 
 
 
-  Definition decompose_mval_t (ty:typ) :=
-    match ty with
-    | TArray ty' => array (val ty')
-    | TRecord i l => grecord val l
-    | TAbs   t    => eval_typ abs (TAbs t)
-    | _           => (False:Type)
-    end.
 
   Lemma ptr_not_prim : forall ty (p:ptr ty),
       typ_is_prim ty = true -> False.
@@ -247,13 +500,6 @@ Section S.
     | Vptr _ _  => false
     end.
 
-  Definition decomp_mval (ty: typ) (v:mval ty) : decompose_mval_t ty.
-  Proof.
-    destruct v.
-    - apply a.
-    - apply r.
-    - apply g.
-  Defined.
 
   Definition  get_fun {args :list typ} {ret : typ}  (p:ptr (TFun args ret)) (ge:genv) : res (mem -> typ_of_fun args ret).
   Proof.
@@ -659,6 +905,14 @@ Section S.
                copy_val (@xcopy m) (projT2 v) cpm
     end.
 
+  Fixpoint copy_args (m:mem) {tparams:list typ} (args : DList.dlist (DList.resFtyp val) tparams)  : res mem :=
+    match args with
+    | DList.DNIL _ => OK (empty_fr (_fresh m))
+    | @DList.DCONS _ _ ty v l dl =>
+        let* cpm := copy_args m dl in
+        let* v := v in
+        copy_val (@xcopy m) v cpm
+    end.
   (** preservation of well-formedness *)
   Lemma wf_empty : forall ge, wf ge empty.
   Proof.
@@ -921,7 +1175,6 @@ Section S.
     else fail.
 
 
-
   Fixpoint eval_atom (te: tenv) (ge: genv) (e:env) (m: mem) (tyr:typ) (a:atom) {struct a} : res (val tyr) :=
     match a with
     | ATrue => val_of_pval (cast_pval (PBool true) tyr)
@@ -980,8 +1233,10 @@ Section S.
             let* vf := cast_val vf (TFun tparams tyr) in
             let* f := @load_fun ge tparams tyr vf in
             let* vargs := DList.map2 _ (eval_atom te ge e m) args tparams in
-            let* (vret, _) := eval_rapp tparams tyr vargs (f empty) in
-            ret vret
+            let* m'    := copy_args m vargs in
+            let* (vret, m2) := eval_rapp tparams tyr vargs (f m') in
+            if eq_mem m' m2
+            then ret vret else fail
         | _  => fail
         end
     end.

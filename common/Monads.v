@@ -90,6 +90,24 @@ Module MonError <: MONAD.
     constructor.
   Qed.
 
+  Lemma res_eq_dec (T: Type) (eq_dec : forall (x y: T), {x = y} + { x <> y})
+                   (x y: res T) : {x = y} + {x <> y}.
+  Proof.
+    decide equality.
+    apply list_eq_dec.
+    decide equality.
+    apply string_dec.
+    apply Pos.eq_dec.
+    apply Pos.eq_dec.
+  Qed.
+
+  Lemma option_rel_res_rel : forall {A: Type} (R : A -> A -> Prop) v1 v2,
+  option_rel R v1 v2 ->
+  res_rel R (err_of_opt v1) (err_of_opt v2).
+  Proof.
+    intros. inv H; simpl; constructor;auto.
+  Qed.
+
   Notation eret := ret.
 
   Notation efail := fail.

@@ -1,5 +1,5 @@
-From Coq Require Import ZArith List MSetPositive.
-From compcert Require Import Integers Maps.
+From Coq Require Import ZArith List MSetPositive Bool.
+From compcert Require Import Coqlib Integers Maps.
 From BarocqComp Require Import Target Error Barray Brecord Benum Ident Maps2 Utils.
 From Coq Require Import Datatypes List MSetPositive Lia.
 From BarocqComp Require Import ExtOrdered.
@@ -37,6 +37,30 @@ Definition typ_is_prim (ty: typ) : bool :=
   | _ => false
   end.
 
+(* [no_TFun t] holds it there are to function types *)
+Fixpoint no_TFun (t:typ) :=
+  match t with
+  | TFun _ _ => false
+  | TArray t => no_TFun t
+  | TRecord _ l => List.forallb (fun x => no_TFun (snd x)) l
+  | _  => true
+  end.
+
+(* [fo_typ t] holds if there are no higher-order types.
+   i.e function do not take functions as arguments *)
+Definition fo_typ (t:typ) :=
+  match t with
+  | TFun l r => List.forallb no_TFun l && no_TFun r
+  | TArray t => no_TFun t
+  | TRecord _ l => List.forallb (fun x => no_TFun (snd x)) l
+  |   _         => true
+  end.
+
+  Lemma no_TFun_fo_typ (ty:typ):  no_TFun ty = true -> fo_typ ty = true.
+  Proof.
+    destruct ty; simpl; auto; try discriminate.
+  Qed.
+
 
 Fixpoint typ_eq_dec (t1 t2: typ) : { t1 = t2 } + { t1 <> t2 }.
 Proof.
@@ -57,7 +81,7 @@ Fixpoint typ_depth (t:typ) : nat :=
   | TInt32 _  | TInt64 _ => O
   | TArray ty => S (typ_depth ty)
   | TEnum _ _ => O
-  | TRecord _ l => S (List.fold_right (fun e acc => max (typ_depth (snd e)) acc) 0 l)
+  | TRecord _ l => S (List.fold_right (fun e acc => max (typ_depth (snd e)) acc) 0%nat l)
   | TFun l r    => S (List.fold_right (fun e acc => max (typ_depth e) acc) (typ_depth r) l)
   | TAbs _ => O
   end.
@@ -139,6 +163,13 @@ Definition signedness_compare (s1 s2:signedness) :=
   | Unsigned , Unsigned => Eq
   end.
 
+Definition signedness_eqb (s1 s2: signedness) : bool:=
+  match s1 , s2 with
+  | Unsigned , Unsigned => true
+  | Signed , Signed => true
+  | _ , _ => false
+  end.
+
 Lemma signedness_compare_eq : forall s1 s2,
     signedness_compare s1 s2 = Eq <-> s1 = s2.
 Proof.
@@ -181,6 +212,72 @@ Fixpoint typ_compare (t1 t2:typ) :=
   | _ , TFun  _ _    => Gt
   | TAbs id1 , TAbs id2 => String.compare id1 id2
   end.
+
+Fixpoint typ_eqb (t1 t2:typ) :=
+  match t1 , t2 with
+  | TBool , TBool => true
+  | TInt32 s1 , TInt32 s2 => signedness_eqb s1 s2
+  | TInt64 s1 , TInt64 s2 => signedness_eqb s1 s2
+  | TArray t1 , TArray t2 => typ_eqb t1 t2
+  | TRecord i1 l1 , TRecord i2 l2 => if String.eqb i1 i2
+                                     then forall2b (fun '(x,t1) '(y,t2) => if String.eqb x y then typ_eqb t1 t2 else false) l1 l2
+                                     else false
+  | TFun a1 r1 , TFun a2 r2 => if typ_eqb r1 r2
+                               then forall2b typ_eqb a1 a2
+                               else false
+  | TAbs i1 , TAbs i2 => String.eqb i1 i2
+  | _ , _ => false
+  end.
+
+Lemma signedness_eqb_true : forall s s',
+    signedness_eqb s s' = true -> s =  s'.
+Proof.
+  destruct s, s'; simpl; congruence.
+Qed.
+
+Fixpoint typ_eqb_true (t1 t2:typ) {struct t1} : typ_eqb t1 t2 = true -> t1 = t2.
+Proof.
+  destruct t1; destruct t2; simpl; try congruence.
+  -  intros.
+     apply signedness_eqb_true in H; congruence.
+  -  intros. apply signedness_eqb_true in H; congruence.
+  - intros.
+    f_equal ; apply typ_eqb_true;assumption.
+  - destruct (String.eqb i i0) eqn:EQ ; try discriminate.
+    intro.
+    f_equal.
+    rewrite String.eqb_eq in EQ. assumption.
+    revert l0 H.
+    induction l.
+    +  simpl. destruct l0. reflexivity.
+       discriminate.
+    + simpl.
+      destruct l0; try discriminate.
+      destruct a,p.
+      destruct (String.eqb i1 i2) eqn:EQ1 ; try discriminate.
+      destruct (typ_eqb t t0) eqn:TYP.
+      apply typ_eqb_true in TYP.
+      intros.
+      f_equal.
+      rewrite String.eqb_eq in EQ1.
+      congruence.
+      apply IHl;auto.
+      discriminate.
+  -  destruct (typ_eqb t1 t2) eqn:TB; try discriminate.
+     intro.
+     f_equal.
+     revert l0 H.
+     induction l; destruct l0; simpl; try discriminate.
+     auto.
+     destruct (typ_eqb a t) eqn:TB'.
+     apply typ_eqb_true in TB'.
+     intro.
+     f_equal; auto. discriminate.
+     apply typ_eqb_true; auto.
+  - intros. f_equal.
+    rewrite String.eqb_eq in H.
+    assumption.
+Qed.
 
 
 (** ** Concrete types *)
@@ -410,12 +507,12 @@ Definition typof_record (ty:typ) :=
 
 Section EVALTYP.
 
-  Variable eval_typ : typ -> Type.
+  Polymorphic Variable eval_typ : typ -> Type.
 
-  Definition eval_recordtyp (fields: smaplist typ) : Type :=
+  Polymorphic Definition eval_recordtyp (fields: smaplist typ) : Type :=
     grecord eval_typ fields.
 
-  Fixpoint eval_funtyp (tparams: list typ) (tret: Type) : Type :=
+  Polymorphic Fixpoint eval_funtyp (tparams: list typ) (tret: Type) : Type :=
     match tparams with
     | nil => unit -> (res tret)
     | tx:: tparams' => eval_typ tx -> match tparams' with
@@ -426,7 +523,7 @@ Section EVALTYP.
 
 End EVALTYP.
 
-Fixpoint eval_typ (am: PMap.t Type) (t: typ) {struct t}: Type :=
+Polymorphic Fixpoint eval_typ (am: PMap.t Type) (t: typ) {struct t}: Type :=
   match t with
   | TBool => bool
   | TInt32 _ => int
@@ -440,16 +537,14 @@ Fixpoint eval_typ (am: PMap.t Type) (t: typ) {struct t}: Type :=
 
 (** ** Type cast w.r.t. type equality *)
 
-Definition typ_cast {t1 t2: typ} (am: SMap.t Type) (Heq: t1 = t2) (x: eval_typ am t1) : eval_typ am t2.
-Proof.
-  subst t1. exact x.
-Defined.
+Definition typ_cast (am: SMap.t Type) {t1 t2: typ}  (Heq: t1 = t2) (x: eval_typ am t1) : eval_typ am t2 :=
+  cast (f_equal (eval_typ am) Heq) x.
 
 Remark typ_cast_id:
   forall t am (x: eval_typ am t),
   typ_cast am eq_refl x = x.
 Proof.
-  intros. unfold typ_cast. reflexivity.
+  reflexivity.
 Qed.
 
 (** Ordered Type *)
@@ -877,3 +972,4 @@ Module BtypOrdered <: OrderedType.
 
 
 End BtypOrdered.
+
