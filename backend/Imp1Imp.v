@@ -1,7 +1,7 @@
 (* Imperative Imp1 *)
 From Coq Require Import Bool List String PArith Lia.
 From compcert Require Import Integers Coqlib.
-From BarocqComp Require Import Barocq Benum  Barray Brecord Error Maps2 Utils Syntax Types Typing.
+From BarocqComp Require Import Denot Benum  Barray Brecord Error Maps2 Utils Syntax Types Typing.
 From BarocqComp Require Import Imp1.
 From BarocqComp Require Printer Pp.
 
@@ -1061,13 +1061,6 @@ Section S.
     | _        => fail
     end.
 
-
-  Definition cast_typof_field ( k:ident) (fields : smaplist typ) (GP :good_proj k fields = true) :
-    gtypeof_field val k  fields GP ->   {ty:typ & val ty} :=
-    fun X =>
-      let s := exists_typeof_field val k fields GP in
-      let (ty, EQ) := s in
-      existT val ty (cast EQ X).
 
   Inductive cedge :=
   | CField (id:ident)

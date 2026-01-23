@@ -3,7 +3,7 @@
 From Coq Require Import ZArith List MSetPositive Bool ZifyBool.
 From compcert Require Import Coqlib Integers Maps.
 From BarocqComp Require Import Barocq ExtOrdered.
-From BarocqComp Require Import Types Target Error Barray Brecord Benum Ident Maps2 Utils.
+From BarocqComp Require Import Denot Types Target Error Barray Brecord Benum Ident Maps2 Utils.
 From Coq Require Import Datatypes List MSetPositive Lia.
 
 
@@ -16,16 +16,16 @@ From Coq Require Import Datatypes List MSetPositive Lia.
  *)
 Section S.
 
-    Variable abs_typ_impl : Maps.PMap.t Type.
+    Variable tabs : Maps.PMap.t Type.
 
-  Local Notation "# X" := (Types.eval_typ abs_typ_impl X) (at level 90).
+  Local Notation "# X" := (Types.eval_typ tabs X) (at level 90).
 
   Section EQUAL_FUN.
     Variable PRED : forall (t:typ), # t -> # t -> Prop.
 
     (** [ext_fun f1 f2] holds if the functions [f1] and [f2] are extentionnaly equal *)
     Fixpoint ext_fun (tret: typ) (targs : list typ)  {struct targs}:
-      forall (f1 f2 : eval_funtyp (eval_typ abs_typ_impl) targs (eval_typ abs_typ_impl tret)), Prop:=
+      forall (f1 f2 : eval_funtyp (eval_typ tabs) targs (eval_typ tabs tret)), Prop:=
       match targs with
       | nil => fun f1 f2 => res_rel (PRED tret) (f1 tt) (f2 tt)
       | t :: l =>
@@ -34,8 +34,8 @@ Section S.
           match
             l as l0
             return
-            ((forall (f1 f2: eval_funtyp (eval_typ abs_typ_impl) l0 (# tret)), Prop) ->
-             (forall f1 f2 : eval_funtyp (eval_typ abs_typ_impl) (t::l0) (# tret), Prop))
+            ((forall (f1 f2: eval_funtyp (eval_typ tabs) l0 (# tret)), Prop) ->
+             (forall f1 f2 : eval_funtyp (eval_typ tabs) (t::l0) (# tret), Prop))
           with
           | nil => fun _  (f3 f4 : # t -> res (# tret)) =>
                      res_rel (PRED tret) (f3 v1) (f4 v2)
@@ -44,7 +44,7 @@ Section S.
       end.
 
     Lemma ext_fun_rw : forall(tret: typ) (targs : list typ),
-        forall (f1 f2 : eval_funtyp (eval_typ abs_typ_impl) targs (eval_typ abs_typ_impl tret)),
+        forall (f1 f2 : eval_funtyp (eval_typ tabs) targs (eval_typ tabs tret)),
           (ext_fun tret targs f1 f2) =
             ((      match targs with
       | nil => fun f1 f2 => res_rel (PRED tret) (f1 tt) (f2 tt)
@@ -54,14 +54,14 @@ Section S.
           match
             l as l0
             return
-            ((forall (f1 f2: eval_funtyp (eval_typ abs_typ_impl) l0 (# tret)), Prop) ->
-             (forall f1 f2 : eval_funtyp (eval_typ abs_typ_impl) (t::l0) (# tret), Prop))
+            ((forall (f1 f2: eval_funtyp (eval_typ tabs) l0 (# tret)), Prop) ->
+             (forall f1 f2 : eval_funtyp (eval_typ tabs) (t::l0) (# tret), Prop))
           with
           | nil => fun _  (f3 f4 : # t -> res (# tret)) =>
                      res_rel (PRED tret) (f3 v1) (f4 v2)
           | t0 :: l0 => fun ext_fun f3 f4 => ext_fun (f3 v1) (f4 v2)
           end (ext_fun tret l) f1 f2
-      end : eval_funtyp (eval_typ abs_typ_impl) targs (eval_typ abs_typ_impl tret) -> eval_funtyp (eval_typ abs_typ_impl) targs (eval_typ abs_typ_impl tret) -> Prop) f1 f2).
+      end : eval_funtyp (eval_typ tabs) targs (eval_typ tabs tret) -> eval_funtyp (eval_typ tabs) targs (eval_typ tabs tret) -> Prop) f1 f2).
     Proof.
       destruct targs;auto.
     Qed.
@@ -72,14 +72,14 @@ Section S.
   Section EQUAL_RECORD.
     Variable PRED : forall (t:typ), # t -> # t -> Prop.
 
-    Fixpoint equal_record (fields : list (ident * typ))  {struct fields} : forall (r1 r2: eval_recordtyp (eval_typ abs_typ_impl) fields), Prop :=
+    Fixpoint equal_record (fields : list (ident * typ))  {struct fields} : forall (r1 r2: eval_recordtyp (eval_typ tabs) fields), Prop :=
       match fields with
       | nil => fun _ _ => True
       | (i,t) :: lt => fun r1 r2 => PRED t (proj_field (fst r1)) (proj_field (fst r2)) /\
                                       equal_record lt (snd r1) (snd r2)
       end.
 
-    Lemma equal_record_rw : forall fd ty fields (v1 v2:field fd (# ty)) (r1 r2:eval_recordtyp (eval_typ abs_typ_impl) fields) ,
+    Lemma equal_record_rw : forall fd ty fields (v1 v2:field fd (# ty)) (r1 r2:eval_recordtyp (eval_typ tabs) fields) ,
         equal_record ((fd,ty)::fields) (v1,r1) (v2,r2) =
           (PRED ty (proj_field v1) (proj_field v2) /\
              equal_record fields r1 r2).
@@ -102,7 +102,7 @@ Section S.
     end.
 
     (** [ext_fun_fo f1 f2] holds if the functions [f1] and [f2] are extentionnaly equal *)
-  Fixpoint ext_fun_fo (tret: typ) (targs : list typ)  {struct targs}: forall (f1 f2 : eval_funtyp (eval_typ abs_typ_impl) targs (#tret)), Prop :=
+  Fixpoint ext_fun_fo (tret: typ) (targs : list typ)  {struct targs}: forall (f1 f2 : eval_funtyp (eval_typ tabs) targs (#tret)), Prop :=
       match targs with
       | nil => fun f1 f2 =>  (f1 tt) = (f2 tt)
       | t :: l =>
@@ -110,8 +110,8 @@ Section S.
           match
             l as l0
             return
-            ((forall (f1 f2: eval_funtyp (eval_typ abs_typ_impl) l0 (# tret)), Prop) ->
-             (forall f1 f2 : eval_funtyp (eval_typ abs_typ_impl) (t::l0) (# tret), Prop))
+            ((forall (f1 f2: eval_funtyp (eval_typ tabs) l0 (# tret)), Prop) ->
+             (forall f1 f2 : eval_funtyp (eval_typ tabs) (t::l0) (# tret), Prop))
           with
           | nil => fun _  (f3 f4 : # t -> res (# tret)) =>
                      (f3 v) = (f4 v)
@@ -121,7 +121,7 @@ Section S.
 
 
   (** [ext_equal_fo v1 v2]  encodes functional extensionality of functions (it is more restricted than ext_equal) *)
-  Definition ext_equal_fo (ty:typ)  : eval_typ abs_typ_impl ty -> eval_typ abs_typ_impl ty -> Prop:=
+  Definition ext_equal_fo (ty:typ)  : eval_typ tabs ty -> eval_typ tabs ty -> Prop:=
     match ty with
     | TFun params ret => fun f1 f2 => ext_fun_fo ret params f1 f2
     |  _ =>  eq
@@ -419,11 +419,11 @@ Section S.
         }
   Qed.
 
-  Definition same_value (v1 v2 : value abs_typ_impl) :=
+  Definition same_value (v1 v2 : value tabs) :=
     match v1 , v2 with
     | Val _ ty vty , Val _ t2 v2 =>
         match typ_eq_dec t2 ty with
-        | left EQ => ext_equal  ty (typ_cast abs_typ_impl EQ v2) vty
+        | left EQ => ext_equal  ty (typ_cast tabs EQ v2) vty
         | _   => False
         end
     end.
@@ -444,7 +444,7 @@ Section S.
 
 
   Lemma same_value_refl : forall x,
-      fo_typ (typeof_value abs_typ_impl x) = true ->
+      fo_typ (typeof_value tabs x) = true ->
       same_value x x.
   Proof.
     unfold same_value.
@@ -459,7 +459,7 @@ Section S.
   Qed.
 
   Lemma same_value_refl' : forall x y,
-      fo_typ (typeof_value abs_typ_impl x) = true ->
+      fo_typ (typeof_value tabs x) = true ->
       x = y ->
       same_value x y.
   Proof.
@@ -487,7 +487,7 @@ Section S.
 
   Lemma ext_equal_ecast_typ : forall ti tf v1 v2,
       res_rel (ext_equal ti) v1 v2 ->
-      res_rel (ext_equal  tf) (@ecast_typ abs_typ_impl ti v1 tf) (@ecast_typ abs_typ_impl ti v2 tf).
+      res_rel (ext_equal  tf) (@ecast_typ tabs ti v1 tf) (@ecast_typ tabs ti v2 tf).
   Proof.
     intros.
     unfold ecast_typ.
@@ -500,8 +500,8 @@ Section S.
   Lemma ext_equal_int_ops : forall op32s op32u op64s op64u t1 t2 v1 v1' v2 v2' tf,
       ext_equal t1 v1 v1' ->
       ext_equal t2 v2 v2' ->
-      res_rel (ext_equal tf) (int_op_s abs_typ_impl op32s op32u op64s op64u t1 t2 v1 v2 tf)
-        (int_op_s abs_typ_impl op32s op32u op64s op64u t1 t2 v1' v2' tf).
+      res_rel (ext_equal tf) (int_op_s tabs op32s op32u op64s op64u t1 t2 v1 v2 tf)
+        (int_op_s tabs op32s op32u op64s op64u t1 t2 v1' v2' tf).
   Proof.
     unfold int_op_s.
     destruct t1,t2; try constructor.
@@ -525,7 +525,7 @@ Section S.
 
   Lemma ext_equal_cast_typ : forall ti tf v1 v2,
       ext_equal ti v1 v2 ->
-      res_rel (ext_equal tf) (cast_typ abs_typ_impl v1 tf) (cast_typ abs_typ_impl v2 tf).
+      res_rel (ext_equal tf) (cast_typ tabs v1 tf) (cast_typ tabs v2 tf).
   Proof.
     unfold cast_typ.
     intros. destruct (typ_eq_dec ti tf); try constructor.
@@ -538,10 +538,10 @@ Section S.
       ext_equal t1 v1 v1' ->
       ext_equal t2 v2 v2' ->
       res_rel (ext_equal tf)
-        (int_eq_neq abs_typ_impl b eqb Int.eq Int64.eq
+        (int_eq_neq tabs b eqb Int.eq Int64.eq
            (fun (elems : list Syntax.ident) (v0 v3 : Benum.enum elems) =>
               if Benum.enum_eq_dec v0 v3 then true else false) t1 t2 v1 v2 tf)
-        (int_eq_neq abs_typ_impl b eqb Int.eq Int64.eq
+        (int_eq_neq tabs b eqb Int.eq Int64.eq
            (fun (elems : list Syntax.ident) (v0 v3 : Benum.enum elems) =>
               if Benum.enum_eq_dec v0 v3 then true else false) t1 t2 v1' v2'
            tf).
@@ -572,8 +572,8 @@ Section S.
   Lemma ext_equal_cmp_op : forall cmp32s cmp32u cmp64s cmp64u t1 t2 v1 v1' v2 v2' tf,
       ext_equal t1 v1 v1' ->
       ext_equal t2 v2 v2' ->
-      res_rel (ext_equal tf) (cmp_op abs_typ_impl cmp32s cmp32u cmp64s cmp64u t1 t2 v1 v2 tf)
-        (cmp_op abs_typ_impl cmp32s cmp32u cmp64s cmp64u t1 t2 v1' v2' tf).
+      res_rel (ext_equal tf) (cmp_op tabs cmp32s cmp32u cmp64s cmp64u t1 t2 v1 v2 tf)
+        (cmp_op tabs cmp32s cmp32u cmp64s cmp64u t1 t2 v1' v2' tf).
   Proof.
     intros.
     destruct t1,t2; try constructor.
@@ -594,7 +594,7 @@ Section S.
   Lemma ext_equal_bool_op : forall op t1 t2 v1 v1' v2 v2' tf,
       ext_equal t1 v1 v1' ->
       ext_equal t2 v2 v2' ->
-      res_rel (ext_equal tf) (bool_op abs_typ_impl op t1 t2 v1 v2 tf) (bool_op abs_typ_impl op t1 t2 v1' v2' tf).
+      res_rel (ext_equal tf) (bool_op tabs op t1 t2 v1 v2 tf) (bool_op tabs op t1 t2 v1' v2' tf).
   Proof.
     unfold bool_op.
     destruct t1,t2; try constructor.
@@ -605,7 +605,7 @@ Section S.
   Lemma ext_equal_int_op : forall op32 op64 t1 t2 v1 v1' v2 v2' tf,
       ext_equal t1 v1 v1' ->
       ext_equal t2 v2 v2' ->
-      res_rel (ext_equal tf) (int_op abs_typ_impl op32 op64 t1 t2 v1 v2 tf) (int_op abs_typ_impl op32 op64 t1 t2 v1' v2' tf).
+      res_rel (ext_equal tf) (int_op tabs op32 op64 t1 t2 v1 v2 tf) (int_op tabs op32 op64 t1 t2 v1' v2' tf).
   Proof.
     unfold int_op.
     destruct t1,t2; try constructor.
@@ -624,7 +624,7 @@ Section S.
   Lemma ext_equal_eval_binary_op : forall op t1 t2 v1 v1' v2 v2' tf,
       ext_equal t1 v1 v1' ->
       ext_equal t2 v2 v2' ->
-      res_rel (ext_equal tf) (eval_binary_op abs_typ_impl op t1 t2 v1 v2 tf) (eval_binary_op abs_typ_impl op t1 t2 v1' v2' tf).
+      res_rel (ext_equal tf) (eval_binary_op tabs op t1 t2 v1 v2 tf) (eval_binary_op tabs op t1 t2 v1' v2' tf).
   Proof.
     intros.
     unfold eval_binary_op; destruct op.
@@ -649,25 +649,23 @@ Section S.
     - apply ext_equal_cmp_op;auto.
   Qed.
 
-
   Lemma ext_equal_array_get : forall arch ta a1 a2  ti i1 i2 ty,
       ext_equal ta a1 a2 ->
       ext_equal ti i1 i2 ->
       res_rel (ext_equal ty)
-        (eval_array_get arch abs_typ_impl ta a1 ti i1 ty)
-        (eval_array_get arch abs_typ_impl ta a2 ti i2 ty).
+        (eval_array_get arch tabs ta a1 ti i1 ty)
+        (eval_array_get arch tabs ta a2 ti i2 ty).
   Proof.
     intros.
     unfold eval_array_get.
     destruct ta; try constructor.
     destruct arch.
     - destruct (typ_eq_dec ti (TInt32 Unsigned)); subst; try constructor.
-      simpl in *.
-      subst.
-      unfold eq_rect_r, eq_rect; simpl.
       eapply ext_equal_ecast_typ.
       unfold Barray.get.
+      simpl in H0. subst.
       rewrite ext_equal_valid_index with (a2:= a2).
+      simpl in *.
       destruct (valid_index a2 (Intop.U64.of_u32 i2)).
       apply option_rel_res_rel; auto.
       constructor.
@@ -675,7 +673,6 @@ Section S.
     - destruct (typ_eq_dec ti (TInt64 Unsigned)); subst; try constructor.
       simpl in *.
       subst.
-      unfold eq_rect_r, eq_rect; simpl.
       eapply ext_equal_ecast_typ.
       unfold Barray.get.
       rewrite ext_equal_valid_index with (a2:= a2).
@@ -750,8 +747,8 @@ Section S.
       ext_equal ta a1 a2 ->
       ext_equal ti i1 i2 ->
       ext_equal tv v1 v2 ->
-      res_rel (ext_equal ty) (eval_array_set arch abs_typ_impl ta a1 ti i1 tv v1 ty)
-        (eval_array_set arch abs_typ_impl ta a2 ti i2 tv v2 ty).
+      res_rel (ext_equal ty) (eval_array_set arch tabs ta a1 ti i1 tv v1 ty)
+        (eval_array_set arch tabs ta a2 ti i2 tv v2 ty).
   Proof.
     intros.
     unfold eval_array_set.
@@ -782,7 +779,7 @@ Section S.
 
   Lemma ext_equal_same_value : forall t x y,
       ext_equal t x y ->
-      same_value (Val abs_typ_impl t y) (Val abs_typ_impl t x).
+      same_value (Val tabs t y) (Val tabs t x).
   Proof.
     unfold same_value.
     intros. destruct (typ_eq_dec t t); try congruence.
@@ -792,7 +789,7 @@ Section S.
 
   Lemma ext_equal_eval_record_proj : forall tr x y f ty,
       ext_equal tr x y ->
-      res_rel (ext_equal ty) (eval_record_project abs_typ_impl tr x f ty) (eval_record_project abs_typ_impl tr y f ty).
+      res_rel (ext_equal ty) (eval_record_project tabs tr x f ty) (eval_record_project tabs tr y f ty).
   Proof.
     intros.
     unfold eval_record_project.
@@ -828,13 +825,52 @@ Section S.
     forall fields r1 r2 f ty v1 v2,
       equal_record ext_equal fields r1 r2 ->
       ext_equal ty v1 v2 ->
-      res_rel (equal_record ext_equal fields) (eval_record_upd_aux abs_typ_impl fields r1 f ty v1)
-        (eval_record_upd_aux abs_typ_impl fields r2 f ty v2).
+      res_rel (equal_record ext_equal fields) (eval_record_upd_aux tabs fields r1 f ty v1)
+        (eval_record_upd_aux tabs fields r2 f ty v2).
   Proof.
     unfold eval_recordtyp.
     intros.
     unfold eval_record_upd_aux.
     {
+      revert r1 r2 H.
+      induction fields.
+      - simpl. constructor.
+      - simpl.
+        intros.
+        destruct a as(fd,ty1).
+        destruct r1 as (f1 & r1').
+        destruct r2 as (f2 & r2').
+        simpl in f1,f2.
+        simpl.
+        simpl in H.
+        destruct (f =?fd)%string.
+        destruct (typ_eq_dec  ty ty1).
+        subst.
+        constructor.
+        subst.
+        simpl; auto. tauto.
+        constructor.
+        destruct H as (FD & RST).
+        specialize (IHfields r1' r2' RST).
+        inv IHfields.
+        constructor.
+        simpl. constructor. simpl; auto.
+    }
+  Qed.
+
+
+(*  Lemma equal_upd_record_aux :
+    forall fields r1 r2 f ty v1 v2,
+      equal_record ext_equal fields r1 r2 ->
+      ext_equal ty v1 v2 ->
+      res_rel (equal_record ext_equal fields) (eval_record_upd_aux tabs fields r1 f ty v1)
+        (eval_record_upd_aux tabs fields r2 f ty v2).
+  Proof.
+    unfold eval_recordtyp.
+    intros.
+    unfold eval_record_upd_aux.
+    {
+
       destruct (typeof_field_typ_prf f fields ty); try constructor.
       revert r1 r2 H.
       induction fields.
@@ -872,14 +908,14 @@ Section S.
         split; auto.
     }
   Qed.
-
+*)
 
   Lemma ext_equal_eval_record_update : forall tr r1 r2 tv v1 v2 f ty,
       ext_equal tr r1 r2 ->
       ext_equal tv v1 v2 ->
       res_rel (ext_equal ty)
-        (eval_record_update abs_typ_impl tr r1 f tv v1 ty)
-        (eval_record_update abs_typ_impl tr r2 f tv v2 ty).
+        (eval_record_update tabs tr r1 f tv v1 ty)
+        (eval_record_update tabs tr r2 f tv v2 ty).
   Proof.
     intros.
     unfold eval_record_update.
@@ -894,8 +930,8 @@ Section S.
       res_rel (ext_equal t1) v1 v1' ->
       res_rel (ext_equal t2) v2 v2' ->
       res_rel (ext_equal tr)
-        (eval_ifthenelse abs_typ_impl x t1 v1 t2 v2 tr)
-        (eval_ifthenelse abs_typ_impl y t1 v1' t2 v2' tr).
+        (eval_ifthenelse tabs x t1 v1 t2 v2 tr)
+        (eval_ifthenelse tabs y t1 v1' t2 v2' tr).
   Proof.
     intros.
     unfold eval_ifthenelse.
@@ -908,7 +944,7 @@ Section S.
   Lemma  ext_equal_eval_match : forall te x y tr l1 l2,
       ext_equal te x y ->
       Forall2 (fun x y => fst x = fst y /\ res_rel (ext_equal tr) (snd x) (snd y))  l1 l2 ->
-      res_rel (ext_equal tr) (eval_match abs_typ_impl te x tr l1) (eval_match abs_typ_impl te y tr l2).
+      res_rel (ext_equal tr) (eval_match tabs te x tr l1) (eval_match tabs te y tr l2).
   Proof.
     intros.
     unfold eval_match.
@@ -928,7 +964,7 @@ Section S.
 
   Lemma res_rel_ecast_typ_refl : forall ti tf v,
       fo_typ ti = true ->
-      res_rel (ext_equal tf) (@ecast_typ abs_typ_impl ti v tf) (@ecast_typ abs_typ_impl ti v tf).
+      res_rel (ext_equal tf) (@ecast_typ tabs ti v tf) (@ecast_typ tabs ti v tf).
   Proof.
     intros.
     unfold ecast_typ.
@@ -941,7 +977,7 @@ Section S.
 
   Lemma same_value_cast_value : forall x y ty,
       same_value x y ->
-      res_rel (ext_equal ty) (cast_value abs_typ_impl x ty) (cast_value abs_typ_impl y ty).
+      res_rel (ext_equal ty) (cast_value tabs x ty) (cast_value tabs y ty).
   Proof.
     unfold same_value. destruct x,y.
     intros. destruct (typ_eq_dec t0 t); try discriminate.
@@ -960,8 +996,8 @@ Section S.
     forall l0 t x y x0 y0 ty,
       ext_equal (TFun l0 t) x y ->
       DList.Forall2 Ftyp Pred l0 x0 y0 ->
-      res_rel (ext_equal ty) (eval_app_res abs_typ_impl l0 t x x0 ty)
-        (eval_app_res abs_typ_impl l0 t y y0 ty).
+      res_rel (ext_equal ty) (eval_app_res tabs l0 t x x0 ty)
+        (eval_app_res tabs l0 t y y0 ty).
   Proof.
     intros.
     unfold ext_equal in H ; fold ext_equal in H.
@@ -984,12 +1020,12 @@ Section S.
           auto.
   Qed.
 
-  Definition val_of_value (v: value abs_typ_impl) : # (typeof_value abs_typ_impl v) :=
+  Definition val_of_value (v: value tabs) : # (typeof_value tabs v) :=
     match v with
     | Val _ _ v => v
     end.
 
-  Definition eq_value (vl: value abs_typ_impl) (t:typ) (v: #t) :=
+  Definition eq_value (vl: value tabs) (t:typ) (v: #t) :=
     same_value  vl (Val _ t v).
 
 
@@ -1020,7 +1056,7 @@ Section S.
 
   Lemma same_value_cast_typ_M : forall x y t,
       same_value x y ->
-      res_rel (ext_equal t) (cast_typ_M abs_typ_impl t x) (cast_typ_M abs_typ_impl t y).
+      res_rel (ext_equal t) (cast_typ_M tabs t x) (cast_typ_M tabs t y).
   Proof.
     unfold same_value.
     intros. destruct x,y.
@@ -1035,7 +1071,7 @@ Section S.
 
   Lemma eq_value_same_value : forall p t v,
       eq_value p t v ->
-      same_value p (Val abs_typ_impl t v).
+      same_value p (Val tabs t v).
   Proof.
     unfold eq_value,same_value.
     intros.

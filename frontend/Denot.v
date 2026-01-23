@@ -11,7 +11,7 @@ Section DENOT.
   (* Abstract type implementation environment *)
   Variable tabs : PMap.t Type.
 
-  Definition eval_typ := Types.eval_typ tabs.
+  Notation eval_typ := (Types.eval_typ tabs).
 
   Inductive value : Type :=
     | Val (t: typ) (v: eval_typ t) : value.
@@ -41,21 +41,19 @@ Section DENOT.
   Definition lenv_update (le: lenv) (x: ident) (v: value) : lenv :=
     STree.set x v le.
 
-  Definition cast_typ  {t2:typ} (v: eval_typ t2) (t1:typ): res (eval_typ t1).
-  Proof.
-    destruct (typ_eq_dec t1 t2).
-    subst. exact (OK v).
-    apply fail.
-  Defined.
+  Definition cast_typ  {t2:typ} (v: eval_typ t2) (t1:typ): res (eval_typ t1) :=
+    match typ_eq_dec t2 t1 with
+    | left EQ => OK (cast (f_equal eval_typ EQ) v)
+    | _       => fail
+    end.
 
-  Definition ecast_typ  {t2:typ} (v: res (eval_typ t2)) (t1:typ): res (eval_typ t1).
-  Proof.
-    destruct (typ_eq_dec t1 t2).
-    - rewrite e. exact v.
-    - apply fail.
-  Defined.
+  Definition ecast_typ  {t2:typ} (v: res (eval_typ t2)) (t1:typ): res (eval_typ t1) :=
+    match typ_eq_dec t2 t1 with
+    | left EQ =>  cast (f_equal res (f_equal eval_typ EQ)) v
+    | _       => fail
+    end.
 
-  Lemma ecast_same_typ: 
+  Lemma ecast_same_typ:
     forall t v,
     @ecast_typ t v t = v.
   Proof.
@@ -355,24 +353,24 @@ Section DENOT.
       * apply fail.
   Defined.
 
-  Definition eval_array_get (ta:typ) (a: eval_typ ta) (t2:typ) (i: eval_typ t2) (tyr:typ): res (eval_typ tyr).
-    destruct ta.
-    4:
-    {
-      destruct arch eqn:Earch.
-        - destruct (typ_eq_dec t2 (TInt32 Unsigned)).
-          + subst. simpl in i. simpl in a.
-            eapply ecast_typ.
-            apply (Barray.get a (U64.of_u32 i)).
-          + apply fail.
-        - destruct (typ_eq_dec t2 (TInt64 Unsigned)).
-          + subst. simpl in i. simpl in a.
-            eapply ecast_typ.
-            apply (Barray.get a i).
-          + apply fail.
-    }
-    all: apply fail.
-  Defined.
+  Definition eval_array_get (ta:typ) (a: eval_typ ta) (t2:typ) (i: eval_typ t2) (tyr:typ): res (eval_typ tyr) :=
+    match ta as t return (eval_typ t -> res (eval_typ tyr)) with
+    | TArray t =>
+    (fun  (a0 : array (eval_typ t)) =>
+     match arch with
+     | Target.Ptr32 =>
+         match typ_eq_dec t2 (TInt32 Unsigned) with
+         | left EQ => ecast_typ (get a0 (U64.of_u32 (cast (f_equal eval_typ EQ) i))) tyr
+         | right _ => fail
+         end
+     | Target.Ptr64 =>
+         match typ_eq_dec t2 (TInt64 Unsigned) with
+         | left EQ => ecast_typ (get a0 (cast (f_equal eval_typ EQ) i)) tyr
+         | right _ => efail
+         end
+     end)
+    | _ => fun _ => efail
+    end a.
 
   Definition eval_array_set (ta: typ) (a : eval_typ ta) (t2:typ)
     (i : eval_typ t2) (t:typ) (v: eval_typ t) (tyr : typ): res (eval_typ tyr).
@@ -551,8 +549,10 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
     | OK v1 , OK v2 => proj_sumbool (typ_eq_dec (typeof_value v1) (typeof_value v2))
     end.
 
-  (* Definition eval_ifthenelse (c:bool) (t2: typ) (v2:res (eval_typ t2)) (t3: typ)  (v3: res (eval_typ t3)) (tr:typ) : res (eval_typ tr) :=
-    if c then ecast_typ v2 tr else ecast_typ v3 tr. *)
+  Definition eval_ifthenelse (c:bool) (t2: typ) (v2:res (eval_typ t2)) (t3: typ)  (v3: res (eval_typ t3)) (tr:typ) : res (eval_typ tr) :=
+    if c then ecast_typ v2 tr else ecast_typ v3 tr.
+
+
 
   Definition eval_match (tv:typ) (v: eval_typ tv) (tr: typ) (cases: list (pattern * (res (eval_typ tr)))) : res (eval_typ tr) :=
     (match tv as t0 return (eval_typ t0 -> res (eval_typ tr)) with

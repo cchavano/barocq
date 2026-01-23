@@ -44,7 +44,7 @@ Section DENOT.
 
   Notation value := (@Denot.value tabs).
 
-  Notation eval_typ := (@Denot.eval_typ tabs).
+  Notation eval_typ := (@Types.eval_typ tabs).
 
   Notation eval_atom := (@Denot.eval_atom arch tabs).
 

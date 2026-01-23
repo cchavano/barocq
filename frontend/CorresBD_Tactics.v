@@ -52,5 +52,5 @@ Ltac2 get_function_spec () :=
 Ltac2 has_property id ge abs_typ_impl :=
   let ge := Control.hyp ge in
   let (str,ty,f) :=  get_function_spec () in
-  let c := constr:(BarocqVC.has_property $abs_typ_impl $ge ($str, (Barocq.Val $abs_typ_impl $ty $f))) in
+  let c := constr:(BarocqVC.has_property $abs_typ_impl $ge ($str, (Denot.Val $abs_typ_impl $ty $f))) in
   Std.assert (Std.AssertType (Init.Some (Std.IntroNaming (Std.IntroFresh id))) c  Init.None).

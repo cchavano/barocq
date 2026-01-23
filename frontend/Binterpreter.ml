@@ -4,6 +4,7 @@ open Types
 open Barocq
 open PrintUtils
 open PrintTypes
+open Denot
 
 exception Error of string
 
