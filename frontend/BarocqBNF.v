@@ -6,7 +6,6 @@ From BarocqComp Require Pp Printer.
   (** * Abstract syntax *)
 
   (** ** Expressions *)
-
 Inductive expr : Type :=
   | EAtom : atom -> expr
   | EArraySet : atom -> atom -> atom -> btyp -> expr
@@ -40,6 +39,8 @@ Definition globdef : Type := Syntax.globdef expr btyp literal.
 (** ** Programs *)
 
 Definition program : Type := Syntax.program expr btyp literal.
+
+Print Syntax.program. Print struct_or_union.
 
 (** * Expression well-formdness *)
 
