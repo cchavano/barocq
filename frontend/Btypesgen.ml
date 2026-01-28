@@ -797,7 +797,7 @@ module RecordConv = struct
     let proof =
       let refl_of_f_equal =
         if List.exists (fun (_, fty) -> field_need_conv fty) fields then
-          "simpl; repeat f_equal"
+          "simpl; repeat apply Brecord.field_eq;auto"
         else "reflexivity"
       in
       sprintf

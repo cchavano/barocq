@@ -166,6 +166,59 @@ Section DENOT.
     | _ , _ => fail
     end.
 
+  Definition get_cast_operator (ty:typ) (ty':typ) : res cast_operator :=
+    match ty, ty' with
+      (* TBool *)
+    | TBool , TBool => OK Cid
+    | TBool , TInt32 s => OK (if s then I32_of_bool else U32_of_bool)
+    | TBool , TInt64 s => OK (if s then I64_of_bool else U64_of_bool)
+    | TBool , TEnum eid elems => OK (Benum_of_i32_I32_of_bool elems)
+       (* TInt32 *)
+    | TInt32 s , TBool =>  OK (if s then I32_to_bool else U32_to_bool)
+    | TInt32 s , TInt32 s' => OK (match s , s' with
+                                  | Signed , Unsigned => U32_of_i32
+                                  | Unsigned , Signed => I32_of_u32
+                                  |  _       ,   _    => Cid
+                                  end)
+    | TInt32 s , TInt64 s' => OK (match s, s' with
+                                  | Signed, Signed => I64_of_i32
+                                  | Signed, Unsigned => U64_of_i32
+                                  | Unsigned, Signed => I64_of_u32
+                                  | Unsigned, Unsigned => U64_of_u32
+                                  end)
+    | TInt32 s ,  TEnum eid elems => OK (
+                                         if s then Benum_of_i32_I32_of_u32 elems
+                                         else Benum_of_i32 elems )
+    (*  Tint64 *)
+    | TInt64 s , TBool => OK (if s then I64_to_bool else U64_to_bool)
+    | TInt64 s , TInt32 s' => OK (
+                                  match s, s' with
+                                  | Signed, Signed =>  I32_of_i64
+                                  | Signed, Unsigned => U32_of_i64
+                                  | Unsigned, Signed => I32_of_u64
+                                  | Unsigned, Unsigned => U32_of_u64
+                                  end)
+    | TInt64 s ,  TInt64 s' => OK (
+                                   match s, s' with
+                                   | Signed, Unsigned => U64_of_i64
+                                   | Unsigned, Signed => I64_of_u64
+                                   | _, _ => Cid
+                                   end)
+    | TInt64 s , TEnum eid elems => OK (if s then  Benum_of_i32_I32_of_i64 elems
+                                        else Benum_of_i32_I32_of_u64 elems)
+            (* Tenum *)
+    | TEnum tid elems , TBool  => OK (I32_to_bool_Benum_to_i32 elems )
+    | TEnum tid elems , TInt32 s => OK (if s then Benum_to_i32  else U32_of_i32_Benum_to_i32)
+    | TEnum tid elems , TInt64 s => OK (if s then I64_of_i32_Benum_to_i32
+                                        else  U64_of_i32_Benum_to_i32 )
+    | _ , _ => fail
+    end.
+
+
+
+
+
+
   Definition eval_cast (ty:typ) (v1:eval_typ ty) (tr:typ) : res (eval_typ tr) :=
     let* f := get_cast ty tr in f  v1.
 
@@ -624,6 +677,7 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
       + eapply bind. apply e.
       apply (fun x => eval_app_res _ _ (f x) args ty).
   Defined.
+
 
   Definition typof_atom (te: tenv) (a: atom) : res typ :=
     btyp_to_typ te (typof_atom a).

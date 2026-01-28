@@ -245,71 +245,69 @@ let generate_c  (gen_csyntax:bool) (gen_header:bool) (l:Compiler.ir_prog list ) 
       end
         
 
+let gen_rocq_program (prog:Barocq.program) = 
+  match 
+    BarocqShallowgen.monadify_norm_program
+      !target_arch
+      BarocqShallowgen.ShallowR
+      prog
+  with
+  | Errors.OK prog -> prog
+  | Errors.Error msg ->
+        raise
+        @@ UnexpectedError
+          (sprintf
+             "fail to generate the ShallowR embedding: %s"
+             (C2C.string_of_errmsg msg)) 
+
 let generate_corres (prog: Barocq.program) (l:Compiler.ir_prog list) = 
   if not (!opt_gen_corres) then ();
   (* Generate Rocq Shallow embedding *)
-  begin 
-    match
-      BarocqShallowgen.monadify_norm_program
-        !target_arch
-        BarocqShallowgen.ShallowR
-        prog
-    with
-    | Errors.OK prog ->
-      let rawname = gen_rocq_prefix () in
-      let file = get_full_filename rawname "_ShallowR.v" in
-      let oc = open_out file in
-      Shallowgen.coqlib := rawname;
-      Shallowgen.SR.print_program oc prog;
-      close_out oc;
-      printf "ShallowR embedding generated at %s\n" (clean_filename file)
-    | Errors.Error msg ->
-      raise
-      @@ UnexpectedError
-        (sprintf
-           "fail to generate the ShallowR embedding: %s"
-           (C2C.string_of_errmsg msg))
-  end ;
+  let rprog = gen_rocq_program prog in 
+  let rawname = gen_rocq_prefix () in
+  let file = get_full_filename rawname "_ShallowR.v" in
+  let oc = open_out file in
+  Shallowgen.coqlib := rawname;
+  Shallowgen.SR.print_program oc rprog;
+  close_out oc;
+  printf "ShallowR embedding generated at %s\n" (clean_filename file); 
   (* Generate Rocq Deep embedding *)
-  begin 
-    let rawname = gen_rocq_prefix () in
-    let file = get_full_filename rawname "_Deep.v" in
-    let oc = open_out file in
-    let dprog = match get_bnf l with
-      | None -> raise @@ UnexpectedError ("Barcoq BNF is not generated")
-      | Some p -> p in
-      Deepgen.BarocqBNFDeep.print_program oc dprog;
-    close_out oc;
-    printf "Deep embedding generated at %s\n" (clean_filename file)
-  end
+  let rawname = gen_rocq_prefix () in
+  let file = get_full_filename rawname "_Deep.v" in
+  let oc = open_out file in
+  let dprog = match get_bnf l with
+    | None -> raise @@ UnexpectedError ("Barcoq BNF is not generated")
+    | Some p -> p in
+  Deepgen.BarocqBNFDeep.print_program oc dprog;
+  close_out oc;
+  printf "Deep embedding generated at %s\n" (clean_filename file);
 
-     (* if !opt_gen_corres then begin
-        let rprog =
-          BarocqShallowgen.monadify_norm_program
-            !target_arch
-            BarocqShallowgen.ShallowR
-            prog
-        in
-        let bprog =
-          BarocqShallowgen.monadify_norm2_program
-            !target_arch
-            BarocqShallowgen.ShallowB
-            prog
-        in
+  (* Generation of ShallowB types *)
+  let types_file = get_full_filename rawname "_Types.v" in
+  let types_oc = open_out types_file in
+  Btypesgen.coqlib := rawname;
+  Btypesgen.print types_oc rprog;
+  printf
+    "ShallowB types generated at %s\n"
+    (clean_filename types_file);
+  ()
+
+(*
+  let bprog =
+    BarocqShallowgen.monadify_norm2_program
+      !target_arch
+      BarocqShallowgen.ShallowB
+      prog
+  in
         begin match (rprog, bprog) with
         | Errors.OK rprog, Errors.OK bprog ->
-            let rawname = gen_rocq_prefix () in
-            let full_filename = get_full_filename rawname in
 
-            (* Generation of ShallowB types *)
-            let types_file = get_full_filename rawname "_Types.v" in
-            let types_oc = open_out types_file in
-            Btypesgen.coqlib := rawname;
-            Btypesgen.print types_oc bprog;
-            printf
-              "ShallowB types generated at %s\n"
-              (clean_filename types_file);
 
+begin match (rprog, bprog) with
+        | Errors.OK rprog, Errors.OK bprog ->
+
+  let full_filename = get_full_filename rawname in
+  
             (* Generation of ShallowB *)
             let shallowB_file = get_full_filename rawname "_ShallowB.v" in
             let shallowB_oc = open_out shallowB_file in

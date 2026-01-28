@@ -40,8 +40,6 @@ Definition globdef : Type := Syntax.globdef expr btyp literal.
 
 Definition program : Type := Syntax.program expr btyp literal.
 
-Print Syntax.program. Print struct_or_union.
-
 (** * Expression well-formdness *)
 
 (** An expression [e] is well-formed w.r.t. a set of global and local symbols [globs] and [locals]

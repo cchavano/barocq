@@ -403,6 +403,13 @@ Ltac apply_decomp_field :=
                 end
                 end.
 
+Lemma field_eq : forall (k:key) (A B: Type) (a1 a2:A) (b1 b2:B),
+                        a1 = a2 -> b1 = b2 -> (Field k a1,b1) = (Field k a2,b2).
+Proof.
+  intros.
+  congruence.
+Qed.
+
 (*Lemma type_of_field_fst : forall k A fields,
     A = type_of_field k ((k, A) :: fields).
 Proof.
