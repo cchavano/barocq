@@ -9,6 +9,14 @@ Polymorphic Definition cast {A B: Type} (EQ : A = B) (v: A) : B.
   rewrite EQ in v. exact v.
 Defined.
 
+Lemma cast_ok_imp_eq:
+  forall (A B: Type) (EQ: A = B) (v: A) (v': B),
+  @cast A B EQ v = v' ->
+  A = B.
+Proof.
+  tauto.
+Qed.
+
 (** Given a goal of the form [Forall P l], instead of doing [repeat Forall_cons] (slow),
     do [apply Forall_app_sound]  (fast) *)
 
@@ -77,6 +85,13 @@ Fixpoint list_fold_left_err {A B: Type} (f: A -> B -> res A) (l: list B) (a0: re
       list_fold_left_err f l' (f a0 x)
   end.
 
+Lemma list_fold_left_err_err:
+  forall (A B: Type) (f: A -> B -> res A) (l: list B) e,
+  list_fold_left_err f l (Error e) = Error e.
+Proof.
+  intros; destruct l; reflexivity.
+Qed.
+
 Lemma list_fold_left_err_ext:
   forall {A B: Type} (f g: A -> B -> res A),
   (forall a b, f a b = g a b) ->
@@ -89,11 +104,20 @@ Proof.
     apply IHl.
 Qed.
 
-Lemma list_fold_right_err_err:
-  forall (A B: Type) (f: A -> B -> res A) (l: list B) e,
-  list_fold_left_err f l (Error e) = Error e.
+Lemma list_fold_left_err_ext_OK:
+  forall {A B: Type} (f g: A -> B -> res A),
+  (forall a b r, f a b = OK r -> g a b = OK r) ->
+  forall (l: list B) (a0: res A) (r: A),
+    list_fold_left_err f l a0 = OK r ->
+    list_fold_left_err g l a0 = OK r.
 Proof.
-  intros; destruct l; reflexivity.
+  induction l; intros.
+  - simpl in H0. rewrite H0. reflexivity.
+  - simpl in H0. monadInv H0. rewrite EQ. 
+    simpl. apply IHl. destruct (f x a) eqn:Ef. 
+    rewrite H with (r := a1); auto.
+    rewrite list_fold_left_err_err in EQ0.
+    discriminate.
 Qed.
 
 Fixpoint list_fold_right_err {A B: Type} (f: B -> A -> res A) (a0: res A) (l: list B) : res A :=
@@ -307,6 +331,20 @@ Section MERGE.
 
 End MERGE.
 
+Section FORALL3.
+  Context {A B C: Type}.
+
+  Variable P : A -> B -> C -> Prop.
+
+  Inductive Forall3 : list A -> list B -> list C -> Prop :=
+  | Forall3_nil : Forall3 nil nil nil
+  | Forall3_cons : forall x y z lx ly lz,
+      P x y z ->
+      Forall3 lx ly lz ->
+      Forall3 (cons x lx) (cons y ly) (cons z lz).
+
+End FORALL3.
+
 (* Tactics *)
 
 Ltac destruct_conj H :=
@@ -323,16 +361,4 @@ Ltac destruct_conj H :=
   | _ => idtac
   end.
       
-Section FORALL3.
-  Context {A B C: Type}.
-
-  Variable P : A -> B -> C -> Prop.
-
-  Inductive Forall3 : list A -> list B -> list C -> Prop :=
-  | Forall3_nil : Forall3 nil nil nil
-  | Forall3_cons : forall x y z lx ly lz,
-      P x y z ->
-      Forall3 lx ly lz ->
-      Forall3 (cons x lx) (cons y ly) (cons z lz).
-
-End FORALL3.
+Ltac inv H := Coqlib.inv H.

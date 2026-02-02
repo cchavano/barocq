@@ -93,7 +93,7 @@ Section S.
   Proof.
     unfold eval_def_fun.
     intros.
-    destruct (build_fun_value arch tabs te ge (Syntax.fn_params f) (Syntax.fn_return f) (Syntax.fn_body f)); try discriminate.
+    destruct (mk_fun_value arch tabs te ge (Syntax.fn_params f) (Syntax.fn_return f) (Syntax.fn_body f)); try discriminate.
     simpl in H.
     eapply genv_update_preserve_defs;eauto.
   Qed.
@@ -326,7 +326,7 @@ Section S.
       let needed_checked := List.filter (fun '(k,_) => has_var k vars) checked in
       let o := forall ge,
           Forall (has_property ge) needed_checked ->
-          let v := (build_funval arch tabs te ge params' tret' e) in
+          let v := (eval_fun arch tabs te ge params' tret' e) in
           eq_value tabs prop ((TFun (map (fun x : string * typ => snd x) params') tret')) v in
       eret o
     else fail.
@@ -371,7 +371,7 @@ Section S.
       if stree_equal vars ge
       then
         let o :=
-          let v := (build_funval arch tabs te ge params' tret' e) in
+          let v := (eval_fun arch tabs te ge params' tret' e) in
           eq_value tabs prop ((TFun (map (fun x : string * typ => snd x) params') tret')) v in
         eret o
       else Error (MSG "Def fun " :: MSG f :: nil)
@@ -1043,8 +1043,8 @@ Section S.
   Lemma build_funval_rec_eq : forall arch te ge ge' lt e le le' t,
       eq_env (vars_of_fun lt e) le le' ge ge' ->
       eq_env_all le le' ->
-      ext_fun tabs (ext_equal tabs) t (map snd lt) (build_funval_rec arch tabs te ge le lt t e)
-        (build_funval_rec arch tabs te ge' le' lt t e).
+      ext_fun tabs (ext_equal tabs) t (map snd lt) (eval_fun_rec arch tabs te ge le lt t e)
+        (eval_fun_rec arch tabs te ge' le' lt t e).
   Proof.
     unfold vars_of_fun.
     induction lt.
@@ -1074,7 +1074,7 @@ Section S.
         change (map snd (p :: lt)) with
            (snd p :: map snd lt).
         cbv beta iota.
-        rewrite build_funval_rec_rw.
+        rewrite eval_fun_rec_rw.
         eapply IHlt.
        apply eq_env_remove_params;auto.
        simpl in H. destruct a,p.
@@ -1183,7 +1183,7 @@ Section S.
     eexists. split. eauto.
     intros.
     eapply eq_value_trans;eauto.
-    unfold build_funval.
+    unfold eval_fun.
     assert (EQENV: eq_env (vars_of_fun params e) STree.empty STree.empty ge ge0).
     {
       unfold eq_env.
@@ -1546,7 +1546,7 @@ Section S.
   Proof.
     unfold generate_def_fun_obligation.
     unfold eval_def_fun.
-    unfold build_fun_value.
+    unfold mk_fun_value.
     intros.
     destruct (@MergeSort.nodup string String.leb String.eqb
                 (@map (prod string btyp) string
@@ -1756,7 +1756,7 @@ Section S.
   Proof.
     unfold eval_def_fun.
     intros.
-    unfold build_fun_value in EVAL.
+    unfold mk_fun_value in EVAL.
     destruct (MapList.nodup Ident.eq_dec (Syntax.fn_params f)); try discriminate.
     destruct (Typing.btyp_to_typ te (Syntax.fn_return f)); try discriminate.
     simpl in EVAL.

@@ -1285,7 +1285,7 @@ Section S.
 
   Definition eval_comp (te:tenv) (ge:genv) (e:env) (m:mem) (c:comp) (tr:typ) : res (val tr  * mem) :=
     match c with
-    | CpAtom a bt => let* va := eval_atom te ge e m tr a in
+    | CpAtom a => let* va := eval_atom te ge e m tr a in
                      OK (va,m)
     | CpArraySet a i v bt =>
         let* ta := typof_atom te a in
@@ -1376,7 +1376,7 @@ Section S.
 
 
 
-  Fixpoint build_funval_rec (te: tenv) (ge: genv)  (e: env) (params: smaplist typ) (tret: typ)  (s: statement) :
+  Fixpoint eval_fun_rec (te: tenv) (ge: genv)  (e: env) (params: smaplist typ) (tret: typ)  (s: statement) :
     mem -> typ_of_fun (List.map snd params) tret.
   Proof.
     destruct params.
@@ -1384,10 +1384,10 @@ Section S.
       apply (fun m _ => eval_statement te ge e m (Some tret) s).
     - simpl.
       intros m v.
-      specialize (build_funval_rec te ge (env_set (fst p) v e) params tret s m).
+      specialize (eval_fun_rec te ge (env_set (fst p) v e) params tret s m).
       destruct (List.map snd params).
-      + simpl in *. apply (build_funval_rec tt).
-      + simpl in *. apply build_funval_rec.
+      + simpl in *. apply (eval_fun_rec tt).
+      + simpl in *. apply eval_fun_rec.
   Defined.
 
   Definition env_empty : env := fun _ => fail.
@@ -1398,7 +1398,7 @@ Section S.
     then
       let* tret' := btyp_to_typ te tret in
       let* params' := MapList.map_err (btyp_to_typ te) params in
-      OK (DeclFun (List.map snd params') tret' (build_funval_rec te ge  env_empty params' tret' s))
+      OK (DeclFun (List.map snd params') tret' (eval_fun_rec te ge  env_empty params' tret' s))
     else fail.
 
 

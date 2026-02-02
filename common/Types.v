@@ -395,6 +395,17 @@ Proof.
   - apply Ident.eq_dec.
 Defined.
 
+Definition btyp_eqb (t1 t2: btyp) : bool :=
+  if btyp_eq_dec t1 t2 then true else false.
+
+Lemma btyp_eqb_eq:
+  forall (t1 t2: btyp), btyp_eqb t1 t2 = true <-> t1 = t2.
+Proof.
+  intros. unfold btyp_eqb; split;
+  destruct (btyp_eq_dec t1 t2); intros;
+  (tauto || discriminate).
+Qed.
+
 Fixpoint btyp_depth (t:btyp) : nat :=
   match t with
   | BBool
@@ -534,6 +545,14 @@ Polymorphic Fixpoint eval_typ (am: PMap.t Type) (t: typ) {struct t}: Type :=
   | TFun tparams tret => eval_funtyp (eval_typ am) tparams (eval_typ am tret)
   | TAbs ta => SMap.get ta am
   end.
+
+(* From Coq Require Import List String.
+
+Import ListNotations.
+
+Open Scope string_scope.
+
+Compute (eval_typ (PMap.init (unit: Type)) (TRecord "point" [("x", TInt32 Signed); ("y", TInt64 Signed)])). *)
 
 (** ** Type cast w.r.t. type equality *)
 

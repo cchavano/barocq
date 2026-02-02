@@ -18,11 +18,11 @@ Ltac vc :=
   | |- @check_value  _ _ _ _ => reflexivity
   | |-
       let ge := genv_has_property ?ABS ?ENV ?L in
-      let v  := build_funval ?A ?ABS ?TE ge ?P ?R
+      let v  := eval_fun ?A ?ABS ?TE ge ?P ?R
                   (Syntax.fn_body ?F) in
       eq_value ?ABS (VAL ?TY ?G) ?DTYP v
     => let L1 := (eval unfold L in L) in
-       cbv beta delta [F TY G L P R Syntax.fn_body build_funval];
+       cbv beta delta [F TY G L P R Syntax.fn_body eval_fun];
        gen_list L1; intro ge ; compute in ge;
        unfold eq_value; apply same_value_refl';[reflexivity | (compute; reflexivity)]
   end.

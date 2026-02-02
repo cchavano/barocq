@@ -41,6 +41,12 @@ Module MonError <: MONAD.
     | None => fail
     end.
 
+  Definition ignore_err {A: Type} (r: M A) : M A :=
+    match r with
+    | Error _ => fail
+    | _ => r
+    end.
+    
   Definition isOK {A: Type} (v: M A) : Prop :=
     exists x, v = OK x.
 
@@ -53,7 +59,7 @@ Module MonError <: MONAD.
     unfold isOK.
     intros. destruct H. congruence.
   Qed.
-
+  
   Remark ok_imp_some:
     forall (A: Type) (o: option A) (v: A),
     err_of_opt o = OK v ->
@@ -129,7 +135,7 @@ Module MonError <: MONAD.
     (at level 200, X name, Y name, A at level 100, B at level 200)
     : error_monad_scope.
 
-  Notation "let/catch X := A '/>' M 'in' B" := (bind_catch A (fun X => B) M)
+  Notation "let/c X := A '/>' M 'in' B" := (bind_catch A (fun X => B) M)
     (at level 200, X name, A at level 100, M at level 100, B at level 200)
     : error_monad_scope.
 

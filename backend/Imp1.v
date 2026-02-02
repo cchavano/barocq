@@ -140,17 +140,19 @@ Section DENOT.
         eval_statement_rec te ge le1 ty s2
     | StReturn a =>
         match ty with
-        | Some ty => eval_atom te ge le ty a
+        | Some ty =>
+            let* ta := typof_atom te a in
+            ecast_typ tabs (eval_atom te ge le ta a) ty
         | None => fail
         end
     | StAttr _ s1 => eval_statement_rec te ge le ty s1
     end.
 
   Definition eval_statement (te: tenv) (ge: genv) (le: lenv) (tr: typ) (body: statement) : res (eval_typ tr) :=
-    eval_statement_rec te ge le (Some tr) body.
+    ignore_err (eval_statement_rec te ge le (Some tr) body).
 
   Definition eval_prog (impl: genv) (prog: program) : res (tenv * genv) :=
-    Denot.eval_prog tabs statement eval_statement impl prog.
+    eval_prog tabs statement eval_statement impl prog.
 
 End DENOT.
 
@@ -213,9 +215,9 @@ Module Typing.
 
   Definition typecheck_comp (be: benv) (gx: gcontext) (lx: lcontext) (c: comp) : res comp :=
     match c with
-    | Syntax.CpAtom a _ =>
+    | Syntax.CpAtom a =>
         let* a' := typecheck_atom be gx lx a in
-        ret (CpAtom a' (Syntax.typof_atom a'))
+        ret (CpAtom a')
     | Syntax.CpArraySet a1 a2 a3 _ =>
         let* a1' := typecheck_atom be gx lx a1 in
         let* a2' := typecheck_atom be gx lx a2 in

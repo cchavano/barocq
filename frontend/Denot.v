@@ -47,23 +47,52 @@ Section DENOT.
     | _       => fail
     end.
 
+  Remark cast_typ_id:
+    forall t x,
+    @cast_typ t x t = OK x.
+  Proof.
+    intros. unfold cast_typ. 
+    destruct (typ_eq_dec t t); try contradiction.
+    assert (e = eq_refl). apply UIP_refl.
+    rewrite H. reflexivity.
+  Qed.
+
+  Lemma cast_typ_ok_imp_typ_eq:
+    forall t2 t1 v v',
+    @cast_typ t2 v t1 = OK v' ->
+    t1 = t2.
+  Proof.
+    unfold cast_typ; intros.
+    destruct (typ_eq_dec t2 t1); try discriminate.
+    inv H. reflexivity.
+  Qed.
+
   Definition ecast_typ  {t2:typ} (v: res (eval_typ t2)) (t1:typ): res (eval_typ t1) :=
     match typ_eq_dec t2 t1 with
     | left EQ =>  cast (f_equal res (f_equal eval_typ EQ)) v
     | _       => fail
     end.
 
-  Lemma ecast_same_typ:
+  Lemma ecast_typ_id: 
     forall t v,
     @ecast_typ t v t = v.
   Proof.
-    intros. 
-    unfold ecast_typ. destruct (typ_eq_dec t t).
-    - assert (e = eq_refl). apply UIP_refl.
-      rewrite H. reflexivity.
-    - contradiction.
+    intros. unfold ecast_typ.
+    destruct (typ_eq_dec t t); try contradiction.
+    assert (e = eq_refl). apply UIP_refl.
+    rewrite H; reflexivity.
   Qed.
 
+  Lemma ecast_typ_ok_imp_typ_eq:
+    forall t2 t1 v v',
+    @ecast_typ t2 v t1 = OK v' ->
+    t2 = t1.
+  Proof.
+    unfold ecast_typ; intros.
+    destruct (typ_eq_dec t2 t1); try tauto.
+    destruct v; discriminate.
+  Qed.
+  
   Definition cast_value  (v:value) (t1:typ) : res (eval_typ t1).
   Proof.
     destruct v.
@@ -378,7 +407,7 @@ Section DENOT.
     destruct ta.
     4 :
     {
-      destruct arch eqn:Earch.
+      destruct arch.
       - destruct (typ_eq_dec t2 (TInt32 Unsigned)).
         + destruct (typ_eq_dec ta t).
           * subst. simpl in i. simpl in a.
@@ -569,7 +598,7 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
     - simpl in f.
       destruct l.
       + apply (ecast_typ (f e) ty).
-      + apply (eval_app _ _ (f e) args).
+      + apply (eval_app _ _ (f e) args ty).
   Defined.
 
   Fixpoint eval_app_typ (tparams: list typ) (tret: typ) (f: eval_funtyp eval_typ tparams (eval_typ tret)) (args: DList.dlist eval_typ tparams) (ty:typ):
@@ -647,8 +676,8 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
 
   Definition eval_comp (te: tenv) (ge: genv) (le: lenv) (ty: typ) (c: comp) : res (eval_typ ty) :=
     match c with
-    | CpAtom a _ => eval_atom te ge le ty a
-    | CpArraySet a1 a2 a3 _ =>
+    | CpAtom a => eval_atom te ge le ty a
+    | CpArraySet a1 a2 a3 bt =>
         let* ta1 := typof_atom te a1 in
         let* ta2 := typof_atom te a2 in
         let* ta3 := typof_atom te a3 in
@@ -656,7 +685,7 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
         let* v2 := eval_atom te ge le ta2 a2 in
         let* v3 := eval_atom te ge le ta3 a3 in
         eval_array_set ta1 v1 ta2 v2 ta3 v3 ty
-    | CpRecordUpdate a1 k a2 _ =>
+    | CpRecordUpdate a1 k a2 bt =>
         let* ta1 := typof_atom te a1 in
         let* ta2 := typof_atom te a2 in
         let* v1 := eval_atom te ge le ta1 a1 in
@@ -717,13 +746,13 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
 
   Variable eval_expr : tenv -> genv -> lenv -> (forall (ty: typ) (e: EXPR), res (eval_typ ty)).
 
-  Fixpoint build_funval_rec (te: tenv) (ge: genv) (le: lenv) (params: smaplist typ) (tret: typ) (e: EXPR) :
+  Fixpoint eval_fun_rec (te: tenv) (ge: genv) (le: lenv) (params: smaplist typ) (tret: typ) (e: EXPR) :
     eval_funtyp eval_typ (List.map snd  params) (eval_typ tret) :=
     match params  with
     | [] => fun _ : unit => eval_expr te ge le tret e
     | p :: l =>
         fun y : eval_typ (snd p) =>
-          match
+          (match
             l as l0
             return
             (eval_funtyp eval_typ (List.map (fun x : string * typ => snd x) l0) (eval_typ tret) ->
@@ -731,18 +760,18 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
              match l1 with
              | [] => res (eval_typ tret)
              | _ :: _ => eval_funtyp eval_typ l1 (eval_typ tret)
-           end)
-      with
-      | [] =>
-          fun _ => eval_expr te ge (lenv_update le (fst p) (Val (snd p) y)) tret e
-      | p0 :: l0 =>
-          fun
-            build_funval_rec  => build_funval_rec
-      end (build_funval_rec te ge (lenv_update le (fst p) (Val (snd p) y)) l tret e)
+            end)
+          with
+          | [] =>
+              fun _ => eval_expr te ge (lenv_update le (fst p) (Val (snd p) y)) tret e
+          | p0 :: l0 =>
+              fun
+                eval_fun_rec  => eval_fun_rec
+          end) (eval_fun_rec te ge (lenv_update le (fst p) (Val (snd p) y)) l tret e)
   end.
 
-  Lemma build_funval_rec_rw : forall (te: tenv) (ge: genv) (le: lenv) (params: smaplist typ) (tret: typ) (e: EXPR),
-    build_funval_rec te ge le params tret e =
+  Lemma eval_fun_rec_rw : forall (te: tenv) (ge: genv) (le: lenv) (params: smaplist typ) (tret: typ) (e: EXPR),
+    eval_fun_rec te ge le params tret e =
     match params  with
     | [] => fun _ : unit => eval_expr te ge le tret e
     | p :: l =>
@@ -760,26 +789,31 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
           fun _ => eval_expr te ge (lenv_update le (fst p) (Val (snd p) y)) tret e
       | p0 :: l0 =>
           fun
-            build_funval_rec  => build_funval_rec
-      end (build_funval_rec te ge (lenv_update le (fst p) (Val (snd p) y)) l tret e)
+            eval_fun_rec  => eval_fun_rec
+      end (eval_fun_rec te ge (lenv_update le (fst p) (Val (snd p) y)) l tret e)
   end.
   Proof.
     destruct params;reflexivity.
   Qed.
 
-  Definition build_funval (te: tenv) (ge: genv) (params: smaplist typ) (tret: typ) (e: EXPR) : eval_typ (TFun (List.map (fun x => snd x) params) tret) :=
-    build_funval_rec te ge STree.empty params tret e.
+  Definition eval_fun (te: tenv) (ge: genv) (params: smaplist typ) (tret: typ) (e: EXPR) : eval_typ (TFun (List.map (fun x => snd x) params) tret) :=
+    eval_fun_rec te ge STree.empty params tret e.
 
-  Definition build_fun_value (te: tenv) (ge: genv) (params: smaplist btyp) (tret: btyp) (e: EXPR) : res value :=
+  (* Definition mk_fun_value (te: tenv) (ge: genv) (params: smaplist btyp) (tret: btyp) (e: EXPR) : res value :=
     if MapList.nodup Ident.eq_dec params then
       let* tret' := btyp_to_typ te tret in
       let* params' := MapList.map_err (btyp_to_typ te) params in
-      ret (Val (TFun (List.map (fun x => snd x) params') tret') (build_funval te ge params' tret' e))
-    else fail.
+      ret (Val (TFun (List.map (fun x => snd x) params') tret') (eval_fun te ge params' tret' e))
+    else fail. *)
 
   Definition eval_def_fun (te: tenv) (ge: genv) (x: ident) (f: Syntax.function EXPR btyp) : res genv :=
-    let* fv := build_fun_value te ge (fn_params f) (fn_return f) (fn_body f) in
-    genv_update ge x fv.
+    let '(tret, params) := (fn_return f, fn_params f) in
+    if MapList.nodup Ident.eq_dec params then
+      let* tret' := btyp_to_typ te tret in
+      let* params' := MapList.map_err (btyp_to_typ te) params in
+      let fv := Val (TFun (List.map (fun x => snd x) params') tret') (eval_fun te ge params' tret' (fn_body f)) in
+      genv_update ge x fv
+    else fail.
 
   Definition fields_btyp_to_typ (te: tenv) (fields: smaplist btyp) : res (smaplist typ) :=
     MapList.map_err (btyp_to_typ te) fields.
@@ -813,6 +847,33 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
     | DeclFun y params tret => eval_decl_fun te impl ge y params tret
     end.
 
+  Lemma eval_globdef_add_gid:
+    forall te impl ge ge' def, 
+      eval_globdef te impl ge def = OK ge' ->
+      STree.keys ge' = SSet.add (globdef_id def) (STree.keys ge).
+  Proof.
+    intros; destruct def; simpl in H.
+    - unfold eval_def_const in H. monadInv H.
+      unfold genv_update in EQ3.
+      destruct (genv_get ge i); try discriminate.
+      inv EQ3. simpl. apply STree.keys_set.
+    - unfold eval_def_fun in H.
+      destruct (nodup Ident.eq_dec (fn_params f)); try discriminate.
+      monadInv H. unfold genv_update in EQ2.
+      destruct (genv_get ge i); try discriminate.
+      inv EQ2. simpl. apply STree.keys_set. 
+    - unfold eval_decl_const in H. monadInv H.
+      destruct (typ_eq_dec x (typeof_value x0)); try discriminate.
+      unfold genv_update in EQ2.
+      destruct (genv_get ge i); try discriminate.
+      inv EQ2. simpl. apply STree.keys_set. 
+    - unfold eval_decl_fun in H.
+      Opaque typ_eq_dec. monadInv H.
+      destruct (typ_eq_dec (TFun x x0) (typeof_value x1)); try discriminate.
+      unfold genv_update in EQ3. destruct (genv_get ge i); inv EQ3.
+      simpl. apply STree.keys_set.
+  Qed. 
+
   Definition eval_prog (impl: genv) (prog: program EXPR btyp literal) : res (tenv * genv) :=
     let* te := tenv_of_type_defs (prog_types prog) in
     let* ge' :=
@@ -826,3 +887,15 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
   End EVAL_EXPR.
 
 End DENOT.
+
+Ltac erase_cast H :=
+  match type of H with
+  | @cast_typ _ _ _ _ = OK _ =>
+      let EQt := fresh "EQt" in
+      pose proof (cast_typ_ok_imp_typ_eq _ _ _ _ _ H) as EQt;
+      subst; rewrite cast_typ_id in H
+  | @ecast_typ _ _ _ _ = OK _ =>
+      let EQt := fresh "EQt" in
+      pose proof (ecast_typ_ok_imp_typ_eq _ _ _ _ _ H) as EQt;
+      subst; rewrite ecast_typ_id in H
+  end.

@@ -144,7 +144,7 @@ Fixpoint pp_atom (a:atom) :=
 
 Definition pp_comp (c:comp) :=
   match c with
-  | CpAtom a _ => pp_atom a
+  | CpAtom a => pp_atom a
   | CpRecordUpdate a f v _ => Bcat (pp_atom a)
                               (Bcat
                                   (Bcat (Bcat (Bstr ".") (Bstr f)) (Bstr "<-"))

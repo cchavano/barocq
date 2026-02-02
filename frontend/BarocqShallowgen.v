@@ -1190,11 +1190,11 @@ End Monadification.
 Open Scope error_monad_scope.
 
 Definition monadify_norm_program (arch: Target.archi) (shver: shallow_version) (prog: Barocq.program) : res Monadic.program :=
-  let/catch bnf := Normalization.norm_program prog /> "unable to normalize the program" in
-  let/catch mon := Monadification.monadify_program arch shver bnf /> "unable to monadify the program" in
+  let/c bnf := Normalization.norm_program prog /> "unable to normalize the program" in
+  let/c mon := Monadification.monadify_program arch shver bnf /> "unable to monadify the program" in
   eret mon.
 
 Definition monadify_norm2_program (arch: Target.archi) (shver: shallow_version) (prog: Barocq.program) : res Monadic.program :=
-  let/catch bnf := Normalization2.norm_program prog /> "unable to normalize the program (v2)" in
-  let/catch mon := Monadification.monadify_program arch shver bnf /> "unable to monadify the program (v2)" in
+  let/c bnf := Normalization2.norm_program prog /> "unable to normalize the program (v2)" in
+  let/c mon := Monadification.monadify_program arch shver bnf /> "unable to monadify the program (v2)" in
   eret mon.

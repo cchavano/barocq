@@ -452,11 +452,14 @@ Section DENOT.
 
   Local Notation eval_typ := (Types.eval_typ tabs).
 
+  Local Notation genv := (genv tabs).
+
+  Local Notation lenv := (lenv tabs).
 
   Definition typof_expr (te:tenv) (e:expr) : res typ :=
     btyp_to_typ te (typof_expr e).
 
-  Fixpoint eval_expr (te: tenv) (ge: genv tabs) (le: lenv tabs) (ty:typ) (e: expr)  : res (eval_typ ty) :=
+  Fixpoint eval_expr (te: tenv) (ge: genv) (le: lenv) (ty:typ) (e: expr)  : res (eval_typ ty) :=
     match e with
     | ETrue  => @cast_typ tabs TBool true ty
     | EFalse => @cast_typ tabs TBool false ty
@@ -532,7 +535,7 @@ Section DENOT.
     | EAttr _ e1 => eval_expr te ge le ty e1
     end.
 
-  Lemma eval_expr_rew : forall (te: tenv) (ge: genv tabs ) (le: lenv tabs ) (ty:typ) (e: expr),
+  Lemma eval_expr_rew : forall (te: tenv) (ge: genv) (le: lenv) (ty:typ) (e: expr),
       eval_expr te ge le ty e =
     match e with
     | ETrue  => @cast_typ tabs TBool true ty
@@ -649,9 +652,9 @@ Section DENOT.
 
   End MAP'.
 
-  Fixpoint build_funval_rec (te: tenv) (ge: genv tabs) (le: lenv tabs) (params: smaplist typ) (tret: typ) (e: expr) :
-    eval_funtyp eval_typ (List.map snd  params) (eval_typ tret) :=
-    match params  with
+  Fixpoint eval_fun_rec (te: tenv) (ge: genv) (le: lenv) (params: smaplist typ) (tret: typ) (e: expr) :
+    eval_funtyp eval_typ (List.map snd params) (eval_typ tret) :=
+    match params with
     | [] => fun _ : unit => eval_expr te ge le tret e
     | p :: l =>
         fun y : eval_typ (snd p) =>
@@ -669,13 +672,13 @@ Section DENOT.
           fun _ => eval_expr te ge (lenv_update tabs le (fst p) (Val tabs (snd p) y)) tret e
       | p0 :: l0 =>
           fun
-            build_funval_rec  => build_funval_rec
-      end (build_funval_rec te ge (lenv_update tabs le (fst p) (Val tabs (snd p) y)) l tret e)
+            eval_fun_rec  => eval_fun_rec
+      end (eval_fun_rec te ge (lenv_update tabs le (fst p) (Val tabs (snd p) y)) l tret e)
   end.
 
-  Lemma build_funval_rec_rw : forall (te: tenv) (ge: genv tabs) (le: lenv tabs) (params: smaplist typ) (tret: typ) (e: expr),
-    build_funval_rec te ge le params tret e =
-    match params  with
+  Lemma eval_fun_rec_rw : forall (te: tenv) (ge: genv) (le: lenv) (params: smaplist typ) (tret: typ) (e: expr),
+    eval_fun_rec te ge le params tret e =
+    match params with
     | [] => fun _ : unit => eval_expr te ge le tret e
     | p :: l =>
         fun y : eval_typ (snd p) =>
@@ -692,28 +695,28 @@ Section DENOT.
       | [] =>
           fun _ => eval_expr te ge (lenv_update tabs le (fst p) (Val tabs (snd p) y)) tret e
       | p0 :: l0 =>
-          fun
-            build_funval_rec  => build_funval_rec
-      end (build_funval_rec te ge (lenv_update tabs le (fst p) (Val tabs (snd p) y)) l tret e)
+          fun 
+            eval_fun_rec  => eval_fun_rec
+      end (eval_fun_rec te ge (lenv_update tabs le (fst p) (Val tabs (snd p) y)) l tret e)
   end.
   Proof.
     destruct params;reflexivity.
   Qed.
 
-  Definition build_funval (te: tenv) (ge: genv tabs) (params: smaplist typ) (tret: typ) (e: expr) : eval_typ (TFun (List.map (fun x => snd x) params) tret).
+  Definition eval_fun (te: tenv) (ge: genv) (params: smaplist typ) (tret: typ) (e: expr) : eval_typ (TFun (List.map (fun x => snd x) params) tret).
     destruct params as [| p params'].
     - simpl.
       intro.
       apply (eval_expr te ge STree.empty tret e).
-    - apply (build_funval_rec te ge STree.empty (p :: params') tret e).
+    - apply (eval_fun_rec te ge STree.empty (p :: params') tret e).
   Defined.
 
 
-  Definition build_fun_value (te: tenv) (ge: genv tabs) (params: smaplist btyp) (tret: btyp) (e: expr) : res (value tabs) :=
+  Definition mk_fun_value (te: tenv) (ge: genv) (params: smaplist btyp) (tret: btyp) (e: expr) : res (value tabs) :=
     if MapList.nodup Ident.eq_dec params then
       let* tret' := btyp_to_typ te tret in
       let* params' := MapList.map_err (btyp_to_typ te) params in
-      ret (Val tabs (TFun (List.map (fun x => snd x) params') tret') (build_funval te ge params' tret' e))
+      ret (Val tabs (TFun (List.map (fun x => snd x) params') tret') (eval_fun te ge params' tret' e))
     else fail.
 
   Definition fields_btyp_to_typ (te: tenv) (fields: smaplist btyp) : res (smaplist typ) :=
@@ -728,22 +731,22 @@ Section DENOT.
         TEnv.update_defs te tid (TdRecord fields')
     end.
 
-  Definition eval_def_const (te: tenv) (ge: genv tabs) (x: ident) (l: literal) (ty: btyp) : res (genv tabs) :=
+  Definition eval_def_const (te: tenv) (ge: genv) (x: ident) (l: literal) (ty: btyp) : res (genv) :=
     let* ty' := btyp_to_typ te ty in
     let* vv := eval_literal te l in
     let* v'  := cast_value tabs vv ty' in
     genv_update tabs ge x (Val tabs ty' v').
 
-  Definition eval_def_fun (te: tenv) (ge: genv tabs) (x: ident) (f: function) : res (genv tabs) :=
-    let* fv := build_fun_value te ge (fn_params f) (fn_return f) (fn_body f) in
+  Definition eval_def_fun (te: tenv) (ge: genv) (x: ident) (f: function) : res (genv) :=
+    let* fv := mk_fun_value te ge (fn_params f) (fn_return f) (fn_body f) in
     genv_update tabs ge x fv.
 
-  Definition eval_decl_const (te: tenv) (ge : genv tabs) (x:ident) (bt:btyp) :=
+  Definition eval_decl_const (te: tenv) (ge : genv) (x:ident) (bt:btyp) :=
     let* ty :=  Typing.btyp_to_typ te bt  in
     let* v  := genv_get tabs ge x in
     if typ_eq_dec ty (typeof_value tabs v) then eret tt else fail.
 
-  Definition eval_decl_fun (te:tenv) (ge : genv tabs) (x:Syntax.ident) (params : list (Syntax.param_attr * btyp)) (tret:btyp) :=
+  Definition eval_decl_fun (te:tenv) (ge : genv) (x:Syntax.ident) (params : list (Syntax.param_attr * btyp)) (tret:btyp) :=
     let* tparam := mmap (Typing.btyp_to_typ te) (List.map snd params) in
     let* tret   := Typing.btyp_to_typ te tret in
     let* v := genv_get tabs ge x in
@@ -751,7 +754,7 @@ Section DENOT.
 
 
   (** Interpreter *)
-  Fixpoint interpret_rec (te: tenv) (ge: genv tabs) (cmds: list command) : res (list (value tabs)) :=
+  Fixpoint interpret_rec (te: tenv) (ge: genv) (cmds: list command) : res (list (value tabs)) :=
     match cmds with
     | nil => ret nil
     | c :: xprog' =>
@@ -781,7 +784,7 @@ Section DENOT.
 
   (** Evaluation of a definition with dynamic environments *)
 
-  Fixpoint eval_def_rec (te: tenv) (ge: genv tabs) (prog: program) (x: ident) : res (value tabs) :=
+  Fixpoint eval_def_rec (te: tenv) (ge: genv) (prog: program) (x: ident) : res (value tabs) :=
     match prog with
     | nil => fail
     | d :: prog' =>
@@ -811,12 +814,12 @@ Section DENOT.
     | Error _ => unit
     end.
 
-  Definition eval_def (impl: genv tabs) (prog: program) (x: ident) : res (value tabs) :=
+  Definition eval_def (impl: genv) (prog: program) (x: ident) : res (value tabs) :=
     eval_def_rec TEnv.empty impl prog x.
 
   (** Evaluation of a whole program *)
 
-  Fixpoint eval_prog_rec (te: tenv) (ge: (genv tabs)) (prog: program) : res (tenv * (genv tabs)) :=
+  Fixpoint eval_prog_rec (te: tenv) (ge: (genv)) (prog: program) : res (tenv * (genv)) :=
     match prog with
     | nil => ret (te,ge)
     | d :: prog' =>
@@ -840,12 +843,12 @@ Section DENOT.
         end
     end.
 
-  Definition eval_prog (impl: genv tabs) (prog: program) : res (tenv* (genv tabs)) :=
+  Definition eval_prog (impl: genv) (prog: program) : res (tenv* (genv)) :=
     eval_prog_rec TEnv.empty impl prog.
 
   (** Redefinition of eval_def by computing the whole global environment first *)
 
-  Definition eval_def2 (impl: genv tabs) (prog: program) (x: ident) : res (value tabs) :=
+  Definition eval_def2 (impl: genv) (prog: program) (x: ident) : res (value tabs) :=
     let* (_, ge) := eval_prog impl prog in
     genv_get tabs ge x.
 

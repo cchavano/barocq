@@ -989,7 +989,7 @@ Definition deep_access (env:aenv) (d:domain) (a:atom) (acc : list EdgeLabel.t)  
 
 Definition eval_comp (te:tenv) (env : aenv) (d:domain) (c:comp)  : res (domain * KVar) :=
   match c with
-  | CpAtom a _ => aeval_atom te env d a
+  | CpAtom a => aeval_atom te env d a
   | CpArraySet a i vl _ => array_set te env d a i vl
   | CpRecordUpdate a fd vl _ => record_set te env d a fd vl
   | CpCall f btf args _  => aeval_call aeval_atom te env d f btf args
@@ -1395,14 +1395,14 @@ Definition transl_comp (te:tenv) (env:aenv) (d:domain) (c:comp) : res comp :=
       match write te env d a (cons (EdgeLabel.Index i) nil) v  with
       | Error m => Error m
       | OK(_,b) =>
-          OK (if b then CpAtom a bt
+          OK (if b then CpAtom a
               else c)
       end
   | CpRecordUpdate a i v bt =>
       match write te env d a (cons (EdgeLabel.Field i) nil) v  with
       | Error m =>  let err := Pp.pp (pp_domain d) in
                     Error (MSG err :: nil)
-      | OK(_,b) => if b then OK (CpAtom a bt)
+      | OK(_,b) => if b then OK (CpAtom a)
                    else OK c
       end
   | _  => OK c
@@ -1438,7 +1438,7 @@ Fixpoint atom_is_var (id:ident) (a:atom) :=
 
 Definition comp_is_var (id:ident) (c:comp) :=
   match c with
-  | CpAtom a _ => atom_is_var id a
+  | CpAtom a => atom_is_var id a
   | _ => false
   end.
 

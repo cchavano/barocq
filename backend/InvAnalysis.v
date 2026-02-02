@@ -245,7 +245,7 @@ Definition call (te:tenv) (age: aenv) (d:domain) (ge:genv) (id:ident) (args:list
 
 Definition inv_comp  (te:tenv) (age: aenv) (d:domain) (ge:genv)  (env:InvMap.t) (c:comp) :=
   match c with
-  | CpAtom a _ => OK (eval_atom env a,env)
+  | CpAtom a => OK (eval_atom env a,env)
   | CpArraySet a1 i v _ => set_field te age d env a1 (EdgeLabel.Index i) v
   | CpRecordUpdate a1 fd v _ => set_field te age d env a1 (EdgeLabel.Field fd) v
   | CpCall id _ args _  => call te age d ge id args env

@@ -14,18 +14,18 @@ Section NORM.
     match e with
     | BarocqTyped.ECast _ ty =>
         let* a := list_nth_err la 0 in
-        eret (EAtom (ACast a ty) ty)
+        eret (EAtom (ACast a ty))
     | BarocqTyped.EUnaryOp op _ ty =>
         let* a := list_nth_err la 0 in
-        eret (EAtom (AUnaryOp op a ty) ty)
+        eret (EAtom (AUnaryOp op a ty))
     | BarocqTyped.EBinaryOp op _ _ ty =>
         let* a1 := list_nth_err la 0 in
         let* a2 := list_nth_err la 1 in
-        eret (EAtom (ABinaryOp op a1 a2 ty) ty)
+        eret (EAtom (ABinaryOp op a1 a2 ty))
     | BarocqTyped.EArrayGet _ _ ly ty =>
         let* a1 := list_nth_err la 0 in
         let* a2 := list_nth_err la 1 in
-        eret (EAtom (AArrayGet a1 a2 ly ty) ty)
+        eret (EAtom (AArrayGet a1 a2 ly ty))
     | BarocqTyped.EArraySet _ _ _ ty =>
         let* a1 := list_nth_err la 0 in
         let* a2 := list_nth_err la 1 in
@@ -33,7 +33,7 @@ Section NORM.
         eret (EArraySet a1 a2 a3 ty)
     | BarocqTyped.ERecordProj _ x ly ty =>
         let* a := list_nth_err la 0 in
-        eret (EAtom (ARecordProj a x ly ty) ty)
+        eret (EAtom (ARecordProj a x ly ty))
     | BarocqTyped.ERecordUpdate _ x _ ty =>
         let* a1 := list_nth_err la 0 in
         let* a2 := list_nth_err la 1 in
@@ -42,7 +42,7 @@ Section NORM.
         let* a := list_nth_err la 0 in
         let args := tail la in
         if SSet.mem f pure_funs then
-          eret (EAtom (APureCall f tf args ty) ty)
+          eret (EAtom (APureCall f tf args ty))
         else
           eret (EApp a args ty)
     | _ => efail
@@ -155,17 +155,17 @@ Section NORM.
     in
     match e with
     | BarocqTyped.ETrue =>
-        ret (EAtom ATrue BBool)
+        ret (EAtom ATrue)
     | BarocqTyped.EFalse =>
-        ret (EAtom AFalse BBool)
+        ret (EAtom AFalse)
     | BarocqTyped.EInt32 i s =>
-        ret (EAtom (AInt32 i s) (BInt32 s))
+        ret (EAtom (AInt32 i s))
     | BarocqTyped.EInt64 i s =>
-        ret (EAtom (AInt64 i s) (BInt64 s))
+        ret (EAtom (AInt64 i s))
     | BarocqTyped.EConstr x i ty =>
-        ret (EAtom (AConstr x i ty) ty)
+        ret (EAtom (AConstr x i ty))
     | BarocqTyped.EVar x ty =>
-        ret (EAtom (AVar x ty) ty)
+        ret (EAtom (AVar x ty))
     | BarocqTyped.ECast e1 ty =>
         norm_exprlist e [e1]
     | BarocqTyped.EUnaryOp op e1 _ =>

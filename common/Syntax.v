@@ -171,14 +171,14 @@ End ATOMIND.
 (** ** Computations with atomic operands *)
 
 Inductive comp : Type := 
-  | CpAtom : atom -> btyp -> comp
+  | CpAtom : atom -> comp
   | CpArraySet : atom -> atom -> atom -> btyp -> comp
   | CpRecordUpdate : atom -> ident -> atom -> btyp -> comp
   | CpCall : ident -> btyp -> list atom -> btyp -> comp.
 
 Definition typof_comp (c: comp) : btyp :=
   match c with
-  | CpAtom _ ty
+  | CpAtom a => typof_atom a
   | CpArraySet _ _ _ ty
   | CpRecordUpdate _ _ _ ty
   | CpCall _ _ _ ty => ty

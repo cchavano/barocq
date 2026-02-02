@@ -279,8 +279,8 @@ Definition typecheck_array_set (arch: Target.archi) (ty1 ty2 ty3: btyp) : res bt
 Definition typecheck_record_proj (be: benv) (ty: btyp) (x: ident) : res btyp :=
   match ty with
   | BRecord t _ =>
-      let/catch fields := TEnv.get_rdef be t
-        /> "Typing.typecheck_record_proj: unknown record type"
+      let/c fields := TEnv.get_rdef be t
+         /> "Typing.typecheck_record_proj: unknown record type"
       in
       btypof_field x (MapList.map fst fields)
   | _ => failwith "Typing.typecheck_record_proj: record type expected"
@@ -289,7 +289,7 @@ Definition typecheck_record_proj (be: benv) (ty: btyp) (x: ident) : res btyp :=
 Definition typecheck_record_proj2 (be: benv) (ty: btyp) (x: ident) : res field_descr :=
   match ty with
   | BRecord t _ =>
-      let/catch fields := TEnv.get_rdef be t
+      let/c fields := TEnv.get_rdef be t
         /> "Typing.typecheck_record_proj: unknown record type"
       in
       MapList.find_err Ident.eq_dec x fields
@@ -299,7 +299,7 @@ Definition typecheck_record_proj2 (be: benv) (ty: btyp) (x: ident) : res field_d
 Definition typecheck_record_update (be: benv) (ty1 ty2: btyp) (x: ident) : res btyp :=
   match ty1 with
   | BRecord t _ =>
-      let/catch fields := TEnv.get_rdef be t
+      let/c fields := TEnv.get_rdef be t
         /> "Typing.typecheck_record_proj: unknown record type"
       in
       let* tx := btypof_field x (MapList.map fst fields) in

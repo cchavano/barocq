@@ -8,7 +8,7 @@ From BarocqComp Require Pp Printer.
   (** ** Expressions *)
 
 Inductive expr : Type :=
-  | EAtom : atom -> btyp -> expr
+  | EAtom : atom -> expr
   | EArraySet : atom -> atom -> atom -> btyp -> expr
   | ERecordUpdate : atom -> ident -> atom -> btyp -> expr
   | EApp : atom -> list atom -> btyp -> expr
@@ -19,7 +19,7 @@ Inductive expr : Type :=
 
 Fixpoint btypof_expr (e: expr) : btyp :=
   match e with
-  | EAtom _ ty
+  | EAtom a => Syntax.typof_atom a
   | EArraySet _ _ _ ty
   | ERecordUpdate _ _ _ ty
   | EApp _ _ ty
@@ -74,7 +74,7 @@ Section WF.
 
   Fixpoint wf_expr (locals: SSet.t) (e: expr) : bool :=
     match e with
-    | EAtom a _ => wf_atom locals a
+    | EAtom a => wf_atom locals a
     | EArraySet a1 a2 a3 _ =>
         (wf_atom locals a1) && (wf_atom locals a2) && (wf_atom locals a3)
     | ERecordUpdate a1 _ a2 _ =>
@@ -103,7 +103,7 @@ Module Pp.
 
   Fixpoint pp_expr (e:expr) : box :=
     match e with
-    | EAtom a _ => Printer.pp_atom a
+    | EAtom a => Printer.pp_atom a
     | EArraySet a i v _ => Pp.seq (Printer.pp_atom a :: Bstr "[" :: Printer.pp_atom i :: Bstr "] <- " :: Printer.pp_atom v :: nil)
     | ERecordUpdate a fd v _ => Pp.seq (Printer.pp_atom a :: Bstr "." :: Bstr fd :: Bstr " <- " :: Printer.pp_atom v :: nil)
     | EApp a l _ => Pp.seq (Printer.pp_atom a :: Bstr "(" :: pp_list (Bstr ", ") Printer.pp_atom l :: Bstr ")" :: nil)
@@ -143,50 +143,62 @@ Section DENOT.
   Definition typof_expr (te:tenv) (e:expr) : res typ :=
     btyp_to_typ te (btypof_expr e).
 
-  Fixpoint eval_expr (te: tenv) (ge: genv) (le: lenv) (ty:typ) (e: expr)  : res (eval_typ ty) :=
+  Fixpoint eval_expr_rec (te: tenv) (ge: genv) (le: lenv) (ty:typ) (e: expr) : res (eval_typ ty) :=
     match e with
-    | EAtom a _ => eval_atom te ge le ty a
-    | EArraySet a1 a2 a3 _ =>
+    | EAtom a =>
+        let* ta := typof_atom te a in
+        ecast_typ tabs (eval_atom te ge le ta a) ty
+    | EArraySet a1 a2 a3 bt =>
+        let* t := btyp_to_typ te bt in
         let* ta1 := typof_atom te a1 in
         let* ta2 := typof_atom te a2 in
         let* ta3 := typof_atom te a3 in
         let* v1 := eval_atom te ge le ta1 a1 in
         let* v2 := eval_atom te ge le ta2 a2 in
         let* v3 := eval_atom te ge le ta3 a3 in
-        eval_array_set arch tabs ta1 v1 ta2 v2 ta3 v3 ty
-    | ERecordUpdate a1 k a2 _ =>
+        ecast_typ tabs (eval_array_set arch tabs ta1 v1 ta2 v2 ta3 v3 t) ty
+    | ERecordUpdate a1 k a2 bt =>
+        let* t := btyp_to_typ te bt in
         let* ta1 := typof_atom te a1 in
         let* ta2 := typof_atom te a2 in
         let* v1 := eval_atom te ge le ta1 a1 in
         let* v2 := eval_atom te ge le ta2 a2 in
-        eval_record_update tabs ta1 v1 k ta2 v2 ty
-    | EApp f args tr =>
+        ecast_typ tabs (eval_record_update tabs ta1 v1 k ta2 v2 t) ty
+    | EApp f args btr =>
+        let* tr := btyp_to_typ te btr in
         let* tf := typof_atom te f in
         match tf with
         | TFun tparams tret =>
-            let* f := eval_atom te ge le  (TFun tparams tret) f in
-            (* let* vargs := DList.map2 _ (eval_atom te ge le) args tparams in
-            eval_app_res tabs tparams tret f vargs ty *)
-            let* vargs := DList.mmap _ (eval_atom te ge le) args tparams in
-            eval_app tabs tparams tret f vargs ty
+            match f with
+            | AVar f _ =>
+                let* f := eval_var tabs ge le f (TFun tparams tret) in
+                (* let* vargs := DList.map2 _ (eval_atom te ge le) args tparams in
+                eval_app_res tabs tparams tret f vargs ty *)
+                let* vargs := DList.mmap _ (eval_atom te ge le) args tparams in
+                ecast_typ tabs (eval_app tabs tparams tret f vargs tr) ty
+            | _ => fail
+            end
         |  _  => fail
         end
     | EIfThenElse a1 e2 e3 _ =>
         let* v1 := eval_atom te ge le TBool a1  in
-        if v1 then eval_expr te ge le ty e2
-        else eval_expr te ge le ty e3
+        if v1 then eval_expr_rec te ge le ty e2
+        else eval_expr_rec te ge le ty e3
     | EMatch a1 cases _  =>
         let* ta1:= typof_atom te a1 in
         let* v1 := eval_atom te ge le ta1 a1 in
-        let vcases := MapList.map (eval_expr te ge le ty) cases in
+        let vcases := MapList.map (eval_expr_rec te ge le ty) cases in
         eval_match tabs ta1 v1 ty vcases
     | ELetIn x e1 e2 _ =>
         let* te1 := typof_expr te e1 in
-        let* v1 := eval_expr te ge le te1 e1 in
+        let* v1 := eval_expr_rec te ge le te1 e1 in
         let le' := lenv_update tabs le x (Val tabs te1 v1) in
-        eval_expr te ge le' ty e2
-    | EAttr _ e1 => eval_expr te ge le ty e1
+        eval_expr_rec te ge le' ty e2
+    | EAttr _ e1 => eval_expr_rec te ge le ty e1
     end.
+
+  Definition eval_expr (te: tenv) (ge: genv) (le: lenv) (ty:typ) (e: expr) : res (eval_typ ty) :=
+    ignore_err (eval_expr_rec te ge le ty e).
 
   Fixpoint eval_def_rec (te: tenv) (ge: genv) (defs: list globdef) (x: ident) : res value :=
     match defs with

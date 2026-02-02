@@ -1,6 +1,6 @@
-From Coq Require Import List.
+From Coq Require Import List Lia.
 From compcert Require Import Maps.
-From BarocqComp Require Import Error Maps2 Types Benum Syntax Typing Denot.
+From BarocqComp Require Import Error Utils Maps2 Types Benum Syntax Typing Denot.
 
 (** * Abstract syntax *)
 
@@ -8,7 +8,7 @@ From BarocqComp Require Import Error Maps2 Types Benum Syntax Typing Denot.
 
 Inductive tailcomp : Type :=
   | TcBegin : statement -> tailcomp -> btyp -> tailcomp
-  | TcComp : comp -> btyp -> tailcomp
+  | TcComp : comp -> tailcomp
   | TcIfThenElse : atom -> tailcomp -> tailcomp -> btyp -> tailcomp
   | TcSwitch : atom -> list (pattern * tailcomp) -> btyp -> tailcomp
   | TcAttr : ident -> tailcomp -> tailcomp
@@ -29,6 +29,178 @@ Definition globdef : Type := Syntax.globdef tailcomp btyp literal.
 (** ** Programs *)
 
 Definition program : Type := Syntax.program tailcomp btyp literal.
+
+(** * Induction principle for tailcomp *)
+
+Check tailcomp_ind.
+
+Section TAILCOMP_IND.
+
+  Fixpoint tailcomp_depth (t: ImpBNF.tailcomp) : nat :=
+    match t with
+    | ImpBNF.TcBegin s t1 _ =>
+        1 + Nat.max (statement_depth s) (tailcomp_depth t1)
+    | ImpBNF.TcComp _ => 0
+    | ImpBNF.TcIfThenElse _ t1 t2 _ =>
+        let m := Nat.max (tailcomp_depth t1) (tailcomp_depth t2) in
+        1 + m
+    | ImpBNF.TcSwitch _ cases _ =>
+        let cases_depths := List.map (fun c => tailcomp_depth (snd c)) cases in
+        let m := List.fold_right (fun d m => Nat.max m d) 0 cases_depths in
+        1 + m
+    | ImpBNF.TcAttr _ e => 1 + tailcomp_depth e
+    end
+
+  with statement_depth (s: ImpBNF.statement) : nat :=
+    match s with
+    | ImpBNF.StSetTailcomp _ t => 1 + (tailcomp_depth t)
+    end.
+
+  Variable P : tailcomp -> Prop.
+  Variable P0 : statement -> Prop.
+
+  Variable PTcBegin :
+    forall s tc ty, P0 s -> P tc -> P (TcBegin s tc ty).
+
+  Hypothesis PTcComp : forall c, P (TcComp c).
+
+  Hypothesis PTcIfThenElse :
+    forall a t1 t2 ty, P t1 -> P t2 -> P (TcIfThenElse a t1 t2 ty).
+
+  Hypothesis PTcSwitch :
+    forall a cases ty,
+      (forall p tc, List.In (p, tc) cases -> P tc) ->
+      P (TcSwitch a cases ty).
+      
+  Hypothesis PTcAttr : forall x tc, P tc -> P (TcAttr x tc).
+
+  Hypothesis P0StSetTailcomp :
+    forall i tc, P tc -> P0 (StSetTailcomp i tc).
+
+  Theorem tailcomp_depth_ind : forall tc, P tc.
+  Proof.
+    intros. remember (tailcomp_depth tc) as n.
+    revert tc Heqn.
+    induction n using Wf_nat.lt_wf_ind; intros.
+    destruct n.
+    - destruct tc; try (auto || discriminate).
+    - destruct tc; simpl in Heqn; try (auto || discriminate);
+      simpl; intros.
+      + inv Heqn. apply PTcBegin.
+        * destruct s. apply P0StSetTailcomp.
+          simpl in H. destruct (tailcomp_depth tc).
+          -- assert (tailcomp_depth t < S (S (tailcomp_depth t))).
+            lia. exact (H (tailcomp_depth t) H0 t eq_refl).
+          -- assert (tailcomp_depth t < S (S (Nat.max (tailcomp_depth t) n))).
+            lia. exact (H (tailcomp_depth t) H0 t eq_refl).
+        * assert (tailcomp_depth tc < S (Nat.max (statement_depth s) (tailcomp_depth tc))).
+          lia. exact (H (tailcomp_depth tc) H0 tc eq_refl).
+      + inv Heqn. 
+        assert (tailcomp_depth tc1 < S (Nat.max (tailcomp_depth tc1) (tailcomp_depth tc2))). lia.
+        assert (tailcomp_depth tc2 < S (Nat.max (tailcomp_depth tc1) (tailcomp_depth tc2))). lia.
+        apply PTcIfThenElse.
+        * exact (H (tailcomp_depth tc1) H0 tc1 eq_refl).
+        * exact (H (tailcomp_depth tc2) H1 tc2 eq_refl).
+      + inv Heqn. apply PTcSwitch; intros.
+        apply H with (m := tailcomp_depth tc).
+        clear - H0. revert p tc H0.
+        {
+          induction l; intros.
+          - simpl in H0. destruct H0. 
+          - simpl in H0. destruct H0.
+            + destruct a. inv H. simpl. lia.
+            + simpl. apply IHl in H. lia.
+        }
+        reflexivity.
+      + inv Heqn. apply PTcAttr.
+        assert ((tailcomp_depth tc) < (S (tailcomp_depth tc))). lia.
+        exact (H (tailcomp_depth tc) H0 tc eq_refl).
+  Qed.
+
+  Theorem statement_depth_ind : forall s, P0 s.
+  Proof.
+    intros. remember (statement_depth s) as n.
+    revert s Heqn.
+    induction n using Wf_nat.lt_wf_ind; intros.
+    destruct n.
+    - destruct s; discriminate.
+    - destruct s. simpl in Heqn. inv Heqn. apply P0StSetTailcomp.
+      apply tailcomp_depth_ind.
+  Qed.
+
+  Theorem tailcomp_depth_ind_mut : (forall tc, P tc) /\ (forall s, P0 s).
+  Proof.
+    split; (apply tailcomp_depth_ind) || (apply statement_depth_ind).
+  Qed.
+
+End TAILCOMP_IND.
+
+Fixpoint btypof_tailcomp (tc: tailcomp) : btyp :=
+  match tc with
+  | TcComp c => Syntax.typof_comp c
+  | TcBegin _ _ ty
+  | TcIfThenElse _ _ _ ty
+  | TcSwitch _ _ ty => ty
+  | TcAttr _ tc => btypof_tailcomp tc
+  end.
+
+
+Definition convertible_btyp (te: tenv) (ty: btyp) : bool :=
+  match btyp_to_typ te ty with
+  | OK _ => true
+  | _ => false
+  end.
+
+Lemma convertible_btyp_iff:
+  forall te bt,
+  convertible_btyp te bt = true <->
+  (exists ty, btyp_to_typ te bt = OK ty).
+Proof.
+  intros; split; intros.
+  - unfold convertible_btyp in H.
+    destruct (btyp_to_typ te bt); try discriminate.
+    exists t. reflexivity.
+  - destruct H. unfold convertible_btyp.
+    rewrite H. reflexivity.
+Qed.
+
+Fixpoint wf_tailcomp (te: tenv) (tc: tailcomp) : bool :=
+  match tc with
+  | TcComp c =>
+      convertible_btyp te (typof_comp c)
+  | TcBegin s tc1 ty =>
+      convertible_btyp te ty
+      && btyp_eqb (btypof_tailcomp tc1) ty
+      && wf_statement te s
+      && wf_tailcomp te tc1
+  | TcIfThenElse _ tc1 tc2 ty =>
+      convertible_btyp te ty
+      && btyp_eqb (btypof_tailcomp tc1) ty
+      && btyp_eqb (btypof_tailcomp tc2) ty
+      && wf_tailcomp te tc1
+      && wf_tailcomp te tc2
+  | TcSwitch _ cases ty =>
+      convertible_btyp te ty
+      && List.forallb (fun '(_, tci) => btyp_eqb (btypof_tailcomp tci) ty) cases
+      && (List.forallb (fun '(_, tci) => wf_tailcomp te tci) cases)
+  | TcAttr _ tc1 => wf_tailcomp te tc1
+  end
+
+with wf_statement (te: tenv) (s: statement) : bool :=
+  match s with StSetTailcomp _ tc => wf_tailcomp te tc end.
+
+Lemma wf_tailcomp_btyp_to_typ:
+  forall te tc,
+    wf_tailcomp te tc = true ->
+    exists ty, btyp_to_typ te (btypof_tailcomp tc) = OK ty.
+Proof.
+  induction tc; simpl; intros; destruct_conj H.
+  - rewrite convertible_btyp_iff in C. exact C.
+  - rewrite convertible_btyp_iff in H. exact H.
+  - rewrite convertible_btyp_iff in C1. exact C1.
+  - rewrite convertible_btyp_iff in C1. exact C1.
+  - exact (IHtc H). 
+Qed.
 
 (** * Denotational semantics *)
 
@@ -51,16 +223,7 @@ Section DENOT.
   Notation eval_comp := (@Denot.eval_comp arch tabs).
 
   Definition typof_tailcomp (te: tenv) (tc: tailcomp) : res typ :=
-    let fix get_typ tc :=
-      match tc with
-      | TcBegin _ _ ty
-      | TcComp _ ty
-      | TcIfThenElse _ _ _ ty
-      | TcSwitch _ _ ty => ty
-      | TcAttr _ tc => get_typ tc
-      end
-    in
-    btyp_to_typ te (get_typ tc).
+    btyp_to_typ te (btypof_tailcomp tc).
 
   Definition eval_match (tv:typ) (v: eval_typ tv) (tr: typ) (cases: list (pattern * res (eval_typ tr * lenv))) : res (eval_typ tr * lenv) :=
     (match tv as t0 return (eval_typ t0 -> res (eval_typ tr * lenv)) with
@@ -74,8 +237,9 @@ Section DENOT.
     | TcBegin s tc1 _ =>
         let* le' := eval_statement te ge le s in
         eval_tailcomp_rec te ge le' ty tc1
-    | TcComp c _ =>
-        let* vc := eval_comp te ge le ty c in
+    | TcComp c =>
+        let* tc := btyp_to_typ te (typof_comp c) in
+        let* vc := ecast_typ tabs (eval_comp te ge le tc c) ty in
         ret (vc, le)
     | TcIfThenElse a tc1 tc _ =>
         let* va := eval_atom te ge le TBool a in
@@ -98,7 +262,7 @@ Section DENOT.
     end.
 
   Definition eval_tailcomp (te: tenv) (ge: genv) (le: lenv) (tr: typ) (tc: tailcomp) : res (eval_typ tr) :=
-    let* (v, _) := eval_tailcomp_rec te ge le tr tc in
+    let* (v, _) := ignore_err (eval_tailcomp_rec te ge le tr tc) in
     ret v.
 
   Definition eval_prog (impl: genv) (prog: program) : res (tenv * genv) :=

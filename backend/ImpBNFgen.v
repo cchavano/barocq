@@ -8,9 +8,9 @@ Open Scope string_scope.
 
 Fixpoint transl_expr (e: expr) : res tailcomp :=
   match e with
-  | EAtom a ty => ret (TcComp (CpAtom a ty) ty)
-  | EArraySet a1 a2 a3 ty => ret (TcComp (CpArraySet a1 a2 a3 ty) ty)
-  | ERecordUpdate a1 x a2 ty => ret (TcComp (CpRecordUpdate a1 x a2 ty) ty)
+  | EAtom a => ret (TcComp (CpAtom a))
+  | EArraySet a1 a2 a3 ty => ret (TcComp (CpArraySet a1 a2 a3 ty))
+  | ERecordUpdate a1 x a2 ty => ret (TcComp (CpRecordUpdate a1 x a2 ty))
   | EApp a args ty =>
       let* (fid, tf) :=
         match a with
@@ -18,7 +18,7 @@ Fixpoint transl_expr (e: expr) : res tailcomp :=
         | _ => fail
         end
       in
-      ret (TcComp (CpCall fid tf args ty) ty)
+      ret (TcComp (CpCall fid tf args ty))
   | ELetIn x e1 e2 ty =>
       let* tc1 := transl_expr e1 in
       let* tc2 := transl_expr e2 in
@@ -100,8 +100,8 @@ Section CORRECTNESS.
       transl_expr e = OK tc ->
       ImpBNF.typof_tailcomp te tc = BarocqBNF.typof_expr te e.
   Proof.
-    induction e; unfold BarocqBNF.typof_expr; unfold ImpBNF.typof_tailcomp;
-    simpl; intros.
+    induction e; unfold BarocqBNF.typof_expr, ImpBNF.typof_tailcomp,
+    ImpBNF.btypof_tailcomp; simpl; intros.
     - inversion H. reflexivity.
     - inversion H. reflexivity.
     - inversion H. reflexivity. 
@@ -255,7 +255,7 @@ Section CORRECTNESS.
 
   Definition wf_comp (globs: SSet.t) (locals: SSet.t) (c: comp) : bool :=
     match c with
-    | CpAtom a _ => wf_atom globs locals a
+    | CpAtom a => wf_atom globs locals a
     | CpArraySet a1 a2 a3 _ =>
         (wf_atom globs locals a1) &&
         (wf_atom globs locals a2) &&
@@ -311,50 +311,55 @@ Section CORRECTNESS.
       (NOSHADOW: env_noshadow ge le2)
       (MATCH_LENV: match_lenv le1 le2)
       (TRANSL: transl_expr e = OK tc)
-      (EVAL_EXPR: BarocqBNF.eval_expr arch tabs te ge le1 ty e = OK v),
+      (EVAL_EXPR: BarocqBNF.eval_expr_rec arch tabs te ge le1 ty e = OK v),
       (exists le2', ImpBNF.eval_tailcomp_rec arch tabs te ge le2 ty tc = OK (v, le2')
         /\ env_noshadow ge le2'
         /\ match_lenv le1 le2').
   Proof.
     destruct e; simpl; intros.
     (* atom *)
-    - inv TRANSL. simpl. eexists. repeat split.
+    - inv TRANSL. monadInv EVAL_EXPR. simpl. eexists.
+      repeat split; eauto. unfold typof_atom in EQ.
+      rewrite EQ; simpl. erase_cast EQ0.
       erewrite eval_atom_match_lenv_eq; simpl; eauto.
-      rewrite EVAL_EXPR; simpl; eauto.
-      exact NOSHADOW. exact MATCH_LENV.
+      rewrite ecast_typ_id, EQ0; simpl. reflexivity.
     (* array set *)
     - inv TRANSL. simpl. monadInv EVAL_EXPR. destruct_conj WF_EXPR.
-      rewrite EQ; rewrite EQ1; rewrite EQ0; simpl.
-      erewrite eval_atom_match_lenv_eq; eauto.
-      rewrite EQ2; simpl.
+      rewrite EQ, EQ1, EQ0, EQ2; simpl.
       erewrite eval_atom_match_lenv_eq; eauto.
       rewrite EQ3; simpl.
       erewrite eval_atom_match_lenv_eq; eauto.
       rewrite EQ4; simpl.
-      rewrite EQ6; simpl. exists le2. repeat split.
-      exact NOSHADOW. exact MATCH_LENV.
+      erewrite eval_atom_match_lenv_eq; eauto.
+      rewrite EQ5; simpl. 
+      exists le2. repeat split; auto.
+      erase_cast EQ7. rewrite ecast_typ_id.
+      rewrite EQ7; reflexivity.
     (* record update *)
     - inv TRANSL. simpl. destruct_conj WF_EXPR.
-      monadInv EVAL_EXPR. rewrite EQ; simpl. rewrite EQ1; simpl.
-      erewrite eval_atom_match_lenv_eq; eauto.
-      rewrite EQ0; simpl.
+      monadInv EVAL_EXPR.
+      rewrite EQ, EQ1, EQ0; simpl.
       erewrite eval_atom_match_lenv_eq; eauto.
       rewrite EQ2; simpl.
-      rewrite EQ4; simpl.
-      exists le2; repeat split.
-      exact NOSHADOW. exact MATCH_LENV.
+      erewrite eval_atom_match_lenv_eq; eauto.
+      rewrite EQ3; simpl. erase_cast EQ5.
+      rewrite ecast_typ_id.
+      rewrite EQ5; simpl.
+      exists le2; repeat split; auto.
     (* application *)
     - destruct a; simpl; try discriminate.
       simpl in TRANSL. inv TRANSL. simpl.
       destruct_conj WF_EXPR. simpl in C.
       apply var_defined_env_get in C; try tauto. destruct C.
       simpl in EVAL_EXPR. monadInv EVAL_EXPR.
-      unfold typof_atom in EQ. simpl in EQ. rewrite EQ; simpl.
-      destruct x0; try discriminate. monadInv EQ0.
-      erewrite eval_var_match_lenv_eq; eauto; simpl.
+      unfold typof_atom in EQ1. simpl in EQ1.
+      rewrite EQ, EQ1; simpl.
+      destruct x1; try discriminate.
+      monadInv EQ2.
+      erewrite eval_var_match_lenv_eq; eauto. rewrite EQ0; simpl.
+      erase_cast EQ4. rewrite ecast_typ_id.
       erewrite DList.mmap_ext_In_OK with (f := eval_atom arch tabs te ge le1) (g := eval_atom arch tabs te ge le2); eauto.
-      simpl. exists le2. rewrite EQ1; simpl. repeat split. rewrite EQ3. reflexivity. 
-      exact NOSHADOW. exact MATCH_LENV.
+      simpl. exists le2. rewrite EQ4; simpl. repeat split; eauto.
       intros. erewrite eval_atom_match_lenv_eq with (le1 := le1) (le2 := le2); eauto.
       rewrite List.forallb_forall in C0. apply (C0 _ H0).
     (* if-then-else *)
@@ -409,54 +414,64 @@ Section CORRECTNESS.
     - monadInv TRANSL. inv EQ0. simpl. eapply transl_expr_correct_ok; eauto.
   Qed.
 
+  Ltac ecast_typ_err_resolve :=
+    try (unfold ecast_typ; destruct (typ_eq_dec _ _); subst; simpl); eauto.
+
   Fixpoint transl_expr_correct_err e:
     forall te ge le1 le2 ty tc r
       (WF_EXPR: wf_expr (STree.keys ge) (STree.keys le1) e = true)
       (NOSHADOW: env_noshadow ge le2)
       (MATCH_LENV: match_lenv le1 le2)
       (TRANSL: transl_expr e = OK tc),
-      BarocqBNF.eval_expr arch tabs te ge le1 ty e = Error r ->
-      ImpBNF.eval_tailcomp_rec arch tabs te ge le2 ty tc = Error r.
+      BarocqBNF.eval_expr_rec arch tabs te ge le1 ty e = Error r ->
+      (exists r', ImpBNF.eval_tailcomp_rec arch tabs te ge le2 ty tc = Error r').
   Proof.
     destruct e; simpl; intros.
-    - inv TRANSL. simpl. 
-      erewrite eval_atom_match_lenv_eq; eauto.
-      rewrite H. reflexivity.
+    - inv TRANSL. simpl. unfold typof_atom in H.
+      destruct (Typing.btyp_to_typ te (Syntax.typof_atom a)); simpl in H; simpl; eauto.
+      erewrite eval_atom_match_lenv_eq; eauto. rewrite H; simpl; eauto.
     - inv TRANSL. destruct_conj WF_EXPR. simpl.
-      destruct (typof_atom te a); simpl in H; simpl; try congruence.
-      destruct (typof_atom te a0); simpl in H; simpl; try congruence.
-      destruct (typof_atom te a1); simpl in H; simpl; try congruence.
+      destruct (Typing.btyp_to_typ te b); simpl in H; simpl; eauto.
+      destruct (typof_atom te a); simpl in H; simpl; ecast_typ_err_resolve.
+      destruct (typof_atom te a0); simpl in H; simpl; ecast_typ_err_resolve.
+      destruct (typof_atom te a1); simpl in H; simpl; ecast_typ_err_resolve.
       erewrite eval_atom_match_lenv_eq; eauto.
-      destruct (eval_atom arch tabs te ge le1 t a); simpl in H; simpl; try congruence.
+      destruct (eval_atom arch tabs te ge le1 t0 a); simpl in H; simpl; ecast_typ_err_resolve.
       erewrite eval_atom_match_lenv_eq; eauto.
-      destruct (eval_atom arch tabs te ge le1 t0 a0); simpl in H; simpl; try congruence.
+      destruct (eval_atom arch tabs te ge le1 t a0); simpl in H; simpl; ecast_typ_err_resolve.
       erewrite eval_atom_match_lenv_eq; eauto.
-      destruct (eval_atom arch tabs te ge le1 t1 a1); simpl in H; simpl; try congruence.
-      rewrite H. reflexivity.
+      destruct (eval_atom arch tabs te ge le1 t1 a1); simpl in H; simpl; ecast_typ_err_resolve.
+      destruct (eval_array_set arch tabs t0 e t e0 t1 e1 ty); simpl in H; simpl; eauto.
+      rewrite ecast_typ_id in H. discriminate.
     - inv TRANSL. simpl. destruct_conj WF_EXPR.
-      destruct (typof_atom te a); simpl in H; simpl; try congruence.
-      destruct (typof_atom te a0); simpl in H; simpl; try congruence.
+      destruct (Typing.btyp_to_typ te b); simpl in H; simpl; eauto.
+      destruct (typof_atom te a); simpl in H; simpl; ecast_typ_err_resolve.
+      destruct (typof_atom te a0); simpl in H; simpl; ecast_typ_err_resolve.
       erewrite eval_atom_match_lenv_eq; eauto.
-      destruct (eval_atom arch tabs te ge le1 t a); simpl in H; simpl; try congruence.
+      destruct (eval_atom arch tabs te ge le1 t0 a); simpl in H; simpl; ecast_typ_err_resolve.
       erewrite eval_atom_match_lenv_eq; eauto.
-      destruct (eval_atom arch tabs te ge le1 t0 a0); simpl in H; simpl; try congruence.
-      rewrite H. reflexivity.
+      destruct (eval_atom arch tabs te ge le1 t a0); simpl in H; simpl; ecast_typ_err_resolve.
+      destruct (eval_record_update tabs t0 e i t e0 ty); simpl in H; simpl; eauto.
+      rewrite ecast_typ_id in H. discriminate. 
     - destruct a; simpl in H; try discriminate.
       simpl in TRANSL. inv TRANSL. simpl.
       destruct_conj WF_EXPR.
       unfold typof_atom in H. simpl in H.
-      destruct (Typing.btyp_to_typ te b0); simpl in H; simpl; try congruence.
-      destruct t; simpl; unfold efail in H; try congruence.
+      destruct (Typing.btyp_to_typ te b); simpl in H; simpl; eauto.
+      destruct (Typing.btyp_to_typ te b0); simpl in H; simpl; ecast_typ_err_resolve.
+      destruct t0; simpl; unfold efail in H; eauto.
       simpl in C. eapply var_defined_env_get in C; destruct C; eauto.
       erewrite eval_var_match_lenv_eq; eauto.
-      destruct (eval_var tabs ge le1 i (TFun l0 t)); simpl in H; simpl; try congruence.
+      destruct (eval_var tabs ge le1 i (TFun l0 t0)); simpl in H; simpl; eauto.
       destruct (DList.mmap (eval_typ tabs) (eval_atom arch tabs te ge le1) l l0) eqn:Hmmap.
       + simpl in H. eapply DList.mmap_ext_In_OK with (f := eval_atom arch tabs te ge le1) (g := eval_atom arch tabs te ge le2) in Hmmap; eauto.
-        rewrite Hmmap; simpl. rewrite H. reflexivity.
+        rewrite Hmmap; simpl. 
+        destruct (eval_app tabs l0 t0 e d ty); simpl; simpl in H; eauto.
+        rewrite ecast_typ_id in H. discriminate.
         intros. erewrite eval_atom_match_lenv_eq; eauto.
         rewrite List.forallb_forall in C0. apply (C0 b1 H1).
       + simpl in H. eapply DList.mmap_ext_In_Error with (f := eval_atom arch tabs te ge le1) (g := eval_atom arch tabs te ge le2) in Hmmap; eauto.
-        rewrite Hmmap. simpl. inv H. reflexivity.
+        rewrite Hmmap. simpl. inv H. eauto.
         intros. erewrite eval_atom_match_lenv_eq; eauto.
         rewrite List.forallb_forall in C0. apply (C0 b1 H1).
         intros. erewrite eval_atom_match_lenv_eq; eauto.
@@ -464,22 +479,22 @@ Section CORRECTNESS.
     - monadInv TRANSL. inv EQ2. simpl.
       destruct_conj WF_EXPR.
       erewrite eval_atom_match_lenv_eq; eauto.
-      destruct (eval_atom arch tabs te ge le1 TBool a); simpl in H; simpl; try congruence.
+      destruct (eval_atom arch tabs te ge le1 TBool a); simpl in H; simpl; eauto.
       destruct e.
       + eapply transl_expr_correct_err with (e := e1); eauto.
       + eapply transl_expr_correct_err with (e := e2); eauto. 
     - monadInv TRANSL. inv EQ0. simpl. destruct_conj WF_EXPR.
-      destruct (typof_atom te a); simpl in H; simpl; try congruence.
+      destruct (typof_atom te a); simpl in H; simpl; eauto.
       erewrite eval_atom_match_lenv_eq; eauto.
-      destruct (eval_atom arch tabs te ge le1 t a); simpl in H; simpl; try congruence.
-      destruct t; simpl in H; inv H; simpl; try reflexivity.
+      destruct (eval_atom arch tabs te ge le1 t a); simpl in H; simpl; eauto.
+      destruct t; simpl in H; inv H; simpl; try unfold efail; eauto.
       revert b le1 le2 ty r C C0 NOSHADOW MATCH_LENV i l0 e x EQ H1.
       induction l; intros.
-      + simpl in EQ. inv EQ. simpl in H1. inv H1. reflexivity.
+      + simpl in EQ. inv EQ. simpl. unfold efail; eauto.
       + simpl in EQ. monadInv EQ. destruct a0. monadInv EQ0.
         inv EQ2. simpl in C0. destruct_conj C0.
         simpl in H1. simpl. destruct p.
-        * destruct (Benum.make_enum l0 i0); simpl in H1; simpl; try congruence.
+        * destruct (Benum.make_enum l0 i0); simpl in H1; simpl; eauto.
           destruct (Benum.enum_eq e1 e).
           -- eapply transl_expr_correct_err; eauto.
           -- eapply IHl; eauto.
@@ -490,7 +505,7 @@ Section CORRECTNESS.
         rewrite Etypof_expr. simpl.
         simpl in WF_EXPR. apply andb_prop in WF_EXPR. destruct WF_EXPR.
         apply andb_prop in H0. destruct H0. apply andb_prop in H0. destruct H0.
-        destruct (eval_expr arch tabs te ge le1 t e1) eqn:Eeval_e1; simpl in H.
+        destruct (eval_expr_rec arch tabs te ge le1 t e1) eqn:Eeval_e1; simpl in H.
         * eapply transl_expr_correct_ok in Eeval_e1; eauto.
           destruct Eeval_e1 as [le2' [EVAL_TC [NOSHADOW_LE2' MATCH_LENV_LE2']]].
           rewrite EVAL_TC. simpl. eapply transl_expr_correct_err with (e := e2); eauto.
@@ -500,17 +515,17 @@ Section CORRECTNESS.
           apply STree.keys_get_mem_false_iff. exact Hmemi.
           apply match_lenv_update2. exact MATCH_LENV_LE2'.
         * eapply transl_expr_correct_err in Eeval_e1; eauto.
-          rewrite Eeval_e1. simpl. inv H. reflexivity.
+          destruct Eeval_e1. rewrite H4. simpl. inv H. eauto.
         * exact EQ. 
       + inv H. rewrite transl_expr_preserve_typ with (e := e1).
-        rewrite Etypof_expr. simpl. reflexivity.
+        rewrite Etypof_expr. simpl. eauto.
         exact EQ.
     - monadInv TRANSL. inv EQ0. simpl.
       eapply transl_expr_correct_err; eauto.
   Qed.
 
-  Fixpoint transl_expr_correct e:
-    forall te ge le1 le2 ty tc
+  Lemma transl_expr_correct:
+    forall e te ge le1 le2 ty tc
     (WF_EXPR: wf_expr (STree.keys ge) (STree.keys le1) e = true)
     (NOSHADOW: env_noshadow ge le2)
     (MATCH_LENV: match_lenv le1 le2)
@@ -518,11 +533,12 @@ Section CORRECTNESS.
       ImpBNF.eval_tailcomp arch tabs te ge le2 ty tc =
       BarocqBNF.eval_expr arch tabs te ge le1 ty e. 
   Proof.
-    intros. unfold eval_tailcomp. destruct (eval_expr arch tabs te ge le1 ty e) eqn:Eeval_e.
+    intros. unfold eval_expr, eval_tailcomp. 
+    destruct (eval_expr_rec arch tabs te ge le1 ty e) eqn:Eeval_e.
     - eapply transl_expr_correct_ok in Eeval_e; eauto.
       destruct Eeval_e. destruct_conj H. rewrite C. reflexivity.
     - eapply transl_expr_correct_err in Eeval_e; eauto.
-      rewrite Eeval_e. reflexivity.
+      destruct Eeval_e. rewrite H; simpl. reflexivity.
   Qed.
 
   Lemma params_noshadow : 
@@ -536,10 +552,10 @@ Section CORRECTNESS.
       simpl in H0. inv H0. exact H.
     - unfold check_params_noshadow in H0. simpl in H0. 
       destruct a. destruct (STree.get s ge) eqn:Hgets_ge.
-      + unfold efail in H0. rewrite list_fold_right_err_err in H0. discriminate.
+      + unfold efail in H0. rewrite list_fold_left_err_err in H0. discriminate.
       + destruct (SSet.mem s ls) eqn:Hmems_ls.
         * simpl in H0.
-          unfold efail in H0. rewrite list_fold_right_err_err in H0. 
+          unfold efail in H0. rewrite list_fold_left_err_err in H0. 
           discriminate.
         * simpl in H0.
           eapply IHparams with (ls := SSet.add s ls); eauto.
@@ -552,8 +568,8 @@ Section CORRECTNESS.
     (CHECK_PARAMS: check_params_noshadow (STree.keys ge) (STree.keys le) params = OK ls)
     (WF_EXPR: wf_expr (STree.keys ge) ls e = true)
     (TRANSL: transl_expr e = OK tc),
-      build_funval_rec tabs tailcomp (eval_tailcomp arch tabs) te ge le params tret tc =
-      build_funval_rec tabs expr (eval_expr arch tabs) te ge le params tret e.
+      eval_fun_rec tabs tailcomp (eval_tailcomp arch tabs) te ge le params tret tc =
+      eval_fun_rec tabs expr (eval_expr arch tabs) te ge le params tret e.
   Proof.
     induction params; intros.
     - simpl. apply Axioms.functional_extensionality; intro.
@@ -594,7 +610,7 @@ Section CORRECTNESS.
     eval_def_fun tabs tailcomp (eval_tailcomp arch tabs) te ge x f' =
     eval_def_fun tabs expr (eval_expr arch tabs) te ge x f.
   Proof.
-    unfold transl_function, eval_def_fun, build_fun_value, build_funval. intros.
+    unfold transl_function, eval_def_fun, eval_fun. intros.
     destruct f; simpl in TRANSL. monadInv TRANSL. rename x0 into ls. 
     destruct (wf_expr (STree.keys ge) ls fn_body) eqn:WF_EXPR; try discriminate. 
     monadInv EQ0. rename x0 into tc. destruct f'. inv EQ2.
@@ -615,9 +631,9 @@ Section CORRECTNESS.
       unfold check_params_noshadow. simpl.
       unfold check_params_noshadow in H. simpl in H.
       destruct (STree.get s ge).
-      + unfold efail in H. rewrite list_fold_right_err_err in H. discriminate.
+      + unfold efail in H. rewrite list_fold_left_err_err in H. discriminate.
       + destruct (SSet.mem s ls); simpl in H.
-        * unfold efail in H. rewrite list_fold_right_err_err in H. discriminate. 
+        * unfold efail in H. rewrite list_fold_left_err_err in H. discriminate. 
         * simpl. eapply IHparams; eauto. }
     eapply H0; eauto.
   Qed.
@@ -645,10 +661,11 @@ Section CORRECTNESS.
       unfold genv_update in EQ3.
       destruct (genv_get tabs ge i); try discriminate.
       inv EQ3. simpl. apply STree.keys_set.
-    - unfold eval_def_fun in H. monadInv H.
-      unfold genv_update in EQ0.
+    - unfold eval_def_fun in H.
+      destruct (MapList.nodup Ident.eq_dec (fn_params f)); try discriminate.
+      monadInv H. unfold genv_update in EQ2.
       destruct (genv_get tabs ge i); try discriminate.
-      inv EQ0. simpl. apply STree.keys_set. 
+      inv EQ2. simpl. apply STree.keys_set. 
     - unfold eval_decl_const in H. monadInv H.
       destruct (typ_eq_dec x (typeof_value tabs x0)); try discriminate.
       unfold genv_update in EQ2.

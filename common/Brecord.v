@@ -1,4 +1,4 @@
-From Coq Require Import PArith List String Bool.
+From Coq Require Import PArith List String Bool RelationClasses.
 From BarocqComp Require Import DList Error Maps2 Ident Utils.
 
 Definition key : Type := ident.
@@ -96,7 +96,34 @@ Section REL.
   end.
 End REL.
 
+Lemma grecord_rel_refl:
+  forall (A: Type) (F: A -> Type) (R: forall x, F x -> F x -> Prop) fields,
+    (forall x, Reflexive (R x)) ->
+    Reflexive (@grecord_rel _ _ _ R fields).
+Proof.
+  unfold grecord_rel.
+  induction fields; intros.
+  - simpl. constructor.
+  - destruct a. simpl. constructor.
+    + apply H.
+    + apply (IHfields H).
+Qed.
 
+Lemma grecord_rel_refl_In:
+  forall (A: Type) (F: A -> Type) (R: forall x, F x -> F x -> Prop) (fields: smaplist A),
+    (forall (p: ident * A), List.In p fields -> Reflexive (R (snd p))) ->
+    Reflexive (@grecord_rel _ _ _ R fields).
+Proof.
+  unfold grecord_rel.
+  induction fields; intros.
+  - simpl. constructor.
+  - simpl. constructor.
+    + specialize (H a). simpl in H.
+      apply H. tauto.
+    + apply IHfields. simpl in H.
+      auto.
+Qed.
+  
 Inductive sfield {A: Type} (F: A -> Type) :=
   mksfield (s:string) (a:A) (v: F a).
 

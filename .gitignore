@@ -11,5 +11,6 @@ dune-project
 .depend
 .depend.extr
 *_old.*
+*_bak.*
 .lia.cache
 archives
