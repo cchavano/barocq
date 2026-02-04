@@ -88,8 +88,10 @@ Definition compile_to_imp1 (arch: Target.archi) (prog: Barocq.program) : res Imp
   let* imp1 := Imp1gen.norm_program ibnf in
   eret imp1.
 
-Definition aliascheck_program (show_debug: bool) (arch: Target.archi) (prog: Barocq.program) : res Imp1.program :=
+Definition aliascheck_program (opt : compiler_opt) (arch: Target.archi) (prog: Barocq.program) : res Imp1.program :=
   let* imp1 := compile_to_imp1 arch prog in
   let* imp1_typed := Imp1Typing.typecheck_program arch imp1 in
   let* (te,age) := InvAnalysis.check_program imp1_typed in
-  Error (msg (Pp.pp (InvAnalysis.pp_inv (snd age)))).
+  if (dbg_analysis opt) then
+    Error (msg (Pp.pp (InvAnalysis.pp_inv (snd age))))
+  else ret imp1_typed.

@@ -450,7 +450,7 @@ let () =
 
       if !opt_aliascheck then begin
         begin match
-          Compiler.aliascheck_program !opt_debug_aliasing !target_arch prog
+          Compiler.aliascheck_program (gen_compile_opt ()) !target_arch prog
         with
         | Errors.OK _ -> printf "Alias checking succeeded\n"
         | Errors.Error msg -> raise @@ CompilerError (C2C.string_of_errmsg msg)
