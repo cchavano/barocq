@@ -534,7 +534,7 @@ module VCgen = struct
       if is_abs then sprintf "%s.%s" !shallowfile fid_shallow
       else
         sprintf
-          "Barocq.build_funval arch abs_types_impl typing_env ge params_%s \
+          "BarocqBNF.build_funval arch abs_types_impl typing_env ge params_%s \
            Deeptypes.%s (Syntax.fn_body %s.fun_%s)"
           fid_shallow
           (Deeptypes.mtyp_to_typ_string tret)
@@ -595,7 +595,7 @@ let prelude_imports () : string =
     "From Coq Require Import String List.\n\
      From compcert Require Import Integers.\n\
      From BarocqComp Require Import Ident Error Maps2 Barray Benum Brecord \
-     Types Typing Barocq BarocqVC CorresBD_Tactics Syntax.\n\
+     Types Typing Denot ExtEqual Barocq BarocqVC CorresBD_Tactics Syntax.\n\
      From %s Require Import %s_Types %s %s.\n\n\
      Import ListNotations.\n\n\
      Open Scope string_scope.\n"

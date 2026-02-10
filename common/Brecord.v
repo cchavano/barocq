@@ -1,5 +1,6 @@
 From Coq Require Import PArith List String Bool RelationClasses.
 From BarocqComp Require Import DList Error Maps2 Ident Utils.
+Set Universe Polymorphism.
 
 Definition key : Type := ident.
 
@@ -25,13 +26,13 @@ Polymorphic Fixpoint find_type_of_field {A: Type}  (k: key) (fields: smaplist A)
   | e::fields => if (k=?(fst e))%string then OK (snd e) else find_type_of_field k fields
   end.
 
-Definition gtype_of_field {A: Type} (F: A -> Type) (k:key) (fields : smaplist A) :  Type :=
+Polymorphic Definition gtype_of_field {A: Type} (F: A -> Type) (k:key) (fields : smaplist A) :  Type :=
   match find_type_of_field k fields with
   | OK a => F a
   | Error _ => False
   end.
 
-Definition type_of_field  (k:key) (fields : smaplist Type) :  Type :=
+Polymorphic Definition type_of_field  (k:key) (fields : smaplist Type) :  Type :=
    gtype_of_field (fun x => x) k fields.
 
 
@@ -179,14 +180,14 @@ Definition proj {fields: smaplist Type} (r:record fields) (k: key) : res (type_o
   gproj (fun x => x)  r k.
 
 
-Fixpoint good_proj {A: Type} (k:key) (fields : smaplist A) :=
+Polymorphic  Fixpoint good_proj {A: Type} (k:key) (fields : smaplist A) :=
   match fields with
   | nil => false
   | e::fields' => if String.eqb k (fst e) then true else good_proj k fields'
   end.
 
 
-Lemma good_proj_nil : forall {A: Type} {k}, @good_proj A k nil = true -> False.
+Polymorphic Lemma good_proj_nil : forall {A: Type} {k}, @good_proj A k nil = true -> False.
 Proof.
   discriminate.
 Qed.
@@ -194,7 +195,7 @@ Qed.
 Fixpoint gtypeof_field {A: Type} (F: A -> Type) (k: key) (fields: smaplist A) : forall (GP : good_proj k fields = true), Type.
 Proof.
   destruct fields.
-  - intro. exfalso. apply (good_proj_nil GP).
+  - intro. exfalso. apply (good_proj_nil GP) .
   - change (good_proj k (p::fields)) with (orb (String.eqb k (fst p)) (good_proj k fields)).
     destruct (String.eqb k (fst p)).
     + intro. exact (F (snd p)).

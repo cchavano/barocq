@@ -77,52 +77,39 @@ Proof.
   - simpl. apply (IHl n).
 Qed.
 
-Fixpoint list_fold_left_err {A B: Type} (f: A -> B -> res A) (l: list B) (a0: res A) : res A :=
+Fixpoint list_fold_left_err_compat {A B: Type} (f: A -> B -> res A) (l: list B) (a0: res A) : res A :=
   match l with
   | nil => a0
   | x :: l' =>
       let* a0 := a0 in
-      list_fold_left_err f l' (f a0 x)
+      list_fold_left_err_compat f l' (f a0 x)
   end.
 
-Lemma list_fold_left_err_err:
-  forall (A B: Type) (f: A -> B -> res A) (l: list B) e,
-  list_fold_left_err f l (Error e) = Error e.
-Proof.
-  intros; destruct l; reflexivity.
-Qed.
+Fixpoint list_fold_left_err {A B: Type} (f: A -> B -> res A) (l: list B) (a0: A) : res A :=
+  match l with
+  | nil => OK a0
+  | x :: l' =>
+      let* acc := f a0 x in
+      list_fold_left_err f l' acc
+  end.
+
 
 Lemma list_fold_left_err_ext:
   forall {A B: Type} (f g: A -> B -> res A),
   (forall a b, f a b = g a b) ->
-  forall (l: list B) (a0: res A), list_fold_left_err f l a0 = list_fold_left_err g l a0.
+  forall (l: list B) (a0: A), list_fold_left_err f l a0 = list_fold_left_err g l a0.
 Proof.
   induction l; intros.
   - simpl. reflexivity.
-  - simpl. destruct a0; try reflexivity. simpl.
-    specialize (H a0 a). rewrite H.
+  - simpl.
+    rewrite H.
+    destruct (g a0 a); try reflexivity. simpl.
     apply IHl.
 Qed.
 
-Lemma list_fold_left_err_ext_OK:
-  forall {A B: Type} (f g: A -> B -> res A),
-  (forall a b r, f a b = OK r -> g a b = OK r) ->
-  forall (l: list B) (a0: res A) (r: A),
-    list_fold_left_err f l a0 = OK r ->
-    list_fold_left_err g l a0 = OK r.
-Proof.
-  induction l; intros.
-  - simpl in H0. rewrite H0. reflexivity.
-  - simpl in H0. monadInv H0. rewrite EQ. 
-    simpl. apply IHl. destruct (f x a) eqn:Ef. 
-    rewrite H with (r := a1); auto.
-    rewrite list_fold_left_err_err in EQ0.
-    discriminate.
-Qed.
-
-Fixpoint list_fold_right_err {A B: Type} (f: B -> A -> res A) (a0: res A) (l: list B) : res A :=
+Fixpoint list_fold_right_err {A B: Type} (f: B -> A -> res A) (a0: A) (l: list B) : res A :=
   match l with
-  | nil => a0
+  | nil => OK a0
   | x :: l' =>
       let* r := list_fold_right_err f a0 l' in
       f x r
@@ -131,7 +118,7 @@ Fixpoint list_fold_right_err {A B: Type} (f: B -> A -> res A) (a0: res A) (l: li
 Lemma list_fold_right_err_ext:
   forall {A B: Type} (f g: B -> A -> res A),
   (forall b a, f b a = g b a) ->
-  forall (l: list B) (a0: res A), list_fold_right_err f a0 l = list_fold_right_err g a0 l.
+  forall (l: list B) (a0: A), list_fold_right_err f a0 l = list_fold_right_err g a0 l.
 Proof.
   induction l; intros.
   - simpl. reflexivity.
@@ -143,7 +130,7 @@ Qed.
 Lemma list_fold_right_err_ext_OK:
   forall {A B: Type} (f g: B -> A -> res A),
   (forall b a r, f b a = OK r -> g b a = OK r) ->
-  forall (l: list B) (a0: res A) (r: A),
+  forall (l: list B) (a0: A) (r: A),
     list_fold_right_err f a0 l = OK r ->
     list_fold_right_err g a0 l = OK r.
 Proof.

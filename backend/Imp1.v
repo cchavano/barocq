@@ -152,7 +152,7 @@ Section DENOT.
     ignore_err (eval_statement_rec te ge le (Some tr) body).
 
   Definition eval_prog (impl: genv) (prog: program) : res (tenv * genv) :=
-    eval_prog tabs statement eval_statement impl prog.
+    eval_prog tabs  eval_statement impl prog.
 
 End DENOT.
 
@@ -320,7 +320,7 @@ Module Typing.
       list_fold_left_err
         (fun acc '(x, tx) => lcontext_update acc x tx)
         (fn_params f)
-        (ret STree.empty)
+        STree.empty
     in
     let* (body, _) := typecheck_statement be gx lx (fn_return f) (fn_body f) in
     ret {|

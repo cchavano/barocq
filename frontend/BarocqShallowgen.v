@@ -1044,7 +1044,7 @@ Module Monadification.
       list_fold_left_err
         (fun acc '(x, tx) => lcontext_update acc x tx)
         params
-        (eret STree.empty)
+        (STree.empty)
     in
     let* body := monadify_expr me gx lx (Syntax.fn_body f) in
     let tret := typof_expr body in

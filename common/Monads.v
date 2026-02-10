@@ -1,15 +1,14 @@
 (** * A collection of useful monads *)
-
 From Coq Require Import PArith String.
 From Coq Require Import RelationClasses.
 From compcert Require Import AST Maps Errors Coqlib.
 
 Module Type MONAD.
 
-  Parameter M : Type -> Type.
-  Parameter ret : forall (A: Type) (a: A), M A.
-  Parameter bind : forall (A B: Type) (f: M A) (g: A -> M B), M B.
-  Parameter bind2 : forall (A B C: Type) (f: M (A * B)) (g: A -> B -> M C), M C.
+Parameter M : Type -> Type.
+Parameter ret : forall (A: Type) (a: A), M A.
+Parameter bind : forall (A B: Type) (f: M A) (g: A -> M B), M B.
+Parameter bind2 : forall (A B C: Type) (f: M (A * B)) (g: A -> B -> M C), M C.
 
 End MONAD.
 
@@ -17,7 +16,7 @@ Module MonError <: MONAD.
 
   Export Errors.
 
-  Definition M : Type -> Type := res.
+  Definition M (T:Type) : Type := res T.
 
   Definition ret {A: Type} (a: A) : M A := OK a.
 

@@ -1,11 +1,10 @@
 (* Extentional equality and compatibility *)
-
 From Coq Require Import ZArith List MSetPositive Bool ZifyBool.
 From compcert Require Import Coqlib Integers Maps.
 From BarocqComp Require Import Barocq ExtOrdered.
 From BarocqComp Require Import Denot Types Target Error Barray Brecord Benum Ident Maps2 Utils.
 From Coq Require Import Datatypes List MSetPositive Lia.
-
+From BarocqComp Require Import Typing.
 
 
 
@@ -19,6 +18,8 @@ Section S.
     Variable tabs : Maps.PMap.t Type.
 
   Local Notation "# X" := (Types.eval_typ tabs X) (at level 90).
+
+  Definition propt : Type := string * value tabs.
 
   Section EQUAL_FUN.
     Variable PRED : forall (t:typ), # t -> # t -> Prop.
@@ -88,18 +89,29 @@ Section S.
       reflexivity.
     Qed.
 
-
   End EQUAL_RECORD.
 
   (** [ext_equal v1 v2] holds if the values are equal. For function types, it uses ext_fun (but not recursively) *)
-  Fixpoint ext_equal (t :typ) : forall (v1 v2 : # t), Prop :=
-    match t as t0 return (# t0 -> # t0 -> Prop) with
-    | TFun l t0 => fun f1 f2 => ext_fun ext_equal t0 l f1 f2
+  Fixpoint ext_equal (ty :typ) : forall (v1 v2 : # ty), Prop :=
+    match ty as t0 return (# t0 -> # t0 -> Prop) with
+    | TFun l t0 => fun (f1 f2: eval_funtyp (eval_typ tabs) l (eval_typ tabs t0)) => ext_fun ext_equal t0 l f1 f2
     | TArray t1 => fun (a1: array (# t1)) (a2:array (# t1)) =>
                      forall x, option_rel (ext_equal t1) (nth_error a1 x) (nth_error a2 x)
-    | TRecord id l => fun r1 r2 => equal_record ext_equal l r1 r2
+    | TRecord id fields => fun (r1 r2:eval_recordtyp (eval_typ tabs) fields) => equal_record ext_equal fields r1 r2
     | _ => eq
     end.
+
+  Lemma ext_equal_rew : forall ty v1 v2,
+      ext_equal ty v1 v2 = match ty as t0 return (# t0 -> # t0 -> Prop) with
+    | TFun l t0 => fun (f1 f2: eval_funtyp (eval_typ tabs) l (eval_typ tabs t0)) => ext_fun ext_equal t0 l f1 f2
+    | TArray t1 => fun (a1: array (# t1)) (a2:array (# t1)) =>
+                     forall x, option_rel (ext_equal t1) (nth_error a1 x) (nth_error a2 x)
+    | TRecord id fields => fun (r1 r2:eval_recordtyp (eval_typ tabs) fields) => equal_record ext_equal fields r1 r2
+    | _ => eq
+    end v1 v2.
+  Proof.
+    destruct ty;reflexivity.
+  Qed.
 
     (** [ext_fun_fo f1 f2] holds if the functions [f1] and [f2] are extentionnaly equal *)
   Fixpoint ext_fun_fo (tret: typ) (targs : list typ)  {struct targs}: forall (f1 f2 : eval_funtyp (eval_typ tabs) targs (#tret)), Prop :=
@@ -164,6 +176,8 @@ Section S.
             apply ext_equal_sym;auto.
         }
   Qed.
+
+
 
 
   Definition ext_eq_array (t:typ) (a1 a2 : array (# t)) :=
@@ -307,6 +321,16 @@ Section S.
         }
   Qed.
 
+  Lemma res_rel_cast_typ_refl : forall ti tf v,
+      fo_typ ti = true ->
+      res_rel (ext_equal tf) (@cast_typ tabs ti v tf) (@cast_typ tabs ti v tf).
+  Proof.
+    intros.
+    unfold cast_typ.
+    destruct (typ_eq_dec ti tf).
+    subst. constructor. apply ext_equal_refl. auto.
+    constructor.
+  Qed.
 
 
   Lemma ext_equal_fo_equal :forall (ty:typ),
@@ -428,6 +452,12 @@ Section S.
         end
     end.
 
+  Definition has_property (ge : genv tabs) (p : propt) :=
+    exists v', genv_get tabs ge (fst p) = OK v' /\ same_value  (snd p) v'.
+
+  Definition subset_property (ge:genv tabs) (l:list propt) :=
+    forall x v', genv_get tabs ge x = OK v' -> exists v, In (x,v) l /\ same_value v v'.
+
   Lemma same_value_sym : forall v1 v2,
       same_value v1 v2 ->
       same_value v2 v1.
@@ -533,6 +563,31 @@ Section S.
     simpl. auto.
   Qed.
 
+  Lemma get_cast_fo_typ : forall  ty t r,
+      get_cast tabs ty t = OK r ->
+      no_TFun ty = true /\ no_TFun t = true.
+  Proof.
+    unfold get_cast.
+    destruct ty,t; try discriminate; simpl; split; reflexivity.
+  Qed.
+
+
+  Lemma ext_equal_eval_cast : forall ty x y t,
+      ext_equal ty x y ->
+      res_rel (ext_equal t) (eval_cast tabs ty x t) (eval_cast tabs ty y t).
+  Proof.
+    unfold eval_cast.
+    intros.
+    destruct (get_cast tabs ty t) eqn:C; try constructor.
+    apply get_cast_fo_typ in C as (F1 & F2).
+    simpl.
+    apply no_TFun_equal in H; auto.
+    subst.
+    apply res_rel_refl. repeat intro. apply ext_equal_refl.
+    apply no_TFun_fo_typ; auto.
+  Qed.
+
+
 
   Lemma ext_equal_int_eq_neq : forall (b:bool) t1 t2 v1 v1' v2 v2' tf,
       ext_equal t1 v1 v1' ->
@@ -619,6 +674,21 @@ Section S.
       constructor.
   Qed.
 
+  Lemma ext_equal_eval_unary_op : forall op ti x y tf,
+      ext_equal ti x y ->
+      res_rel (ext_equal tf) (eval_unary_op tabs op ti x tf)
+        (eval_unary_op tabs op ti y tf).
+  Proof.
+    intros.
+    destruct op,ti; simpl; try constructor.
+    apply ext_equal_cast_typ; simpl in *; congruence.
+    apply ext_equal_cast_typ; simpl in *; congruence.
+    apply ext_equal_cast_typ; simpl in *; congruence.
+    apply ext_equal_cast_typ; simpl in *; congruence.
+    apply ext_equal_cast_typ; simpl in *; congruence.
+    apply ext_equal_cast_typ; simpl in *; congruence.
+    apply ext_equal_cast_typ; simpl in *; congruence.
+  Qed.
 
 
   Lemma ext_equal_eval_binary_op : forall op t1 t2 v1 v1' v2 v2' tf,
@@ -1090,6 +1160,115 @@ Section S.
     constructor. apply ext_equal_refl; auto.
     constructor.
   Qed.
+
+
+  Section EXPR.
+    Variable EXPR : Type.
+
+    Variable eval_expr : tenv -> (genv tabs) -> (lenv tabs) -> (forall (ty: typ) (e: EXPR), res (# ty)).
+
+    Lemma eval_prog_rec_preserve_properties : forall arch te ge prog  ge' props
+                                                   (ALL : Forall (has_property ge) props),
+        eval_prog_rec tabs eval_expr arch  te ge prog = OK ge' ->
+        Forall (has_property ge') props.
+  Proof.
+    intros.
+    rewrite Forall_forall in *.
+    intros.
+    apply ALL in H0.
+    unfold has_property in H0.
+    destruct x as (id,v).
+    simpl in H0. destruct v as (ty,vty).
+    destruct H0 as (v' & GET & EQ).
+    eexists. split.
+    eapply genv_get_preserve_defs; eauto.
+    auto.
+  Qed.
+
+  Lemma eval_prog_rec_preserve_app_properties : forall arch  p2  te  ge' ge'' p1' p2',
+      Forall (has_property ge') p1' ->
+      eval_prog_rec tabs eval_expr arch  te ge' p2 = OK ge'' ->
+      Forall (has_property ge'') p2' ->
+      Forall (has_property ge'') (p1' ++ p2').
+  Proof.
+    intros.
+    rewrite Forall_app.
+    split.
+    eapply eval_prog_rec_preserve_properties; eauto.
+    auto.
+  Qed.
+
+  End EXPR.
+
+  Fixpoint genv_has_property (ge: genv tabs)  (l:list propt) :=
+    match l with
+    | nil => ge
+    | (k,p)::l' => genv_has_property (STree.set k p ge) l'
+    end.
+
+  Lemma genv_has_property_same : forall x ge' l acc v,
+      STree.get x (genv_has_property acc l) = Some v ->
+      Forall (has_property ge') l ->
+      option_rel same_value (Some v) (STree.get x ge') \/ STree.get x acc = Some v.
+  Proof.
+    induction l.
+    - simpl.
+      tauto.
+    - simpl.
+      destruct a.
+      intros.
+      inv H0.
+      apply IHl in H; auto.
+      destruct H.
+      tauto.
+      rewrite STree.gsspec in H.
+      destruct (STree.elt_eq x s); subst.
+      inv H.
+      unfold has_property in H3.
+      destruct H3 as (v' & GET & SAME).
+      unfold genv_get in GET.
+      simpl in GET. destruct (STree.get s ge'); try discriminate.
+      inv GET. left; constructor ; auto.
+      right;assumption.
+  Qed.
+
+
+  Lemma map_err_nil : forall {A B:Type} (F : A -> res B) (l:list (string * A)),
+      MapList.map_err F l = OK nil -> l = nil.
+  Proof.
+    induction l; simpl.
+    - congruence.
+    - intros.
+      destruct a. destruct (F a); try discriminate.
+      simpl in H.
+      destruct (MapList.map_err F l) eqn:MR.
+      simpl in H. inv H. discriminate.
+  Qed.
+
+
+  Definition check_value (v: res (value tabs)) (ty:typ) (prop : value tabs) :=
+    match v with
+    | OK v' => match cast_value tabs v' ty with
+               | OK v' => eq_value prop ty v'
+               |  _    => False
+               end
+    | _    => False
+    end.
+
+
+  Definition generate_const_obligation (te : Typing.tenv) (x:ident) (l:Syntax.literal) (ty:btyp)
+    (prop : value tabs) : res Prop :=
+    let* ty' := Typing.btyp_to_typ te ty in
+    eret (check_value (eval_literal tabs te l) ty' prop).
+
+
+  Definition get_prop (s:ident) (props : list propt) :=
+    match props with
+    | nil => fail
+    | (s',p)::props' => if String.eqb s s' then
+                          eret (p,props')
+                        else fail
+    end.
 
 
 End S.

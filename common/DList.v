@@ -252,6 +252,70 @@ Section MAP.
 
 End MAP.
 
+Lemma map2_eq : forall {A B:Type} (Ftyp : A -> Type) (F G: forall (ty:A), B -> res (Ftyp ty)),
+    forall lt l,
+      List.Forall (fun v => forall ty, F ty v = G ty v) lt ->
+      map2 Ftyp F lt l = map2 Ftyp G lt l.
+Proof.
+  induction lt ; simpl.
+  - destruct l;reflexivity.
+  - destruct l; try reflexivity.
+    intros.
+    rewrite IHlt.
+    destruct (map2 Ftyp G lt l).
+    + simpl. inv H.
+      rewrite H2.
+      reflexivity.
+    +  reflexivity.
+    + inv H; auto.
+Qed.
+
+Section OFERR.
+  Context {A: Type}.
+  Context  {Ftyp : A -> Type}.
+
+  Fixpoint of_err {lt :list A} (dl : dlist (resFtyp Ftyp) lt) :  res (dlist Ftyp lt) :=
+    match dl in (dlist _ l) return (res (dlist Ftyp l)) with
+   | DNIL _ => OK (DNIL Ftyp)
+   | @DCONS _ _ ty e l dl1 => let* X := e in let* TL := of_err dl1 in OK (DCONS Ftyp X TL)
+   end.
+
+End OFERR.
+
+Lemma map2_mmap_err : forall {A B:Type} (Ftyp : A -> Type) (F: forall (ty:A), B -> res (Ftyp ty)),
+    forall lt l dl,
+    map2 Ftyp F lt l = OK dl ->
+    isError(mmap Ftyp F lt l) \/ exists vargs', of_err dl = OK vargs' /\ mmap Ftyp F lt l = OK vargs'.
+Proof.
+  induction lt; simpl.
+  - destruct l; simpl; try discriminate.
+    intros. inv H.
+    right. eexists.
+    split; reflexivity.
+  - destruct l; try discriminate.
+    intros.
+    destruct (map2 Ftyp F lt l) eqn:MMAP2; try discriminate.
+    simpl in H.
+    inv H.
+    destruct (F a0 a) eqn:FA.
+    simpl.
+    apply IHlt in MMAP2.
+    destruct MMAP2 as [MMAP2 | MMAP2].
+    destruct MMAP2. rewrite H. simpl. left.
+    eexists x;auto.
+    destruct MMAP2 as (vargs' & OF & MMAP).
+    rewrite MMAP.
+    simpl.
+    right.
+    rewrite OF.
+    simpl. eexists. split. reflexivity.
+    reflexivity.
+    simpl.
+    left ; eexists e;auto.
+Qed.
+
+
+
 Section IN.
   Context {A: Type}.
   Context {F1 : A -> Type}.

@@ -32,8 +32,6 @@ Definition program : Type := Syntax.program tailcomp btyp literal.
 
 (** * Induction principle for tailcomp *)
 
-Check tailcomp_ind.
-
 Section TAILCOMP_IND.
 
   Fixpoint tailcomp_depth (t: ImpBNF.tailcomp) : nat :=
@@ -266,7 +264,7 @@ Section DENOT.
     ret v.
 
   Definition eval_prog (impl: genv) (prog: program) : res (tenv * genv) :=
-    Denot.eval_prog tabs tailcomp eval_tailcomp impl prog.
+    Denot.eval_prog tabs  eval_tailcomp impl prog.
 
 End DENOT.
 

@@ -13,7 +13,7 @@ Proof.
   intros. left. destruct x; destruct y. reflexivity.
 Defined.
 
-Fixpoint enum (elems: list ident) : Type :=
+Polymorphic Fixpoint enum (elems: list ident) : Type :=
   match elems with
   | nil => False
   | ei :: nil => constr ei

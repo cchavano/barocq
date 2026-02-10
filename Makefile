@@ -6,7 +6,7 @@ COMMON=\
 
 FRONTEND=\
 	Denot.v Barocq.v Renaming.v BarocqBNF.v BarocqBNFgen.v\
-	BarocqShallow.v BarocqShallowgen.v ExtEqual.v BarocqVC.v CorresBD_Tactics.v
+	BarocqShallow.v BarocqShallowgen.v ExtEqual.v BarocqVC.v BarocqBNFVC.v CorresBD_Tactics.v
 
 BACKEND=\
 	ImpBNF.v ImpBNFgen.v Imp1.v Imp1gen.v Imp1ElimAlias.v InvAnalysis.v\
@@ -28,8 +28,9 @@ EXTRDEP=$(BUILD_DIR)/bcomp/extractionMachdep.v
 
 
 COQINCLUDES=$(foreach d, $(VDIRS), -R $(BUILD_DIR)/$(d) BarocqComp.$(d))
-COQC=coqc $(COQINCLUDES)
-COQEXEC=coqtop $(COQINCLUDES) -batch -load-vernac-source
+COQOPT= #-set "Universe Polymorphism"
+COQC=coqc $(COQOPT) $(COQINCLUDES)
+COQEXEC=coqtop $(COQOPT) $(COQINCLUDES) -batch -load-vernac-source
 COQDEP=coqdep $(COQINCLUDES)
 OCAMLFORMAT=ocamlformat -i
 

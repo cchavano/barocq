@@ -1,8 +1,7 @@
 $MODULES
-From Coq Require Import String List Lia.
 From compcert Require Import Integers Coqlib.
-From BarocqComp Require Import Target Utils Monads Error Barray Brecord Types Barocq BarocqVC Maps2.
-Import Typed.
+From BarocqComp Require Import Target Utils Monads ExtEqual Error Barray Brecord Types BarocqBNF BarocqBNFVC Maps2.
+From Coq Require Import String List Lia.
 Open Scope list_scope.
 
 Ltac gen_list L :=
@@ -27,12 +26,6 @@ Ltac vc :=
        unfold eq_value; apply same_value_refl';[reflexivity | (compute; reflexivity)]
   end.
 
-
-Definition is_ktype (d:Typed.globdef) :=
-  match kind_of_globdef d with
-  | KindType => true
-  | _    => false
-  end.
 
 Ltac has_property_FFI :=
   unfold has_property; eexists; split;

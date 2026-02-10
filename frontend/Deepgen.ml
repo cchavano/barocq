@@ -555,7 +555,7 @@ struct
   let rec expr_to_deep (prefix:string) (o:out_channel) (e:expr) = 
   let prefix' = prefix ^ indent in
     match e with
-    | EAtom(a,bt) -> Printf.fprintf o "EAtom (%a) (%s)" (atom_to_deep "") a (btyp_to_deep bt)
+    | EAtom(a) -> Printf.fprintf o "EAtom (%a)" (atom_to_deep "") a 
     | EArraySet (e1, e2, e3, bt) ->
       Printf.fprintf o
           "EArraySet (%a) (%a) (%a) (%s)"

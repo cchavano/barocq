@@ -168,15 +168,11 @@ Section DENOT.
         let* tf := typof_atom te f in
         match tf with
         | TFun tparams tret =>
-            match f with
-            | AVar f _ =>
-                let* f := eval_var tabs ge le f (TFun tparams tret) in
-                (* let* vargs := DList.map2 _ (eval_atom te ge le) args tparams in
-                eval_app_res tabs tparams tret f vargs ty *)
-                let* vargs := DList.mmap _ (eval_atom te ge le) args tparams in
-                ecast_typ tabs (eval_app tabs tparams tret f vargs tr) ty
-            | _ => fail
-            end
+            let* f := eval_atom te ge le  (TFun tparams tret) f in
+            let* vargs := DList.map2 _ (eval_atom te ge le) args tparams in
+            ecast_typ tabs (eval_app_res tabs tparams tret f vargs tr) ty
+            (*let* vargs := DList.mmap _ (eval_atom te ge le) args tparams in
+            eval_app tabs tparams tret f vargs ty *)
         |  _  => fail
         end
     | EIfThenElse a1 e2 e3 _ =>
@@ -199,6 +195,9 @@ Section DENOT.
   Definition eval_expr (te: tenv) (ge: genv) (le: lenv) (ty:typ) (e: expr) : res (eval_typ ty) :=
     ignore_err (eval_expr_rec te ge le ty e).
 
+  Definition eval_def_fun := eval_def_fun tabs eval_expr.
+
+
   Fixpoint eval_def_rec (te: tenv) (ge: genv) (defs: list globdef) (x: ident) : res value :=
     match defs with
     | nil => fail
@@ -209,7 +208,7 @@ Section DENOT.
             if Ident.eq_dec x y then genv_get tabs ge' x
             else eval_def_rec te ge' defs' x
         | DefFun y f =>
-            let* ge':= eval_def_fun tabs expr eval_expr te ge y f in
+            let* ge':= eval_def_fun  te ge y f in
             if Ident.eq_dec x y then genv_get tabs ge' x
             else eval_def_rec te ge' defs' x
         | DeclConst y _
@@ -218,6 +217,8 @@ Section DENOT.
             else eval_def_rec te ge defs' x
         end
     end.
+
+
 
   Definition eval_value_err_typ (rv: res value) : Type :=
     match rv with
@@ -232,7 +233,7 @@ Section DENOT.
   (** Evaluation of a whole program *)
 
   Definition eval_prog (impl: genv) (prog: program) : res (tenv * genv) :=
-    Denot.eval_prog tabs expr eval_expr impl prog.
+    Denot.eval_prog tabs  eval_expr impl prog.
 
   (** Redefinition of eval_def by computing the whole global environment first *)
 

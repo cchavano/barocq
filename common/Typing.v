@@ -61,7 +61,7 @@ Module TEnv.
             list_fold_left_err
               (fun acc_te constr => update_constr_types acc_te constr x)
               elems
-              (ret te')
+              te'
         | _ => ret te'
         end
     end.
@@ -70,7 +70,7 @@ Module TEnv.
     Utils.list_fold_left_err
       (fun acc_be '(tid, td) => update_defs acc_be tid td)
       types
-      (eret empty).
+      empty.
 
   End TYP.
 

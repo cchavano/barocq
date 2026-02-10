@@ -1,7 +1,8 @@
+Set Universe Polymorphism.
 From Coq Require Import String Bool List Eqdep.
 From compcert Require Import Coqlib Maps Integers.
-From BarocqComp Require Import Error Utils Types Syntax Barray Benum Brecord Maps2 Typing Intop.
-From BarocqComp Require DList.
+From BarocqComp Require Import  DList Error Utils Types Syntax Barray Benum Brecord Maps2 Typing Intop.
+From BarocqComp Require DList .
 Import ListNotations.
 
 Section DENOT.
@@ -678,6 +679,51 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
       apply (fun x => eval_app_res _ _ (f x) args ty).
   Defined.
 
+  Lemma eval_app_res_eval_app : forall {B:Type} (F : forall (ty:typ), B -> res (eval_typ  ty)) lt l args,
+      DList.map2 (eval_typ ) F l lt = OK args ->
+      forall tret f ty v,
+      eval_app_res  lt tret f args ty = OK v ->
+      exists vargs,
+        DList.mmap (eval_typ ) F l lt = OK vargs /\ eval_app  lt tret f vargs ty = OK v.
+  Proof.
+    induction lt.
+    - destruct l; try discriminate.
+      simpl;intros. inv H.
+      simpl in H0. eexists.
+      split. reflexivity.
+      simpl. auto.
+    - intros.
+      cbn in f.
+      destruct l; try discriminate.
+      simpl in H.
+      destruct (DList.map2 eval_typ F l lt) eqn:MAP2 ;
+        try discriminate.
+      simpl in H.
+      inv H.
+      specialize (IHlt l d MAP2 tret).
+      simpl in H0.
+      destruct lt.
+      + destruct l; try discriminate.
+        destruct (F a b) eqn:Fab; try discriminate.
+        simpl in H0.
+        eexists. split;simpl.
+        rewrite Fab.
+        reflexivity.
+        simpl. auto.
+      + destruct (F a b) eqn:Fab; try discriminate.
+        simpl in H0.
+        specialize (IHlt (f e) ty v H0).
+        destruct IHlt as (vargs' & MAP & EVAL).
+        eexists.
+        split.
+        cbn. rewrite Fab. simpl. rewrite MAP.
+        reflexivity.
+        cbn.
+        auto.
+  Qed.
+
+
+
 
   Definition typof_atom (te: tenv) (a: atom) : res typ :=
     btyp_to_typ te (typof_atom a).
@@ -720,10 +766,10 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
         match tf with
         | TFun tparams tret =>
             let* f := eval_var ge le f (TFun tparams tret) in
-            (* let* vargs := DList.map2 _ (eval_atom te ge le) args tparams in
-            eval_app_res tparams tret f vargs ty *)
-            let* vargs := DList.mmap _ (eval_atom te ge le) args tparams in
-            eval_app tparams tret f vargs ty
+            let* vargs := DList.map2 _ (eval_atom te ge le) args tparams in
+            eval_app_res tparams tret f vargs ty
+              (* let* vargs := DList.mmap _ (eval_atom te ge le) args tparams in
+            eval_app tparams tret f vargs ty *)
         |  _  => fail
         end
     end.
@@ -750,10 +796,10 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
         match tf with
         | TFun tparams tret =>
             let* f := eval_var ge le f (TFun tparams tret) in
-            (* let* vargs := DList.map2 _ (eval_atom te ge le) args tparams in
-            eval_app_res tparams tret f vargs ty *)
-            let* vargs := DList.mmap _ (eval_atom te ge le) args tparams in
-            eval_app tparams tret f vargs ty
+            let* vargs := DList.map2 _ (eval_atom te ge le) args tparams in
+            eval_app_res tparams tret f vargs ty
+            (*let* vargs := DList.mmap _ (eval_atom te ge le) args tparams in
+            eval_app tparams tret f vargs ty *)
         |  _  => fail
         end
     end.
@@ -794,11 +840,100 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
           end
     end.
 
+  Definition eval_def_const (te: tenv) (ge: genv) (x: ident) (l: literal) (ty: btyp) : res genv :=
+    let* ty' := btyp_to_typ te ty in
+    let* vv := eval_literal te l in
+    let* v'  := cast_value vv ty' in
+    genv_update ge x (Val ty' v').
+
+  Section PRESERVE_ENV.
+
+    Definition env_preserve_defs (ge1 ge2: genv) :=
+      forall k' v',
+        ge1 ! k' = Some v' -> ge2 ! k' = Some v'.
+
+      Lemma env_preserve_defs_refl : forall ge,
+      env_preserve_defs ge ge.
+  Proof.
+    unfold env_preserve_defs;auto.
+  Qed.
+
+  Lemma env_preserve_defs_trans : forall ge1 ge2 ge3,
+      env_preserve_defs ge1 ge2 ->
+      env_preserve_defs ge2 ge3 ->
+      env_preserve_defs ge1 ge3.
+  Proof.
+    unfold env_preserve_defs.
+    intros ; auto.
+  Qed.
+
+  Lemma genv_update_preserve_defs : forall ge k v ge',
+      genv_update ge k v = OK ge' ->
+      env_preserve_defs ge ge'.
+  Proof.
+    unfold env_preserve_defs,genv_update;intros.
+    unfold genv_get in H.
+    unfold STree.get in H.
+    destruct (ge ! (StringIndexed.index k)) eqn:G; try discriminate.
+    inv H. unfold STree.set.
+    rewrite PTree.gsspec.
+    destruct (peq k' (StringIndexed.index k)); subst; congruence.
+  Qed.
+
+  Lemma eval_def_const_preserve_defs : forall te ge ge' x l ty,
+      eval_def_const te ge x l ty = OK ge' ->
+      env_preserve_defs ge ge'.
+  Proof.
+    unfold eval_def_const.
+    intros.
+    destruct (Typing.btyp_to_typ te ty); try discriminate.
+    destruct (eval_literal te l); try discriminate.
+    simpl in H.
+    destruct (cast_value v t0); try discriminate.
+    simpl in H.
+    eapply genv_update_preserve_defs;eauto.
+  Qed.
+
+  Definition eval_decl_const (te: tenv) (impl ge: genv) (x:ident) (bt:btyp) : res genv :=
+    let* ty :=  Typing.btyp_to_typ te bt  in
+    let* v  := genv_get impl x in
+    if typ_eq_dec ty (typeof_value v) then
+      genv_update ge x v
+    else fail.
+
+  Lemma eval_decl_const_preserve_defs : forall te impl ge ge' x  ty,
+      eval_decl_const te impl ge x ty = OK ge' ->
+      env_preserve_defs ge ge'.
+  Proof.
+    unfold eval_decl_const.
+    intros.
+    destruct (Typing.btyp_to_typ te ty); try discriminate.
+    simpl in H.
+    destruct (genv_get impl x) eqn:GE; try discriminate.
+    simpl in H.
+    destruct (typ_eq_dec t0 (typeof_value v)) eqn:TE; try discriminate.
+    eapply genv_update_preserve_defs;eauto.
+  Qed.
+
+
+  Lemma genv_update_gss : forall ge ge' id v,
+      genv_update ge id v = OK ge' ->
+      ge' ! (StringIndexed.index id) = Some v.
+  Proof.
+    unfold genv_update; intros.
+    unfold genv_get in H.
+    unfold STree.get in H.
+    destruct (ge ! (StringIndexed.index id)) eqn:G ; try discriminate.
+    simpl in H. unfold STree.set in H.
+    inv H. rewrite PTree.gss. reflexivity.
+  Qed.
+
+
   Section EVAL_EXPR.
 
-  Variable EXPR : Type.
+    Context {EXPR : Type}.
 
-  Variable eval_expr : tenv -> genv -> lenv -> (forall (ty: typ) (e: EXPR), res (eval_typ ty)).
+    Variable eval_expr : tenv -> genv -> lenv -> (forall (ty: typ) (e: EXPR), res (eval_typ ty)).
 
   Fixpoint eval_fun_rec (te: tenv) (ge: genv) (le: lenv) (params: smaplist typ) (tret: typ) (e: EXPR) :
     eval_funtyp eval_typ (List.map snd  params) (eval_typ tret) :=
@@ -872,18 +1007,7 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
   Definition fields_btyp_to_typ (te: tenv) (fields: smaplist btyp) : res (smaplist typ) :=
     MapList.map_err (btyp_to_typ te) fields.
 
-  Definition eval_def_const (te: tenv) (ge: genv) (x: ident) (l: literal) (ty: btyp) : res genv :=
-    let* ty' := btyp_to_typ te ty in
-    let* vv := eval_literal te l in
-    let* v'  := cast_value vv ty' in
-    genv_update ge x (Val ty' v').
 
-  Definition eval_decl_const (te: tenv) (impl ge: genv) (x:ident) (bt:btyp) : res genv :=
-    let* ty :=  Typing.btyp_to_typ te bt  in
-    let* v  := genv_get impl x in
-    if typ_eq_dec ty (typeof_value v) then
-      genv_update ge x v
-    else fail.
 
   Definition eval_decl_fun (te:tenv) (impl ge : genv) (x:Syntax.ident) (params : list (Syntax.param_attr * btyp)) (tret:btyp) : res genv :=
     let* tparam := mmap (Typing.btyp_to_typ te) (List.map snd params) in
@@ -928,17 +1052,99 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
       simpl. apply STree.keys_set.
   Qed. 
 
+
+  Definition eval_prog_rec (te:tenv) (impl:genv) (ge:genv) (prog:list (globdef EXPR btyp literal)) : res genv :=
+    list_fold_left_err
+      (fun acc d => eval_globdef te impl acc d)
+      prog ge.
+
+
   Definition eval_prog (impl: genv) (prog: program EXPR btyp literal) : res (tenv * genv) :=
     let* te := tenv_of_type_defs (prog_types prog) in
-    let* ge' :=
-      list_fold_left_err
-        (fun acc d => eval_globdef te impl acc d)
-        (prog_defs prog)
-        (ret STree.empty)
-    in
+    let* ge' := eval_prog_rec te impl STree.empty (prog_defs prog)  in
     ret (te, ge').
 
+  Lemma eval_def_fun_preserve_defs : forall te ge x f ge',
+      eval_def_fun te ge x f = OK ge' ->
+      env_preserve_defs ge ge'.
+  Proof.
+    unfold eval_def_fun.
+    intros.
+    destruct (nodup Ident.eq_dec (fn_params f)); try discriminate.
+    destruct (btyp_to_typ te (fn_return f)); try discriminate.
+    simpl in H. destruct (map_err (btyp_to_typ te) (fn_params f)); try discriminate.
+    simpl in H.
+    eapply genv_update_preserve_defs;eauto.
+  Qed.
+
+  Lemma eval_decl_fun_preserve_defs : forall te impl ge ge' f targs tret,
+      eval_decl_fun te impl ge f targs tret = OK ge' ->
+      env_preserve_defs ge ge'.
+  Proof.
+    unfold eval_decl_fun.
+    intros.
+    destruct (mmap (btyp_to_typ te) (List.map snd targs)) eqn:P; try discriminate.
+    destruct (btyp_to_typ te tret); try discriminate.
+    destruct (genv_get impl f) eqn:GET; try discriminate.
+    unfold bind,Errors.bind in H.
+    destruct (typ_eq_dec (TFun l t0) (typeof_value v)); try discriminate.
+    eapply genv_update_preserve_defs; eauto.
+  Qed.
+
+
+  Lemma eval_globdef_preserve_defs : forall te impl ge ge' a,
+      eval_globdef te impl ge a = OK ge' ->
+      env_preserve_defs ge ge'.
+  Proof.
+    destruct a; simpl.
+    - intros.
+      eapply eval_def_const_preserve_defs; eauto.
+    - intros.
+      eapply eval_def_fun_preserve_defs; eauto.
+    - intros.
+      eapply eval_decl_const_preserve_defs in H ; eauto.
+    - intros.
+      eapply eval_decl_fun_preserve_defs in H ; eauto.
+  Qed.
+
+
+  Lemma eval_prog_rec_preserve_defs :
+    forall  prog impl ge  te ge'
+           (EVAL: eval_prog_rec te impl ge prog = OK  ge'),
+      env_preserve_defs ge ge'.
+  Proof.
+    unfold eval_prog_rec.
+    induction prog.
+    - simpl; intros. inv EVAL. apply env_preserve_defs_refl.
+    - simpl; intros.
+      destruct (eval_globdef te impl ge a) eqn:GD; try discriminate.
+      simpl in EVAL.
+      eapply IHprog in EVAL ;eauto.
+      eapply env_preserve_defs_trans;eauto.
+      eapply eval_globdef_preserve_defs;eauto.
+  Qed.
+
+
+
+  Lemma genv_get_preserve_defs :
+    forall  prog te impl ge   ge' x v
+           (EVAL: eval_prog_rec te impl ge prog = OK ge')
+           (GET : genv_get  ge x = OK v),
+      genv_get  ge' x = OK v.
+  Proof.
+    intros.
+    eapply eval_prog_rec_preserve_defs in EVAL.
+    unfold genv_get in *.
+    unfold STree.get in *.
+    specialize (EVAL (StringIndexed.index x) v).
+    destruct (ge ! (StringIndexed.index x)); try discriminate.
+    inv GET.
+    rewrite EVAL;auto.
+  Qed.
+
   End EVAL_EXPR.
+
+  End PRESERVE_ENV.
 
 End DENOT.
 

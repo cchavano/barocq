@@ -1,3 +1,4 @@
+Set Universe Polymorphism.
 From Coq Require Import List ZArith.
 From compcert Require Import Integers.
 From BarocqComp Require Import Intop Error Utils.

@@ -1,3 +1,4 @@
+Set Universe Polymorphism.
 From Coq Require Import List String ListDec PArith Bool.
 From compcert Require Import Coqlib Integers Maps Ctypes.
 From BarocqComp Require Import Error Maps2 Utils Intop Barray Brecord Benum Types Typing Syntax Pp Printer.
@@ -353,7 +354,7 @@ Module Typing.
       list_fold_left_err
         (fun acc '(x, tx) => lcontext_update acc x tx)
         (fn_params f)
-        (ret STree.empty)
+        ( STree.empty)
     in
     let* body := typecheck_expr be gx lx (fn_body f) in
     if btyp_eq_dec (typof_expr body) (fn_return f) then

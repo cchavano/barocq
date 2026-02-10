@@ -25,7 +25,7 @@ Fixpoint norm_statement (fuel: nat) (s: ImpBNF.statement) : res Imp1.statement :
               (fun '(ci, ti) acc =>
                  let* si := norm_statement fuel' (ImpBNF.StSetTailcomp x ti) in
                  ret ((ci, si) :: acc))
-              (ret nil)
+              nil
               cases
           in
           ret (StSwitch a cases')
@@ -88,7 +88,6 @@ Definition norm_program (prog: ImpBNF.program) : res Imp1.program :=
     prog_tabs := prog_tabs prog
   |} in
   ret prog'.
-
 
 Section CORRECTNESS.
 
@@ -170,7 +169,7 @@ Section CORRECTNESS.
           eapply NORM_STATEMENT_CORRECT; eauto.
           eapply norm_statement_fuel_gt; eauto.
       + monadInv H. inv EQ0. simpl in H0. monadInv H0.
-        simpl. rewrite EQ0; simpl. rewrite EQ2; simpl.
+        simpl. setoid_rewrite EQ0; simpl. rewrite EQ2; simpl.
         rename x0 into ta. rename x1 into va.
         rename l into cases. rename x into cases'.
         destruct ta; try discriminate. simpl in va.
@@ -247,7 +246,7 @@ Section CORRECTNESS.
           unfold typof_tailcomp in *; simpl in TYPOF_TAIL.
           rewrite C3. exact TYPOF_TAIL.       
       + monadInv H. inv EQ0. simpl in H0. monadInv H0.
-        simpl. rewrite EQ0; simpl. rewrite EQ2; simpl.
+        simpl. setoid_rewrite EQ0; simpl. rewrite EQ2; simpl.
         rename x0 into ta. rename x1 into va.
         rename l into cases. rename x into cases'.
         destruct ta; try discriminate. simpl in va.
@@ -352,7 +351,7 @@ Section CORRECTNESS.
       rename x into cases'.
       rename x0 into ta.
       rename x1 into va.
-      rewrite EQ0; simpl. rewrite EQ2; simpl.
+      setoid_rewrite EQ0; simpl. rewrite EQ2; simpl.
       destruct ta; try discriminate.
       unfold ImpBNF.eval_match in EQ3. simpl in EQ3.
       unfold Imp1.eval_match.
@@ -398,7 +397,7 @@ Section CORRECTNESS.
           eapply norm_statement_set_fw; eauto.
         * monadInv H0. inv EQ0. simpl in H1.
           monadInv H1. monadInv EQ1. monadInv EQ2.
-          inv EQ3. simpl. rewrite EQ1; simpl.
+          inv EQ3. simpl. setoid_rewrite EQ1; simpl.
           rewrite EQ2; simpl. rename l into cases.
           rename x into cases'. rename x0 into tb.
           rename x3 into ta. rename x4 into va.
@@ -504,7 +503,7 @@ Section CORRECTNESS.
       destruct x1. eapply IHtc1; eauto. eapply IHtc2; eauto.
     - simpl in H0. monadInv H0. inv EQ0.
       simpl in H1. monadInv H1. simpl.
-      rewrite EQ0; simpl. rewrite EQ2; simpl.
+      setoid_rewrite EQ0; simpl. rewrite EQ2; simpl.
       simpl in WF_TAIL. destruct_conj WF_TAIL.
       destruct x0; try discriminate. simpl in EQ3; simpl.
       rename x into cases'. rename x1 into va. simpl in va.
@@ -571,7 +570,7 @@ Section CORRECTNESS.
             rewrite convertible_btyp_iff in C1.
             unfold typof_tailcomp; simpl. destruct C1.
             rewrite H; simpl.
-            rewrite EQ0; simpl. rewrite EQ2; simpl.
+            setoid_rewrite EQ0; simpl. rewrite EQ2; simpl.
             destruct x0; try discriminate.
             simpl; simpl in EQ3. rename l into cases.
             rename x into cases'.
@@ -634,8 +633,8 @@ Section CORRECTNESS.
     forall params tc s te ge le tret,
       wf_tailcomp te tc = true ->
       norm_tailcomp tc = OK s ->
-      eval_fun_rec tabs Imp1.statement (Imp1.eval_statement arch tabs) te ge le params tret s =
-      eval_fun_rec tabs ImpBNF.tailcomp (ImpBNF.eval_tailcomp arch tabs) te ge le params tret tc.
+      eval_fun_rec tabs  (Imp1.eval_statement arch tabs) te ge le params tret s =
+      eval_fun_rec tabs  (ImpBNF.eval_tailcomp arch tabs) te ge le params tret tc.
     Proof.
       induction params; intros.
       - simpl. apply Axioms.functional_extensionality; intros.
@@ -650,8 +649,8 @@ Section CORRECTNESS.
   Lemma norm_function_correct:
     forall f f' te ge x,
     norm_function te f = OK f' ->
-    eval_def_fun tabs Imp1.statement (Imp1.eval_statement arch tabs) te ge x f' =
-    eval_def_fun tabs ImpBNF.tailcomp (ImpBNF.eval_tailcomp arch tabs) te ge x f.
+    eval_def_fun tabs  (Imp1.eval_statement arch tabs) te ge x f' =
+    eval_def_fun tabs  (ImpBNF.eval_tailcomp arch tabs) te ge x f.
   Proof.
     unfold norm_function; intros.
     destruct (wf_tailcomp te (fn_body f)) eqn:Ewf_body.
@@ -669,8 +668,8 @@ Section CORRECTNESS.
   Lemma norm_globdef_correct:
     forall te impl ge d d',
       norm_globdef te d = OK d' ->
-      eval_globdef tabs Imp1.statement (Imp1.eval_statement arch tabs) te impl ge d' = 
-      eval_globdef tabs ImpBNF.tailcomp (ImpBNF.eval_tailcomp arch tabs) te impl ge d.
+      eval_globdef tabs  (Imp1.eval_statement arch tabs) te impl ge d' =
+      eval_globdef tabs  (ImpBNF.eval_tailcomp arch tabs) te impl ge d.
   Proof.
     destruct d; simpl; intros.
     - inv H. simpl. reflexivity.
@@ -685,16 +684,19 @@ Section CORRECTNESS.
       mmap (norm_globdef te) defs = OK defs' ->
       list_fold_left_err
         (fun acc d =>
-          eval_globdef tabs statement (eval_statement arch tabs) te impl acc d) defs' a0 =
+          eval_globdef tabs  (eval_statement arch tabs) te impl acc d) defs' a0 =
       list_fold_left_err
         (fun acc d =>
-          eval_globdef tabs tailcomp (eval_tailcomp arch tabs) te impl acc d) defs a0.
+          eval_globdef tabs  (eval_tailcomp arch tabs) te impl acc d) defs a0.
   Proof.
     induction defs; intros.
     - simpl in H. inv H. simpl. reflexivity.
     - simpl in H. monadInv H. simpl.
-      destruct a0; simpl; try reflexivity.
       erewrite norm_globdef_correct; eauto.
+      destruct
+        (eval_globdef tabs (eval_tailcomp arch tabs) te impl a0 a);
+        try reflexivity.
+      simpl; auto.
   Qed.
 
   Theorem norm_program_correct:

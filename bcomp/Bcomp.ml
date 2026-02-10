@@ -260,11 +260,28 @@ let gen_rocq_program (prog:Barocq.program) =
              "fail to generate the ShallowR embedding: %s"
              (C2C.string_of_errmsg msg)) 
 
-let generate_corres (prog: Barocq.program) (l:Compiler.ir_prog list) = 
+let gen_shallowB_program (prog:Barocq.program) = 
+  match 
+    BarocqShallowgen.monadify_norm2_program
+      !target_arch
+      BarocqShallowgen.ShallowB
+      prog
+  with 
+  | Errors.OK bprog -> bprog
+  | Errors.Error msg -> 
+        raise
+        @@ UnexpectedError
+          (sprintf
+             "fail to generate the ShallowB embedding: %s"
+             (C2C.string_of_errmsg msg)) 
+
+
+let generate_corres (prog: Barocq.program) (tprog:Barocq.Typed.program) (l:Compiler.ir_prog list) = 
   if not (!opt_gen_corres) then ();
   (* Generate Rocq Shallow embedding *)
   let rprog = gen_rocq_program prog in 
   let rawname = gen_rocq_prefix () in
+  let full_filename = get_full_filename rawname in
   let file = get_full_filename rawname "_ShallowR.v" in
   let oc = open_out file in
   Shallowgen.coqlib := rawname;
@@ -290,80 +307,62 @@ let generate_corres (prog: Barocq.program) (l:Compiler.ir_prog list) =
   printf
     "ShallowB types generated at %s\n"
     (clean_filename types_file);
-  ()
-
-(*
-  let bprog =
-    BarocqShallowgen.monadify_norm2_program
-      !target_arch
-      BarocqShallowgen.ShallowB
-      prog
-  in
-        begin match (rprog, bprog) with
-        | Errors.OK rprog, Errors.OK bprog ->
-
-
-begin match (rprog, bprog) with
-        | Errors.OK rprog, Errors.OK bprog ->
-
-  let full_filename = get_full_filename rawname in
+  (* Generation of ShallowB program *) 
+  let bprog = gen_shallowB_program prog in 
+  let shallowB_file = get_full_filename rawname "_ShallowB.v" in
+  let shallowB_oc = open_out shallowB_file in
+  Shallowgen.coqlib := rawname;
+  Shallowgen.SB.print_program shallowB_oc bprog;
+  close_out shallowB_oc;
+  printf
+    "ShallowB embedding generated at %s\n"
+    (clean_filename shallowB_file);
+  (* ShallowR <-> ShallowB correspondence *)
+  CorresRBgen.coqlib := rawname;
+  let corresRB_tactics_file = full_filename "_CorresRB_Tactics.v" in
+  let corresRB_tactics_oc = open_out corresRB_tactics_file in
+  CorresRBgen.HelperTactics.print corresRB_tactics_oc rprog bprog;
+  close_out corresRB_tactics_oc;
+  printf
+    "ShallowR <-> ShallowB helper tactics generated at %s\n"
+    (clean_filename corresRB_tactics_file);
+  let corresRB_file = full_filename "_CorresRB.v" in
+  let corresRB_oc = open_out corresRB_file in
+  CorresRBgen.print_corres corresRB_oc rprog bprog;
+  close_out corresRB_oc;
+  printf
+    "ShallowR <-> ShallowB correspondence theorems generated at %s\n"
+    (clean_filename corresRB_file);
   
-            (* Generation of ShallowB *)
-            let shallowB_file = get_full_filename rawname "_ShallowB.v" in
-            let shallowB_oc = open_out shallowB_file in
-            Shallowgen.coqlib := rawname;
-            Shallowgen.SB.print_program shallowB_oc bprog;
-            close_out shallowB_oc;
-            printf
-              "ShallowB embedding generated at %s\n"
-              (clean_filename shallowB_file);
+  (* ShallowB <-> Deep correspondence *)
+  CorresBDgen.coqlib := rawname;
+  let preludeBD_file = full_filename "_CorresBD_Prelude.v" in
+  let corresBD_proof = full_filename "_CorresBD_Proof.v" in
+  let corresBD_file = full_filename "_CorresBD.v" in
+  let preludeBD_oc = open_out preludeBD_file in
+  let corresBD_oc = open_out corresBD_file in
+  CorresBDgen.print_prelude preludeBD_oc !target_arch tprog bprog;
+  CorresBDgen.print_proof !target_arch corresBD_proof;
+  CorresBDgen.print_corres corresBD_oc !target_arch bprog;
+  close_out preludeBD_oc;
+  close_out corresBD_oc;
+  printf
+    "ShallowB <-> Deep correspondence prelude generated at %s\n"
+    (clean_filename preludeBD_file);
+  printf
+    "ShallowB <-> Deep correspondence theorems generated at %s\n"
+    (clean_filename corresBD_file);
+  
+  (* ShallowR <-> Deep correspondence *)
+  CorresRDgen.coqlib := rawname;
+  let corresRD_file = full_filename "_CorresRD.v" in
+  let corresRD_oc = open_out corresRD_file in
+  CorresRDgen.print_corres corresRD_oc !target_arch rprog;
+  printf
+    "ShallowR <-> Deep correspondence theorems generated at %s\n"
+    (clean_filename corresRD_file);
+  close_out corresRD_oc
 
-            (* ShallowR <-> ShallowB correspondence *)
-            CorresRBgen.coqlib := rawname;
-            let corresRB_tactics_file = full_filename "_CorresRB_Tactics.v" in
-            let corresRB_tactics_oc = open_out corresRB_tactics_file in
-            CorresRBgen.HelperTactics.print corresRB_tactics_oc rprog bprog;
-            close_out corresRB_tactics_oc;
-            printf
-              "ShallowR <-> ShallowB helper tactics generated at %s\n"
-              (clean_filename corresRB_tactics_file);
-            let corresRB_file = full_filename "_CorresRB.v" in
-            let corresRB_oc = open_out corresRB_file in
-            CorresRBgen.print_corres corresRB_oc rprog bprog;
-            close_out corresRB_oc;
-            printf
-              "ShallowR <-> ShallowB correspondence theorems generated at %s\n"
-              (clean_filename corresRB_file);
-
-            (* ShallowB <-> Deep correspondence *)
-            CorresBDgen.coqlib := rawname;
-            let preludeBD_file = full_filename "_CorresBD_Prelude.v" in
-            let corresBD_proof = full_filename "_CorresBD_Proof.v" in
-            let corresBD_file = full_filename "_CorresBD.v" in
-            let preludeBD_oc = open_out preludeBD_file in
-            let corresBD_oc = open_out corresBD_file in
-            CorresBDgen.print_prelude preludeBD_oc !target_arch tprog bprog;
-            CorresBDgen.print_proof !target_arch corresBD_proof;
-            CorresBDgen.print_corres corresBD_oc !target_arch bprog;
-            close_out preludeBD_oc;
-            close_out corresBD_oc;
-            printf
-              "ShallowB <-> Deep correspondence prelude generated at %s\n"
-              (clean_filename preludeBD_file);
-            printf
-              "ShallowB <-> Deep correspondence theorems generated at %s\n"
-              (clean_filename corresBD_file);
-
-            (* ShallowR <-> Deep correspondence *)
-            CorresRDgen.coqlib := rawname;
-            let corresRD_file = full_filename "_CorresRD.v" in
-            let corresRD_oc = open_out corresRD_file in
-            CorresRDgen.print_corres corresRD_oc !target_arch rprog;
-            printf
-              "ShallowR <-> Deep correspondence theorems generated at %s\n"
-              (clean_filename corresRD_file);
-            close_out corresRD_oc
-*)
 
 
 
@@ -402,12 +401,20 @@ let () =
 
       let prog = Barocq.iprog_to_prog iprog in
 
+      let tiprog =
+        match Barocq.Typing.typecheck_iprogram !target_arch iprog with
+        | Errors.OK p -> p
+        | Errors.Error msg ->
+            raise @@ UnexpectedError (C2C.string_of_errmsg msg)
+      in
 
+      let tprog = Barocq.Typing.program_of_iprogram tiprog in
+      
       match Compiler.compile (gen_compile_opt ()) !target_arch ginfo prog with
       | Errors.OK (progs, log) -> begin
           ignore (output_log stdout log);
           generate_c  !opt_export_csyntax !opt_gen_header progs;
-          generate_corres prog progs
+          generate_corres prog tprog progs
         end
       | Errors.Error msg -> raise @@ CompilerError (C2C.string_of_errmsg msg)
 
@@ -435,14 +442,6 @@ let () =
 
 (*
       
-      let tiprog =
-        match Barocq.Typing.typecheck_iprogram !target_arch iprog with
-        | Errors.OK p -> p
-        | Errors.Error msg ->
-            raise @@ UnexpectedError (C2C.string_of_errmsg msg)
-      in
-
-      let tprog = Barocq.Typing.program_of_iprogram tiprog in
 
       if !opt_interp then begin
         let _ = Binterpreter.interpret !target_arch tiprog in
