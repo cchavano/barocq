@@ -135,7 +135,7 @@ Fixpoint list_of_grecord {A: Type} (F: A -> Type) (fields : smaplist A) : grecor
   end.
 
 Fixpoint dlist_of_grecord {A: Type} {F: A-> Type} {fields : smaplist A} : grecord F fields -> DList.dlist F (List.map snd fields) :=
-  match fields as l return (grecord F l -> dlist F (map snd l)) with
+  match fields as l return (grecord F l -> dlist F (List.map snd l)) with
   | nil => fun _  => DNIL F
   | p :: fields' =>
        fun r  => DCONS F (proj_field (fst r)) (dlist_of_grecord  (snd r))
@@ -174,7 +174,17 @@ Proof.
     + apply (gprojT A F fields' rc' k).
 Defined.
 
-
+Fixpoint gprojt {A: Type} {F : A -> Type} {fields: smaplist A} (A_eq_dec: forall (x y: A), {x = y} + {x <> y}) (rc: grecord F fields) (k: key) (t: A) {struct fields}: res (F t).
+Proof.
+  destruct fields as [|[x tx] fields'].
+  - apply fail.
+  - simpl in rc. destruct rc.
+    destruct (k=?x)%string.
+    + destruct (A_eq_dec tx t).
+      * subst. destruct f. apply (ret a).
+      * apply fail.
+    + apply fail.
+Defined.
 
 Definition proj {fields: smaplist Type} (r:record fields) (k: key) : res (type_of_field k fields) :=
   gproj (fun x => x)  r k.

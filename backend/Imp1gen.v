@@ -1,5 +1,5 @@
 From Coq Require Import List String Lia Eqdep RelationClasses.
-From BarocqComp Require Import Error Utils Brecord Types Syntax ImpBNF Imp1 Maps2 Denot.
+From BarocqComp Require Import Error Utils Brecord Types Syntax ImpBNF Imp1 Maps2 Denot Imp1Pure.
 Import ListNotations.
 
 Close Scope Z_scope.
@@ -139,11 +139,11 @@ Section CORRECTNESS.
       forall sb s1 le le',
         norm_statement fuel sb = OK s1 ->
         ImpBNF.eval_statement arch tabs te ge le sb = OK le' ->
-        Imp1.eval_statement_rec arch tabs te ge le None s1 = OK le')
+        Imp1Pure.eval_statement_rec arch tabs te ge le None s1 = OK le')
     i tc s1 le le' ty v,
       norm_statement fuel (StSetTailcomp i tc) = OK s1 ->
       ImpBNF.eval_tailcomp_rec arch tabs te ge le ty tc = OK (v, le') ->
-      Imp1.eval_statement_rec arch tabs te ge le None s1 =
+      Imp1Pure.eval_statement_rec arch tabs te ge le None s1 =
       OK (Denot.lenv_update tabs le' i (Denot.Val tabs ty v)).
   Proof.
     induction fuel; intros.
@@ -202,13 +202,13 @@ Section CORRECTNESS.
       forall sb s1 le le'
         (WF_STMT: wf_statement te sb = true),
         norm_statement fuel sb = OK s1 ->
-        Imp1.eval_statement_rec arch tabs te ge le None s1 = OK le' ->
+        Imp1Pure.eval_statement_rec arch tabs te ge le None s1 = OK le' ->
         ImpBNF.eval_statement arch tabs te ge le sb = OK le')
       i tc s1 le le' ty
       (TYPOF_TAIL: typof_tailcomp te tc = OK ty)
       (WF_TAIL: wf_tailcomp te tc = true),
       norm_statement fuel (StSetTailcomp i tc) = OK s1 ->
-      Imp1.eval_statement_rec arch tabs te ge le None s1 = OK le' ->
+      Imp1Pure.eval_statement_rec arch tabs te ge le None s1 = OK le' ->
       (exists v le1,
         ImpBNF.eval_tailcomp_rec arch tabs te ge le ty tc = OK (v, le1) /\
         (lenv_update tabs le1 i (Val tabs ty v) = le')).
@@ -291,13 +291,13 @@ Section CORRECTNESS.
     (forall s te ge le le' ty (v: eval_typ tabs ty),
       norm_tailcomp tc = OK s ->
       ImpBNF.eval_tailcomp_rec arch tabs te ge le ty tc = OK (v, le') ->
-      Imp1.eval_statement_rec arch tabs te ge le (Some ty) s = OK v).
+      Imp1Pure.eval_statement_rec arch tabs te ge le (Some ty) s = OK v).
 
   Local Notation norm_statement_correct_fw_def sb :=
     (forall fuel s1 te ge le le',
       norm_statement fuel sb = OK s1 ->
       ImpBNF.eval_statement arch tabs te ge le sb = OK le' ->
-      Imp1.eval_statement_rec arch tabs te ge le None s1 = OK le').
+      Imp1Pure.eval_statement_rec arch tabs te ge le None s1 = OK le').
 
   Lemma norm_tailcomp_correct_mut:
     (forall tc, norm_tailcomp_correct_fw_def tc) /\
@@ -354,7 +354,7 @@ Section CORRECTNESS.
       setoid_rewrite EQ0; simpl. rewrite EQ2; simpl.
       destruct ta; try discriminate.
       unfold ImpBNF.eval_match in EQ3. simpl in EQ3.
-      unfold Imp1.eval_match.
+      unfold Imp1Pure.eval_match.
       revert le le' cases' EQ va EQ2 EQ3.
       clear - H l.
       {
@@ -440,14 +440,14 @@ Section CORRECTNESS.
     (forall s te ge le ty (v: eval_typ tabs ty)
     (WF_TAIL: wf_tailcomp te tc = true),
       norm_tailcomp tc = OK s ->
-      Imp1.eval_statement_rec arch tabs te ge le (Some ty) s = OK v ->
+      Imp1Pure.eval_statement_rec arch tabs te ge le (Some ty) s = OK v ->
       (exists le', ImpBNF.eval_tailcomp_rec arch tabs te ge le ty tc = OK (v, le'))).
 
   Local Notation norm_statement_correct_bw_def sb :=
     (forall fuel s1 te ge le le'
     (WF_STMT: wf_statement te sb = true),
       norm_statement fuel sb = OK s1 ->
-      Imp1.eval_statement_rec arch tabs te ge le None s1 = OK le' ->
+      Imp1Pure.eval_statement_rec arch tabs te ge le None s1 = OK le' ->
       ImpBNF.eval_statement arch tabs te ge le sb = OK le').
 
   Theorem norm_tailcomp_bw_correct:
@@ -616,10 +616,10 @@ Section CORRECTNESS.
     forall te ge le tc s ty,
       wf_tailcomp te tc = true ->
       norm_tailcomp tc = OK s ->
-      Imp1.eval_statement arch tabs te ge le ty s =
+      Imp1Pure.eval_statement arch tabs te ge le ty s =
       ImpBNF.eval_tailcomp arch tabs te ge le ty tc.
   Proof.
-    unfold ImpBNF.eval_tailcomp, Imp1.eval_statement; intros.
+    unfold ImpBNF.eval_tailcomp, Imp1Pure.eval_statement; intros.
     destruct (eval_tailcomp_rec arch tabs te ge le ty tc) as [[v le']|] eqn:Eeval_tc;
     simpl.
     - erewrite norm_tailcomp_correct_fw; eauto. reflexivity.
@@ -633,8 +633,8 @@ Section CORRECTNESS.
     forall params tc s te ge le tret,
       wf_tailcomp te tc = true ->
       norm_tailcomp tc = OK s ->
-      eval_fun_rec tabs  (Imp1.eval_statement arch tabs) te ge le params tret s =
-      eval_fun_rec tabs  (ImpBNF.eval_tailcomp arch tabs) te ge le params tret tc.
+      eval_fun_rec tabs (Imp1Pure.eval_statement arch tabs) te ge le params tret s =
+      eval_fun_rec tabs (ImpBNF.eval_tailcomp arch tabs) te ge le params tret tc.
     Proof.
       induction params; intros.
       - simpl. apply Axioms.functional_extensionality; intros.
@@ -649,8 +649,8 @@ Section CORRECTNESS.
   Lemma norm_function_correct:
     forall f f' te ge x,
     norm_function te f = OK f' ->
-    eval_def_fun tabs  (Imp1.eval_statement arch tabs) te ge x f' =
-    eval_def_fun tabs  (ImpBNF.eval_tailcomp arch tabs) te ge x f.
+    eval_def_fun tabs (Imp1Pure.eval_statement arch tabs) te ge x f' =
+    eval_def_fun tabs (ImpBNF.eval_tailcomp arch tabs) te ge x f.
   Proof.
     unfold norm_function; intros.
     destruct (wf_tailcomp te (fn_body f)) eqn:Ewf_body.
@@ -668,8 +668,8 @@ Section CORRECTNESS.
   Lemma norm_globdef_correct:
     forall te impl ge d d',
       norm_globdef te d = OK d' ->
-      eval_globdef tabs  (Imp1.eval_statement arch tabs) te impl ge d' =
-      eval_globdef tabs  (ImpBNF.eval_tailcomp arch tabs) te impl ge d.
+      eval_globdef tabs (Imp1Pure.eval_statement arch tabs) te impl ge d' =
+      eval_globdef tabs (ImpBNF.eval_tailcomp arch tabs) te impl ge d.
   Proof.
     destruct d; simpl; intros.
     - inv H. simpl. reflexivity.
@@ -702,13 +702,13 @@ Section CORRECTNESS.
   Theorem norm_program_correct:
     forall impl p p',
       norm_program p = OK p' ->
-      Imp1.eval_prog arch tabs impl p' =
+      Imp1Pure.eval_prog arch tabs impl p' =
       ImpBNF.eval_prog arch tabs impl p.
   Proof.
     intros. unfold norm_program in H.
     monadInv H. inv EQ2.
     destruct p; simpl in *.
-    unfold Imp1.eval_prog, ImpBNF.eval_prog, eval_prog.
+    unfold Imp1Pure.eval_prog, ImpBNF.eval_prog, Denot.eval_prog.
     simpl. rewrite EQ; simpl. f_equal.
     apply norm_program_correct_aux. exact EQ1.
   Qed.

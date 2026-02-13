@@ -227,7 +227,6 @@ Proof.
     +  eapply IHl;eauto.
 Qed.
 
-
 Section FORALL.
   Context {A: Type}.
   Variable P : A -> Prop.

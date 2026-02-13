@@ -1,0 +1,20 @@
+module Test
+
+record rec {
+  f: i32,
+}
+
+record cont {
+  r: rec,
+}
+
+decl foo : (@read rec) -> bool
+
+defn bad(a: [rec], i: u64, j: u64) : [rec] =
+  let x = a[i] in
+  let y = a[j] in
+  let z = x.f in
+  let y = y.f <- z in
+  let a = a[j] <- y in
+  a
+

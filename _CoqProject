@@ -1,4 +1,3 @@
--set "Universe Polymorphism"
 -R _build/common BarocqComp.common
 -R _build/frontend BarocqComp.frontend
 -R _build/backend BarocqComp.backend

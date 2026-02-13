@@ -9,8 +9,8 @@ FRONTEND=\
 	BarocqShallow.v BarocqShallowgen.v ExtEqual.v BarocqVC.v BarocqBNFVC.v CorresBD_Tactics.v
 
 BACKEND=\
-	ImpBNF.v ImpBNFgen.v Imp1.v Imp1gen.v Imp1ElimAlias.v InvAnalysis.v\
-	Unboxing.v Imp2.v Imp2gen.v GlobRewrite.v Csyntaxgen.v Imp1Imp.v
+	ImpBNF.v ImpBNFgen.v Imp1.v Imp1gen.v Imp1Pure.v Imp1Imp.v Imp1Instr.v\
+	Imp1ElimAlias.v InvAnalysis.v Unboxing.v Imp2.v Imp2gen.v GlobRewrite.v Csyntaxgen.v
 
 BCOMP=Compiler.v
 

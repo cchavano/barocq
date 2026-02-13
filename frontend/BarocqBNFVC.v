@@ -731,15 +731,14 @@ Section S.
       eapply ExtEqual.ext_equal_eval_cast with (t:=t)in H3;eauto.
       apply ext_equal_ecast_typ; auto.
       constructor.
-    - destruct (Typing.btyp_to_typ te b); try constructor.
+    - destruct (Denot.typof_atom te a); try constructor.
       simpl.
       specialize (eq_genv_eval_atom t a le le' H H0).
       inv eq_genv_eval_atom.
       constructor.
       simpl.
       apply ExtEqual.ext_equal_eval_unary_op; auto.
-    -
-      simpl in H.
+    - simpl in H.
       destruct (Denot.typof_atom te a1); try constructor.
       destruct (Denot.typof_atom te a2); try constructor.
       simpl.

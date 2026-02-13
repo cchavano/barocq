@@ -741,11 +741,11 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
         let* ta1  := typof_atom te a1 in
         let* v1 := eval_atom te ge le ta1 a1 in
         ecast_typ (eval_cast ta1 v1 tr') ty
-    | AUnaryOp op a1 bt =>
-        let* ta1 := btyp_to_typ te bt in
+    | AUnaryOp op a1 _ =>
+        let* ta1 := typof_atom te a1 in
         let* v := eval_atom te ge le ta1 a1 in
         eval_unary_op op ta1 v ty
-    | ABinaryOp op a1 a2 bt =>
+    | ABinaryOp op a1 a2 _ =>
         let* ta1 := typof_atom te a1 in
         let* ta2  := typof_atom te a2 in
         let* v1 := eval_atom te ge le ta1 a1  in
@@ -1009,11 +1009,11 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
 
 
 
-  Definition eval_decl_fun (te:tenv) (impl ge : genv) (x:Syntax.ident) (params : list (Syntax.param_attr * btyp)) (tret:btyp) : res genv :=
-    let* tparam := mmap (Typing.btyp_to_typ te) (List.map snd params) in
+  Definition eval_decl_fun (te:tenv) (impl ge : genv) (x: ident) (params : list (Syntax.param_attr * btyp)) (tret:btyp) : res genv :=
+    let* tparams := mmap (Typing.btyp_to_typ te) (List.map snd params) in
     let* tret   := Typing.btyp_to_typ te tret in
     let* v := genv_get impl x in
-    if (typ_eq_dec (TFun tparam tret) (typeof_value v)) then
+    if (typ_eq_dec (TFun tparams tret) (typeof_value v)) then
       genv_update ge x v
     else fail.
 

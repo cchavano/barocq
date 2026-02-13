@@ -32,22 +32,31 @@ Section Forall2.
     end.
 End Forall2.
 
-  Section MAPACC.
-    Context {A B MEM:Type}.
-    Variable F : A -> MEM -> res (B * MEM).
+Section MAPACC.
+  Context {A B MEM:Type}.
+  Variable F : A -> MEM -> res (B * MEM).
 
-    Fixpoint mmap_fold (l:list A) (m:MEM) : res (list B * MEM) :=
-      match l with
-      | nil => OK(nil,m)
-      | e::l => let* (fe,m1) := F e m in
-                let* (l ,mr) := mmap_fold l m1 in
-                OK (fe::l,mr)
-      end.
+  Fixpoint mmap_fold (l:list A) (m:MEM) : res (list B * MEM) :=
+    match l with
+    | nil => OK(nil,m)
+    | e::l => let* (fe,m1) := F e m in
+              let* (l ,mr) := mmap_fold l m1 in
+              OK (fe::l,mr)
+    end.
 
-  End MAPACC.
+End MAPACC.
 
+Inductive cedge :=
+  | CField (id:ident)
+  | CIndex (i:Integers.Int64.int).
 
-
+Definition cedge_eqb (ce1 ce2: cedge) : bool :=
+  match ce1, ce2 with
+  | CField f1, CField f2 =>
+      if Ident.eq_dec f1 f2 then true else false
+  | CIndex i1, CIndex i2 => Int64.eq i1 i2
+  | _, _ => false
+  end.
 
 Inductive pval : typ -> Type :=
 | PBool  : forall (b:bool), pval TBool
@@ -104,8 +113,7 @@ Section S.
   Variable abs_dec : forall x,
     forall (v1 v2: SMap.get x abs), {v1 = v2} + {v1 <> v2}.
 
-  (* The semantics is dynamically typed.
-   *)
+  (* The semantics is dynamically typed. *)
 
   Inductive val : typ -> Type :=
   | Vprim  : forall (ty:typ) (p:pval ty), val ty
@@ -372,7 +380,6 @@ Section S.
   Defined.
 
 
-
   Definition memt := addr -> res {ty : typ & mval ty}.
 
   Record mem : Type := mkmem {
@@ -408,7 +415,7 @@ Section S.
   Definition eq_mem (m1 m2: mem) :=
     xeq_mem (_mem m1) (_mem m2) (Pos.max (_fresh m1) (_fresh m2)) (Plt_wf (Pos.max (_fresh m1) (_fresh m2))).
 
-    Fixpoint typ_of_fun (l:list typ) (r:typ) :=
+  Fixpoint typ_of_fun (l:list typ) (r:typ) :=
     match l with
     | nil => unit -> res (val r * mem)
     | tx::tparams' => val tx ->
@@ -432,11 +439,11 @@ Section S.
 
   Definition Fun (args: list typ) (tret: typ) := mem -> typ_of_fun args tret.
 
-  Inductive defs :=
-  | DeclFun  (args : list typ) (tret : typ) (fct: Fun args tret)
-  | DeclLit  (ty:typ) (v : val ty).
+  Inductive gval :=
+  | GFun  (args : list typ) (tret : typ) (fct: Fun args tret)
+  | GConst  (ty:typ) (v : val ty).
 
-  Definition genv := ident -> res defs.
+  Definition genv := ident -> res gval.
 
 
   Definition  get {ty:typ} (p:ptr ty) (m:mem) : res (mval ty):=
@@ -575,7 +582,7 @@ Section S.
                       | Error _ => false
                       | OK f    =>
                           match f with
-                          | DeclFun _ _ _ => true
+                          | GFun _ _ _ => true
                           | _             => false
                           end
                       end
@@ -601,10 +608,10 @@ Section S.
     forall a ty mv,
       _mem m a = OK (existT _ ty mv) -> wf_mval ge m ty mv.
 
-  Definition defs_has_typ (d:defs) (ty:typ)  : Prop :=
+  Definition defs_has_typ (d:gval) (ty:typ)  : Prop :=
     match d with
-    | DeclFun args tret _ => ty = TFun args tret
-    | DeclLit ty' _      => ty = ty'
+    | GFun args tret _ => ty = TFun args tret
+    | GConst ty' _      => ty = ty'
     end.
 
 
@@ -1061,11 +1068,6 @@ Section S.
     | _        => fail
     end.
 
-
-  Inductive cedge :=
-  | CField (id:ident)
-  | CIndex (i:Integers.Int64.int).
-
   Definition eval_array_get {ty: typ} (m:mval ty) (i:Integers.Int64.int) (tr:typ) : res (val tr) :=
     match m with
     | MArray _ l =>  let* v := Barray.get l i in cast_val v tr
@@ -1107,14 +1109,13 @@ Section S.
     let fid := decomp_ptr _ (decomp_val _ v) in
     let* f := ge fid in
     match f with
-    | DeclLit _ _ => fail
-    | DeclFun args' ret' fc =>
+    | GConst _ _ => fail
+    | GFun args' ret' fc =>
         match typ_eq_dec (TFun args' ret') (TFun args ret)  with
         | left EQ => OK (cast_function EQ fc)
         | _  => fail
         end
     end.
-
 
   Fixpoint eval_rapp (tparams : list typ) (tret : typ)
     (args : DList.dlist (DList.resFtyp val) tparams) : forall (f: typ_of_fun tparams tret), res (val tret * mem).
@@ -1146,18 +1147,22 @@ Section S.
     | Error m => Error m
     end.
 
+  Locate cast.
+
   Definition get_gvar (ge:genv) (id:ident) (tyr: typ) : res (val tyr) :=
     let* d := ge id in
     match d with
-    | DeclFun args tret _ => match typ_eq_dec (TFun args tret) tyr with
+    | GFun args tret _ => match typ_eq_dec (TFun args tret) tyr with
                              | left EQ => OK (cast (f_equal val EQ) (mk_fptr id args tret))
                              | _  => fail
                              end
-    | DeclLit ty v => match typ_eq_dec ty tyr with
+    | GConst ty v => match typ_eq_dec ty tyr with
                       | left EQ => OK (cast (f_equal val EQ) v)
                       | right _ => efail
                       end
     end.
+
+  Check ecast.
 
 
   Definition get_var (te:tenv) (ge:genv) (e:env) (id:ident) (bt:btyp) (tyr:typ) : res (val tyr) :=
@@ -1176,7 +1181,7 @@ Section S.
     |  _    =>
          let* d := ge id in
          match d with
-         | DeclFun args tret _ =>
+         | GFun args tret _ =>
              match typ_eq_dec (TFun args tret) tyr with
              | left EQ => OK (cast (f_equal val EQ) (mk_fptr id args tret))
              | _  => fail
@@ -1185,7 +1190,6 @@ Section S.
          end
     end
   .
-
 
   Section S.
     Variable eval_atom :  tenv -> genv -> env -> mem -> forall (tyr: typ), atom -> res (val tyr).
@@ -1283,35 +1287,28 @@ Section S.
     | _ => fun _ => fail
     end eq_refl.
 
+  Check eval_call.
+
   Definition eval_comp (te:tenv) (ge:genv) (e:env) (m:mem) (c:comp) (tr:typ) : res (val tr  * mem) :=
     match c with
     | CpAtom a => let* va := eval_atom te ge e m tr a in
                      OK (va,m)
     | CpArraySet a i v bt =>
-        let* ta := typof_atom te a in
         let* tv := typof_atom te v in
-        let* a := eval_atom te ge e m ta a in
+        let* a := eval_atom te ge e m tr a in
         let* i := eval_atom te ge e m (typof_index arch) i in
-        let* v := eval_atom te ge e m tr v in
+        let* v := eval_atom te ge e m tv v in
         let* m := eval_array_set m a i v  in
-        OK (v,m)
+        OK (a, m)
     | CpRecordUpdate r id v bt =>
         let* trec := typof_atom te r in
         let* tv   := typof_atom te v in
         let* r := eval_atom te ge e m tr r in
         let* v := eval_atom te ge e m tv v in
         let* m := eval_record_update m r id v in
-        OK(r,m)
-    | CpCall f btf args bt =>
-        let* tyf := btyp_to_typ te btf in
-        match tyf with
-        | TFun tparams tret =>
-            let* f := eval_atom te ge e m (TFun tparams tr) (AVar f btf) in
-            let* f := load_fun ge f in
-            let* vargs := DList.map2 _ (eval_atom te ge e m) args tparams in
-            eval_rapp tparams tr vargs (f m)
-        | _  => fail
-        end
+        OK(r, m)
+    | CpCall f btf args _ =>
+        eval_call eval_atom te ge e m f btf args tr
     end.
 
   Definition typof_comp (te:tenv) (c: comp) : res typ :=
@@ -1392,13 +1389,12 @@ Section S.
 
   Definition env_empty : env := fun _ => fail.
 
-
-  Definition build_Fun (te:tenv) (ge:genv) (params:smaplist btyp) (tret:btyp) (s:statement) : res defs  :=
+  Definition build_Fun (te:tenv) (ge:genv) (params:smaplist btyp) (tret:btyp) (s:statement) : res gval  :=
     if MapList.nodup Ident.eq_dec params
     then
       let* tret' := btyp_to_typ te tret in
       let* params' := MapList.map_err (btyp_to_typ te) params in
-      OK (DeclFun (List.map snd params') tret' (eval_fun_rec te ge  env_empty params' tret' s))
+      OK (GFun (List.map snd params') tret' (eval_fun_rec te ge  env_empty params' tret' s))
     else fail.
 
 
@@ -1433,7 +1429,7 @@ Section S.
 
   (* Like Barocq, the semantics is not typed *)
 
-  Fixpoint eval_literal (te: tenv)  (l: literal)  (m:mem): res ({ty:typ & val ty} * mem) :=
+  Fixpoint eval_literal (te: tenv) (l: literal) (m:mem): res ({ty:typ & val ty} * mem) :=
     match l with
     | LTrue => OK  (existT _ _ (Vprim _ (PBool true)),m)
     | LFalse => OK (existT _ _ (Vprim _ (PBool false)), m)
@@ -1466,6 +1462,5 @@ Section S.
         end
     end.
 
-
-
 End S.
+

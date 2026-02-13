@@ -134,6 +134,14 @@ Module MonError <: MONAD.
     (at level 200, X name, Y name, A at level 100, B at level 200)
     : error_monad_scope.
 
+  Notation "'let*' ( X , Y , Z ) := A 'in' B" := (bind2 A (fun '(X, Y) Z => B))
+    (at level 200, X name, Y name, Z name, A at level 100, B at level 200)
+    : error_monad_scope.
+
+  Notation "'let*' ( X , Y , Z , W ) := A 'in' B" := (bind2 A (fun '(X, Y, Z) W => B))
+    (at level 200, X name, Y name, Z name, W name, A at level 100, B at level 200)
+    : error_monad_scope.
+
   Notation "let/c X := A '/>' M 'in' B" := (bind_catch A (fun X => B) M)
     (at level 200, X name, A at level 100, M at level 100, B at level 200)
     : error_monad_scope.

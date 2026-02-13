@@ -228,7 +228,7 @@ Section CORRECTNESS.
     - destruct (Typing.btyp_to_typ te t); simpl; try reflexivity.
       destruct (typof_atom te a); simpl; try reflexivity.
       erewrite IHa; eauto.
-    - destruct (Typing.btyp_to_typ te t); simpl; try reflexivity.
+    - destruct (typof_atom te a); simpl; try reflexivity.
       erewrite IHa; eauto.
     - destruct (typof_atom te a1); simpl; try reflexivity.
       destruct (typof_atom te a2); simpl; try reflexivity.

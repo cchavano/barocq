@@ -90,6 +90,27 @@ Section S.
   
   Context {B: Type}.
 
+  Section MAP.
+
+  Variable F : forall (ty: A), B -> Ftyp ty.
+
+  Fixpoint map  (l:list B) (lt:list A) : res (dlist lt) :=
+    match l with
+    | nil =>  match lt with
+              | nil => OK DNIL
+              | _   => fail
+              end
+    | cons e l' => match lt with
+                   | nil =>  fail
+                   | ty::lt' =>
+                       let* m := map l' lt' in
+                       eret (DCONS (F ty e) m)
+                   end
+    end.
+
+  End MAP.
+
+
   Section MMAP.
 
   Variable F : forall (ty:A), B -> res (Ftyp ty).

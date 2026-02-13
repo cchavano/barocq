@@ -112,9 +112,9 @@ Fixpoint find_may_edge {A: Type} (e:EdgeLabel.t) (l:list (EdgeLabel.t * A)) : op
 
 Definition get_field (p:option G.PathTree.t) (fd: EdgeLabel.t) : option G.PathTree.t :=
   match p with
-  | None => None (* Evary path is valid *)
+  | None => None (* Every path is valid *)
   | Some p => match p with
-              | Node nil => Some (Node nil) (* Evary path is invalid *)
+              | Node nil => Some (Node nil) (* Every path is invalid *)
               | Node l   =>  find_may_edge fd l
               end
   end.
@@ -128,8 +128,6 @@ Fixpoint eval_atom (env:InvMap.t) (a:atom) :=
   | ARecordProj a id _ _ => get_field (eval_atom env a) (EdgeLabel.Field id)
   | APureCall _ _ _ _ => None
   end.
-
-
 
 Definition set_path (p:option G.PathTree.t) (fd:EdgeLabel.t) (v: option G.PathTree.t) : option G.PathTree.t :=
   match p with
@@ -242,7 +240,6 @@ Definition call (te:tenv) (age: aenv) (d:domain) (ge:genv) (id:ident) (args:list
           end
   end.
 
-
 Definition inv_comp  (te:tenv) (age: aenv) (d:domain) (ge:genv)  (env:InvMap.t) (c:comp) :=
   match c with
   | CpAtom a => OK (eval_atom env a,env)
@@ -250,6 +247,8 @@ Definition inv_comp  (te:tenv) (age: aenv) (d:domain) (ge:genv)  (env:InvMap.t) 
   | CpRecordUpdate a1 fd v _ => set_field te age d env a1 (EdgeLabel.Field fd) v
   | CpCall id _ args _  => call te age d ge id args env
   end.
+
+  Check inv_comp.
 
 Definition join (v1 v2 : option G.PathTree.t * InvMap.t) : res (option G.PathTree.t * InvMap.t) :=
   OK (InvMap.merge (fst v1) (fst v2) , InvMap.join (snd v1) (snd v2)).
@@ -279,6 +278,9 @@ Fixpoint inv_statement (te:tenv) (age:aenv) (d:domain) (ge:genv) (env:InvMap.t) 
         Error (MSG "#[aliasing]":: MSG nl :: MSG (Pp.pp (InvMap.pp env)):: MSG nl :: MSG (Pp.pp (pp_domain d)) :: nil)
       else inv_statement te age d ge env s
   end.
+
+Check inv_statement.
+
 
 Definition get_inv_arguments (inv:InvMap.t) (l:list (string * btyp)) :=
   List.map  (fun '(s,bt) => (bt,STree.get s inv)) l.
@@ -340,3 +342,80 @@ Definition check_program (p:program) : res (tenv *(aenv * genv)) :=
   (* Analyse the invalid path - could be done on the fly*)
   let* inv := inv_globdefs te age STree.empty (prog_defs p) in
   OK (te,(age,inv)).
+
+
+From compcert Require Import Maps.
+From BarocqComp Require Import Denot.
+From BarocqComp Require Import Imp1 Imp1Imp.
+
+Section CORRES.
+
+  Variable tabs : PMap.t Type.
+
+  Check Imp1Imp.genv.
+  
+  Inductive match_vals: forall ty, eval_typ tabs ty -> Imp1Imp.val ty -> Imp1Imp.mem tabs -> Prop :=
+    | match_Vbool: forall b m,
+        match_vals TBool b (Imp1Imp.Vprim TBool (PBool b)) m
+    | match_Vint32: forall i s m,
+        match_vals (TInt32 s) i (Imp1Imp.Vprim (TInt32 s) (PInt32 s i)) m
+    | match_Vint64: forall i s m,
+        match_vals (TInt64 s) i (Imp1Imp.Vprim (TInt64 s) (PInt64 s i)) m
+    | match_Venum: forall eid elems e m,
+        match_vals (TEnum eid elems) e (Imp1Imp.Vprim (TEnum eid elems) (PEnum eid elems e)) m
+    | match_Vrecord:
+        forall rid fields vr ur a m,
+          (forall fd (ty: typ) (vv: eval_typ tabs ty) (uv: Imp1Imp.val ty),
+            @Brecord.gprojt typ (eval_typ tabs) fields typ_eq_dec vr fd ty = OK vv ->
+            @Brecord.gprojt typ val fields typ_eq_dec ur fd ty = OK uv ->
+            match_vals ty vv uv m) ->
+          Imp1Imp.get tabs (PtrR a rid fields) m = OK (MRecord tabs rid fields ur) ->
+          match_vals (TRecord rid fields) vr (Imp1Imp.Vptr (TRecord rid fields) (PtrR a rid fields)) m
+    | match_Varray:
+        forall ty va ua a m,
+        (forall i (vv: eval_typ tabs ty) (uv: Imp1Imp.val ty),
+          Barray.get va i = OK vv ->
+          Barray.get ua i = OK uv ->
+          match_vals ty vv uv m) ->
+        Imp1Imp.get tabs (PtrA a ty) m = OK (MArray tabs ty ua) ->
+        match_vals (TArray ty) va (Imp1Imp.Vptr (TArray ty) (PtrA a ty)) m.
+
+  Variable path : Type.
+
+  Variable inv_paths : Type.
+
+  Variable is_valid : path -> InvMap.t -> Prop.
+
+  Record vstate : Type := {
+    vs_genv: Denot.genv tabs;
+    vs_lenv: Denot.lenv tabs;
+  }.
+
+  Record ustate : Type := {
+    us_genv: Imp1Imp.genv tabs;
+    us_env: Imp1Imp.env;
+    us_mem: Imp1Imp.mem tabs;
+  }.
+
+  Variable V_eval_path : forall (ty: typ), path -> vstate -> res (eval_typ tabs ty).
+
+  Variable U_eval_path : forall (ty: typ), path -> ustate -> res (Imp1Imp.val ty).
+
+  Definition match_states (inv: InvMap.t) (vs: vstate) (us: ustate) : Prop :=
+    forall (ty: typ) (p: path),
+      is_valid p inv ->
+      res_rel (fun vv uv => match_vals ty vv uv (us_mem us))
+        (V_eval_path ty p vs) (U_eval_path ty p us).
+
+  (* Theorem inv_check_correct:
+    forall arch tabs te age d ge inv' s r vs us ty,
+      match_states inv vs us ->
+      Imp1.eval_statement arch tabs te (vs_genv vs) (vs_lenv vs) ty = OK vv ->
+      inv_statement te age d ge inv s = OK (_, inv') ->
+      (exists uv,
+        Imp1Imp.eval_statement arch tabs _ te (us_genv us) (us_env us) (us_mem us) (Some ty) = OK (uv, m')
+        /\ match_states inv'  ) *)
+
+
+End CORRES.
+
