@@ -119,11 +119,17 @@ Definition get_field (p:option G.PathTree.t) (fd: EdgeLabel.t) : option G.PathTr
               end
   end.
 
-Fixpoint eval_atom (env:InvMap.t) (a:atom) :=
+Fixpoint eval_atom (env:InvMap.t) (a:atom) : option G.PathTree.t :=
   match a with
   | ATrue | AFalse | AInt32 _ _ | AInt64 _ _ | AConstr _ _ _ => None
   | AVar i _ => STree.get i env
-  | ACast _ _ | AUnaryOp _ _ _ | ABinaryOp _ _ _ _ => None (* this is a primitive value *)
+  | ACast a1 _ | AUnaryOp _ a1 _ => eval_atom env a1
+  | ABinaryOp _ a1 a2 _ =>
+      match eval_atom env a1, eval_atom env a2 with
+      | Some pt1, Some pt2 => Some (G.PathTree.union pt1 pt2)
+      | Some pt, _  | _, Some pt => Some pt
+      | _, _ => None
+      end
   | AArrayGet a i _ _  =>  get_field (eval_atom env a) (EdgeLabel.Index i)
   | ARecordProj a id _ _ => get_field (eval_atom env a) (EdgeLabel.Field id)
   | APureCall _ _ _ _ => None

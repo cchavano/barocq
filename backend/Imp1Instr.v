@@ -372,12 +372,6 @@ Section SEM.
     let inv' := InvSet.union inv inv_a_i in
     ret (va, m', ppsr, inv').
   
-  Check ieval_atom.
-
-  Check index_of_val.
-
-  Check ieval_call.
-  
   Definition ieval_comp (te: tenv) (ge: genv) (e: env) (m: mem) (inv: InvSet.t) (c: comp) (ty: typ) : res (val ty * mem * option PPathSet.t * InvSet.t) :=
     match c with
     | CpAtom a =>

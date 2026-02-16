@@ -1,0 +1,9 @@
+module Test
+
+record rec {
+  field : i32,
+}
+
+defn bad2 (r: rec) : i32 =
+  let r1 = r.field <- 0 in
+  r.field + 2
