@@ -113,702 +113,827 @@ let rec btyp_to_deep (ty : btyp) : string =
 and opt_parens_btyp (ty : btyp) : string =
   PrintUtils.opt_parens is_simpl_btyp btyp_to_deep ty
 
-
 let param_attr_to_deep (attr : param_attr) : string =
   match attr with
   | AttrNone -> "AttrNone"
   | AttrReadonly -> "AttrReadonly"
   | AttrWrite -> "AttrWrite"
 
-let rocq_list_to_deep out_elt o l = 
-    output_list ~delim:("[","]") ~sep:";" out_elt o l
+let rocq_list_to_deep out_elt o l =
+  output_list ~delim:("[", "]") ~sep:";" out_elt o l
 
-
-let function_to_deep obody otyp (o:out_channel) f  =
+let function_to_deep obody otyp (o : out_channel) f =
   let prefix = String.make 4 ' ' in
-  let ident_typ_to_deep o (id,typ) =
-    Printf.fprintf o "(%s,%a)" (ident_to_deep id) otyp typ in 
-  let params_to_deep = rocq_list_to_deep ident_typ_to_deep  in 
-  Printf.fprintf o
+  let ident_typ_to_deep o (id, typ) =
+    Printf.fprintf o "(%s,%a)" (ident_to_deep id) otyp typ
+  in
+  let params_to_deep = rocq_list_to_deep ident_typ_to_deep in
+  Printf.fprintf
+    o
     "{|\n%sfn_return := %a;\n%sfn_params := %a;\n%sfn_body :=\n%s%a\n|}"
     indent
-    otyp f.fn_return
+    otyp
+    f.fn_return
     indent
-    params_to_deep f.fn_params
+    params_to_deep
+    f.fn_params
     indent
     prefix
-    (obody prefix) f.fn_body
-
+    (obody prefix)
+    f.fn_body
 
 let globdef_to_deep obody otyp olit o gd =
-  match  gd with
-  | Syntax.DefConst(id,lit,typ) -> 
-    Printf.fprintf o "DefConst %s (%a) (%a)" (ident_to_deep id) olit lit otyp typ
-  | Syntax.DefFun(id,fct) ->
-    Printf.fprintf o "DefFun %s  %a" (ident_to_deep id) (function_to_deep obody otyp) fct
-  | Syntax.DeclConst(id,typ) ->
-    Printf.fprintf o "DeclConst %s (%a)" (ident_to_deep id) otyp typ
-  | Syntax.DeclFun(id,args,typ) ->
-    let param_typ_to_deep o (p,ty) =
-      Printf.fprintf o "(%s,%a)" (param_attr_to_deep p) otyp ty in
-    Printf.fprintf o "DeclFun %s %a (%a)" (ident_to_deep id)
-      (rocq_list_to_deep param_typ_to_deep) args
-      otyp typ
-
-module Barocq =
-struct 
-
-let rec expr_to_deep (prefix : string) (e : Typed.expr) : string =
-  let prefix' = prefix ^ indent in
-  Typed.(
-    match e with
-    | ETrue -> "ETrue"
-    | EFalse -> "EFalse"
-    | EInt32 (i, s) ->
-        sprintf "EInt32 (%s) %s" (int_to_deep i s) (signedness_to_deep s)
-    | EInt64 (i, s) ->
-        sprintf "EInt64 (%s) %s" (int64_to_deep i s) (signedness_to_deep s)
-    | EConstr (x, n, bt) ->
-        sprintf
-          "EConstr %s (%s)"
-          (ident_to_deep x)
-          (*          (Camlcoq.Z.to_string n)*)
-          (btyp_to_deep bt)
-    | EVar (x, bt) -> sprintf "EVar %s (%s)" (ident_to_deep x) (btyp_to_deep bt)
-    | ECast (e1, ty) ->
-        sprintf "ECast (%s) (%s)" (expr_to_deep prefix e1) (btyp_to_deep ty)
-    | EUnaryOp (op, e1, bt) ->
-        sprintf
-          "EUnaryOp %s (%s) (%s)"
-          (unary_op_to_deep op)
-          (expr_to_deep "" e1)
-          (btyp_to_deep bt)
-    | EBinaryOp (op, e1, e2, bt) ->
-        sprintf
-          "EBinaryOp %s (%s) (%s) (%s)"
-          (binary_op_to_deep op)
-          (expr_to_deep "" e1)
-          (expr_to_deep "" e2)
-          (btyp_to_deep bt)
-    | EArrayGet (e1, e2, ly, bt) ->
-        sprintf
-          "EArrayGet (%s) (%s) (%s)"
-          (expr_to_deep "" e1)
-          (expr_to_deep "" e2)
-          (btyp_to_deep bt)
-    | EArraySet (e1, e2, e3, bt) ->
-        sprintf
-          "EArraySet (%s) (%s) (%s) (%s)"
-          (expr_to_deep "" e1)
-          (expr_to_deep "" e2)
-          (expr_to_deep "" e3)
-          (btyp_to_deep bt)
-    | ERecordProj (e1, x, ly, bt) ->
-        sprintf
-          "ERecordProj (%s) %s (%s)"
-          (expr_to_deep "" e1)
-          (ident_to_deep x)
-          (btyp_to_deep bt)
-    | ERecordUpdate (e1, x, e2, bt) ->
-        sprintf
-          "ERecordUpdate (%s) %s (%s) (%s)"
-          (expr_to_deep "" e1)
-          (ident_to_deep x)
-          (expr_to_deep "" e2)
-          (btyp_to_deep bt)
-    | EApp (e1, args, bt) ->
-        sprintf
-          "EApp (%s) %s (%s)"
-          (expr_to_deep "" e1)
-          (list_to_string_bracket (expr_to_deep "") args)
-          (btyp_to_deep bt)
-    | EIfThenElse (e1, e2, e3, bt) ->
-        sprintf
-          "EIfThenElse (%s)\n%s(%s)\n%s(%s) (%s)"
-          (expr_to_deep "" e1)
-          prefix'
-          (expr_to_deep prefix' e2)
-          prefix'
-          (expr_to_deep prefix' e3)
-          (btyp_to_deep bt)
-    | EMatch (e1, cases, bt) ->
-        sprintf
-          "EMatch (%s) [\n%s\n%s] (%s)"
-          (expr_to_deep "" e1)
-          (list_to_string ~sep:";\n" (match_case_to_string prefix') cases)
-          prefix
-          (btyp_to_deep bt)
-    | ELetIn (x, e1, e2, bt) -> begin
-        match e1 with
-        | EIfThenElse _ | EMatch _ ->
-            sprintf
-              "ELetIn %s\n%s(%s)\n%s(%s) (%s)"
-              (ident_to_deep x)
-              prefix'
-              (expr_to_deep prefix' e1)
-              prefix'
-              (expr_to_deep prefix' e2)
-              (btyp_to_deep bt)
-        | _ ->
-            sprintf
-              "ELetIn %s (%s)\n%s(%s) (%s)"
-              (ident_to_deep x)
-              (expr_to_deep "" e1)
-              prefix'
-              (expr_to_deep prefix' e2)
-              (btyp_to_deep bt)
-      end
-    | EAttr (x, e1) ->
-        sprintf "EAttr %s (%s)" (ident_to_deep x) (expr_to_deep prefix e1))
-
-and match_case_to_string (prefix : string)
-    ((p, ep) : Benum.pattern * Typed.expr) : string =
-  let prefix' = prefix ^ indent in
-  let case =
-    match p with
-    | Benum.PIdent (i, z) ->
-        sprintf "PIdent %s %s" (ident_to_deep i) (i32_to_string z)
-    | Benum.PWildcard -> sprintf "PWildcard"
-  in
-  sprintf "%s(%s,\n%s%s)" prefix case prefix' (expr_to_deep prefix' ep)
-
-let params_to_deep (params : (ident * btyp) list) : string =
-  list_to_string_bracket
-    (fun (id, ty) -> sprintf "(%s, %s)" (ident_to_deep id) (btyp_to_deep ty))
-    params
-
-let function_to_deep (f : Typed.coq_function) : string =
-  let prefix = String.make 4 ' ' in
-  sprintf
-    "{|\n%sfn_return := %s;\n%sfn_params := %s;\n%sfn_body :=\n%s%s\n|}"
-    indent
-    (btyp_to_deep f.fn_return)
-    indent
-    (params_to_deep f.fn_params)
-    indent
-    prefix
-    (expr_to_deep prefix f.fn_body)
-
-let rec literal_to_deep (l : literal) : string =
-  match l with
-  | LTrue -> "LTrue"
-  | LFalse -> "LFalse"
-  | LInt32 (i, s) ->
-      sprintf "LInt32 (%s) %s" (int_to_deep i s) (signedness_to_deep s)
-  | LInt64 (i, s) ->
-      sprintf "LInt64 (%s) %s" (int64_to_deep i s) (signedness_to_deep s)
-  | LArray (la, ta, ly) ->
-      sprintf
-        "LArray %s %s %s"
-        (list_to_string_bracket literal_to_deep la)
-        (btyp_to_deep ta)
-        (layout_to_deep ly)
-  | LRecord (ls, ub, id) ->
-      sprintf
-        "LRecord %s %s %s"
-        (fields_lit_to_deep ls)
-        (list_to_string_bracket ident_to_string ub)
+  match gd with
+  | Syntax.DefConst (id, lit, typ) ->
+      Printf.fprintf
+        o
+        "DefConst %s (%a) (%a)"
         (ident_to_deep id)
-
-and fields_lit_to_deep (fields : (ident * literal) list) : string =
-  list_to_string_bracket
-    (fun (id, li) -> sprintf "(%s, %s)" (ident_to_deep id) (literal_to_deep li))
-    fields
-
-let fields_to_deep (fields : (ident * field_descr) list) : string =
-  list_to_string
-    ~sep:";\n"
-    (fun (id, (ty, ly)) ->
-      sprintf
-        "%s(%s, (%s, %s))"
-        indent2
+        olit
+        lit
+        otyp
+        typ
+  | Syntax.DefFun (id, fct) ->
+      Printf.fprintf
+        o
+        "DefFun %s  %a"
         (ident_to_deep id)
-        (btyp_to_deep ty)
-        (layout_to_deep ly))
-    fields
-
-let elems_to_deep (elems : ident list) : string =
-  list_to_string
-    ~sep:";\n"
-    (fun e -> sprintf "%s%s" indent2 (ident_to_deep e))
-    elems
-
-let globdef_to_coqdef (def : Typed.globdef) : string =
-  let typ_format = sprintf "Definition %s : %s :=\n%s%s." in
-  let def_format = sprintf "Definition %s : %s := %s." in
-  match def with
-  | DefType (id, td) -> begin
-      match td with
-      | TdEnum elems ->
-          typ_format
-            (sprintf "enum_%s" (ident_to_string id))
-            "type_def field_descr"
-            indent
-            (sprintf "TdEnum [\n%s\n%s]" (elems_to_deep elems) indent)
-      | TdRecord fields ->
-          typ_format
-            (sprintf "record_%s" (ident_to_string id))
-            "type_def field_descr"
-            indent
-            (sprintf "TdRecord [\n%s\n%s]" (fields_to_deep fields) indent)
-    end
-  | DefConst (id, l, _) ->
-      def_format
-        (sprintf "const_%s" (ident_to_string id))
-        "Syntax.literal"
-        (literal_to_deep l)
-  | DefFun (id, f) ->
-      def_format
-        (sprintf "fun_%s" (ident_to_string id))
-        "Barocq.Typed.function"
-        (function_to_deep f)
-  | _ -> ""
-
-let print_globdefs (out : out_channel) (defs : Typed.globdef list) : unit =
-  let defs =
-    List.filter
-      (fun d ->
-        match (d : Barocq.Typed.globdef) with
-        | Typed.DefType _ | Typed.DefConst _ | Typed.DefFun _ -> true
-        | _ -> false)
-      defs
-  in
-  print_list out ~delim:("", "\n") ~sep:"\n\n" globdef_to_coqdef defs
-
-
-let globdef_to_deep (def : Typed.globdef) : string =
-  match def with
-  | DefType (id, td) ->
-      let kind =
-        match td with
-        | TdEnum _ -> "enum"
-        | TdRecord _ -> "record"
+        (function_to_deep obody otyp)
+        fct
+  | Syntax.DeclConst (id, typ) ->
+      Printf.fprintf o "DeclConst %s (%a)" (ident_to_deep id) otyp typ
+  | Syntax.DeclFun (id, args, typ) ->
+      let param_typ_to_deep o (p, ty) =
+        Printf.fprintf o "(%s,%a)" (param_attr_to_deep p) otyp ty
       in
-      sprintf "DefType %s %s_%s" (ident_to_deep id) kind (ident_to_string id)
-  | DefConst (id, l, ty) ->
-      sprintf
-        "DefConst %s const_%s %s"
+      Printf.fprintf
+        o
+        "DeclFun %s %a (%a)"
         (ident_to_deep id)
-        (ident_to_string id)
-        (opt_parens_btyp ty)
-  | DefFun (id, f) ->
-      sprintf "DefFun %s fun_%s" (ident_to_deep id) (ident_to_string id)
-  | DeclType (id, su) ->
-      let st_or_un =
-        match su with
-        | SU_struct -> "SU_struct"
-        | SU_union -> "SU_union"
-      in
-      sprintf "DeclType %s %s" (ident_to_deep id) st_or_un
-  | DeclConst (id, ty) ->
-      sprintf "DeclConst %s %s" (ident_to_deep id) (opt_parens_btyp ty)
-  | DeclFun (id, tparams, tret) ->
-      sprintf
-        "DeclFun %s %s %s"
-        (ident_to_deep id)
-        (list_to_string_bracket
-           (fun (attr, ty) ->
-             sprintf "(%s, %s)" (param_attr_to_deep attr) (btyp_to_deep ty))
-           tparams)
-        (opt_parens_btyp tret)
+        (rocq_list_to_deep param_typ_to_deep)
+        args
+        otyp
+        typ
 
-let print_decomp_remark (out : out_channel) : unit =
-  fprintf
-    out
-    "Remark prog_decomp : (prog = prog_types ++ prog_decls ++ prog_defs)%%list.\n\
-     Proof.\n\
-     %sreflexivity.\n\
-     Qed.\n"
-    indent
+module Barocq = struct
+  let rec expr_to_deep (prefix : string) (e : Typed.expr) : string =
+    let prefix' = prefix ^ indent in
+    Typed.(
+      match e with
+      | ETrue -> "ETrue"
+      | EFalse -> "EFalse"
+      | EInt32 (i, s) ->
+          sprintf "EInt32 (%s) %s" (int_to_deep i s) (signedness_to_deep s)
+      | EInt64 (i, s) ->
+          sprintf "EInt64 (%s) %s" (int64_to_deep i s) (signedness_to_deep s)
+      | EConstr (x, n, bt) ->
+          sprintf
+            "EConstr %s (%s)"
+            (ident_to_deep x)
+            (*          (Camlcoq.Z.to_string n)*)
+            (btyp_to_deep bt)
+      | EVar (x, bt) ->
+          sprintf "EVar %s (%s)" (ident_to_deep x) (btyp_to_deep bt)
+      | ECast (e1, ty) ->
+          sprintf "ECast (%s) (%s)" (expr_to_deep prefix e1) (btyp_to_deep ty)
+      | EUnaryOp (op, e1, bt) ->
+          sprintf
+            "EUnaryOp %s (%s) (%s)"
+            (unary_op_to_deep op)
+            (expr_to_deep "" e1)
+            (btyp_to_deep bt)
+      | EBinaryOp (op, e1, e2, bt) ->
+          sprintf
+            "EBinaryOp %s (%s) (%s) (%s)"
+            (binary_op_to_deep op)
+            (expr_to_deep "" e1)
+            (expr_to_deep "" e2)
+            (btyp_to_deep bt)
+      | EArrayGet (e1, e2, ly, bt) ->
+          sprintf
+            "EArrayGet (%s) (%s) (%s)"
+            (expr_to_deep "" e1)
+            (expr_to_deep "" e2)
+            (btyp_to_deep bt)
+      | EArraySet (e1, e2, e3, bt) ->
+          sprintf
+            "EArraySet (%s) (%s) (%s) (%s)"
+            (expr_to_deep "" e1)
+            (expr_to_deep "" e2)
+            (expr_to_deep "" e3)
+            (btyp_to_deep bt)
+      | ERecordProj (e1, x, ly, bt) ->
+          sprintf
+            "ERecordProj (%s) %s (%s)"
+            (expr_to_deep "" e1)
+            (ident_to_deep x)
+            (btyp_to_deep bt)
+      | ERecordUpdate (e1, x, e2, bt) ->
+          sprintf
+            "ERecordUpdate (%s) %s (%s) (%s)"
+            (expr_to_deep "" e1)
+            (ident_to_deep x)
+            (expr_to_deep "" e2)
+            (btyp_to_deep bt)
+      | EApp (e1, args, bt) ->
+          sprintf
+            "EApp (%s) %s (%s)"
+            (expr_to_deep "" e1)
+            (list_to_string_bracket (expr_to_deep "") args)
+            (btyp_to_deep bt)
+      | EIfThenElse (e1, e2, e3, bt) ->
+          sprintf
+            "EIfThenElse (%s)\n%s(%s)\n%s(%s) (%s)"
+            (expr_to_deep "" e1)
+            prefix'
+            (expr_to_deep prefix' e2)
+            prefix'
+            (expr_to_deep prefix' e3)
+            (btyp_to_deep bt)
+      | EMatch (e1, cases, bt) ->
+          sprintf
+            "EMatch (%s) [\n%s\n%s] (%s)"
+            (expr_to_deep "" e1)
+            (list_to_string ~sep:";\n" (match_case_to_string prefix') cases)
+            prefix
+            (btyp_to_deep bt)
+      | ELetIn (x, e1, e2, bt) -> begin
+          match e1 with
+          | EIfThenElse _ | EMatch _ ->
+              sprintf
+                "ELetIn %s\n%s(%s)\n%s(%s) (%s)"
+                (ident_to_deep x)
+                prefix'
+                (expr_to_deep prefix' e1)
+                prefix'
+                (expr_to_deep prefix' e2)
+                (btyp_to_deep bt)
+          | _ ->
+              sprintf
+                "ELetIn %s (%s)\n%s(%s) (%s)"
+                (ident_to_deep x)
+                (expr_to_deep "" e1)
+                prefix'
+                (expr_to_deep prefix' e2)
+                (btyp_to_deep bt)
+        end
+      | EAttr (x, e1) ->
+          sprintf "EAttr %s (%s)" (ident_to_deep x) (expr_to_deep prefix e1))
 
-let prim_types : string =
-  "Definition tbool := BBool.\n\n\
-   Definition tint32 := BInt32 Signed.\n\n\
-   Definition tuint32 := BInt32 Unsigned.\n\n\
-   Definition tint64 := BInt64 Signed.\n\n\
-   Definition tuint64 := BInt64 Unsigned.\n"
+  and match_case_to_string (prefix : string)
+      ((p, ep) : Benum.pattern * Typed.expr) : string =
+    let prefix' = prefix ^ indent in
+    let case =
+      match p with
+      | Benum.PIdent (i, z) ->
+          sprintf "PIdent %s %s" (ident_to_deep i) (i32_to_string z)
+      | Benum.PWildcard -> sprintf "PWildcard"
+    in
+    sprintf "%s(%s,\n%s%s)" prefix case prefix' (expr_to_deep prefix' ep)
 
-let imports : string =
-  "From Coq Require Import String List BinIntDef.\n\
-   From compcert Require Import Integers.\n\
-   From BarocqComp Require Import Ident Types Syntax Benum Barocq.\n\
-   Import Typed.\n\
-   Import ListNotations.\n\n\
-   Open Scope Z_scope.\n\
-   Open Scope string_scope.\n"
+  let params_to_deep (params : (ident * btyp) list) : string =
+    list_to_string_bracket
+      (fun (id, ty) -> sprintf "(%s, %s)" (ident_to_deep id) (btyp_to_deep ty))
+      params
 
-let print_program (out : out_channel) (prog : Typed.program) : unit =
-  fprintf out "%s" imports;
-  if prog <> [] then begin
-    fprintf out "\n";
-    fprintf out "%s" prim_types;
-    fprintf out "\n";
-    print_globdefs out prog;
-    fprintf out "\n";
-    print_list
-      out
-      ~delim:("Definition prog : Barocq.Typed.program := [\n", "\n].\n")
+  let function_to_deep (f : Typed.coq_function) : string =
+    let prefix = String.make 4 ' ' in
+    sprintf
+      "{|\n%sfn_return := %s;\n%sfn_params := %s;\n%sfn_body :=\n%s%s\n|}"
+      indent
+      (btyp_to_deep f.fn_return)
+      indent
+      (params_to_deep f.fn_params)
+      indent
+      prefix
+      (expr_to_deep prefix f.fn_body)
+
+  let rec literal_to_deep (l : literal) : string =
+    match l with
+    | LTrue -> "LTrue"
+    | LFalse -> "LFalse"
+    | LInt32 (i, s) ->
+        sprintf "LInt32 (%s) %s" (int_to_deep i s) (signedness_to_deep s)
+    | LInt64 (i, s) ->
+        sprintf "LInt64 (%s) %s" (int64_to_deep i s) (signedness_to_deep s)
+    | LArray (la, ta, ly) ->
+        sprintf
+          "LArray %s %s %s"
+          (list_to_string_bracket literal_to_deep la)
+          (btyp_to_deep ta)
+          (layout_to_deep ly)
+    | LRecord (ls, ub, id) ->
+        sprintf
+          "LRecord %s %s %s"
+          (fields_lit_to_deep ls)
+          (list_to_string_bracket ident_to_string ub)
+          (ident_to_deep id)
+
+  and fields_lit_to_deep (fields : (ident * literal) list) : string =
+    list_to_string_bracket
+      (fun (id, li) ->
+        sprintf "(%s, %s)" (ident_to_deep id) (literal_to_deep li))
+      fields
+
+  let fields_to_deep (fields : (ident * field_descr) list) : string =
+    list_to_string
       ~sep:";\n"
-      (fun d -> sprintf "%s%s" indent (globdef_to_deep d))
-      prog;
-    let types =
-      List.filter
-        (fun (d : Barocq.Typed.globdef) ->
-          match d with
-          | DefType _ | DeclType _ -> true
-          | _ -> false)
-        prog
-    in
-    let decls =
-      List.filter
-        (fun (d : Barocq.Typed.globdef) ->
-          match d with
-          | DeclConst _ | DeclFun _ -> true
-          | _ -> false)
-        prog
-    in
+      (fun (id, (ty, ly)) ->
+        sprintf
+          "%s(%s, (%s, %s))"
+          indent2
+          (ident_to_deep id)
+          (btyp_to_deep ty)
+          (layout_to_deep ly))
+      fields
+
+  let elems_to_deep (elems : ident list) : string =
+    list_to_string
+      ~sep:";\n"
+      (fun e -> sprintf "%s%s" indent2 (ident_to_deep e))
+      elems
+
+  let globdef_to_coqdef (def : Typed.globdef) : string =
+    let typ_format = sprintf "Definition %s : %s :=\n%s%s." in
+    let def_format = sprintf "Definition %s : %s := %s." in
+    match def with
+    | DefType (id, td) -> begin
+        match td with
+        | TdEnum elems ->
+            typ_format
+              (sprintf "enum_%s" (ident_to_string id))
+              "type_def field_descr"
+              indent
+              (sprintf "TdEnum [\n%s\n%s]" (elems_to_deep elems) indent)
+        | TdRecord fields ->
+            typ_format
+              (sprintf "record_%s" (ident_to_string id))
+              "type_def field_descr"
+              indent
+              (sprintf "TdRecord [\n%s\n%s]" (fields_to_deep fields) indent)
+      end
+    | DefConst (id, l, _) ->
+        def_format
+          (sprintf "const_%s" (ident_to_string id))
+          "Syntax.literal"
+          (literal_to_deep l)
+    | DefFun (id, f) ->
+        def_format
+          (sprintf "fun_%s" (ident_to_string id))
+          "Barocq.Typed.function"
+          (function_to_deep f)
+    | _ -> ""
+
+  let print_globdefs (out : out_channel) (defs : Typed.globdef list) : unit =
     let defs =
       List.filter
-        (fun (d : Barocq.Typed.globdef) ->
-          match d with
-          | DefConst _ | DefFun _ -> true
+        (fun d ->
+          match (d : Barocq.Typed.globdef) with
+          | Typed.DefType _ | Typed.DefConst _ | Typed.DefFun _ -> true
           | _ -> false)
-        prog
+        defs
     in
-    fprintf out "\n";
-    print_list
-      out
-      ~delim:("Definition prog_types : Barocq.Typed.program := [\n", "\n].\n")
-      ~sep:";\n"
-      (fun d -> sprintf "%s%s" indent (globdef_to_deep d))
-      types;
-    fprintf out "\n";
-    print_list
-      out
-      ~delim:("Definition prog_decls : Barocq.Typed.program := [\n", "\n].\n")
-      ~sep:";\n"
-      (fun d -> sprintf "%s%s" indent (globdef_to_deep d))
-      decls;
-    fprintf out "\n";
-    print_list
-      out
-      ~delim:("Definition prog_defs : Barocq.Typed.program := [\n", "\n].\n")
-      ~sep:";\n"
-      (fun d -> sprintf "%s%s" indent (globdef_to_deep d))
-      defs;
-    fprintf out "\n";
-    print_decomp_remark out
-  end
+    print_list out ~delim:("", "\n") ~sep:"\n\n" globdef_to_coqdef defs
 
-end 
+  let globdef_to_deep (def : Typed.globdef) : string =
+    match def with
+    | DefType (id, td) ->
+        let kind =
+          match td with
+          | TdEnum _ -> "enum"
+          | TdRecord _ -> "record"
+        in
+        sprintf "DefType %s %s_%s" (ident_to_deep id) kind (ident_to_string id)
+    | DefConst (id, l, ty) ->
+        sprintf
+          "DefConst %s const_%s %s"
+          (ident_to_deep id)
+          (ident_to_string id)
+          (opt_parens_btyp ty)
+    | DefFun (id, f) ->
+        sprintf "DefFun %s fun_%s" (ident_to_deep id) (ident_to_string id)
+    | DeclType (id, su) ->
+        let st_or_un =
+          match su with
+          | SU_struct -> "SU_struct"
+          | SU_union -> "SU_union"
+        in
+        sprintf "DeclType %s %s" (ident_to_deep id) st_or_un
+    | DeclConst (id, ty) ->
+        sprintf "DeclConst %s %s" (ident_to_deep id) (opt_parens_btyp ty)
+    | DeclFun (id, tparams, tret) ->
+        sprintf
+          "DeclFun %s %s %s"
+          (ident_to_deep id)
+          (list_to_string_bracket
+             (fun (attr, ty) ->
+               sprintf "(%s, %s)" (param_attr_to_deep attr) (btyp_to_deep ty))
+             tparams)
+          (opt_parens_btyp tret)
 
-module BarocqBNFDeep =
-struct 
+  let print_decomp_remark (out : out_channel) : unit =
+    fprintf
+      out
+      "Remark prog_decomp : (prog = prog_types ++ prog_decls ++ \
+       prog_defs)%%list.\n\
+       Proof.\n\
+       %sreflexivity.\n\
+       Qed.\n"
+      indent
+
+  let prim_types : string =
+    "Definition tbool := BBool.\n\n\
+     Definition tint32 := BInt32 Signed.\n\n\
+     Definition tuint32 := BInt32 Unsigned.\n\n\
+     Definition tint64 := BInt64 Signed.\n\n\
+     Definition tuint64 := BInt64 Unsigned.\n"
+
+  let imports : string =
+    "From Coq Require Import String List BinIntDef.\n\
+     From compcert Require Import Integers.\n\
+     From BarocqComp Require Import Ident Types Syntax Benum Barocq.\n\
+     Import Typed.\n\
+     Import ListNotations.\n\n\
+     Open Scope Z_scope.\n\
+     Open Scope string_scope.\n"
+
+  let print_program (out : out_channel) (prog : Typed.program) : unit =
+    fprintf out "%s" imports;
+    if prog <> [] then begin
+      fprintf out "\n";
+      fprintf out "%s" prim_types;
+      fprintf out "\n";
+      print_globdefs out prog;
+      fprintf out "\n";
+      print_list
+        out
+        ~delim:("Definition prog : Barocq.Typed.program := [\n", "\n].\n")
+        ~sep:";\n"
+        (fun d -> sprintf "%s%s" indent (globdef_to_deep d))
+        prog;
+      let types =
+        List.filter
+          (fun (d : Barocq.Typed.globdef) ->
+            match d with
+            | DefType _ | DeclType _ -> true
+            | _ -> false)
+          prog
+      in
+      let decls =
+        List.filter
+          (fun (d : Barocq.Typed.globdef) ->
+            match d with
+            | DeclConst _ | DeclFun _ -> true
+            | _ -> false)
+          prog
+      in
+      let defs =
+        List.filter
+          (fun (d : Barocq.Typed.globdef) ->
+            match d with
+            | DefConst _ | DefFun _ -> true
+            | _ -> false)
+          prog
+      in
+      fprintf out "\n";
+      print_list
+        out
+        ~delim:("Definition prog_types : Barocq.Typed.program := [\n", "\n].\n")
+        ~sep:";\n"
+        (fun d -> sprintf "%s%s" indent (globdef_to_deep d))
+        types;
+      fprintf out "\n";
+      print_list
+        out
+        ~delim:("Definition prog_decls : Barocq.Typed.program := [\n", "\n].\n")
+        ~sep:";\n"
+        (fun d -> sprintf "%s%s" indent (globdef_to_deep d))
+        decls;
+      fprintf out "\n";
+      print_list
+        out
+        ~delim:("Definition prog_defs : Barocq.Typed.program := [\n", "\n].\n")
+        ~sep:";\n"
+        (fun d -> sprintf "%s%s" indent (globdef_to_deep d))
+        defs;
+      fprintf out "\n";
+      print_decomp_remark out
+    end
+end
+
+module BarocqBNFDeep = struct
   open BarocqBNF
 
-  
-  let rec atom_to_deep (prefix: string)  (o:out_channel) (a:atom) : unit =
+  let rec atom_to_deep (prefix : string) (o : out_channel) (a : atom) : unit =
     match a with
     | ATrue -> output_string o "ATrue"
     | AFalse -> output_string o "AFalse"
-    | AInt32 (i,s) -> Printf.fprintf o "AInt32 (%s) %s" (int_to_deep i s) (signedness_to_deep s)
-    | AInt64 (i,s) -> Printf.fprintf o "AInt64 (%s) %s" (int64_to_deep i s) (signedness_to_deep s)
-    | AConstr (x,n, bt) -> Printf.fprintf o "AConstr %s (Int.repr %s) (%s)"
-        (ident_to_deep x)
-                (Camlcoq.Z.to_string n) 
-        (btyp_to_deep bt)
-    | AVar(x,bt) -> Printf.fprintf o "AVar %s (%s)" (ident_to_deep x) (btyp_to_deep bt)
-    | ACast(a,bt) -> Printf.fprintf o "ACast (%a) (%s)" (atom_to_deep prefix) a (btyp_to_deep bt)
-    | AUnaryOp(op,a,bt) -> Printf.fprintf o 
+    | AInt32 (i, s) ->
+        Printf.fprintf
+          o
+          "AInt32 (%s) %s"
+          (int_to_deep i s)
+          (signedness_to_deep s)
+    | AInt64 (i, s) ->
+        Printf.fprintf
+          o
+          "AInt64 (%s) %s"
+          (int64_to_deep i s)
+          (signedness_to_deep s)
+    | AConstr (x, n, bt) ->
+        Printf.fprintf
+          o
+          "AConstr %s (Int.repr %s) (%s)"
+          (ident_to_deep x)
+          (Camlcoq.Z.to_string n)
+          (btyp_to_deep bt)
+    | AVar (x, bt) ->
+        Printf.fprintf o "AVar %s (%s)" (ident_to_deep x) (btyp_to_deep bt)
+    | ACast (a, bt) ->
+        Printf.fprintf
+          o
+          "ACast (%a) (%s)"
+          (atom_to_deep prefix)
+          a
+          (btyp_to_deep bt)
+    | AUnaryOp (op, a, bt) ->
+        Printf.fprintf
+          o
           "AUnaryOp %s (%a) (%s)"
           (unary_op_to_deep op)
-          (atom_to_deep "") a
+          (atom_to_deep "")
+          a
           (btyp_to_deep bt)
-    | ABinaryOp(bop,a1,a2,bt) ->
-      Printf.fprintf o
+    | ABinaryOp (bop, a1, a2, bt) ->
+        Printf.fprintf
+          o
           "ABinaryOp %s (%a) (%a) (%s)"
           (binary_op_to_deep bop)
-          (atom_to_deep "") a1
-          (atom_to_deep "") a2
+          (atom_to_deep "")
+          a1
+          (atom_to_deep "")
+          a2
           (btyp_to_deep bt)
     | AArrayGet (e1, e2, ly, bt) ->
-      Printf.fprintf o
+        Printf.fprintf
+          o
           "AArrayGet (%a) (%a) %s (%s)"
-          (atom_to_deep "") e1
-          (atom_to_deep "") e2
+          (atom_to_deep "")
+          e1
+          (atom_to_deep "")
+          e2
           (opt_parens_layout ly)
-          (btyp_to_deep bt)  
-    | ARecordProj(a1, x, ly, bt) ->
-      Printf.fprintf o
+          (btyp_to_deep bt)
+    | ARecordProj (a1, x, ly, bt) ->
+        Printf.fprintf
+          o
           "ARecordProj (%a) %s %s (%s)"
-          (atom_to_deep "") a1
+          (atom_to_deep "")
+          a1
           (ident_to_deep x)
           (opt_parens_layout ly)
           (btyp_to_deep bt)
-    | APureCall (f , bt, args, btr) -> 
-      Printf.fprintf o
-        "APureCall %s (%s) (%a) (%s)"
+    | APureCall (f, bt, args, btr) ->
+        Printf.fprintf
+          o
+          "APureCall %s (%s) (%a) (%s)"
           (ident_to_deep f)
           (btyp_to_deep bt)
-          (rocq_list_to_deep (atom_to_deep "")) args  (btyp_to_deep btr)
+          (rocq_list_to_deep (atom_to_deep ""))
+          args
+          (btyp_to_deep btr)
 
-  let rec expr_to_deep (prefix:string) (o:out_channel) (e:expr) = 
-  let prefix' = prefix ^ indent in
+  let rec expr_to_deep (prefix : string) (o : out_channel) (e : expr) =
+    let prefix' = prefix ^ indent in
     match e with
-    | EAtom(a) -> Printf.fprintf o "EAtom (%a)" (atom_to_deep "") a 
+    | EAtom a -> Printf.fprintf o "EAtom (%a)" (atom_to_deep "") a
     | EArraySet (e1, e2, e3, bt) ->
-      Printf.fprintf o
+        Printf.fprintf
+          o
           "EArraySet (%a) (%a) (%a) (%s)"
-          (atom_to_deep "") e1
-          (atom_to_deep "") e2
-          (atom_to_deep "") e3
+          (atom_to_deep "")
+          e1
+          (atom_to_deep "")
+          e2
+          (atom_to_deep "")
+          e3
           (btyp_to_deep bt)
-    | ERecordUpdate(e1,id,e2, bt) ->  Printf.fprintf o
+    | ERecordUpdate (e1, id, e2, bt) ->
+        Printf.fprintf
+          o
           "ERecordUpdate (%a) %s (%a) (%s)"
-          (atom_to_deep "") e1
+          (atom_to_deep "")
+          e1
           (ident_to_deep id)
-          (atom_to_deep "") e2
+          (atom_to_deep "")
+          e2
           (btyp_to_deep bt)
     | EApp (e1, args, bt) ->
-      Printf.fprintf o
+        Printf.fprintf
+          o
           "EApp (%a) %a (%s)"
-          (atom_to_deep "") e1
-          (rocq_list_to_deep (atom_to_deep "")) args
+          (atom_to_deep "")
+          e1
+          (rocq_list_to_deep (atom_to_deep ""))
+          args
           (btyp_to_deep bt)
     | EIfThenElse (a1, e2, e3, bt) ->
-      Printf.fprintf o
+        Printf.fprintf
+          o
           "EIfThenElse (%a)\n%s(%a)\n%s(%a) (%s)"
-          (atom_to_deep "") a1
+          (atom_to_deep "")
+          a1
           prefix'
-          (expr_to_deep prefix') e2
+          (expr_to_deep prefix')
+          e2
           prefix'
-          (expr_to_deep prefix') e3
+          (expr_to_deep prefix')
+          e3
           (btyp_to_deep bt)
     | EMatch (a1, cases, bt) ->
-      Printf.fprintf o
+        Printf.fprintf
+          o
           "EMatch (%a) [\n%a\n%s] (%s)"
-          (atom_to_deep "") a1
-          (output_list ~sep:";\n" (match_case_to_deep prefix')) cases
+          (atom_to_deep "")
+          a1
+          (output_list ~sep:";\n" (match_case_to_deep prefix'))
+          cases
           prefix
           (btyp_to_deep bt)
     | ELetIn (x, e1, e2, bt) -> begin
         match e1 with
         | EIfThenElse _ | EMatch _ ->
-          Printf.fprintf o
+            Printf.fprintf
+              o
               "ELetIn %s\n%s(%a)\n%s(%a) (%s)"
               (ident_to_deep x)
               prefix'
-              (expr_to_deep prefix') e1
+              (expr_to_deep prefix')
+              e1
               prefix'
-              (expr_to_deep prefix') e2
+              (expr_to_deep prefix')
+              e2
               (btyp_to_deep bt)
         | _ ->
-          Printf.fprintf o
+            Printf.fprintf
+              o
               "ELetIn %s (%a)\n%s(%a) (%s)"
               (ident_to_deep x)
-              (expr_to_deep "") e1
+              (expr_to_deep "")
+              e1
               prefix'
-              (expr_to_deep prefix') e2
+              (expr_to_deep prefix')
+              e2
               (btyp_to_deep bt)
       end
     | EAttr (x, e1) ->
-      Printf.fprintf o "EAttr %s (%a)" (ident_to_deep x) (expr_to_deep prefix) e1
-  and match_case_to_deep (prefix : string) (o:out_channel)
-    ((p, ep) : Benum.pattern * expr)  =
-  let prefix' = prefix ^ indent in
-  let case o p =
-    match p with
-    | Benum.PIdent (i, z) ->
-      Printf.fprintf o "PIdent %s %s" (ident_to_deep i) (i32_to_string z)
-    | Benum.PWildcard -> Printf.fprintf o  "PWildcard"
-  in
-  Printf.fprintf o "%s(%a,\n%s%a)" prefix case p prefix' (expr_to_deep prefix') ep
+        Printf.fprintf
+          o
+          "EAttr %s (%a)"
+          (ident_to_deep x)
+          (expr_to_deep prefix)
+          e1
 
+  and match_case_to_deep (prefix : string) (o : out_channel)
+      ((p, ep) : Benum.pattern * expr) =
+    let prefix' = prefix ^ indent in
+    let case o p =
+      match p with
+      | Benum.PIdent (i, z) ->
+          Printf.fprintf o "PIdent %s %s" (ident_to_deep i) (i32_to_string z)
+      | Benum.PWildcard -> Printf.fprintf o "PWildcard"
+    in
+    Printf.fprintf
+      o
+      "%s(%a,\n%s%a)"
+      prefix
+      case
+      p
+      prefix'
+      (expr_to_deep prefix')
+      ep
 
-let params_to_deep (o:out_channel) (params : (ident * btyp) list)  =
-  rocq_list_to_deep 
-    (fun o (id, ty) -> Printf.fprintf o "(%s, %s)" (ident_to_deep id) (btyp_to_deep ty))
-    o params
+  let params_to_deep (o : out_channel) (params : (ident * btyp) list) =
+    rocq_list_to_deep
+      (fun o (id, ty) ->
+        Printf.fprintf o "(%s, %s)" (ident_to_deep id) (btyp_to_deep ty))
+      o
+      params
 
-let function_to_deep (o:out_channel) (f : BarocqBNF.coq_function)  =
-  function_to_deep expr_to_deep (fun o ty -> output_string o (btyp_to_deep ty)) o f
+  let function_to_deep (o : out_channel) (f : BarocqBNF.coq_function) =
+    function_to_deep
+      expr_to_deep
+      (fun o ty -> output_string o (btyp_to_deep ty))
+      o
+      f
 
+  let globdef_to_rocqdef (o : out_channel) (def : BarocqBNF.globdef) =
+    match def with
+    | Syntax.DefConst (id, l, _) ->
+        Printf.fprintf
+          o
+          "Definition %s : %s := %a."
+          (sprintf "const_%s" (ident_to_string id))
+          "Syntax.literal"
+          output_string
+          (Barocq.literal_to_deep l)
+    | Syntax.DefFun (id, f) ->
+        Printf.fprintf
+          o
+          "Definition %s : %s := %a."
+          (sprintf "fun_%s" (ident_to_string id))
+          "BarocqBNF.function"
+          function_to_deep
+          f
+    | _ -> ()
 
-let globdef_to_rocqdef (o:out_channel) (def : BarocqBNF.globdef)  =
-  match def with
-  | Syntax.DefConst (id, l, _) ->
-    Printf.fprintf o "Definition %s : %s := %a."
-        (sprintf "const_%s" (ident_to_string id))
-        "Syntax.literal"
-        output_string (Barocq.literal_to_deep l)
-  | Syntax.DefFun (id, f) ->
-    Printf.fprintf o "Definition %s : %s := %a." 
-        (sprintf "fun_%s" (ident_to_string id))
-        "BarocqBNF.function"
-        function_to_deep f
-  | _ -> ()
+  let globdef_to_deep (o : out_channel) (def : BarocqBNF.globdef) =
+    match def with
+    | Syntax.DefConst (id, l, bt) ->
+        Printf.fprintf
+          o
+          "DefConst \"%s\" %s (%s)"
+          (ident_to_string id)
+          (sprintf "const_%s" (ident_to_string id))
+          (btyp_to_deep bt)
+    | Syntax.DefFun (id, f) ->
+        Printf.fprintf
+          o
+          "DefFun \"%s\" %s"
+          (ident_to_string id)
+          (sprintf "fun_%s" (ident_to_string id))
+    | Syntax.DeclConst (id, bt) ->
+        Printf.fprintf
+          o
+          "DeclConst \"%s\" (%s)"
+          (ident_to_string id)
+          (btyp_to_deep bt)
+    | Syntax.DeclFun (id, args, typ) ->
+        let param_typ_to_deep o (p, ty) =
+          Printf.fprintf o "(%s,%s)" (param_attr_to_deep p) (btyp_to_deep ty)
+        in
+        Printf.fprintf
+          o
+          "DeclFun %s %a (%s)"
+          (ident_to_deep id)
+          (rocq_list_to_deep param_typ_to_deep)
+          args
+          (btyp_to_deep typ)
 
-let globdef_to_deep (o:out_channel) (def: BarocqBNF.globdef) = 
-  match def with
-  | Syntax.DefConst (id,l,bt) ->
-    Printf.fprintf o "DefConst \"%s\" %s (%s)"
-      (ident_to_string id)
-      (sprintf "const_%s" (ident_to_string id))
-      (btyp_to_deep bt)
-  | Syntax.DefFun(id,f) -> 
-    Printf.fprintf o "DefFun \"%s\" %s"
-      (ident_to_string id)
-      (sprintf "fun_%s" (ident_to_string id))
-  | Syntax.DeclConst(id,bt) ->
-    Printf.fprintf o "DeclConst \"%s\" (%s)" (ident_to_string id) (btyp_to_deep bt)
-  | Syntax.DeclFun(id,args,typ) ->
-    let param_typ_to_deep o (p,ty) =
-      Printf.fprintf o "(%s,%s)" (param_attr_to_deep p) (btyp_to_deep  ty) in
-    Printf.fprintf o "DeclFun %s %a (%s)" (ident_to_deep id)
-      (rocq_list_to_deep param_typ_to_deep) args
-      (btyp_to_deep  typ)
+  let print_globdefs (out : out_channel) (defs : globdef list) : unit =
+    output_list ~delim:("", "\n") ~sep:"\n\n" globdef_to_rocqdef out defs
 
-
-let print_globdefs (out : out_channel) (defs : globdef list) : unit =
-  output_list  ~delim:("", "\n") ~sep:"\n\n" globdef_to_rocqdef out defs
-
-
-let elems_to_deep (o:out_channel) (elems : ident list) : unit =
-  output_list
-    ~sep:";\n"
-    (fun o e -> Printf.fprintf o "%s%s" indent2 (ident_to_deep e))
-    o elems
-
-let fields_to_deep (o:out_channel) (fields : (ident * field_descr) list) : unit =
-  output_list
-    ~sep:";\n"
-    (fun o (id, (ty, ly)) ->
-      Printf.fprintf o
-        "%s(%s, (%s, %s))"
-        indent2
-        (ident_to_deep id)
-        (btyp_to_deep ty)
-        (opt_parens_layout ly))
-    o fields
-
-let rocq_name_of_type (id:ident) (td : (btyp * layout) type_def) =
-  match td with
-  | TdEnum _ -> sprintf "enum_%s" (ident_to_string id)
-  | TdRecord _ -> sprintf "record_%s" (ident_to_string id)
-
-
-let type_def_to_coqdef (id:ident) (o:out_channel)  (td : (btyp * layout) type_def) : unit =
-  match td with
-  | TdEnum elems ->
-    Printf.fprintf o "Definition %s : %s :=\n%sTdEnum[\n%a\n%s]."
-      (sprintf "enum_%s" (ident_to_string id))
-      "type_def field_descr"
-      indent
-      elems_to_deep elems indent
-  | TdRecord fields ->
-    Printf.fprintf o "Definition %s : %s :=\n%sTdRecord[\n%a\n%s]."
-      (sprintf "record_%s" (ident_to_string id))
-      "type_def field_descr"
-      indent
-      fields_to_deep fields indent
-
-let struct_or_union_to_string = function 
-  | SU_struct -> "SU_struct"
-  | SU_union -> "SU_union"
-  
-
-let print_prog_tabs out l =
-  output_list
-  ~delim:("Definition prog_tabs  := [\n", "\n].\n")
+  let elems_to_deep (o : out_channel) (elems : ident list) : unit =
+    output_list
       ~sep:";\n"
-      (fun o (id, su) -> Printf.fprintf o "%s(\"%s\",%s)" indent (ident_to_string id) (struct_or_union_to_string su))
-      out l
+      (fun o e -> Printf.fprintf o "%s%s" indent2 (ident_to_deep e))
+      o
+      elems
 
+  let fields_to_deep (o : out_channel) (fields : (ident * field_descr) list) :
+      unit =
+    output_list
+      ~sep:";\n"
+      (fun o (id, (ty, ly)) ->
+        Printf.fprintf
+          o
+          "%s(%s, (%s, %s))"
+          indent2
+          (ident_to_deep id)
+          (btyp_to_deep ty)
+          (opt_parens_layout ly))
+      o
+      fields
 
+  let rocq_name_of_type (id : ident) (td : (btyp * layout) type_def) =
+    match td with
+    | TdEnum _ -> sprintf "enum_%s" (ident_to_string id)
+    | TdRecord _ -> sprintf "record_%s" (ident_to_string id)
 
+  let type_def_to_coqdef (id : ident) (o : out_channel)
+      (td : (btyp * layout) type_def) : unit =
+    match td with
+    | TdEnum elems ->
+        Printf.fprintf
+          o
+          "Definition %s : %s :=\n%sTdEnum[\n%a\n%s]."
+          (sprintf "enum_%s" (ident_to_string id))
+          "type_def field_descr"
+          indent
+          elems_to_deep
+          elems
+          indent
+    | TdRecord fields ->
+        Printf.fprintf
+          o
+          "Definition %s : %s :=\n%sTdRecord[\n%a\n%s]."
+          (sprintf "record_%s" (ident_to_string id))
+          "type_def field_descr"
+          indent
+          fields_to_deep
+          fields
+          indent
 
+  let struct_or_union_to_string = function
+    | SU_struct -> "SU_struct"
+    | SU_union -> "SU_union"
 
-let print_decomp_remark (out : out_channel) : unit =
-  fprintf
-    out
-    "Remark prog_decomp : (prog = prog_types ++ prog_decls ++ prog_defs)%%list.\n\
-     Proof.\n\
-     %sreflexivity.\n\
-     Qed.\n"
-    indent
+  let print_prog_tabs out l =
+    output_list
+      ~delim:("Definition prog_tabs  := [\n", "\n].\n")
+      ~sep:";\n"
+      (fun o (id, su) ->
+        Printf.fprintf
+          o
+          "%s(\"%s\",%s)"
+          indent
+          (ident_to_string id)
+          (struct_or_union_to_string su))
+      out
+      l
 
-let prim_types : string =
-  "Definition tbool := BBool.\n\n\
-   Definition tint32 := BInt32 Signed.\n\n\
-   Definition tuint32 := BInt32 Unsigned.\n\n\
-   Definition tint64 := BInt64 Signed.\n\n\
-   Definition tuint64 := BInt64 Unsigned.\n"
+  let print_decomp_remark (out : out_channel) : unit =
+    fprintf
+      out
+      "Remark prog_decomp : (prog = prog_types ++ prog_decls ++ \
+       prog_defs)%%list.\n\
+       Proof.\n\
+       %sreflexivity.\n\
+       Qed.\n"
+      indent
 
-let imports : string =
-  "From Coq Require Import String List BinIntDef.\n\
-   From compcert Require Import Integers.\n\
-   From BarocqComp Require Import Ident Types Syntax Benum BarocqBNF.\n\
-   Import ListNotations.\n\n\
-   Open Scope Z_scope.\n\
-   Open Scope string_scope.\n"
+  let prim_types : string =
+    "Definition tbool := BBool.\n\n\
+     Definition tint32 := BInt32 Signed.\n\n\
+     Definition tuint32 := BInt32 Unsigned.\n\n\
+     Definition tint64 := BInt64 Signed.\n\n\
+     Definition tuint64 := BInt64 Unsigned.\n"
 
+  let imports : string =
+    "From Coq Require Import String List BinIntDef.\n\
+     From compcert Require Import Integers.\n\
+     From BarocqComp Require Import Ident Types Syntax Benum BarocqBNF.\n\
+     Import ListNotations.\n\n\
+     Open Scope Z_scope.\n\
+     Open Scope string_scope.\n"
 
-let is_def gd =
-  match gd with
-  | Syntax.DefConst _ | Syntax.DefFun _ -> true
-  | _ -> false
+  let is_def gd =
+    match gd with
+    | Syntax.DefConst _ | Syntax.DefFun _ -> true
+    | _ -> false
 
-
-
-
-
-let print_program (out : out_channel) (prog : BarocqBNF.program) : unit =
-  let (defs,decls) = List.partition is_def (prog.Syntax.prog_defs) in 
-  let types = prog.Syntax.prog_types in 
-  fprintf out "%s" imports;
-  fprintf out "\n";
-  fprintf out "%s" prim_types;
-  fprintf out "\n";
-  (* program types *) 
-  List.iter (fun (id,td) -> Printf.fprintf out "%a\n" (type_def_to_coqdef id) td) types;
-  (* programs definitions *)
-  List.iter (fun d -> Printf.fprintf out "%a\n" globdef_to_rocqdef d) defs;
-  fprintf out "\n";
-  (* Put all the program types into a list *)
-     output_list
+  let print_program (out : out_channel) (prog : BarocqBNF.program) : unit =
+    let defs, decls = List.partition is_def prog.Syntax.prog_defs in
+    let types = prog.Syntax.prog_types in
+    fprintf out "%s" imports;
+    fprintf out "\n";
+    fprintf out "%s" prim_types;
+    fprintf out "\n";
+    (* program types *)
+    List.iter
+      (fun (id, td) -> Printf.fprintf out "%a\n" (type_def_to_coqdef id) td)
+      types;
+    (* programs definitions *)
+    List.iter (fun d -> Printf.fprintf out "%a\n" globdef_to_rocqdef d) defs;
+    fprintf out "\n";
+    (* Put all the program types into a list *)
+    output_list
       ~delim:("Definition prog_types  := [\n", "\n].\n")
       ~sep:";\n"
-      (fun o (id, td) -> Printf.fprintf o "%s(\"%s\",%s)" indent (ident_to_string id) (rocq_name_of_type id td))
+      (fun o (id, td) ->
+        Printf.fprintf
+          o
+          "%s(\"%s\",%s)"
+          indent
+          (ident_to_string id)
+          (rocq_name_of_type id td))
       out
       types;
     fprintf out "\n";
-  (* Put all the program defs into a list *)
-  output_list
+    (* Put all the program defs into a list *)
+    output_list
       ~delim:("Definition prog_decls : list globdef  := [\n", "\n].\n")
       ~sep:";\n"
-      globdef_to_deep 
-      out 
+      globdef_to_deep
+      out
       decls;
     fprintf out "\n";
-  output_list
-    ~delim:("Definition prog_defs : list globdef := [\n", "\n].\n")
+    output_list
+      ~delim:("Definition prog_defs : list globdef := [\n", "\n].\n")
       ~sep:";\n"
-      globdef_to_deep 
-      out 
+      globdef_to_deep
+      out
       defs;
-  fprintf out "\n";
-  print_prog_tabs out prog.Syntax.prog_tabs;
-  fprintf out "\n";
-  Printf.fprintf out "Definition prog := mk_program (prog_decls ++ prog_decls) prog_types prog_tabs.\n"
-  
+    fprintf out "\n";
+    print_prog_tabs out prog.Syntax.prog_tabs;
+    fprintf out "\n";
+    Printf.fprintf
+      out
+      "Definition prog := mk_program (prog_decls ++ prog_decls) prog_types \
+       prog_tabs.\n"
 
-(*;
+  (*;
     print_decomp_remark out
   end
 *)
-  
-
 end
-
-
-
