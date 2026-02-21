@@ -1,4 +1,4 @@
-From BarocqComp Require Import Error Benum Maps2 Syntax Types Typing Imp1 Denot.
+From BarocqComp Require Import OptionMonad Benum Maps2 Syntax Types Typing Imp1 Denot.
 
 (* Denotational pure semantics of Imp1 *)
 
@@ -25,14 +25,14 @@ Section DENOT.
     | None => lenv
     end.
 
-  Definition eval_match (tv:typ) (v: eval_typ tv) (tr: option typ) (cases: list (pattern * res (typ_of_statement tr))) : res (typ_of_statement tr) :=
-    (match tv as t0 return (eval_typ t0 -> res (typ_of_statement tr)) with
+  Definition eval_match (tv:typ) (v: eval_typ tv) (tr: option typ) (cases: list (pattern * option (typ_of_statement tr))) : option (typ_of_statement tr) :=
+    (match tv as t0 return (eval_typ t0 -> option (typ_of_statement tr)) with
     | TEnum _ elems => 
         (fun v0 => match_with_err v0 cases)
     | _ => (fun _ => fail)
     end) v.
 
-  Fixpoint eval_statement_rec (te: tenv) (ge: genv) (le: lenv) (ty: option typ) (s: statement) : res (typ_of_statement ty) :=
+  Fixpoint eval_statement_rec (te: tenv) (ge: genv) (le: lenv) (ty: option typ) (s: statement) : option (typ_of_statement ty) :=
     match s with
     | StSet x c =>
         match ty with
@@ -64,10 +64,10 @@ Section DENOT.
     | StAttr _ s1 => eval_statement_rec te ge le ty s1
     end.
 
-  Definition eval_statement (te: tenv) (ge: genv) (le: lenv) (tr: typ) (body: statement) : res (eval_typ tr) :=
-    ignore_err (eval_statement_rec te ge le (Some tr) body).
+  Definition eval_statement (te: tenv) (ge: genv) (le: lenv) (tr: typ) (body: statement) : option (eval_typ tr) :=
+     eval_statement_rec te ge le (Some tr) body.
 
-  Definition eval_prog (impl: genv) (prog: program) : res (tenv * genv) :=
+  Definition eval_prog (impl: genv) (prog: program) : option (tenv * genv) :=
     eval_prog tabs eval_statement impl prog.
 
 End DENOT.

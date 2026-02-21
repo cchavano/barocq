@@ -6,7 +6,7 @@ This is adapted from the [BarocqVC] version.
 
 From Coq Require Import String List.
 From compcert Require Import Integers Maps.
-From BarocqComp Require Import Denot Syntax Target Ident Monads Error Barray Brecord Types BarocqBNF Maps2 MergeSort Utils.
+From BarocqComp Require Import Denot Syntax Target Ident OptionMonad Barray Brecord Types BarocqBNF Maps2 MergeSort Utils.
 From BarocqComp Require Import ExtEqual.
 From compcert Require Import Coqlib.
 From Coq Require Import ZifyBool.
@@ -145,21 +145,31 @@ Section S.
   Definition vars_of_fun {A:Type} (params : smaplist A) (e:expr) :=
     remove_params params (vars_of_expr STree.empty e).
 
-
+(*
+  Lemma  map_err_same  {V A : Type} (f : V -> res A) (l : list (ident* V)) :
+    map_err f l = MapList.map_err f l.
+  Proof.
+    induction l; simpl.
+    - reflexivity.
+    - destruct a; simpl.
+      rewrite IHl.
+      reflexivity.
+  Qed.
+*)
   Definition generate_def_fun_obligation (arch:archi) (te:Typing.tenv)  (params : smaplist btyp) (tret : btyp) (e : expr) (checked : list (propt tabs))
-    (prop : value tabs) : res Prop :=
+    (prop : value tabs) : option Prop :=
     if MergeSort.nodup String.leb String.eqb (List.map fst params)
     then
       let* tret' := Typing.btyp_to_typ te tret in
-      let* params' := MapList.map_err (Typing.btyp_to_typ te) params in
+      let* params' := map_err (Typing.btyp_to_typ te) params in
       let vars     := vars_of_fun params e in
       let needed_checked := List.filter (fun '(k,_) => has_var k vars) checked in
       let o := forall ge,
           Forall (has_property tabs ge) needed_checked ->
-          let v := (eval_fun tabs (eval_expr arch tabs) te ge params' tret'
+          let v := (eval_fun arch tabs  te ge params' tret'
                       e) in
           eq_value _ prop _ v  in
-      eret o
+      ret o
     else fail.
 
 
@@ -185,22 +195,22 @@ Section S.
 
 
   Definition generate_def_fun_obligation' (arch:archi) (f:ident) (te:Typing.tenv)  (params : smaplist btyp) (tret : btyp) (e : expr) (checked : list (propt tabs))
-    (prop : value tabs) : res Prop :=
+    (prop : value tabs) : option Prop :=
     if MergeSort.nodup String.leb String.eqb (List.map fst params)
     then
       let* tret' := Typing.btyp_to_typ te tret in
-      let* params' := MapList.map_err (Typing.btyp_to_typ te) params in
+      let* params' := map_err (Typing.btyp_to_typ te) params in
       let vars     := vars_of_fun params e in
       let needed_checked := List.filter (fun '(k,_) => has_var k vars) checked in
       let ge := genv_has_property tabs STree.empty needed_checked in
       if stree_equal vars ge
       then
         let o :=
-          let v := (eval_fun tabs (eval_expr arch tabs) te ge params' tret' e) in
+          let v := (eval_fun arch tabs  te ge params' tret' e) in
           eq_value _ prop _ v in
-        eret o
-      else Error (MSG "Def fun " :: MSG f :: nil)
-    else Error (MSG "Def fun " :: MSG f :: nil).
+        ret o
+      else None
+    else None.
 
 
   Definition eq_env (keys: STree.t unit) (le le': genv tabs) (ge ge' : genv tabs) :=
@@ -626,8 +636,8 @@ Section S.
 
   Lemma  ext_equal_eval_match : forall te x y tr l1 l2,
       ext_equal tabs te x y ->
-      Forall2 (fun x y => fst x = fst y /\ res_rel (ext_equal tabs tr) (snd x) (snd y))  l1 l2 ->
-      res_rel (ext_equal tabs tr) (eval_match tabs te x tr l1) (eval_match tabs te y tr l2).
+      Forall2 (fun x y => fst x = fst y /\ option_rel (ext_equal tabs tr) (snd x) (snd y))  l1 l2 ->
+      option_rel (ext_equal tabs tr) (eval_match tabs te x tr l1) (eval_match tabs te y tr l2).
   Proof.
     intros.
     unfold eval_match.
@@ -658,20 +668,20 @@ Section S.
     rewrite STree.gro;auto.
   Qed.
 
-  Lemma res_rel_bind_equal : forall {A B : Type} R {f g: A -> res B} (v:res A) ,
-      (forall a, res_rel R (f a) (g a)) ->
-      res_rel R (let* x := v in f x)  (let* x := v in g x).
+  Lemma option_rel_bind_equal : forall {A B : Type} R {f g: A -> option B} (v:option A) ,
+      (forall a, option_rel R (f a) (g a)) ->
+      option_rel R (let* x := v in f x)  (let* x := v in g x).
   Proof.
     destruct v.
     - simpl. auto.
     -  constructor.
   Qed.
 
-  Lemma res_rel_bind_rel : forall {A B : Type} (RA: A -> A -> Prop) R {f g: A -> res B} (v1 v2:res A) ,
-      res_rel RA v1 v2 ->
+  Lemma option_rel_bind_rel : forall {A B : Type} (RA: A -> A -> Prop) R {f g: A -> option B} (v1 v2:option A) ,
+      option_rel RA v1 v2 ->
       (forall x y, RA x y ->
-                 res_rel R (f x) (g y)) ->
-      res_rel R (let* x := v1 in f x)  (let* x := v2 in g x).
+                 option_rel R (f x) (g y)) ->
+      option_rel R (let* x := v1 in f x)  (let* x := v2 in g x).
   Proof.
     intros.
     inv H.
@@ -685,38 +695,39 @@ Section S.
            (GE: eq_env s le le' ge ge')
            (LE:eq_env_all le le')
            (GET:STree.get v s = Some tt),
-      res_rel (ext_equal tabs ty) (eval_var tabs ge le v ty) (eval_var tabs ge' le' v ty).
+      option_rel (ext_equal tabs ty) (eval_var tabs ge le v ty) (eval_var tabs ge' le' v ty).
   Proof.
     intros.
     unfold eval_var.
     unfold lenv_get.
     specialize (LE v).
     inv LE.
-    - simpl.
+    - try (rewrite <- H0; rewrite <- H).
+      simpl.
       unfold eq_env in GE. unfold genv_get.
       simpl in GE.
       specialize (GE v (eq_sym H0) (eq_sym H) GET).
-      eapply res_rel_bind_rel.
-      eapply option_rel_res_rel;eauto.
+      eapply option_rel_bind_rel.
+      eauto.
       intros.
       apply same_value_cast_value; auto.
-    - simpl.
+    - try (rewrite <- H; rewrite <- H0) ; simpl.
       apply same_value_cast_value; auto.
   Qed.
 
   Fixpoint eq_genv_eval_atom (arch:archi) (te:Typing.tenv)  (ge ge':genv tabs) (ty:typ) (a:atom) : forall le le',
       eq_env (vars_of_atom (STree.empty) a) le le' ge ge' ->
       eq_env_all le le'  ->
-      res_rel (ext_equal tabs ty) (eval_atom arch tabs te ge le ty a)
+      option_rel (ext_equal tabs ty) (eval_atom arch tabs te ge le ty a)
         (eval_atom arch tabs te ge' le' ty a).
   Proof.
     specialize (eq_genv_eval_atom arch te ge ge').
-    destruct a; intros; simpl; try (apply ExtEqual.res_rel_cast_typ_refl;reflexivity).
+    destruct a; intros; simpl; try (apply ExtEqual.option_rel_cast_typ_refl;reflexivity).
     - unfold eval_constr.
       destruct (Typing.TEnv.get_constr_typ te i); try constructor.
       simpl. destruct (Typing.TEnv.get_edef te i1); try constructor.
       simpl. destruct (bool_dec (existsb (String.eqb i) l) true);try constructor.
-      apply res_rel_cast_typ_refl;reflexivity.
+      apply option_rel_cast_typ_refl;reflexivity.
     - eapply eq_env_eval_var; eauto.
       simpl.
       rewrite STree.gss.  reflexivity.
@@ -750,40 +761,40 @@ Section S.
       simpl.
       apply ext_equal_eval_binary_op; auto.
     - simpl in H.
-      apply res_rel_bind_equal.
+      apply option_rel_bind_equal.
       intro t1.
-      apply res_rel_bind_equal.
+      apply option_rel_bind_equal.
       intro t2.
-      eapply res_rel_bind_rel.
+      eapply option_rel_bind_rel.
       { apply eq_genv_eval_atom; auto.
         eapply eq_env_vars_of_atom_acc; eauto.
       }
       intros.
-      eapply res_rel_bind_rel.
+      eapply option_rel_bind_rel.
       { apply eq_genv_eval_atom; auto.
         eapply eq_env_vars_of_atom; eauto.
       }
       intros.
       apply ext_equal_array_get; auto.
     - simpl in H.
-      apply res_rel_bind_equal.
+      apply option_rel_bind_equal.
       intro t1.
-      eapply res_rel_bind_rel.
+      eapply option_rel_bind_rel.
       { apply eq_genv_eval_atom; auto.
       }
       intros.
       apply ext_equal_eval_record_proj; auto.
     - simpl in H.
-      apply res_rel_bind_equal.
+      apply option_rel_bind_equal.
       intro t1.
       apply eq_env_atoms in H as (EQ1 & EQ2).
       destruct t1; try constructor.
-      apply res_rel_bind_rel with (RA:= ext_equal tabs (TFun l0 t1)).
+      apply option_rel_bind_rel with (RA:= ext_equal tabs (TFun l0 t1)).
       eapply eq_env_eval_var; eauto.
       rewrite STree.gss. reflexivity.
-      set (Ftyp := fun (ty:typ) => res (eval_typ tabs ty)).
-      set (Pred := fun ty => res_rel (ext_equal tabs ty)).
-      assert (res_rel (DList.Forall2 Ftyp Pred  _) (DList.map2 (eval_typ tabs) (eval_atom arch tabs te ge le) l l0)
+      set (Ftyp := fun (ty:typ) => option (eval_typ tabs ty)).
+      set (Pred := fun ty => option_rel (ext_equal tabs ty)).
+      assert (option_rel (DList.Forall2 Ftyp Pred  _) (DList.map2 (eval_typ tabs) (eval_atom arch tabs te ge le) l l0)
                 (DList.map2 (eval_typ tabs) (eval_atom arch tabs te ge' le') l l0)).
       {
         revert l0.
@@ -803,7 +814,7 @@ Section S.
           constructor ;auto.
       }
       intros.
-      eapply res_rel_bind_rel.
+      eapply option_rel_bind_rel.
       eapply H.
       intros.
       apply ext_equal_eval_app_res; auto.
@@ -812,24 +823,24 @@ Section S.
   Fixpoint eq_genv_eval_expr_rec (arch:archi) (te:Typing.tenv)  (ge ge':genv tabs) (ty:typ) (e:expr) : forall le le',
       eq_env (vars_of_expr (STree.empty) e) le le' ge ge' ->
       eq_env_all le le'  ->
-      res_rel (ext_equal tabs ty) (eval_expr_rec arch tabs te ge le ty e)
+      option_rel (ext_equal tabs ty) (eval_expr_rec arch tabs te ge le ty e)
         (eval_expr_rec arch tabs te ge' le' ty e).
   Proof.
     specialize (eq_genv_eval_expr_rec arch te ge ge').
-    destruct e; intros; simpl; try (apply res_rel_cast_typ_refl;reflexivity).
-    - apply res_rel_bind_equal.
+    destruct e; intros; simpl; try (apply option_rel_cast_typ_refl;reflexivity).
+    - apply option_rel_bind_equal.
       intros.
       apply ext_equal_ecast_typ.
       eapply eq_genv_eval_atom;eauto.
-    - apply res_rel_bind_equal.
+    - apply option_rel_bind_equal.
       intro t1.
-      apply res_rel_bind_equal.
+      apply option_rel_bind_equal.
       intro t2.
-      apply res_rel_bind_equal.
+      apply option_rel_bind_equal.
       intro t3.
-      apply res_rel_bind_equal.
+      apply option_rel_bind_equal.
       intro t4.
-      eapply res_rel_bind_rel.
+      eapply option_rel_bind_rel.
       { apply eq_genv_eval_atom; auto.
         simpl in H.
         eapply eq_env_vars_of_atom_acc.
@@ -837,7 +848,7 @@ Section S.
         eauto.
       }
       intros.
-      eapply res_rel_bind_rel.
+      eapply option_rel_bind_rel.
       { apply eq_genv_eval_atom; auto.
         simpl in H.
         apply eq_env_vars_of_atom_acc in H.
@@ -845,7 +856,7 @@ Section S.
         auto.
       }
       intros.
-      eapply res_rel_bind_rel.
+      eapply option_rel_bind_rel.
       {
         simpl in H.
         apply eq_genv_eval_atom; auto.
@@ -855,20 +866,20 @@ Section S.
       intros.
       eapply ext_equal_ecast_typ.
       eapply ext_equal_array_set;eauto.
-    - apply res_rel_bind_equal.
+    - apply option_rel_bind_equal.
       intro t1.
-      apply res_rel_bind_equal.
+      apply option_rel_bind_equal.
       intro t2.
-      apply res_rel_bind_equal.
+      apply option_rel_bind_equal.
       intro t3.
-      eapply res_rel_bind_rel.
+      eapply option_rel_bind_rel.
       {
         apply eq_genv_eval_atom; auto.
         simpl in H.
        eapply eq_env_vars_of_atom_acc in H; auto.
       }
       intros.
-      eapply res_rel_bind_rel.
+      eapply option_rel_bind_rel.
       { apply eq_genv_eval_atom; auto.
         simpl in H.
         apply eq_env_vars_of_atom in H.
@@ -878,19 +889,19 @@ Section S.
       eapply ext_equal_ecast_typ.
       eapply ext_equal_eval_record_update;eauto.
     - simpl in H.
-      apply res_rel_bind_equal.
+      apply option_rel_bind_equal.
       intro t1.
-      apply res_rel_bind_equal.
+      apply option_rel_bind_equal.
       intro t2.
       apply eq_env_atoms in H as (EQ1 & EQ2).
       destruct t2; try constructor.
-      apply res_rel_bind_rel with (RA:= ext_equal tabs (TFun l0 t2)).
+      apply option_rel_bind_rel with (RA:= ext_equal tabs (TFun l0 t2)).
       eapply eq_genv_eval_atom; eauto.
       intros.
-      set (Ftyp := fun (ty:typ) => res (eval_typ tabs ty)).
-      set (Pred := fun ty => res_rel (ext_equal tabs ty)).
+      set (Ftyp := fun (ty:typ) => option (eval_typ tabs ty)).
+      set (Pred := fun ty => option_rel (ext_equal tabs ty)).
       clear EQ2.
-      assert (res_rel (DList.Forall2 Ftyp Pred  _) (DList.map2 (eval_typ tabs) (eval_atom arch tabs te ge le) l l0)
+      assert (option_rel (DList.Forall2 Ftyp Pred  _) (DList.map2 (eval_typ tabs) (eval_atom arch tabs te ge le) l l0)
                 (DList.map2 (eval_typ tabs) (eval_atom arch tabs te ge' le') l l0)).
       {
         clear x y H.
@@ -913,7 +924,7 @@ Section S.
           constructor ;auto.
       }
       intros.
-      eapply res_rel_bind_rel.
+      eapply option_rel_bind_rel.
       eapply H1.
       intros.
       apply ext_equal_ecast_typ.
@@ -921,16 +932,16 @@ Section S.
     - simpl in H.
       apply eq_env_split in H as (EQ1 & EQ2).
       apply eq_env_split in EQ2 as (EQ2 & EQ3).
-      eapply res_rel_bind_rel with (RA:= ext_equal tabs TBool) ;eauto.
+      eapply option_rel_bind_rel with (RA:= ext_equal tabs TBool) ;eauto.
       eapply eq_genv_eval_atom;eauto.
       intros.
       simpl in H. subst.
       destruct y; eauto.
     - simpl in H.
       apply eq_env_pattern in H.
-      eapply res_rel_bind_equal.
+      eapply option_rel_bind_equal.
       intros.
-      eapply res_rel_bind_rel;eauto.
+      eapply option_rel_bind_rel;eauto.
       eapply eq_genv_eval_atom;eauto.
       tauto.
       intros.
@@ -951,10 +962,10 @@ Section S.
         apply IHl.
         tauto.
     - simpl in H.
-      eapply res_rel_bind_equal.
+      eapply option_rel_bind_equal.
       intro t.
       apply eq_env_split in H as (EQ1 & EQ2).
-      eapply res_rel_bind_rel.
+      eapply option_rel_bind_rel.
       eapply eq_genv_eval_expr_rec; eauto.
       intros.
       assert (LE : eq_env_all (lenv_update tabs le i (Val tabs t x))
@@ -977,7 +988,7 @@ Section S.
   Lemma eq_genv_eval_expr (arch:archi) (te:Typing.tenv)  (ge ge':genv tabs) (ty:typ) (e:expr) : forall le le',
       eq_env (vars_of_expr (STree.empty) e) le le' ge ge' ->
       eq_env_all le le'  ->
-      res_rel (ext_equal tabs ty) (eval_expr arch tabs te ge le ty e)
+      option_rel (ext_equal tabs ty) (eval_expr arch tabs te ge le ty e)
         (eval_expr arch tabs te ge' le' ty e).
   Proof.
     unfold eval_expr.
@@ -1094,22 +1105,31 @@ Section S.
       eapply IHv1;eauto.
   Qed.
 
-  Lemma map_err_fst : forall (A B:Type) (F : A -> res B) (l1:smaplist A) (l2:smaplist B),
-      MapList.map_err F l1  = OK l2 ->
+  Lemma map_err_fst : forall (A B:Type) (F : A -> option B) (l1:smaplist A) (l2:smaplist B),
+      map_err F l1  = Some l2 ->
       map fst l1 = map fst l2.
   Proof.
     induction l1;simpl;auto.
     - intros. inv H. reflexivity.
-    - intros. destruct a.
-      simpl. destruct (F a); try discriminate.
-      simpl in H. destruct (MapList.map_err F l1) eqn:M;try discriminate.
-      simpl in H. inv H.
-      simpl. f_equal ;auto.
+    - intros.
+      monadInv H.
+      monadInv EQ.
+      simpl. f_equal;auto.
   Qed.
 
+  Lemma map_err_nil
+     : forall (A B : Type) (F : A -> option B) (l : list (string * A)),
+      map_err F l = Some nil -> l = nil.
+  Proof.
+    destruct l; simpl.
+    - reflexivity.
+    - intros. monadInv H.
+  Qed.
+
+  
   Lemma generate_def_fun_obligation_impl : forall arch f te params tret e checked prop o',
-      generate_def_fun_obligation' arch f te params tret e checked prop = OK o' ->
-      exists o, generate_def_fun_obligation arch te params tret e checked prop = OK o /\
+      generate_def_fun_obligation' arch f te params tret e checked prop = Some o' ->
+      exists o, generate_def_fun_obligation arch te params tret e checked prop = Some o /\
                   (o' -> o).
   Proof.
     unfold generate_def_fun_obligation', generate_def_fun_obligation.
@@ -1118,7 +1138,7 @@ Section S.
                 (map fst params)); try discriminate.
     destruct (Typing.btyp_to_typ te tret); try discriminate.
     simpl in *.
-    destruct (MapList.map_err (Typing.btyp_to_typ te) params)eqn:PARAM; try discriminate.
+    destruct (map_err (Typing.btyp_to_typ te) params)eqn:PARAM; try discriminate.
     simpl in *.
     set (ge :=    (genv_has_property tabs STree.empty
                           (filter (fun '(k, _) => has_var k (vars_of_fun params e))
@@ -1141,19 +1161,13 @@ Section S.
       - intuition congruence.
     }
     unfold eval_fun.
-    destruct t0.
+    destruct l.
     - simpl.
       apply map_err_nil in PARAM. subst.
       generalize (eq_genv_eval_expr arch te ge ge0 t e STree.empty STree.empty EQENV eq_env_all_empty).
       intro EEXPR.
       simpl. auto.
     - rewrite ext_equal_rew.
-      unfold map; fold map.
-      change ((snd p :: (fix map (l : list (string * typ)) : list typ := match l with
-                                                                         | nil => nil
-                                                                         | a :: t1 => snd a :: map t1
-                                                                         end) t0))
-        with (map snd (p :: t0)).
       eapply eval_fun_rec_eq.
       eapply eq_env_fst with (v1 := params).
       eapply map_err_fst;eauto.
@@ -1164,42 +1178,40 @@ Section S.
   Definition is_checked (x:Syntax.ident) (checked:list (propt tabs)) :=
     List.existsb (fun p => string_dec x (fst p)) checked.
 
-  Definition generate_decl_const_obligation (te: Typing.tenv) (ge0 : genv tabs) (x:Syntax.ident) (bt:btyp) (prop:value tabs) : res Prop :=
+  Definition generate_decl_const_obligation (te: Typing.tenv) (ge0 : genv tabs) (x:Syntax.ident) (bt:btyp) (prop:value tabs) : option Prop :=
     let* ty := Typing.btyp_to_typ te bt in
     let* v  := genv_get tabs ge0 x in
     let* v' := cast_value tabs v ty in
-    eret (eq_value tabs prop  _ v').
+    ret (eq_value tabs prop  _ v').
 
   Definition generate_decl_fun_obligation (te: Typing.tenv) (ge0 : genv tabs) (x:Syntax.ident) (params : list (Syntax.param_attr * btyp))
-    (tret : btyp) (prop:value tabs) : res Prop :=
+    (tret : btyp) (prop:value tabs) : option Prop :=
     let* tparam := mmap (Typing.btyp_to_typ te) (map snd params) in
     let* tret' := Typing.btyp_to_typ te tret in
     let* v  := genv_get tabs ge0 x in
     let* v' := cast_value tabs v (TFun tparam tret') in
-    eret (eq_value tabs prop  _ v').
+    ret (eq_value tabs prop  _ v').
 
   (* Definition tenv_update_opt (te: Typing.tenv) (x: Syntax.ident) (fields : smaplist typ) :=
   let id := StringIndexed.index x in
   match PTree.get id te.(tenv_defs) with
-  | None => eret (PTree.set id fields te)
+  | None => ret (PTree.set id fields te)
   | Some _ => fail
   end. *)
 
-  (* Definition obligation_def_type (te: Typing.tenv) (x:Syntax.ident) (fields : SMapList.t btyp) : res Typing.tenv :=
+  (* Definition obligation_def_type (te: Typing.tenv) (x:Syntax.ident) (fields : SMapList.t btyp) : option Typing.tenv :=
   let* fields' := fields_btyp_to_typ te fields in
   tenv_update_opt te x fields'. *)
 
-(*  Definition obligation_def_type (te: Typing.tenv) (x: ident) (td: Syntax.type_def field_descr) : res Typing.tenv :=
+(*  Definition obligation_def_type (te: Typing.tenv) (x: ident) (td: Syntax.type_def field_descr) : option Typing.tenv :=
     eval_def_type te x td. *)
 
 
-
-
   Fixpoint generate_obligations (arch:archi)  (te:Typing.tenv) (ge0 : genv tabs)
-    (checked : list (propt tabs)) (vc : list Prop) (p:list globdef) (props : list (propt tabs)) : res (list Prop) :=
+    (checked : list (propt tabs)) (vc : list Prop) (p:list globdef) (props : list (propt tabs)) : option (list Prop) :=
     match p with
     | nil => match props with
-             | nil => eret vc
+             | nil => ret vc
              | _   => fail
              end
     | a :: prog' =>
@@ -1225,7 +1237,7 @@ Section S.
 
 
   Lemma get_prop_inv : forall s p props props',
-      get_prop tabs s props = OK (p, props')  ->
+      get_prop tabs s props = Some (p, props')  ->
       props = (s,p) :: props'.
   Proof.
     unfold get_prop.
@@ -1276,11 +1288,11 @@ Section S.
 
   Lemma generate_const_obligation_sound :
     forall te x l ty p (P:Prop) ge
-           (GEN : generate_const_obligation tabs te x l ty p = OK P)
+           (GEN : generate_const_obligation tabs te x l ty p = Some P)
            (GET : genv_get tabs ge x = fail)
            (HOLD : P),
     exists ge',
-      eval_def_const tabs te ge x l ty = OK ge' /\
+      eval_def_const tabs te ge x l ty = Some ge' /\
         has_property tabs ge' (x,p).
   Proof.
     unfold generate_const_obligation.
@@ -1475,13 +1487,13 @@ Section S.
 
   Lemma generate_def_fun_obligation_sound :
     forall arch te x f checked ge p o
-           (GEN : generate_def_fun_obligation arch te (Syntax.fn_params f) (Syntax.fn_return f) (Syntax.fn_body f) checked p = OK o)
+           (GEN : generate_def_fun_obligation arch te (Syntax.fn_params f) (Syntax.fn_return f) (Syntax.fn_body f) checked p = Some o)
            (GET : genv_get tabs ge x = fail)
            (ALL : Forall (has_property tabs ge) checked)
            (HAS : o)
     ,
     exists ge',
-      eval_def_fun arch tabs te ge x f = OK ge' /\
+      eval_def_fun arch tabs te ge x f = Some ge' /\
         has_property tabs ge' (x,p).
   Proof.
     unfold generate_def_fun_obligation.
@@ -1496,8 +1508,8 @@ Section S.
     destruct (Typing.btyp_to_typ te (Syntax.fn_return f)); try discriminate.
     simpl in GEN.
     simpl.
-    unfold Syntax.ident, ident.
-    destruct (@MapList.map_err string btyp typ (Typing.btyp_to_typ te) (Syntax.fn_params f)); try discriminate.
+    unfold Syntax.ident, ident in *.
+    destruct (map_err  (Typing.btyp_to_typ te) (fn_params f)); try discriminate.
     simpl in GEN; simpl.
     inv GEN.
     unfold genv_update.
@@ -1517,7 +1529,7 @@ Section S.
 
   Lemma has_property_find_err : forall ge x checked,
       Forall (has_property tabs ge) checked   ->
-      forall v, MapList.find_err string_dec x checked = OK v ->
+      forall v, find_err string_dec x checked = Some v ->
                 has_property tabs ge (x,v).
   Proof.
     intros ge x checked ALL.
@@ -1533,14 +1545,14 @@ Section S.
 
   Lemma has_property_equal :
     forall te ge0 ge s t v prog
-           (EVAL: eval_prog Ptr64 tabs ge0 prog = OK (te,ge))
+           (EVAL: eval_prog Ptr64 tabs ge0 prog = Some (te,ge))
            (FO : fo_typ t = true)
            (HASP : has_property tabs  ge  (s,Val tabs t v)),
     exists
       v' : eval_typ tabs t,
       (let* (_, ge0):= eval_prog Ptr64 tabs ge0 prog
        in genv_get tabs ge0 s) =
-        OK (Val tabs t v') /\ ext_equal_fo tabs t v' v.
+        Some (Val tabs t v') /\ ext_equal_fo tabs t v' v.
   Proof.
     intros.
     unfold has_property in HASP.
@@ -1555,7 +1567,7 @@ Section S.
   Qed.
 
   Lemma cast_value_typ_eq : forall v t e,
-      cast_value tabs v t = OK e ->
+      cast_value tabs v t = Some e ->
       typeof_value tabs v = t.
   Proof.
     unfold cast_value. intros.
@@ -1565,7 +1577,7 @@ Section S.
   Qed.
 
   Lemma cast_value_eq_value : forall v t e p ,
-      cast_value tabs v t = OK e ->
+      cast_value tabs v t = Some e ->
       eq_value tabs p t e ->
       same_value tabs p v.
   Proof.
@@ -1581,12 +1593,12 @@ Section S.
 
   Lemma generate_decl_const_obligation_sound :
     forall te x bt  ge0 ge p P
-           (GEN : generate_decl_const_obligation  te ge0 x bt p = OK P)
-           (FAIL : genv_get tabs ge x = efail)
+           (GEN : generate_decl_const_obligation  te ge0 x bt p = Some P)
+           (FAIL : genv_get tabs ge x = fail)
            (HOLD: P)
     ,
     exists ge',
-      eval_decl_const tabs te ge0 ge x bt = OK ge' /\  has_property tabs ge' (x,p).
+      eval_decl_const tabs te ge0 ge x bt = Some ge' /\  has_property tabs ge' (x,p).
   Proof.
     unfold generate_decl_const_obligation.
     unfold eval_decl_const.
@@ -1611,19 +1623,19 @@ Section S.
 
   Lemma generate_decl_fun_obligation_sound :
     forall te x tparams tret ge0 ge P prop
-           (GEN : generate_decl_fun_obligation  te ge0 x tparams tret prop = OK P)
-           (FAIL : genv_get tabs ge x = efail)
+           (GEN : generate_decl_fun_obligation  te ge0 x tparams tret prop = Some P)
+           (FAIL : genv_get tabs ge x = fail)
            (HOLD: P)
     ,
     exists ge',
-      eval_decl_fun tabs te ge0 ge x tparams tret = OK ge' /\  has_property tabs ge' (x,prop).
+      eval_decl_fun tabs te ge0 ge x tparams tret = Some ge' /\  has_property tabs ge' (x,prop).
   Proof.
     unfold generate_decl_fun_obligation.
     unfold eval_decl_fun.
     intros.
     destruct (mmap (Typing.btyp_to_typ te) (map snd tparams)); try discriminate.
     destruct (Typing.btyp_to_typ te tret); try discriminate.
-    simpl in GEN. unfold bind,Errors.bind.
+    simpl in GEN. unfold bind,Res.bind.
     destruct (genv_get tabs ge0 x); try discriminate.
     simpl in GEN.
     destruct (cast_value tabs v (TFun l t)) eqn:CAST ; try discriminate.
@@ -1656,6 +1668,17 @@ Section S.
     forall id,
       In id (List.map globdef_id prog) -> (*has_def d = true ->*) genv_get tabs ge id = fail.
 
+  Lemma wf_env_empty : forall prog,
+      wf_env  STree.empty prog.
+  Proof.
+    unfold wf_env.
+    intros.
+    unfold genv_get.
+    rewrite STree.gempty.
+    reflexivity.
+  Qed.
+
+  
   Lemma wf_env_tail : forall ge d prog,
       wf_env ge (d :: prog) ->
       wf_env ge prog.
@@ -1668,7 +1691,7 @@ Section S.
   Lemma genv_gsspec : forall x v ge y,
       genv_get tabs (STree.set x v ge) y =
         if string_dec x y
-        then OK v else genv_get tabs ge y.
+        then Some v else genv_get tabs ge y.
   Proof.
     unfold genv_get, STree.get,STree.set.
     intros.
@@ -1676,7 +1699,6 @@ Section S.
     destruct (string_dec x y).
     - subst.
       destruct (peq (StringIndexed.index y) (StringIndexed.index y));try congruence.
-      reflexivity.
     - destruct (peq (StringIndexed.index y) (StringIndexed.index x)); try discriminate; auto.
       apply Ctypesdefs.ident_of_string_injective in e.
       congruence.
@@ -1705,7 +1727,7 @@ Section S.
     forall te ge ge' x l ty prog
            (DUP : NoDup (map ident_of_globdef (DefConst x l ty :: prog)))
            (WF : wf_env ge (DefConst x l ty :: prog))
-           (EVAL : eval_def_const tabs te ge x l ty = OK ge'),
+           (EVAL : eval_def_const tabs te ge x l ty = Some ge'),
       wf_env ge' prog.
   Proof.
     unfold eval_def_const.
@@ -1727,7 +1749,7 @@ Section S.
     forall te ge0 ge ge' x ty prog
            (DUP : NoDup (map ident_of_globdef (DeclConst x  ty :: prog)))
            (WF : wf_env ge (DeclConst x ty :: prog))
-           (EVAL : eval_decl_const tabs te ge0 ge x ty = OK ge'),
+           (EVAL : eval_decl_const tabs te ge0 ge x ty = Some ge'),
       wf_env ge' prog.
   Proof.
     unfold eval_decl_const.
@@ -1748,14 +1770,14 @@ Section S.
     forall te ge0 ge ge' x targs ty prog
            (DUP : NoDup (map ident_of_globdef (DeclFun x targs ty :: prog)))
            (WF : wf_env ge (DeclFun x targs ty :: prog))
-           (EVAL : eval_decl_fun tabs te ge0 ge x targs ty = OK ge'),
+           (EVAL : eval_decl_fun tabs te ge0 ge x targs ty = Some ge'),
       wf_env ge' prog.
   Proof.
     unfold eval_decl_fun.
     intros.
     destruct (mmap (Typing.btyp_to_typ te) (map snd targs)); try discriminate.
     destruct (Typing.btyp_to_typ te ty); try discriminate.
-    unfold bind,Errors.bind in EVAL.
+    unfold bind,Res.bind in EVAL.
     destruct (genv_get tabs ge0 x) eqn:GET; try discriminate.
     destruct (typ_eq_dec (TFun l t) (typeof_value tabs v)) eqn:TYP;
       try discriminate.
@@ -1770,7 +1792,7 @@ Section S.
     forall arch te ge ge' x f prog
            (DUP : NoDup (map ident_of_globdef (DefFun x f :: prog)))
            (WF : wf_env ge (DefFun x f :: prog))
-           (EVAL : eval_def_fun arch tabs te ge x f = OK ge'),
+           (EVAL : eval_def_fun arch tabs te ge x f = Some ge'),
       wf_env ge' prog.
   Proof.
     unfold eval_def_fun. unfold Denot.eval_def_fun.
@@ -1778,7 +1800,7 @@ Section S.
     destruct (MapList.nodup Ident.eq_dec (Syntax.fn_params f)); try discriminate.
     destruct (Typing.btyp_to_typ te (Syntax.fn_return f)); try discriminate.
     simpl in EVAL.
-    destruct (@MapList.map_err Syntax.ident btyp typ (Typing.btyp_to_typ te) (Syntax.fn_params f)); try discriminate.
+    destruct (map_err (Typing.btyp_to_typ te) (Syntax.fn_params f)); try discriminate.
     simpl in EVAL.
     unfold genv_update in EVAL.
     destruct (genv_get tabs ge x) eqn:GET; try discriminate.
@@ -1788,7 +1810,7 @@ Section S.
 
   Lemma generate_obligations_incl :
     forall arch ge0 prog te checked props ol vc
-           (GEN : generate_obligations arch  te ge0 checked vc prog props = OK ol),
+           (GEN : generate_obligations arch  te ge0 checked vc prog props = Some ol),
     forall x, In x vc -> In x ol.
   Proof.
     induction prog.
@@ -1868,23 +1890,20 @@ Section S.
   Qed.
 
 
-
-
-
-
   Lemma generate_obligations_sound :
     forall arch prog te checked props ol vc ge0
            (ND : NoDup (map ident_of_globdef prog))
-           (GEN : generate_obligations arch te ge0 checked vc prog props = OK ol)
+           (GEN : generate_obligations arch te ge0 checked vc prog props = Some ol)
            (OBL : Forall (fun p => p) ol)
     ,
     forall ge,
       wf_env ge prog ->
       Forall (has_property tabs ge) checked ->
-      exists ge', eval_prog_rec tabs (eval_expr arch tabs) te ge0 ge prog = OK ge' /\
+      exists ge', eval_prog_rec arch tabs te ge0 ge prog = Some ge' /\
                         Forall (has_property tabs ge') props.
   Proof.
     unfold eval_prog_rec.
+    unfold Denot.eval_prog_rec.
     induction prog.
     - simpl.
       intros. destruct props ; try discriminate.
@@ -1911,7 +1930,7 @@ Section S.
           apply OBL;auto.
           simpl. tauto.
         }
-        rewrite EF. simpl.
+        setoid_rewrite EF. simpl.
         apply IHprog with (ge0:=ge0)(ge:=ge') in GEN; auto.
         destruct GEN as (ge2 & EQ & ALL).
         eexists ; split. eauto.
@@ -1978,7 +1997,7 @@ Section S.
           apply OBL;auto.
           simpl. tauto.
         }
-        rewrite EF. simpl.
+        setoid_rewrite EF. simpl.
         apply IHprog with (ge0:=ge0)(ge:=ge') in GEN; auto.
         destruct GEN as (ge2 & EQ & ALL).
         eexists ; split; eauto.
@@ -2028,11 +2047,34 @@ Section S.
         eapply env_preserve_defs_has_property; eauto.
   Qed.
 
+  Lemma eval_prog_has_property : forall arch te ge0 gds props prog
+      (TE : Typing.tenv_of_type_defs (prog_types prog) = Some te)
+      (DEFS : prog_defs prog = gds),
+      (exists ge ,
+      eval_prog_rec arch tabs te ge0 STree.empty gds = Some ge /\
+      Forall (has_property tabs ge) props) ->
+  exists (te : Typing.tenv) (ge : genv tabs),
+    eval_prog arch tabs ge0 prog = Some (te, ge) /\
+    Forall (has_property tabs ge) props.
+  Proof.
+    intros.
+    destruct H as (ge & EVAL & ALL).
+    unfold eval_prog.
+    unfold Denot.eval_prog.
+    rewrite TE.
+    exists te, ge.
+    split; auto.
+    simpl.
+    unfold eval_prog_rec in EVAL.
+    rewrite DEFS. setoid_rewrite EVAL.
+    reflexivity.
+  Qed.
+
 (*
   Lemma eval_prog_rec_app : forall arch abs_types_impl p1 p2 te ge te1 ge1 te2 ge2,
-      eval_prog_rec arch abs_types_impl te ge p1 = OK (te1, ge1) ->
-      eval_prog_rec arch abs_types_impl te1 ge1 p2 = OK (te2, ge2) ->
-      eval_prog_rec arch abs_types_impl te ge (p1++p2)%list = OK (te2, ge2).
+      eval_prog_rec arch abs_types_impl te ge p1 = Some (te1, ge1) ->
+      eval_prog_rec arch abs_types_impl te1 ge1 p2 = Some (te2, ge2) ->
+      eval_prog_rec arch abs_types_impl te ge (p1++p2)%list = Some (te2, ge2).
   Proof.
     induction p1; simpl.
     - intros. inv H. auto.
@@ -2065,7 +2107,7 @@ Section S.
   Fixpoint partition_props (prog:program) (props : list propt) :=
     match prog with
     | nil => match props with
-             | nil => eret (nil,nil)
+             | nil => ret (nil,nil)
              |  _  => fail
              end
     | a :: prog' => match kind_of_globdef a with
@@ -2073,12 +2115,12 @@ Section S.
                     | KindDecl => match props with
                                   | nil => fail
                                   | p1::props' => let* (decl,defs) := partition_props prog' props' in
-                                                  eret (p1::decl,defs)
+                                                  ret (p1::decl,defs)
                                   end
                     | KindDef  => match props with
                                   | nil => fail
                                   | p1::props' => let* (decl,defs) := partition_props prog' props' in
-                                                  eret (decl,p1::defs)
+                                                  ret (decl,p1::defs)
                                   end
                     end
     end.

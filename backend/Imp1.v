@@ -1,6 +1,6 @@
 From Coq Require Import Bool List String PArith Lia.
 From compcert Require Import Integers Maps.
-From BarocqComp Require Import  Barocq Benum Barray Brecord Error Maps2 Utils Syntax Types Typing Pp Denot.
+From BarocqComp Require Import  Barocq Benum Barray Brecord OptionMonad Maps2 Utils Syntax Types Typing Pp Denot.
 From BarocqComp Require Printer.
 
 (** * Abstract syntax *)
@@ -57,14 +57,17 @@ Module Pp.
 End Pp.
 
 Section TRANSF.
+  Import Error.
+  Open Scope error_monad_scope.
+
   Variable trans_statement : statement -> res statement.
 
   Definition trans_function (f:function) :=
-    let* b := trans_statement (fn_body f) in
+    (let* b := trans_statement (fn_body f) in
     OK {| fn_return := fn_return f;
           fn_params := fn_params f;
           fn_body   := b
-      |}.
+      |})%error_monad.
 
   Definition trans_globdef (gd : globdef) : res globdef :=
     match gd with
@@ -83,7 +86,9 @@ Section TRANSF.
 
 End TRANSF.
 
+
 Module Typing.
+  Import Error.
 
   Import ListNotations.
 
@@ -106,7 +111,7 @@ Module Typing.
         ret (AVar x t)
     | Syntax.ACast a1 ty =>
         let* a1' := typecheck_atom be gx lx a1 in
-        let* t := typecheck_cast (Syntax.typof_atom a1') ty in
+        let* t := err_of_opt (typecheck_cast (Syntax.typof_atom a1') ty) in
         ret (ACast a1' t)
     | Syntax.AUnaryOp op a1 _ =>
         let* a1' := typecheck_atom be gx lx a1 in
@@ -202,7 +207,7 @@ Module Typing.
       (cases: list (Benum.pattern * statement)) : res (list (pattern * statement) * lcontext) :=
       match ty with
       | BEnum te =>
-          let* elems := TEnv.get_edef be te in
+          let* elems := err_of_opt (TEnv.get_edef be te) in
           typecheck_match_rec be gx lx ty tret elems elems cases
       | _ => failwith "Imp1.Typing.typecheck_match: enum type expected"
       end
@@ -289,7 +294,7 @@ Module Typing.
     typecheck_globdefs_rec be STree.empty defs.
 
   Definition typecheck_program (prog: program) : res program :=
-    let* be := TEnv.build (prog_types prog) in
+    let* be := err_of_opt (TEnv.build (prog_types prog)) in
     let* defs := typecheck_globdefs be (prog_defs prog) in
     ret {|
       prog_defs := defs;

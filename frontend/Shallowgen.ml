@@ -19,7 +19,7 @@ let rec mtyp_to_rocq (ty : mtyp) : string =
   | MBool -> "bool"
   | MInt32 _ -> "int"
   | MInt64 _ -> "int64"
-  | MArray ta -> sprintf "array %s" (opt_parens ta)
+  | MArray ta -> sprintf "list %s" (opt_parens ta)
   | MEnum te -> ident_to_string te
   | MRecord tr -> ident_to_string tr
   | MAbs t -> ident_to_string t
@@ -31,7 +31,7 @@ let rec mtyp_to_rocq (ty : mtyp) : string =
             (fun t acc -> sprintf "%s -> %s" (opt_parens t) acc)
             tparams
             (opt_parens tret))
-  | MRes ty' -> sprintf "res %s" (opt_parens ty')
+  | MRes ty' -> sprintf "option %s" (opt_parens ty')
 
 and opt_parens (ty : mtyp) : string =
   PrintUtils.opt_parens is_simpl_mtyp mtyp_to_rocq ty
@@ -282,7 +282,7 @@ let rec atom_to_rocq (a : atom) : string =
             (atom_to_rocq a2)
       | BarocqShallowgen.ShallowB ->
           sprintf
-            "Brecord.upd %s %s _ %s eq_refl"
+            "%s <- %s := %s" (* Notation is using ltac in terms *)
             (opt_parens a1)
             (Deepgen.ident_to_deep x)
             (opt_parens a2)
@@ -611,7 +611,7 @@ module SR = struct
         "%slet ni := I32.to_nat i in\n\
          %sif Int.cmp Clt i Int.zero || Nat.leb %d%%nat ni then fail\n\
          %selse\n\
-         %slist_nth_err\n\
+         %snth_error\n\
          %s[\n\
          %s\n\
          %s]\n\
@@ -630,7 +630,7 @@ module SR = struct
         indent3
     in
     sprintf
-      "Definition cast_i32_to_%s (i: int) : res %s :=\n%s."
+      "Definition cast_i32_to_%s (i: int) : option %s :=\n%s."
       eid
       eid
       cast_body
@@ -639,10 +639,10 @@ module SR = struct
     "From Coq Require Import Bool List BinIntDef.\n\
      From compcert Require Import Integers.\n\
      From RecordUpdate Require Import RecordUpdate.\n\
-     From BarocqComp Require Import Error Barray Intop Utils.\n\
+     From BarocqComp Require Import OptionMonad Barray Intop Utils.\n\
      Import BoolNotations ListNotations.\n\n\
      Open Scope Z_scope.\n\
-     Open Scope error_monad_scope.\n"
+     Open Scope option_monad_scope.\n"
 
   let print_program (out : out_channel) (prog : program) : unit =
     shver := BarocqShallowgen.ShallowR;
@@ -836,12 +836,12 @@ module SB = struct
       "From Coq Require Import Bool List BinIntDef String.\n\
        From compcert Require Import Integers.\n\
        From RecordUpdate Require Import RecordUpdate.\n\
-       From BarocqComp Require Import Ident Error Barray Benum Brecord Intop.\n\
+       From BarocqComp Require Import Ident OptionMonad Barray Benum Brecord Intop.\n\
        From %s Require Import %s_Types.\n\
        Import BoolNotations ListNotations.\n\n\
        Open Scope Z_scope.\n\
        Open Scope string_scope.\n\
-       Open Scope error_monad_scope.\n"
+       Open Scope option_monad_scope.\n"
       !coqlib
       !coqlib
 

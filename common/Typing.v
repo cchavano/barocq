@@ -1,6 +1,8 @@
 From Coq Require Import List String ZArith Bool.
 From BarocqComp Require Import Error Maps2 Utils Types Syntax Barray Benum.
+From BarocqComp Require Import OptionMonad.
 Import ListNotations.
+Open Scope option_monad_scope.
 
 (** * Environments of types *)
 
@@ -24,22 +26,22 @@ Module TEnv.
     tenv_constr_types := STree.empty
   |}.
 
-  Definition get_edef (te: t) (x: ident) : res (list ident) :=
+  Definition get_edef (te: t) (x: ident) : option (list ident) :=
     match STree.get x (tenv_defs te) with
     | Some (TdEnum elems) => ret elems
     | _ => fail
     end.
 
-  Definition get_rdef (te: t) (x: ident) : res (smaplist typ) :=
+  Definition get_rdef (te: t) (x: ident) : option (smaplist typ) :=
     match STree.get x (tenv_defs te) with
     | Some (TdRecord fields) => ret fields
     | _ => fail
     end.
 
-  Definition get_constr_typ (te: t) (x: ident) : res ident :=
-    err_of_opt (STree.get x (tenv_constr_types te)).
+  Definition get_constr_typ (te: t) (x: ident) : option ident :=
+    STree.get x (tenv_constr_types te).
 
-  Definition update_constr_types (te: t) (elem: ident) (eid: ident) : res t :=
+  Definition update_constr_types (te: t) (elem: ident) (eid: ident) : option t :=
     let elems := (tenv_constr_types te) in
     match STree.get elem elems with
     | Some _ => fail
@@ -50,7 +52,8 @@ Module TEnv.
         |}
   end.
 
-  Definition update_defs (te: t) (x: ident) (td: type_def typ) : res t :=
+
+  Definition update_defs (te: t) (x: ident) (td: type_def typ) : option t :=
     let types := tenv_defs te in
     match STree.get x types with
     | Some _ => fail
@@ -58,7 +61,7 @@ Module TEnv.
         let te' := mk_tenv (STree.set x td types) (tenv_constr_types te) in
         match td with
         | TdEnum elems =>
-            list_fold_left_err
+            fold_left_err
               (fun acc_te constr => update_constr_types acc_te constr x)
               elems
               te'
@@ -66,8 +69,8 @@ Module TEnv.
         end
     end.
 
-  Definition build (types: smaplist (type_def typ)) : res t :=
-    Utils.list_fold_left_err
+  Definition build (types: smaplist (type_def typ)) : option t :=
+    fold_left_err
       (fun acc_be '(tid, td) => update_defs acc_be tid td)
       types
       empty.
@@ -84,7 +87,7 @@ Definition tenv := TEnv.t typ.
 
 (** ** Conversion of concrete types to plain types *)
 
-Fixpoint btyp_to_typ (te: tenv) (ty: btyp) : res typ :=
+Fixpoint btyp_to_typ (te: tenv) (ty: btyp) : option typ :=
   match ty with
   | BBool => ret TBool
   | BInt32 s => ret (TInt32 s)
@@ -105,23 +108,23 @@ Fixpoint btyp_to_typ (te: tenv) (ty: btyp) : res typ :=
   | BAbs t => ret (TAbs t)
   end.
 
-Definition tenv_update_type_def (te:tenv) (tid: ident) (t : type_def field_descr) : res tenv :=
+Definition tenv_update_type_def (te:tenv) (tid: ident) (t : type_def field_descr) : option tenv :=
   match t with
   | TdEnum elems =>
       TEnv.update_defs te tid (TdEnum elems)
   | TdRecord fields =>
-      let* fields' := MapList.map_err (btyp_to_typ te) (MapList.map fst fields) in
+      let* fields' := mmap_assoc (btyp_to_typ te) (MapList.map fst fields) in
       TEnv.update_defs te tid (TdRecord fields')
   end.
 
-Fixpoint xtenv_of_type_defs (te:tenv) (tds: smaplist (type_def field_descr)) : res tenv :=
+Fixpoint xtenv_of_type_defs (te:tenv) (tds: smaplist (type_def field_descr)) : option tenv :=
   match tds with
-  | nil => OK te
+  | nil => Some te
   | (tid, t)::tds => let* te' := tenv_update_type_def te tid t in
               xtenv_of_type_defs te' tds
   end.
 
-Definition tenv_of_type_defs (tds: smaplist (type_def field_descr)) : res tenv :=
+Definition tenv_of_type_defs (tds: smaplist (type_def field_descr)) : option tenv :=
   xtenv_of_type_defs TEnv.empty tds.
 
 Definition gcontext : Type := STree.t btyp.
@@ -130,34 +133,34 @@ Definition lcontext : Type := STree.t btyp.
 
 Definition gcontext_get (gx: gcontext) (x: ident) : res btyp :=
   match STree.get x gx with
-  | Some t => ret t
+  | Some t => OK t
   | None => failwith "Typing.gcontext_get: unknown identifier"
   end.
 
 Definition gcontext_update (gx: gcontext) (x: ident) (ty: btyp) : res gcontext :=
   match gcontext_get gx x with
   | OK _ => failwith "Typing.gcontext_update: global symbol already defined"
-  | Error _ => ret (STree.set x ty gx)
+  | Error _ => OK (STree.set x ty gx)
   end.
 
 Definition lcontext_get (lx: lcontext) (x: ident) : res btyp :=
   match STree.get x lx with
-  | Some t => ret t
+  | Some t => OK t
   | None => failwith "Typing.lcontext_get: unknown identifier"
   end.
 
 Definition lcontext_update (lx: lcontext) (x: ident) (ty: btyp) : res lcontext :=
   match lcontext_get lx x with
   | OK t =>
-      if btyp_eq_dec ty t then ret (STree.set x ty lx)
+      if btyp_eq_dec ty t then OK (STree.set x ty lx)
       else
         failwith "Typing.lcontext_update: variable shadowing with a different type"
-  | Error _ => ret (STree.set x ty lx)
+  | Error _ => OK (STree.set x ty lx)
   end.
 
 Definition typof_constr (be: benv) (c: ident) : res btyp :=
-  match TEnv.get_constr_typ be c with
-  | OK eid => ret (BEnum eid)
+  match err_of_opt (TEnv.get_constr_typ be c) with
+  | OK eid => OK (BEnum eid)
   | Error _ => failwith "Typing.typof_constr: undefined enum constructor"
   end.
 
@@ -177,7 +180,7 @@ Definition typof_var (gx: gcontext) (lx: lcontext) (x: ident) : res btyp :=
       end
   end.
 
-Definition typecheck_cast (from: btyp) (to: btyp) : res btyp :=
+Definition typecheck_cast (from: btyp) (to: btyp) : option btyp :=
   match from with
   | BBool | BInt32 _ | BInt64 _ =>
       match to with
@@ -200,7 +203,7 @@ Definition typecheck_unary_op (op: unary_op) (ty: btyp) : res btyp :=
   | UopNeg, BInt32 _
   | UopNeg, BInt64 _
   | UopPlus, BInt32 _
-  | UopPlus, BInt64 _ => ret ty
+  | UopPlus, BInt64 _ => OK ty
   | _, _ => failwith "Typing.typecheck_unary_op: type mismatch"
   end.
 
@@ -210,19 +213,19 @@ Definition typecheck_binary_op (op: binary_op) (ty1 ty2: btyp) : res btyp :=
   | BopOrbool
   | BopXorbool =>
       match ty1, ty2 with
-      | BBool, BBool => ret ty1
+      | BBool, BBool => OK ty1
       | _, _ => failwith "Typing.typecheck_binary_op: type mismatch"
       end
   | BopEq
   | BopNeq =>
       match ty1, ty2 with
-      | BBool, BBool => ret ty1
+      | BBool, BBool => OK ty1
       | BInt32 s1, BInt32 s2
       | BInt64 s1, BInt64 s2 =>
-          if signedness_eq_dec s1 s2 then ret BBool
+          if signedness_eq_dec s1 s2 then OK BBool
           else failwith "Typing.typecheck_binary_op: integer signedness mismatch"
       | BEnum t1, BEnum t2 =>
-          if Ident.eq_dec t1 t2 then ret BBool
+          if Ident.eq_dec t1 t2 then OK BBool
           else failwith "Typing.typecheck_binary_op: type mismach"
       | _, _ =>
           failwith "Typing.typecheck_binary_op: type mismatch"
@@ -234,7 +237,7 @@ Definition typecheck_binary_op (op: binary_op) (ty1 ty2: btyp) : res btyp :=
       match ty1, ty2 with
       | BInt32 s1, BInt32 s2
       | BInt64 s1, BInt64 s2 =>
-          if signedness_eq_dec s1 s2 then ret BBool
+          if signedness_eq_dec s1 s2 then OK BBool
           else failwith "Typing.typecheck_binary_op: integer signedness mismatch"
       | _, _ =>
         failwith "Typing.typecheck_binary_op: type mismatch"
@@ -243,7 +246,7 @@ Definition typecheck_binary_op (op: binary_op) (ty1 ty2: btyp) : res btyp :=
       match ty1, ty2 with
       | BInt32 s1, BInt32 s2
       | BInt64 s1, BInt64 s2 =>
-          if signedness_eq_dec s1 s2 then ret ty1
+          if signedness_eq_dec s1 s2 then OK ty1
           else failwith "Typing.typecheck_binary_op: integer signedness mismatch"
       | _, _ =>
         failwith "Typing.typecheck_binary_op: type mismatch"
@@ -253,7 +256,7 @@ Definition typecheck_binary_op (op: binary_op) (ty1 ty2: btyp) : res btyp :=
 Definition typecheck_array_get (arch: Target.archi) (ty1 ty2: btyp) : res btyp :=    
   match ty1 with
   | BArray ta _ =>
-      if btyp_eq_dec ty2 (arr_index_btyp arch) then ret ta
+      if btyp_eq_dec ty2 (arr_index_btyp arch) then OK ta
       else failwith "Typing.typecheck_array_get: array index type mismatch"
   | _ => failwith "Typing.typecheck_array_get: array typed expected"
   end.
@@ -261,7 +264,7 @@ Definition typecheck_array_get (arch: Target.archi) (ty1 ty2: btyp) : res btyp :
 Definition typecheck_array_get2 (arch: Target.archi) (ty1 ty2: btyp) : res field_descr :=    
   match ty1 with
   | BArray ta ly =>
-      if btyp_eq_dec ty2 (arr_index_btyp arch) then ret (ta, ly)
+      if btyp_eq_dec ty2 (arr_index_btyp arch) then OK (ta, ly)
       else failwith "Typing.typecheck_array_get2: array index type mismatch"
   | _ => failwith "Typing.typecheck_array_get2: array type expected"
   end.
@@ -270,7 +273,7 @@ Definition typecheck_array_set (arch: Target.archi) (ty1 ty2 ty3: btyp) : res bt
   match ty1 with
   | BArray ta _ =>
       if btyp_eq_dec ty2 (arr_index_btyp arch) then
-        if btyp_eq_dec ta ty3 then ret ty1
+        if btyp_eq_dec ta ty3 then OK ty1
         else failwith "Typing.typecheck_array_set: type mismatch"
       else failwith "Typing.typecheck_array_set: array index type mismatch"
   | _ => failwith "Typing.typecheck_array_set: array type expected"
@@ -279,30 +282,32 @@ Definition typecheck_array_set (arch: Target.archi) (ty1 ty2 ty3: btyp) : res bt
 Definition typecheck_record_proj (be: benv) (ty: btyp) (x: ident) : res btyp :=
   match ty with
   | BRecord t _ =>
-      let/c fields := TEnv.get_rdef be t
+      let/c fields := err_of_opt (TEnv.get_rdef be t)
          /> "Typing.typecheck_record_proj: unknown record type"
       in
-      btypof_field x (MapList.map fst fields)
+      err_of_opt (btypof_field x (MapList.map fst fields))
   | _ => failwith "Typing.typecheck_record_proj: record type expected"
   end.
 
 Definition typecheck_record_proj2 (be: benv) (ty: btyp) (x: ident) : res field_descr :=
   match ty with
   | BRecord t _ =>
-      let/c fields := TEnv.get_rdef be t
+      let/c fields := err_of_opt (TEnv.get_rdef be t)
         /> "Typing.typecheck_record_proj: unknown record type"
       in
       MapList.find_err Ident.eq_dec x fields
   | _ => failwith "Typing.typecheck_record_proj: record type expected"
   end.
 
+Import Error.
+
 Definition typecheck_record_update (be: benv) (ty1 ty2: btyp) (x: ident) : res btyp :=
   match ty1 with
   | BRecord t _ =>
-      let/c fields := TEnv.get_rdef be t
+      let/c fields := err_of_opt (TEnv.get_rdef be t)
         /> "Typing.typecheck_record_proj: unknown record type"
       in
-      let* tx := btypof_field x (MapList.map fst fields) in
+      let* tx := err_of_opt (btypof_field x (MapList.map fst fields)) in
       if btyp_eq_dec tx ty2 then ret ty1
       else failwith "Typing.typecheck_record_update: type mismatch"
   | _ => failwith "Typing.typecheck_record_update: record type expected"
@@ -379,7 +384,7 @@ Fixpoint typecheck_literal (be: benv) (l: Syntax.literal) : res literal :=
       else fail
   | Syntax.LRecord rc ub x =>
       let* rc' := MapList.map_err (typecheck_literal be) rc in
-      let* t := TEnv.get_rdef be x in
+      let* t := err_of_opt (TEnv.get_rdef be x) in
       if typecheck_struct_lit rc' (MapList.map fst t) then ret (LRecord rc' ub x)
       else failwith "Typing.typecheck_literal: record type mismatch"
   end.
@@ -395,7 +400,7 @@ Fixpoint zval_of_constr_rec (elems: list ident) (i: Z) (constr: ident) : res Z :
 Definition zval_of_constr (be: benv) (tc: btyp) (constr: ident) : res Z :=
   match tc with
   | BEnum eid =>
-      let* elems := TEnv.get_edef be eid in
+      let* elems := err_of_opt (TEnv.get_edef be eid) in
       zval_of_constr_rec elems Z0 constr
   | _ => fail
   end.
@@ -438,7 +443,7 @@ Fixpoint typecheck_match_rec (be: benv) (te: btyp) (elems: list ident) (unmatche
 Definition typecheck_match (be: benv) (ty: btyp) (cases: list (pattern * btyp)) : res btyp :=
   match ty with
   | BEnum te =>
-      let* elems := TEnv.get_edef be te in
+      let* elems := err_of_opt (TEnv.get_edef be te) in
       typecheck_match_rec be ty elems elems cases
   | _ => failwith "Typing.typecheck_match: enum type expected"
   end.

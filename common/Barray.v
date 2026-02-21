@@ -1,7 +1,7 @@
-Set Universe Polymorphism.
 From Coq Require Import List ZArith.
 From compcert Require Import Integers.
-From BarocqComp Require Import Intop Error Utils.
+From BarocqComp Require Import Intop Utils OptionMonad.
+Open Scope option_monad_scope.
 
 Import ListNotations.
 
@@ -19,8 +19,8 @@ Section ARRAYS.
     Int64.cmpu Cle Int64.zero i &&
     ((U64.to_nat i) <? (length a))%nat.
 
-  Definition get (a: array A) (i: int64) : res A :=
-    if valid_index a i then err_of_opt (nth_error a (U64.to_nat i))
+  Definition get (a: array A) (i: int64) : option A :=
+    if valid_index a i then nth_error a (U64.to_nat i)
     else fail.
   
   Fixpoint set_rec (l: list A) (n: nat) (x: A) {struct n} : list A :=
@@ -30,7 +30,7 @@ Section ARRAYS.
     | _ , _ => nil
     end.
 
-  Definition set (a: array A) (i: int64) (x: A) : res (array A) :=
+  Definition set (a: array A) (i: int64) (x: A) : option ((array A):Type) :=
     if valid_index a i then ret (set_rec a (U64.to_nat i) x)
     else fail.
 
@@ -67,7 +67,7 @@ Section Specs.
   Proof.
     intros. unfold get. rewrite map_preserve_valid_index.
     destruct (valid_index a i); try reflexivity.
-    apply Utils.list_nth_err_map_same.
+    apply Utils.nth_error_map_same.
   Qed.
 
   Lemma set_rec_map_same :

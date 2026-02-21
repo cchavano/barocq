@@ -2,7 +2,7 @@ From Coq Require Import String List.
 From BarocqComp Require Import Error Utils Ident Pp Barocq Imp1.
 From BarocqComp Require Import Renaming BarocqBNFgen ImpBNFgen Imp1gen Unboxing Imp2gen GlobRewrite Csyntaxgen.
 From BarocqComp Require Import Imp1ElimAlias InvAnalysis.
-
+From BarocqComp Require Import BarocqBNFUndo. (* force dependency *)
 Inductive ir_name :=
 | Ir_Barocq
 | Ir_BBNF

@@ -303,7 +303,7 @@ module EnumConv = struct
        %sforall (i: int),\n\
        %sBenum.of_i32 elems_of_%s i =\n\
        %slet* e := %s.cast_i32_to_%s i in\n\
-       %sOK (econv_%s_RtoB e).\n\
+       %sSome (econv_%s_RtoB e).\n\
        Proof.\n\
        %s\n\
        Qed."
@@ -378,7 +378,7 @@ module EnumConv = struct
           let cid = ident_to_string constr in
           sprintf
             "Lemma constr_%s_make_ok :\n\
-             %sBenum.make_enum elems_of_%s %s = OK %s.\n\
+             %sBenum.make_enum elems_of_%s %s = Some %s.\n\
              Proof.\n\
              %sreflexivity.\n\
              Qed."
@@ -723,10 +723,8 @@ module RecordConv = struct
       sprintf
         "Proof.\n\
          %sBrecord.apply_decomp_field.\n\
-         %sunfold rconv_Types_proc_t_BtoR.\n\
-         %sintros. compute. subst. repeat esplit.\n\
+         %scompute. intros. subst. repeat esplit.\n\
          Qed."
-        indent
         indent
         indent
     in
@@ -866,11 +864,12 @@ let imports () : string =
     "From Coq Require Import List String BinIntDef.\n\
      From compcert Require Import Integers.\n\
      From RecordUpdate Require Import RecordUpdate.\n\
-     From BarocqComp Require Import Ident Error Barray Benum Brecord Utils.\n\
+     From BarocqComp Require Import Ident OptionMonad Barray Benum Brecord Utils.\n\
      From %s Require Import %s.\n\
      Import ListNotations.\n\n\
      Open Scope Z_scope.\n\
-     Open Scope string_scope.\n"
+     Open Scope string_scope.\n\
+     Open Scope option_monad_scope.\n"
     !coqlib
     !shallowR_file
 

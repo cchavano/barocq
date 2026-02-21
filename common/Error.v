@@ -13,5 +13,5 @@ Ltac monadInv H :=
       let FEQ := fresh "FEQ" in
       destruct F eqn:FEQ; try discriminate;
       inversion H; clear H; subst
-  | _ => Errors.monadInv H
+  | _ => Res.monadInv H
   end.

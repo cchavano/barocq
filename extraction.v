@@ -5,7 +5,7 @@ From Coq Require Import ExtrOCamlInt63.
 From Coq Require BinInt BinPos.
 From compcert Require Integers Floats Machregs Archi AST Memdata Csyntax Initializers.
 From compcert Require Import Ctyping Ctypes Clight Ctypesdefs Values Cabs Parser.
-From BarocqComp Require Imp1 Imp1gen Barocq Compiler BarocqShallowgen BarocqVC.
+From BarocqComp Require Imp1 Imp1gen Barocq BarocqBNFUndo Compiler BarocqShallowgen BarocqVC Res.
 
 (* Extraction language *)
 Extraction Language OCaml.
@@ -15,7 +15,7 @@ Extract Inlined Constant Datatypes.fst => "fst".
 Extract Inlined Constant Datatypes.snd => "snd".
 
 (* Errors *)
-Extraction Inline Errors.bind Errors.bind2.
+Extraction Inline Res.bind Res.bind2.
 
 Load extractionMachdep.
 
@@ -77,6 +77,7 @@ Separate Extraction
   Barocq.interpret
   Barocq.iprog_to_prog
   Barocq.eval_def
+  BarocqBNFUndo.decompile_program
   Compiler.aliascheck_program
   Compiler.compile_to_imp1
   Compiler.compile Compiler.ir_name

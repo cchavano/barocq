@@ -1,7 +1,8 @@
 From Coq Require Import List.
 From compcert Require Import Maps.
-From BarocqComp Require Import Maps2 Types Syntax Benum Error Typing Denot.
+From BarocqComp Require Import Maps2 Types Syntax Benum OptionMonad Typing Denot.
 From BarocqComp Require Pp Printer.
+Open Scope option_monad_scope.
 
   (** * Abstract syntax *)
 
@@ -35,6 +36,11 @@ Definition function : Type := Syntax.function expr btyp.
 (** ** Global definitions *)
 
 Definition globdef : Type := Syntax.globdef expr btyp literal.
+
+Definition prog_types_t := smaplist (type_def (btyp * layout)).
+
+Definition prog_tabs_t := smaplist struct_or_union.
+
 
 (** ** Programs *)
 
@@ -111,7 +117,7 @@ Module Pp.
                              (Bcat (Bstr "if ") (Printer.pp_atom c))
                              (Bstack (Bcat (Bstr "then ") (pp_expr t))
                                      (Bcat (Bstr "else ") (pp_expr e)) Left) Left
-    | ELetIn id e1 e2 _ => Bcat (Bstr "let") (Bstack (Pp.seq (Bstr id :: Bstr " := " :: pp_expr e1 :: Bstr " in " :: nil))
+    | ELetIn id e1 e2 _ => Bcat (Bstr "let ") (Bstack (Pp.seq (Bstr id :: Bstr " := " :: pp_expr e1 :: Bstr " in " :: nil))
                                               (pp_expr e2) Left)
     | EAttr id e => Pp.seq (Bstr "#[ " :: Bstr id :: Bstr " ]"  :: pp_expr e :: nil)
     end.
@@ -139,10 +145,12 @@ Section DENOT.
 
   Notation eval_atom := (@Denot.eval_atom arch tabs).
 
-  Definition typof_expr (te:tenv) (e:expr) : res typ :=
+  Definition typof_expr (te:tenv) (e:expr) : option typ :=
     btyp_to_typ te (btypof_expr e).
 
-  Fixpoint eval_expr_rec (te: tenv) (ge: genv) (le: lenv) (ty:typ) (e: expr) : res (eval_typ ty) :=
+
+
+  Fixpoint eval_expr_rec (te: tenv) (ge: genv) (le: lenv) (ty:typ) (e: expr) : option (eval_typ ty) :=
     match e with
     | EAtom a =>
         let* ta := typof_atom te a in
@@ -170,7 +178,7 @@ Section DENOT.
         | TFun tparams tret =>
             let* f := eval_atom te ge le  (TFun tparams tret) f in
             let* vargs := DList.map2 _ (eval_atom te ge le) args tparams in
-            ecast_typ tabs (eval_app_res tabs tparams tret f vargs tr) ty
+            ecast_typ tabs (eval_app_option tabs tparams tret f vargs tr) ty
             (*let* vargs := DList.mmap _ (eval_atom te ge le) args tparams in
             eval_app tabs tparams tret f vargs ty *)
         |  _  => fail
@@ -192,13 +200,16 @@ Section DENOT.
     | EAttr _ e1 => eval_expr_rec te ge le ty e1
     end.
 
-  Definition eval_expr (te: tenv) (ge: genv) (le: lenv) (ty:typ) (e: expr) : res (eval_typ ty) :=
-    ignore_err (eval_expr_rec te ge le ty e).
+  Definition eval_expr (te: tenv) (ge: genv) (le: lenv) (ty:typ) (e: expr) : option (eval_typ ty) :=
+    (eval_expr_rec te ge le ty e).
+
+  Definition eval_fun (te: tenv) (ge:genv) (params : smaplist typ) (tret:typ) (e:expr): Types.eval_typ tabs (TFun (map (fun x : String.string * typ => snd x) params) tret) := eval_fun tabs eval_expr te ge params tret e.
+
 
   Definition eval_def_fun := eval_def_fun tabs eval_expr.
 
 
-  Fixpoint eval_def_rec (te: tenv) (ge: genv) (defs: list globdef) (x: ident) : res value :=
+  Fixpoint eval_def_rec (te: tenv) (ge: genv) (defs: list globdef) (x: ident) : option value :=
     match defs with
     | nil => fail
     | d :: defs' =>
@@ -220,24 +231,28 @@ Section DENOT.
 
 
 
-  Definition eval_value_err_typ (rv: res value) : Type :=
+  Definition eval_value_err_typ (rv: option value) : Type :=
     match rv with
-    | OK (Val _ tv _) => eval_typ tv
-    | Error _ => unit
+    | Some (Val _ tv _) => eval_typ tv
+    | None => unit
     end.
 
-  Definition eval_def (impl: genv) (prog: program) (x: ident) : res value :=
+  Definition eval_def (impl: genv) (prog: program) (x: ident) : option value :=
     let* te := tenv_of_type_defs (prog_types prog) in
     eval_def_rec te impl (prog_defs prog) x.
 
   (** Evaluation of a whole program *)
 
-  Definition eval_prog (impl: genv) (prog: program) : res (tenv * genv) :=
+  Definition eval_prog (impl: genv) (prog: program) : option (tenv * genv) :=
     Denot.eval_prog tabs  eval_expr impl prog.
+
+  Definition eval_prog_rec (te:tenv) (impl: genv) (ge:genv) (prog: list globdef) : option genv :=
+    Denot.eval_prog_rec tabs  eval_expr te impl ge prog.
+
 
   (** Redefinition of eval_def by computing the whole global environment first *)
 
-  Definition eval_def2 (impl: genv) (prog: program) (x: ident) : res value :=
+  Definition eval_def2 (impl: genv) (prog: program) (x: ident) : option value :=
     let* (_, ge) := eval_prog impl prog in
     genv_get tabs ge x.
 

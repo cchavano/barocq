@@ -1,6 +1,8 @@
 From Coq Require Import List Bool BinNums.
 From compcert Require Import Integers.
-From BarocqComp Require Import Ident Intop Error Utils.
+From BarocqComp Require Import Ident Intop Utils.
+From BarocqComp Require Import OptionMonad.
+Open Scope option_monad_scope.
 
 Import ListNotations.
 
@@ -38,8 +40,9 @@ Definition enum_eq {elems: list ident} (x y: enum elems) :=
 Definition enum_neq {elems: list ident} (x y: enum elems) :=
  negb (enum_eq x y).
 
-Fixpoint make_enum (elems: list ident) (i: ident) : res (enum elems) :=
-  match elems as l0 return (res (enum l0)) with
+
+Fixpoint make_enum (elems: list ident) (i: ident) : option (enum elems) :=
+  match elems as l0 return (option (enum l0)) with
   | [] => fail
   | s0 :: l0 =>
       if Ident.eq_dec i s0
@@ -49,23 +52,20 @@ Fixpoint make_enum (elems: list ident) (i: ident) : res (enum elems) :=
          | s3 :: l2 => inl (Constr s0)
          end
       else
-        match make_enum l0 i with
-        | OK e =>
-            ret
-              (match l0 as l2 return (enum l2 -> enum (s0 :: l2)) with
-               | [] => fun e1 : enum [] => False_rect (enum [s0]) e1
-               | s3 :: l2 => fun e1 : enum (s3 :: l2) => inr e1
-               end e)
-       | Error e => Error e
-       end
+        let* e :=  make_enum l0 i in
+        ret
+          (match l0 as l2 return (enum l2 -> enum (s0 :: l2)) with
+           | [] => fun e1 : enum [] => False_rect (enum [s0]) e1
+           | s3 :: l2 => fun e1 : enum (s3 :: l2) => inr e1
+           end e)
   end.
 
-Fixpoint mk_enum (elems:list ident) (s:ident) : forall (H : existsb  (String.eqb s) elems = true), enum elems.
+Fixpoint mk_enum (elems:list ident) (s:ident) : forall (H : existsb  (Ident.eqb s) elems = true), enum elems.
 Proof.
   destruct elems; intro EX.
   + simpl in EX. discriminate.
   + simpl in EX.
-    destruct (String.eqb s i).
+    destruct (Ident.eqb s i).
     { destruct elems.
       apply (Constr i).
       apply (inl (Constr i)). }
@@ -78,7 +78,7 @@ Proof.
 Defined.
 
 Lemma make_enum_mk_enum : forall elems s e,
-    make_enum elems s = OK e -> exists H, mk_enum elems s H = e.
+    make_enum elems s = Some e -> exists H, mk_enum elems s H = e.
 Proof.
   induction elems.
   - simpl. discriminate.
@@ -92,12 +92,12 @@ Proof.
     + destruct (make_enum elems s) eqn:REC; try discriminate.
       inversion H ; subst; clear H.
       destruct (IHelems  _ _ REC).
-      assert (EX : String.eqb s a
-         || existsb (String.eqb s) elems = true).
+      assert (EX : Ident.eqb s a
+         || existsb (Ident.eqb s) elems = true).
       { rewrite orb_comm.
         rewrite x. reflexivity.
       }
-      destruct (String.eqb s a) eqn:EQB.
+      destruct (Ident.eqb s a) eqn:EQB.
       *  apply String.eqb_eq in EQB.
          congruence.
       *  destruct elems.
@@ -107,7 +107,7 @@ Proof.
 Qed.
 
 Lemma mk_enum_make_enum : forall elems s  H,
-    make_enum elems s = OK (mk_enum elems s H).
+    make_enum elems s = Some (mk_enum elems s H).
 Proof.
   induction elems.
   - simpl. discriminate.
@@ -115,13 +115,14 @@ Proof.
     destruct (eq_dec s a).
     + simpl.
       subst.
-      destruct (String.eqb a a) eqn:E.
+      destruct (Ident.eqb a a) eqn:E.
       * destruct elems.
       reflexivity.
       reflexivity.
       * exfalso.
+        unfold eqb in E.
         generalize (String.eqb_refl a); congruence.
-    + destruct (String.eqb s a) eqn:E.
+    + destruct (Ident.eqb s a) eqn:E.
       simpl in H.
       destruct H.
       rewrite String.eqb_eq in E. congruence.
@@ -153,11 +154,11 @@ Definition to_i32 {elems: list ident} (e: enum elems) : int :=
   in
   aux elems Int.zero.
 
-Definition of_i32 (elems: list ident) (i: int) : res (enum elems) :=
+Definition of_i32 (elems: list ident) (i: int) : option (enum elems) :=
   if Int.cmp Clt i Int.zero
      || Nat.leb (List.length elems) (I32.to_nat i) then fail
   else
-    let* ei := list_nth_err elems (I32.to_nat i) in
+    let* ei := nth_error elems (I32.to_nat i) in
     make_enum elems ei.
 
 Inductive pattern : Type := 
@@ -212,7 +213,7 @@ Proof.
     + reflexivity.
 Qed. *)
   
-Fixpoint match_with_err {elems: list ident} {A: Type} (e: enum elems) (cases: list (pattern * res A)) : res A :=
+Fixpoint match_with_err {elems: list ident} {A: Type} (e: enum elems) (cases: list (pattern * option A)) : option A :=
   match cases with
   | nil => fail
   | (pi, ai) :: cases' =>
@@ -225,8 +226,8 @@ Fixpoint match_with_err {elems: list ident} {A: Type} (e: enum elems) (cases: li
       end
   end.
 
-Fixpoint match_with_err2 {elems: list ident} {A E: Type} (e: enum elems) (cases: list (pattern * res A))
-  (E_eq_dec: forall (x y: E), {x = y} + {x <> y}) (f: enum elems -> E) : res A :=
+Fixpoint match_with_err2 {elems: list ident} {A E: Type} (e: enum elems) (cases: list (pattern * option A))
+  (E_eq_dec: forall (x y: E), {x = y} + {x <> y}) (f: enum elems -> E) : option A :=
   match cases with
   | nil => fail
   | (pi, ai) :: cases' =>
@@ -240,7 +241,7 @@ Fixpoint match_with_err2 {elems: list ident} {A E: Type} (e: enum elems) (cases:
   end.
 
 Lemma match_with_err_eq_match_with_err2 :
-  forall (elems: list ident) (A E: Type) (e: enum elems) (cases: list (pattern * res A))
+  forall (elems: list ident) (A E: Type) (e: enum elems) (cases: list (pattern * option A))
   (E_eq_dec: forall (x y: E), {x = y} + {x <> y})
   (econv_to: enum elems -> E)
   (econv_from: E -> enum elems)
@@ -319,27 +320,26 @@ Qed.
 
 Definition cast_eqb {A: Type} (l:list ident) (F : A -> enum l) (l1:list ident)  (l2:list A) :=
   forall2b (fun x y => match make_enum l x with
-                       | Error _ => false
-                       | OK e    => enum_eq e (F y)
+                       | None => false
+                       | Some e    => enum_eq e (F y)
                        end) l1 l2.
 
 Lemma cast_eqb_sound : forall {A: Type} (l:list ident) (F: A -> enum l) (l': list A) (n:nat),
     cast_eqb l F l l' = true ->
-    (let* ei := Utils.list_nth_err l n
+    (let* ei := nth_error l n
      in make_enum l ei) =
-      (let* en := Utils.list_nth_err l' n in eret (F en)).
+      (let* en := nth_error l' n in Some (F en)).
 Proof.
   intros.
   assert (forall l1 l2,
              cast_eqb l F l1 l2 = true ->
-             (let* ei := list_nth_err l1 n in make_enum l ei) = (let* en := list_nth_err l2 n in eret (F en))).
+             (let* ei := nth_error l1 n in make_enum l ei) = (let* en := nth_error l2 n in Some (F en))).
   { clear H.
     unfold cast_eqb.
     set (G := (fun (x : ident) (y : A) => match make_enum l x with
-                                | OK e => enum_eq e (F y)
-                                | Error _ => false
+                                | Some e => enum_eq e (F y)
+                                | None => false
                                 end)).
-    unfold list_nth_err.
     intro l1; revert n.
     induction l1;destruct l2; try discriminate.
     - simpl. rewrite! nth_error_nil.
@@ -349,7 +349,7 @@ Proof.
       destruct (G a a0) eqn:EQG; try discriminate.
       destruct n; simpl.
       + unfold G in EQG. destruct (make_enum l a); try discriminate.
-        apply enum_eq_sound in EQG. unfold eret ; congruence.
+        apply enum_eq_sound in EQG. congruence.
       + apply (IHl1 n); auto.
   }
   apply H0;auto.

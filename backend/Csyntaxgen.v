@@ -450,7 +450,7 @@ Definition transl_program (prog: Imp2.program) : res Csyntax.program :=
   let public := List.map Ident.to_pos (public_idents defs) in
   let main := _main in
   match Ctypes.make_program ts cdefs public main with
-  | OK prog =>
+  | Errors.OK prog =>
       match Ctyping.typecheck_program prog with
       | _ => ret prog
       (* | OK prog => OK prog
@@ -458,8 +458,8 @@ Definition transl_program (prog: Imp2.program) : res Csyntax.program :=
       | Error (MSG msg :: CTX id :: _) => failwith (String.append (String.append "CSyntaxgen.transl_program: typing failed: " msg) (string_of_ident id))
       | _ => failwith "CSyntaxgen.transl_program: typing failed" *)
       end
-  | Error (MSG msg :: CTX id :: _) => failwith (String.append msg (string_of_ident id))
-  | Error _ => failwith "Csyntaxgen.transl_program: error when calling Ctypes.make_program"
+  | Errors.Error (Errors.MSG msg :: Errors.CTX id :: _) => failwith (String.append msg (string_of_ident id))
+  | Errors.Error _ => failwith "Csyntaxgen.transl_program: error when calling Ctypes.make_program"
   end.
 
 Section IDENTS.

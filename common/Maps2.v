@@ -230,7 +230,7 @@ Module MapList.
     List.map (fun kv => (fst kv, f (snd kv))) l.
 
   Definition map_err (A: Type) (f: V -> res A) (l: t V) : res (t A) :=
-    Errors.mmap (fun '(x, v) => let* a := f v in ret (x, a)) l.
+    mmap (fun '(x, v) => let* a := f v in ret (x, a)) l.
 
   Fixpoint mem (k: key) (l: t V) : bool :=
     match l with
@@ -297,4 +297,4 @@ Module MapList.
 
 End MapList.
 
-Polymorphic Definition smaplist := MapList.t string.
+Definition smaplist (A:Type) := MapList.t string A.

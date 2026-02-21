@@ -1,6 +1,6 @@
 From Coq Require Import List Lia.
 From compcert Require Import Maps.
-From BarocqComp Require Import Error Utils Maps2 Types Benum Syntax Typing Denot.
+From BarocqComp Require Import OptionMonad Utils Maps2 Types Benum Syntax Typing Denot.
 
 (** * Abstract syntax *)
 
@@ -145,14 +145,14 @@ Fixpoint btypof_tailcomp (tc: tailcomp) : btyp :=
 
 Definition convertible_btyp (te: tenv) (ty: btyp) : bool :=
   match btyp_to_typ te ty with
-  | OK _ => true
+  | Some _ => true
   | _ => false
   end.
 
 Lemma convertible_btyp_iff:
   forall te bt,
   convertible_btyp te bt = true <->
-  (exists ty, btyp_to_typ te bt = OK ty).
+  (exists ty, btyp_to_typ te bt = Some ty).
 Proof.
   intros; split; intros.
   - unfold convertible_btyp in H.
@@ -190,7 +190,7 @@ with wf_statement (te: tenv) (s: statement) : bool :=
 Lemma wf_tailcomp_btyp_to_typ:
   forall te tc,
     wf_tailcomp te tc = true ->
-    exists ty, btyp_to_typ te (btypof_tailcomp tc) = OK ty.
+    exists ty, btyp_to_typ te (btypof_tailcomp tc) = Some ty.
 Proof.
   induction tc; simpl; intros; destruct_conj H.
   - rewrite convertible_btyp_iff in C. exact C.
@@ -220,17 +220,17 @@ Section DENOT.
 
   Notation eval_comp := (@Denot.eval_comp arch tabs).
 
-  Definition typof_tailcomp (te: tenv) (tc: tailcomp) : res typ :=
+  Definition typof_tailcomp (te: tenv) (tc: tailcomp) : option typ :=
     btyp_to_typ te (btypof_tailcomp tc).
 
-  Definition eval_match (tv:typ) (v: eval_typ tv) (tr: typ) (cases: list (pattern * res (eval_typ tr * lenv))) : res (eval_typ tr * lenv) :=
-    (match tv as t0 return (eval_typ t0 -> res (eval_typ tr * lenv)) with
+  Definition eval_match (tv:typ) (v: eval_typ tv) (tr: typ) (cases: list (pattern * option (eval_typ tr * lenv))) : option (eval_typ tr * lenv) :=
+    (match tv as t0 return (eval_typ t0 -> option (eval_typ tr * lenv)) with
     | TEnum _ elems => 
         (fun v0 => match_with_err v0 cases)
     | _ => (fun _ => fail)
     end) v.
 
-  Fixpoint eval_tailcomp_rec (te: tenv) (ge: genv) (le: lenv) (ty: typ) (tc: tailcomp) : res (eval_typ ty * lenv) :=
+  Fixpoint eval_tailcomp_rec (te: tenv) (ge: genv) (le: lenv) (ty: typ) (tc: tailcomp) : option (eval_typ ty * lenv) :=
     match tc with
     | TcBegin s tc1 _ =>
         let* le' := eval_statement te ge le s in
@@ -251,7 +251,7 @@ Section DENOT.
     | TcAttr _ tc1 => eval_tailcomp_rec te ge le ty tc1
     end
   
-  with eval_statement (te: tenv) (ge: genv) (le: lenv) (s: statement) : res lenv :=
+  with eval_statement (te: tenv) (ge: genv) (le: lenv) (s: statement) : option lenv :=
     match s with
     | StSetTailcomp x tc =>
         let* ttc := typof_tailcomp te tc in
@@ -259,11 +259,11 @@ Section DENOT.
         ret (lenv_update tabs lec x (Val tabs ttc v))
     end.
 
-  Definition eval_tailcomp (te: tenv) (ge: genv) (le: lenv) (tr: typ) (tc: tailcomp) : res (eval_typ tr) :=
-    let* (v, _) := ignore_err (eval_tailcomp_rec te ge le tr tc) in
+  Definition eval_tailcomp (te: tenv) (ge: genv) (le: lenv) (tr: typ) (tc: tailcomp) : option (eval_typ tr) :=
+    let* (v, _) :=  (eval_tailcomp_rec te ge le tr tc) in
     ret v.
 
-  Definition eval_prog (impl: genv) (prog: program) : res (tenv * genv) :=
+  Definition eval_prog (impl: genv) (prog: program) : option (tenv * genv) :=
     Denot.eval_prog tabs  eval_tailcomp impl prog.
 
 End DENOT.

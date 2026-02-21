@@ -3,6 +3,8 @@ From compcert Require Import Coqlib Integers Maps.
 From BarocqComp Require Import Target Error Barray Brecord Benum Ident Maps2 Utils.
 From Coq Require Import Datatypes List MSetPositive Lia.
 From BarocqComp Require Import ExtOrdered.
+From BarocqComp Require Import OptionMonad.
+Open Scope option_monad_scope.
 
 (** * Syntax of types *)
 
@@ -480,11 +482,11 @@ Definition mk_fun_btyp {A: Type} (params: list (A * btyp)) (tret: btyp) : btyp :
 
 (** * Type of a record field *)
 
-Definition typof_field (k: ident) (fields: smaplist typ) : res typ :=
-  MapList.find_err Ident.eq_dec k fields.
+Definition typof_field (k: ident) (fields: smaplist typ) : option typ :=
+  find_err Ident.eq_dec k fields.
 
-Definition btypof_field (k: ident) (fields: smaplist btyp) : res btyp :=
-  MapList.find_err Ident.eq_dec k fields.
+Definition btypof_field (k: ident) (fields: smaplist btyp) : option btyp :=
+  find_err Ident.eq_dec k fields.
 
 (* Type for array indexes *)
 
@@ -503,13 +505,13 @@ Definition arr_index_typ (arch: Target.archi) : typ :=
 (** extraction of types *)
 Definition typof_array (ty:typ) :=
   match ty with
-  | TArray te => OK te
+  | TArray te => Some te
   | _         => fail
   end.
 
 Definition typof_record (ty:typ) :=
   match ty with
-  | TRecord _ te => OK te
+  | TRecord _ te => Some te
   | _         => fail
   end.
 
@@ -525,9 +527,9 @@ Section EVALTYP.
 
   Polymorphic Fixpoint eval_funtyp (tparams: list typ) (tret: Type) : Type :=
     match tparams with
-    | nil => unit -> (res tret)
+    | nil => unit -> (option tret)
     | tx:: tparams' => eval_typ tx -> match tparams' with
-                                      | nil => res tret
+                                      | nil => option tret
                                       |  _  => eval_funtyp tparams' tret
                                       end
     end.

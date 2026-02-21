@@ -40,10 +40,10 @@ let fun_corres_shallowR_call_ret (indent : string) (call : string) (tr : mtyp)
   | MRes tr, MRes _ ->
       let v_conv = Btypesgen.conv_value Btypesgen.RtoB tr "r" in
       if v_conv = "r" then sprintf "%s%s" indent call
-      else sprintf "%slet* r := %s in\n%sOK (%s)" indent call indent v_conv
+      else sprintf "%slet* r := %s in\n%sSome (%s)" indent call indent v_conv
   | _, MRes _ ->
       sprintf
-        "%sOK %s"
+        "%sSome %s"
         indent
         (Btypesgen.conv_value_opt_parens
            Btypesgen.RtoB
@@ -458,12 +458,16 @@ module HelperTactics = struct
         indent3
         indent3
     in
-    fprintf
-      out
-      "Ltac pattern_match_err_corres E :=\n%smatch type of E with\n"
-      indent;
-    print_list out ~delim:("", "\n") ~sep:"\n" gen_enum_simpl enums;
-    fprintf out "%send.\n" indent
+    if enums = []
+    then 
+      fprintf out "Ltac pattern_match_err_corres E := fail."
+    else begin fprintf
+        out
+        "Ltac pattern_match_err_corres E :=\n%smatch type of E with\n"
+        indent;
+      print_list out ~delim:("", "\n") ~sep:"\n" gen_enum_simpl enums;
+      fprintf out "%send.\n" indent
+        end
 
   let print_helper_match_tac (out : out_channel) (prog : program) : unit =
     let funs =
@@ -494,7 +498,7 @@ module HelperTactics = struct
       "Ltac corres_rb_match P :=\n\
        %smatch P with\n\
        %s| ret ?X => corres_rb_match X\n\
-       %s| bind (OK _) _ => simpl\n\
+       %s| bind (Some _) _ => simpl\n\
        %s| bind ?F _ => corres_rb_match F\n\
        %s| let _ := _ in _ => simpl\n\
        %s| if ?C then _ else _ => destruct C; simpl; try reflexivity\n\
@@ -582,7 +586,7 @@ module HelperTactics = struct
        %smatch goal with\n\
        %s| [ |- _ = match ?E with _ => _ end ] =>\n\
        %sdestruct E; try reflexivity; corres_rb_rec\n\
-       %s| [ |- ret _ = OK _] => finish\n\
+       %s| [ |- ret _ = Some _] => finish\n\
        %s| [ |- ?G = _ ] =>\n\
        %sreflexivity ||\n\
        %s(corres_rb_match G; corres_rb_rec)\n\
@@ -612,8 +616,9 @@ module HelperTactics = struct
     sprintf
       "From Coq Require Import String.\n\
        From compcert Require Import Integers.\n\
-       From BarocqComp Require Import Error.\n\
-       From %s Require Import %s_Types %s_ShallowR %s_ShallowB.\n"
+       From BarocqComp Require Import OptionMonad.\n\
+       From %s Require Import %s_Types %s_ShallowR %s_ShallowB.\n\
+       Open Scope option_monad_scope.\n"
       !coqlib
       !coqlib
       !coqlib
@@ -646,7 +651,7 @@ let imports () : string =
   sprintf
     "From Coq Require Import String.\n\
      From compcert Require Import Integers.\n\
-     From BarocqComp Require Import Error.\n\
+     From BarocqComp Require Import OptionMonad.\n\
      From %s Require Import %s_Types %s_ShallowR %s_ShallowB \
      %s_CorresRB_Tactics.\n\n\
      Open Scope string_scope.\n"

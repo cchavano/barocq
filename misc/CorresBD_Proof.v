@@ -1,6 +1,6 @@
 $MODULES
 From compcert Require Import Integers Coqlib.
-From BarocqComp Require Import Target Utils Monads ExtEqual Error Barray Brecord Types BarocqBNF BarocqBNFVC Maps2.
+From BarocqComp Require Import Target Utils Monads ExtEqual OptionMonad Denot Barray Brecord Types BarocqBNF BarocqBNFVC Maps2.
 From Coq Require Import String List Lia.
 Open Scope list_scope.
 
@@ -24,6 +24,7 @@ Ltac vc :=
        cbv beta delta [F TY G L P R Syntax.fn_body eval_fun];
        gen_list L1; intro ge ; compute in ge;
        unfold eq_value; apply same_value_refl';[reflexivity | (compute; reflexivity)]
+  | |- _ => unfold eq_value; apply same_value_refl';[reflexivity | reflexivity]
   end.
 
 
@@ -52,52 +53,28 @@ Opaque Int.cmp Int.cmpu Int64.cmp Int64.cmpu.
 Opaque Intop.I32.of_u64.
 Opaque Intop.U64.of_i32.
 
-Theorem eval_prog_spec : exists te ge, eval_prog $ARCH abs_types_impl abs_defs_impl $PROG = OK (te, ge) /\
-                                      Forall (has_property abs_types_impl ge) (List.app decl_prop def_prop).
+Theorem eval_prog_spec : exists te ge, eval_prog $ARCH abs_types_impl abs_defs_impl $PROG = Some (te, ge) /\
+                                      Forall (has_property abs_types_impl ge) prop_list.
 Proof.
-  (** Proof of abs_types_impl *)
-  assert (partition is_ktype prog = (prog_types, (prog_decls ++ prog_defs))).
-  { reflexivity.
-  }
-  assert (PART2: partition_props abs_types_impl (prog_decls ++ prog_defs) (List.app decl_prop def_prop) = OK(decl_prop,def_prop)).
-  { reflexivity.
-  }
-  (* Let prove that the initial environment verifies all the properties [decl_prop].
-     This is a manual proof...
-   *)
-  assert (Forall (has_property  abs_types_impl abs_defs_impl) decl_prop).
-  {
-    apply (Forall_app_sound _ decl_prop).
-    all:has_property_FFI.
-  }
   (* Prove that we can prove all the properties of the definitions
      assuming the properties of the declarations in the typing environment*)
-  assert (EX : exists (te': Typing.tenv) (ge : genv abs_types_impl),
-    eval_prog_rec $ARCH abs_types_impl typing_env abs_defs_impl prog_defs = OK (te', ge) /\
-      Forall (has_property abs_types_impl ge) def_prop).
+  assert (EX : exists  (ge : genv abs_types_impl),
+    eval_prog_rec $ARCH abs_types_impl typing_env abs_defs_impl STree.empty prog_defs = Some ge /\
+      Forall (has_property abs_types_impl ge) prop_list).
   {
-    assert (GO :generate_obligations abs_types_impl $ARCH typing_env decl_prop nil prog_defs def_prop = OK vc).
+    assert (GO :generate_obligations abs_types_impl $ARCH typing_env abs_defs_impl nil nil prog_defs
+                  prop_list = Some vc).
     {
       reflexivity.
     }
-    apply generate_obligations_sound  with (ge:=abs_defs_impl) (vc:=nil) (checked:=decl_prop) (ol:=vc); auto.
+    apply generate_obligations_sound  with  (vc:=nil) (checked:=nil) (ol:=vc); auto.
     { apply nodup_NoDup.
       reflexivity.
     }
     - (* discharge all the proof obligations *)
       apply (Forall_app_sound _ vc).
       all: time vc.
-    - unfold wf_env.
-      rewrite <- Forall_forall.
-      apply (Forall_app_sound _ prog_defs).
-      all:reflexivity.
+    - apply wf_env_empty.
   }
-  destruct EX as (te' & ge & EVAL & ALL).
-  exists te'. exists ge.
-  rewrite prog_decomp.
-  unfold eval_prog.
-  split.
-  rewrite List.app_assoc.
-  apply eval_prog_rec_app with (te1:=typing_env) (ge1:= abs_defs_impl) ; eauto.
-  eapply eval_prog_rec_preserve_app_properties;eauto.
+  apply eval_prog_has_property with (gds:= prog_defs) (te:= typing_env); auto.
 Time Qed.

@@ -1,7 +1,8 @@
 (** * A collection of useful monads *)
 From Coq Require Import PArith String.
 From Coq Require Import RelationClasses.
-From compcert Require Import AST Maps Errors Coqlib.
+From compcert Require Import AST Maps  Coqlib.
+From BarocqComp Require Import Res.
 
 Module Type MONAD.
 
@@ -12,15 +13,15 @@ Parameter bind2 : forall (A B C: Type) (f: M (A * B)) (g: A -> B -> M C), M C.
 
 End MONAD.
 
-Module MonError <: MONAD.
+Module MonError. (*<: MONAD. *)
 
-  Export Errors.
+  Export Res.
 
   Definition M (T:Type) : Type := res T.
 
   Definition ret {A: Type} (a: A) : M A := OK a.
 
-  Definition bind {A B: Type} (f: M A) (g: A -> M B) : M B := Errors.bind f g.
+  Polymorphic Definition bind {A B: Type} (f: M A) (g: A -> M B) : M B := Res.bind f g.
 
   Definition bind_catch {A B: Type} (f: M A) (g: A -> M B) (m: string) : M B :=
     match f with
@@ -28,19 +29,19 @@ Module MonError <: MONAD.
     | Error _ => Error (msg m)
     end. 
 
-  Definition bind2 {A B C: Type} (f: M (A * B)) (g: A -> B -> M C) : M C := Errors.bind2 f g.
+  Polymorphic Definition bind2 {A B C: Type} (f: M (A * B)) (g: A -> B -> M C) : M C := Res.bind2 f g.
 
-  Definition fail {A: Type} : M A := Error nil.
+  Polymorphic Definition fail {A: Type} : M A := Error nil.
 
-  Definition failwith {A: Type} (m: string) : M A := Error (msg m).
+  Polymorphic Definition failwith {A: Type} (m: string) : M A := Error (msg m).
 
-  Definition err_of_opt {A: Type} (o: option A) : M A :=
+  Polymorphic Definition err_of_opt {A: Type} (o: option A) : M A :=
     match o with
     | Some v => OK v
     | None => fail
     end.
 
-  Definition ignore_err {A: Type} (r: M A) : M A :=
+  Polymorphic Definition ignore_err {A: Type} (r: M A) : M A :=
     match r with
     | Error _ => fail
     | _ => r
@@ -66,7 +67,7 @@ Module MonError <: MONAD.
   Proof.
     unfold err_of_opt; intros.
     destruct o; try discriminate.
-    inv H. reflexivity.
+    congruence.
   Qed.
 
   Definition res_pred {A : Type} (P : A -> Prop) (r:res A) :=
@@ -154,7 +155,7 @@ Module Type STATE_TYPE.
 
 End STATE_TYPE.
 
-Module MonState (S: STATE_TYPE) <: MONAD.
+Module MonState (S: STATE_TYPE). (* <: MONAD. *)
 
   Definition M (A: Type) : Type := S.t -> A * S.t.
 
@@ -186,7 +187,7 @@ Module MonState (S: STATE_TYPE) <: MONAD.
         
 End MonState.
 
-Module MonStateErr (S: STATE_TYPE) <: MONAD.
+Module MonStateErr (S: STATE_TYPE). (* <: MONAD.*)
 
   Import MonError.
 
@@ -219,6 +220,15 @@ Module MonStateErr (S: STATE_TYPE) <: MONAD.
       | Error msg => Error msg
       end.
 
+  Definition lift_option {A: Type} (f: option A) : M A :=
+    fun (s: S.t) =>
+      match f with
+      | Some a => OK (a, s)
+      | None => Error nil
+      end.
+
+
+
   Definition fail {A: Type} : M A :=
     fun (s: S.t) => Error nil.
 
@@ -237,7 +247,7 @@ Module MonStateErr (S: STATE_TYPE) <: MONAD.
 
 End MonStateErr.
 
-Module StateCounter <: STATE_TYPE.
+Module StateCounter. (* <: STATE_TYPE.*)
   Definition t : Type := positive.
 End StateCounter.
 

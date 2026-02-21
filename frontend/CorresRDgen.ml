@@ -145,7 +145,7 @@ end
 let gen_const_corres (cid : ident) (ty : mtyp) : string =
   let thm =
     sprintf
-      "eval_def %s = OK (VAL Deeptypes.typof_%s %s)"
+      "eval_def %s = Some (VAL Deeptypes.typof_%s %s)"
       (Deepgen.ident_to_deep cid)
       (ident_to_string cid)
       (conv_value RtoB ty (sprintf "%s.%s" !shallowfile (ident_to_string cid)))
@@ -174,10 +174,10 @@ let fun_corres_shallow_call_ret (indent : string) (call : string) (ty : mtyp) :
   | MRes tr ->
       let v_conv = conv_value RtoB tr "r" in
       if v_conv = "r" then sprintf "%s%s" indent call
-      else sprintf "%slet* r := %s in\n%sOK (%s)" indent call indent v_conv
+      else sprintf "%slet* r := %s in\n%sSome (%s)" indent call indent v_conv
   | _ ->
       sprintf
-        "%sOK %s"
+        "%sSome %s"
         indent
         (conv_value_opt_parens RtoB ty (sprintf "(%s)" call))
 
@@ -239,7 +239,7 @@ let gen_fun_corres (fid : ident) (params : (ident * mtyp) list) (tret : mtyp) :
   sprintf
     "Theorem fun_%s_corres :\n\
      %sexists %s_val,\n\
-     %seval_def %s = OK (VAL Deeptypes.typof_%s %s_val) /\\\n\
+     %seval_def %s = Some (VAL Deeptypes.typof_%s %s_val) /\\\n\
      %s.\n\
      Proof.\n\
      %s\n\
@@ -276,7 +276,7 @@ let imports () : string =
   sprintf
     "From Coq Require Import String.\n\
      From compcert Require Import Integers.\n\
-     From BarocqComp Require Import Target Monads Error Barray Brecord Types \
+     From BarocqComp Require Import Target Monads OptionMonad Barray Brecord Types \
      Barocq.\n\
      From %s Require Import %s_Types %s %s %s_CorresBD_Prelude.\n\
      From %s Require %s_CorresRB %s_CorresBD.\n\n\

@@ -1,18 +1,18 @@
 From Coq Require Import BinIntDef.
 From compcert Require Import Integers.
-From BarocqComp Require Import Error.
+From BarocqComp Require Import OptionMonad.
 
 Local Open Scope bool_scope.
 
 Module I32.
 
-  Definition div (x y: int) : res int :=
+  Definition div (x y: int) : option int :=
     if Int.eq y Int.zero
        || Int.eq x (Int.repr Int.min_signed) && Int.eq y Int.mone
     then fail
     else ret (Int.divs x y).
 
-  Definition mod (x y: int) : res int :=
+  Definition mod (x y: int) : option int :=
     if Int.eq y Int.zero
        || Int.eq x (Int.repr Int.min_signed) && Int.eq y Int.mone
     then fail
@@ -39,11 +39,11 @@ End I32.
 
 Module U32.
 
-  Definition div (x y: int) : res int :=
+  Definition div (x y: int) : option int :=
     if Int.eq y Int.zero then fail
     else ret (Int.divu x y).
    
-  Definition mod (x y: int) : res int :=
+  Definition mod (x y: int) : option int :=
     if Int.eq y Int.zero then fail
     else ret (Int.modu x y).
 
@@ -65,13 +65,13 @@ End U32.
 
 Module I64.
 
-  Definition div (x y: int64) : res int64 :=
+  Definition div (x y: int64) : option int64 :=
     if Int64.eq y Int64.zero
        || Int64.eq x (Int64.repr Int64.min_signed) && Int64.eq y Int64.mone
     then fail
     else ret (Int64.divs x y).
 
-  Definition mod (x y: int64) : res int64 :=
+  Definition mod (x y: int64) : option int64 :=
     if Int64.eq y Int64.zero
        || Int64.eq y (Int64.repr Int64.min_signed) && Int64.eq y Int64.mone
     then fail
@@ -95,11 +95,11 @@ End I64.
 
 Module U64.
 
-  Definition div (x y: int64) : res int64 :=
+  Definition div (x y: int64) : option int64 :=
     if Int64.eq y Int64.zero then fail
     else ret (Int64.divu x y).
 
-  Definition mod (x y: int64) : res int64 :=
+  Definition mod (x y: int64) : option int64 :=
     if Int64.eq y Int64.zero then fail
     else ret (Int64.modu x y).
 

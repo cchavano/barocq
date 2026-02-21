@@ -3,7 +3,12 @@ From Coq Require Import String Bool List Eqdep.
 From compcert Require Import Coqlib Maps Integers.
 From BarocqComp Require Import  DList Error Utils Types Syntax Barray Benum Brecord Maps2 Typing Intop.
 From BarocqComp Require DList .
+From BarocqComp Require Import OptionMonad.
 Import ListNotations.
+
+Definition map_err  {V A : Type} (f : V -> option A) (l : list (ident* V))  :=
+  mmap (fun v => let* a := f (snd v) in Some (fst v, a)) l.
+
 
 Section DENOT.
 
@@ -27,30 +32,30 @@ Section DENOT.
 
   Definition lenv := STree.t value.
 
-  Definition genv_get (ge: genv) (x: ident) : res value :=
-    err_of_opt (STree.get x ge).
+  Definition genv_get (ge: genv) (x: ident) : option value :=
+    STree.get x ge.
 
-  Definition genv_update (ge: genv) (x: ident) (v: value) : res genv :=
+  Definition genv_update (ge: genv) (x: ident) (v: value) : option genv :=
     match genv_get ge x with
-    | OK _ => fail
-    | Error _ => ret (STree.set x v ge)
+    | Some _ => None
+    | None => Some (STree.set x v ge)
     end.
 
-  Definition lenv_get (le: lenv) (x: ident) : res value :=
-    err_of_opt (STree.get x le).
+  Definition lenv_get (le: lenv) (x: ident) : option value :=
+    STree.get x le.
 
   Definition lenv_update (le: lenv) (x: ident) (v: value) : lenv :=
     STree.set x v le.
 
-  Definition cast_typ  {t2:typ} (v: eval_typ t2) (t1:typ): res (eval_typ t1) :=
+  Definition cast_typ  {t2:typ} (v: eval_typ t2) (t1:typ): option (eval_typ t1) :=
     match typ_eq_dec t2 t1 with
-    | left EQ => OK (cast (f_equal eval_typ EQ) v)
-    | _       => fail
+    | left EQ => Some (cast (f_equal eval_typ EQ) v)
+    | _       => None
     end.
 
   Remark cast_typ_id:
     forall t x,
-    @cast_typ t x t = OK x.
+    @cast_typ t x t = Some x.
   Proof.
     intros. unfold cast_typ. 
     destruct (typ_eq_dec t t); try contradiction.
@@ -60,7 +65,7 @@ Section DENOT.
 
   Lemma cast_typ_ok_imp_typ_eq:
     forall t2 t1 v v',
-    @cast_typ t2 v t1 = OK v' ->
+    @cast_typ t2 v t1 = Some v' ->
     t1 = t2.
   Proof.
     unfold cast_typ; intros.
@@ -68,10 +73,10 @@ Section DENOT.
     inv H. reflexivity.
   Qed.
 
-  Definition ecast_typ  {t2:typ} (v: res (eval_typ t2)) (t1:typ): res (eval_typ t1) :=
+  Definition ecast_typ  {t2:typ} (v: option (eval_typ t2)) (t1:typ): option (eval_typ t1) :=
     match typ_eq_dec t2 t1 with
-    | left EQ =>  cast (f_equal res (f_equal eval_typ EQ)) v
-    | _       => fail
+    | left EQ => cast (f_equal option (f_equal eval_typ EQ)) v
+    | _       => None
     end.
 
   Lemma ecast_typ_id: 
@@ -86,7 +91,7 @@ Section DENOT.
 
   Lemma ecast_typ_ok_imp_typ_eq:
     forall t2 t1 v v',
-    @ecast_typ t2 v t1 = OK v' ->
+    @ecast_typ t2 v t1 = Some v' ->
     t2 = t1.
   Proof.
     unfold ecast_typ; intros.
@@ -94,20 +99,20 @@ Section DENOT.
     destruct v; discriminate.
   Qed.
   
-  Definition cast_value  (v:value) (t1:typ) : res (eval_typ t1).
+  Definition cast_value  (v:value) (t1:typ) : option (eval_typ t1).
   Proof.
     destruct v.
     apply (cast_typ v t1).
   Defined.
 
-  Definition eval_var  (ge: genv) (le: lenv) (x: ident) (ty:typ) : res (eval_typ ty) :=
+  Definition eval_var  (ge: genv) (le: lenv) (x: ident) (ty:typ) : option (eval_typ ty) :=
     match (lenv_get le x) with
-    | OK v => cast_value  v ty
-    | Error _ => let* v := genv_get ge x in
+    | Some v => cast_value  v ty
+    | None => let* v := genv_get ge x in
                  cast_value v ty
     end.
 
-  Definition eval_constr  (te: tenv) (x: ident) (ty:typ) : res (eval_typ ty) :=
+  Definition eval_constr  (te: tenv) (x: ident) (ty:typ) : option (eval_typ ty) :=
     let* eid := TEnv.get_constr_typ te x in
     let* elems := TEnv.get_edef te eid in
     match (bool_dec (existsb (String.eqb x) elems) true) with
@@ -115,115 +120,111 @@ Section DENOT.
     | right _ => fail
     end.
 
-  Definition partial {A B: Type} (F : A -> B) : A -> res B :=
-    fun x => OK (F x).
+  Definition partial {A B: Type} (F : A -> B) : A -> option B :=
+    fun x => Some (F x).
 
-  Definition partial2 {A B C: Type} (F : A -> B -> C) : A -> B -> res C :=
-    fun x y => OK (F x y).
+  Definition partial2 {A B C: Type} (F : A -> B -> C) : A -> B -> option C :=
+    fun x y => Some (F x y).
 
 
-  Definition get_cast (ty:typ) (ty':typ) : res (eval_typ ty -> res (eval_typ ty')) :=
+  Definition get_cast (ty:typ) (ty':typ) : option (eval_typ ty -> option (eval_typ ty')) :=
     match ty, ty' with
       (* TBool *)
-    | TBool , TBool => OK (fun x => OK x)
-    | TBool , TInt32 s => OK (partial (if s then I32.of_bool else U32.of_bool))
-    | TBool , TInt64 s => OK (partial (if s then I64.of_bool else U64.of_bool))
-    | TBool , TEnum eid elems => OK (fun x => Benum.of_i32 elems (I32.of_bool x))
+    | TBool , TBool => Some (fun x => Some x)
+    | TBool , TInt32 s => Some (partial (if s then I32.of_bool else U32.of_bool))
+    | TBool , TInt64 s => Some (partial (if s then I64.of_bool else U64.of_bool))
+    | TBool , TEnum eid elems => Some (fun x => Benum.of_i32 elems (I32.of_bool x))
        (* TInt32 *)
-    | TInt32 s , TBool =>  OK (partial (if s then I32.to_bool else U32.to_bool))
-    | TInt32 s , TInt32 s' => OK (partial (match s , s' with
+    | TInt32 s , TBool =>  Some (partial (if s then I32.to_bool else U32.to_bool))
+    | TInt32 s , TInt32 s' => Some (partial (match s , s' with
                                               | Signed , Unsigned => U32.of_i32
                                               | Unsigned , Signed => I32.of_u32
                                               |  _       ,   _    => fun x => x
                                               end))
-    | TInt32 s , TInt64 s' => OK (partial (match s, s' with
+    | TInt32 s , TInt64 s' => Some (partial (match s, s' with
                                               | Signed, Signed => I64.of_i32
                                               | Signed, Unsigned => U64.of_i32
                                               | Unsigned, Signed => I64.of_u32
                                               | Unsigned, Unsigned => U64.of_u32
                                               end))
-    | TInt32 s ,  TEnum eid elems => OK (fun x => Benum.of_i32 elems (if s then x else I32.of_u32 x))
+    | TInt32 s ,  TEnum eid elems => Some (fun x => Benum.of_i32 elems (if s then x else I32.of_u32 x))
                  (*  Tint64 *)
-    | TInt64 s , TBool => OK (partial (if s then I64.to_bool else U64.to_bool))
-    | TInt64 s , TInt32 s' => OK (partial (
+    | TInt64 s , TBool => Some (partial (if s then I64.to_bool else U64.to_bool))
+    | TInt64 s , TInt32 s' => Some (partial (
                                       match s, s' with
                                       | Signed, Signed =>  I32.of_i64
                                       | Signed, Unsigned => U32.of_i64
                                       | Unsigned, Signed => I32.of_u64
                                       | Unsigned, Unsigned => U32.of_u64
                                       end))
-    | TInt64 s ,  TInt64 s' => OK (partial (
+    | TInt64 s ,  TInt64 s' => Some (partial (
                                        match s, s' with
                                        | Signed, Unsigned => U64.of_i64
                                        | Unsigned, Signed => I64.of_u64
                                        | _, _ => fun x => x
                                        end))
-    | TInt64 s , TEnum eid elems => OK (fun x => Benum.of_i32 elems (if s then I32.of_i64 x else I32.of_u64 x))
+    | TInt64 s , TEnum eid elems => Some (fun x => Benum.of_i32 elems (if s then I32.of_i64 x else I32.of_u64 x))
             (* Tenum *)
-    | TEnum tid elems , TBool  => OK (partial (fun x => I32.to_bool (Benum.to_i32 x)))
-    | TEnum tid elems , TInt32 s => OK (partial (fun x => if s then Benum.to_i32 x else U32.of_i32 (Benum.to_i32 x)))
-    | TEnum tid elems , TInt64 s => OK (partial (fun x => if s then I64.of_i32 (Benum.to_i32 x)
+    | TEnum tid elems , TBool  => Some (partial (fun x => I32.to_bool (Benum.to_i32 x)))
+    | TEnum tid elems , TInt32 s => Some (partial (fun x => if s then Benum.to_i32 x else U32.of_i32 (Benum.to_i32 x)))
+    | TEnum tid elems , TInt64 s => Some (partial (fun x => if s then I64.of_i32 (Benum.to_i32 x)
                                                           else  U64.of_i32 (Benum.to_i32 x)))
     | _ , _ => fail
     end.
 
-  Definition get_cast_operator (ty:typ) (ty':typ) : res cast_operator :=
+  Definition get_cast_operator (ty:typ) (ty':typ) : option cast_operator :=
     match ty, ty' with
       (* TBool *)
-    | TBool , TBool => OK Cid
-    | TBool , TInt32 s => OK (if s then I32_of_bool else U32_of_bool)
-    | TBool , TInt64 s => OK (if s then I64_of_bool else U64_of_bool)
-    | TBool , TEnum eid elems => OK (Benum_of_i32_I32_of_bool elems)
+    | TBool , TBool => Some Cid
+    | TBool , TInt32 s => Some (if s then I32_of_bool else U32_of_bool)
+    | TBool , TInt64 s => Some (if s then I64_of_bool else U64_of_bool)
+    | TBool , TEnum eid elems => Some (Benum_of_i32_I32_of_bool elems)
        (* TInt32 *)
-    | TInt32 s , TBool =>  OK (if s then I32_to_bool else U32_to_bool)
-    | TInt32 s , TInt32 s' => OK (match s , s' with
+    | TInt32 s , TBool =>  Some (if s then I32_to_bool else U32_to_bool)
+    | TInt32 s , TInt32 s' => Some (match s , s' with
                                   | Signed , Unsigned => U32_of_i32
                                   | Unsigned , Signed => I32_of_u32
                                   |  _       ,   _    => Cid
                                   end)
-    | TInt32 s , TInt64 s' => OK (match s, s' with
+    | TInt32 s , TInt64 s' => Some (match s, s' with
                                   | Signed, Signed => I64_of_i32
                                   | Signed, Unsigned => U64_of_i32
                                   | Unsigned, Signed => I64_of_u32
                                   | Unsigned, Unsigned => U64_of_u32
                                   end)
-    | TInt32 s ,  TEnum eid elems => OK (
+    | TInt32 s ,  TEnum eid elems => Some (
                                          if s then Benum_of_i32_I32_of_u32 elems
                                          else Benum_of_i32 elems )
     (*  Tint64 *)
-    | TInt64 s , TBool => OK (if s then I64_to_bool else U64_to_bool)
-    | TInt64 s , TInt32 s' => OK (
+    | TInt64 s , TBool => Some (if s then I64_to_bool else U64_to_bool)
+    | TInt64 s , TInt32 s' => Some (
                                   match s, s' with
                                   | Signed, Signed =>  I32_of_i64
                                   | Signed, Unsigned => U32_of_i64
                                   | Unsigned, Signed => I32_of_u64
                                   | Unsigned, Unsigned => U32_of_u64
                                   end)
-    | TInt64 s ,  TInt64 s' => OK (
+    | TInt64 s ,  TInt64 s' => Some (
                                    match s, s' with
                                    | Signed, Unsigned => U64_of_i64
                                    | Unsigned, Signed => I64_of_u64
                                    | _, _ => Cid
                                    end)
-    | TInt64 s , TEnum eid elems => OK (if s then  Benum_of_i32_I32_of_i64 elems
+    | TInt64 s , TEnum eid elems => Some (if s then  Benum_of_i32_I32_of_i64 elems
                                         else Benum_of_i32_I32_of_u64 elems)
             (* Tenum *)
-    | TEnum tid elems , TBool  => OK (I32_to_bool_Benum_to_i32 elems )
-    | TEnum tid elems , TInt32 s => OK (if s then Benum_to_i32  else U32_of_i32_Benum_to_i32)
-    | TEnum tid elems , TInt64 s => OK (if s then I64_of_i32_Benum_to_i32
+    | TEnum tid elems , TBool  => Some (I32_to_bool_Benum_to_i32 elems )
+    | TEnum tid elems , TInt32 s => Some (if s then Benum_to_i32  else U32_of_i32_Benum_to_i32)
+    | TEnum tid elems , TInt64 s => Some (if s then I64_of_i32_Benum_to_i32
                                         else  U64_of_i32_Benum_to_i32 )
     | _ , _ => fail
     end.
 
 
-
-
-
-
-  Definition eval_cast (ty:typ) (v1:eval_typ ty) (tr:typ) : res (eval_typ tr) :=
+  Definition eval_cast (ty:typ) (v1:eval_typ ty) (tr:typ) : option(eval_typ tr) :=
     let* f := get_cast ty tr in f  v1.
 
-  Definition eval_unary_op (op: unary_op) (ty:typ) : forall (v: eval_typ ty) (tyr : typ), res (eval_typ tyr):=
+  Definition eval_unary_op (op: unary_op) (ty:typ) : forall (v: eval_typ ty) (tyr : typ), option(eval_typ tyr):=
     match op, ty with
     | UopNotbool, TBool    => (fun v tyr => @cast_typ TBool (negb v) tyr)
     | UopNotint,  TInt32 s => (fun v tyr => @cast_typ (TInt32 s) (Int.not v) tyr)
@@ -237,36 +238,36 @@ Section DENOT.
 
   Definition bool_bool_bool (t1 t2:typ) :=
     match t1 , t2 with
-    | TBool , TBool => OK TBool
+    | TBool , TBool => Some TBool
     |   _   ,   _    => fail
     end.
 
   Definition int_int_int (t1 t2:typ) :=
     match t1,t2 with
-    | TInt32 Signed , TInt32 Signed => OK (TInt32 Signed)
-    | TInt32 Unsigned , TInt32 Unsigned => OK (TInt32 Unsigned)
-    | TInt64 Signed , TInt64 Signed   => OK (TInt64 Signed)
-    | TInt64 Unsigned , TInt64 Unsigned   => OK (TInt64 Unsigned)
+    | TInt32 Signed , TInt32 Signed => Some (TInt32 Signed)
+    | TInt32 Unsigned , TInt32 Unsigned => Some (TInt32 Unsigned)
+    | TInt64 Signed , TInt64 Signed   => Some (TInt64 Signed)
+    | TInt64 Unsigned , TInt64 Unsigned   => Some (TInt64 Unsigned)
     |  _ , _ => fail
     end.
 
   Definition int_int_bool (t1 t2:typ) :=
     match t1,t2 with
-    | TInt32 Signed , TInt32 Signed => OK TBool
-    | TInt32 Unsigned , TInt32 Unsigned => OK TBool
-    | TInt64 Signed , TInt64 Signed   => OK TBool
-    | TInt64 Unsigned , TInt64 Unsigned   => OK TBool
+    | TInt32 Signed , TInt32 Signed => Some TBool
+    | TInt32 Unsigned , TInt32 Unsigned => Some TBool
+    | TInt64 Signed , TInt64 Signed   => Some TBool
+    | TInt64 Unsigned , TInt64 Unsigned   => Some TBool
     |  _ , _ => fail
     end.
 
   Definition eq_neq_bool (t1 t2:typ) :=
     match t1,t2 with
-    | TBool , TBool => OK TBool
-    | TInt32 Signed , TInt32 Signed => OK TBool
-    | TInt32 Unsigned , TInt32 Unsigned => OK TBool
-    | TInt64 Signed , TInt64 Signed   => OK TBool
-    | TInt64 Unsigned , TInt64 Unsigned   => OK TBool
-    | TEnum _ _ , TEnum _ _ => if typ_eq_dec t1 t2 then OK TBool else fail
+    | TBool , TBool => Some TBool
+    | TInt32 Signed , TInt32 Signed => Some TBool
+    | TInt32 Unsigned , TInt32 Unsigned => Some TBool
+    | TInt64 Signed , TInt64 Signed   => Some TBool
+    | TInt64 Unsigned , TInt64 Unsigned   => Some TBool
+    | TEnum _ _ , TEnum _ _ => if typ_eq_dec t1 t2 then Some TBool else fail
     |  _ , _ => fail
     end.
 
@@ -295,7 +296,7 @@ Section DENOT.
     | BopGe => int_int_bool
     end.
 
-  Definition bool_op (F : bool -> bool -> bool) (t1 t2:typ) : eval_typ t1 -> eval_typ t2 -> forall (tyr:typ),res (eval_typ tyr) :=
+  Definition bool_op (F : bool -> bool -> bool) (t1 t2:typ) : eval_typ t1 -> eval_typ t2 -> forall (tyr:typ),option(eval_typ tyr) :=
     match t1, t2 with
     | TBool , TBool => (fun v1 v2 tyr => @cast_typ TBool (F v1 v2) tyr)
     | _, _ =>   (fun _ _ _ => fail)
@@ -303,7 +304,7 @@ Section DENOT.
 
 
   Definition int_op (F32 : int -> int -> int) (F64 : int64 -> int64 -> int64)
-    (t1 t2:typ) : eval_typ t1 -> eval_typ t2 -> forall (tyr:typ),res (eval_typ tyr) :=
+    (t1 t2:typ) : eval_typ t1 -> eval_typ t2 -> forall (tyr:typ),option(eval_typ tyr) :=
     match t1, t2 with
     | TInt32 s , TInt32 s' => if signedness_eq_dec s s' then
                                 (fun v1 v2 tyr => @cast_typ (TInt32 s) (F32 v1 v2) tyr)
@@ -315,9 +316,9 @@ Section DENOT.
     end.
 
 
-  Definition int_op_s (F32s : int -> int -> res int) (F32u : int -> int -> res int)
-    (F64s : int64 -> int64 -> res int64) (F64u : int64 -> int64 -> res int64)
-    (t1 t2:typ) : eval_typ t1 -> eval_typ t2 -> forall (tyr:typ),res (eval_typ tyr) :=
+  Definition int_op_s (F32s : int -> int -> option int) (F32u : int -> int -> option int)
+    (F64s : int64 -> int64 -> option int64) (F64u : int64 -> int64 -> option int64)
+    (t1 t2:typ) : eval_typ t1 -> eval_typ t2 -> forall (tyr:typ),option(eval_typ tyr) :=
     match t1, t2 with
     | TInt32 s , TInt32 s'  =>
         match s , s' with
@@ -336,7 +337,7 @@ Section DENOT.
 
   Definition int_eq_neq (equal:bool) (Fbool : bool -> bool -> bool)
     (F32 : int -> int -> bool) (F64 : int64 -> int64 -> bool) (Fenum : forall (elems : list ident), enum elems -> enum elems -> bool)
-    (t1 t2:typ) : eval_typ t1 -> eval_typ t2 -> forall (tyr:typ),res (eval_typ tyr) :=
+    (t1 t2:typ) : eval_typ t1 -> eval_typ t2 -> forall (tyr:typ),option(eval_typ tyr) :=
     let map b := if equal then b else negb b in
     match t1, t2 with
     | TBool , TBool => (fun v1 v2 tyr => @cast_typ TBool (map (eqb v1 v2)) tyr)
@@ -353,7 +354,7 @@ Section DENOT.
     end.
 
   Definition cmp_op (cmp32s : int -> int -> bool) (cmp32u:int -> int -> bool) (cmp64s : int64 -> int64 -> bool) (cmp64u : int64 -> int64 -> bool)
-    (t1 t2:typ) : eval_typ t1 -> eval_typ t2 -> forall (tyr:typ),res (eval_typ tyr) :=
+    (t1 t2:typ) : eval_typ t1 -> eval_typ t2 -> forall (tyr:typ),option(eval_typ tyr) :=
     match t1, t2 with
     | TInt32 s , TInt32 s'  =>
         match s , s' with
@@ -370,8 +371,7 @@ Section DENOT.
     |  _ ,  _ => (fun _ _ _ => fail)
     end.
 
-
-  Definition eval_binary_op (op: binary_op) : forall (t1:typ) (t2: typ)  (v1: eval_typ t1)  (v2: eval_typ t2) (tyr : typ), res (eval_typ tyr) :=
+  Definition eval_binary_op (op: binary_op) : forall (t1:typ) (t2: typ)  (v1: eval_typ t1)  (v2: eval_typ t2) (tyr : typ), option(eval_typ tyr) :=
     match op with
     | BopAndbool => bool_op andb
     | BopOrbool  => bool_op orb
@@ -396,7 +396,7 @@ Section DENOT.
     | BopGe => cmp_op (Int.cmp Cge) (Int.cmpu Cge) (Int64.cmp Cge) (Int64.cmpu Cge)
     end.
 
-  Fixpoint eval_array_lit (a: array value) : res value :=
+  Fixpoint eval_array_lit (a: array value) : option value :=
     match a with
     | nil => fail
     | Val tx x :: nil => ret (Val (TArray tx) (x :: nil))
@@ -413,7 +413,7 @@ Section DENOT.
         end
     end.
 
-  Fixpoint eval_record_lit_rec (lv: smaplist value) (fields: smaplist typ) : res (eval_recordtyp eval_typ fields).
+  Fixpoint eval_record_lit_rec (lv: smaplist value) (fields: smaplist typ) : option(eval_recordtyp eval_typ fields).
     destruct lv as [|[x [tv v]] lv'] eqn:Elv; destruct fields as [| [y t] fields'] eqn:Efields.
     - apply (ret tt).
     - apply fail.
@@ -428,7 +428,7 @@ Section DENOT.
       + apply fail.
   Defined.
 
-  Definition eval_record_lit (n: ident) (lv: smaplist value) (fields: smaplist typ) : res value.
+  Definition eval_record_lit (n: ident) (lv: smaplist value) (fields: smaplist typ) : option value.
     destruct lv as [|x lv'].
     - apply fail.
     - destruct (eval_record_lit_rec (x :: lv') fields) as [r |].
@@ -436,8 +436,8 @@ Section DENOT.
       * apply fail.
   Defined.
 
-  Definition eval_array_get (ta:typ) (a: eval_typ ta) (t2:typ) (i: eval_typ t2) (tyr:typ): res (eval_typ tyr) :=
-    match ta as t return (eval_typ t -> res (eval_typ tyr)) with
+  Definition eval_array_get (ta:typ) (a: eval_typ ta) (t2:typ) (i: eval_typ t2) (tyr:typ): option (eval_typ tyr) :=
+    match ta as t return (eval_typ t -> option(eval_typ tyr)) with
     | TArray t =>
     (fun  (a0 : array (eval_typ t)) =>
      match arch with
@@ -449,14 +449,14 @@ Section DENOT.
      | Target.Ptr64 =>
          match typ_eq_dec t2 (TInt64 Unsigned) with
          | left EQ => ecast_typ (get a0 (cast (f_equal eval_typ EQ) i)) tyr
-         | right _ => efail
+         | right _ => fail
          end
      end)
-    | _ => fun _ => efail
+    | _ => fun _ => fail
     end a.
 
   Definition eval_array_set (ta: typ) (a : eval_typ ta) (t2:typ)
-    (i : eval_typ t2) (t:typ) (v: eval_typ t) (tyr : typ): res (eval_typ tyr).
+    (i : eval_typ t2) (t:typ) (v: eval_typ t) (tyr : typ): option (eval_typ tyr).
   Proof.
     destruct ta.
     4 :
@@ -478,8 +478,6 @@ Section DENOT.
     all: apply fail.
   Defined.
 
-  Import MapList.
-
   Fixpoint exists_typeof_field (F: typ -> Type) (k:key) (fields : smaplist typ) :
     forall (GP : good_proj k  fields = true),
       { ty| gtypeof_field F k  fields GP = F ty}.
@@ -490,7 +488,7 @@ Section DENOT.
       simpl.
       intros.
       destruct ((k=?s)%string).
-      exists t0. reflexivity.
+      exists t. reflexivity.
       apply exists_typeof_field.
   Defined.
 
@@ -504,7 +502,19 @@ Section DENOT.
     apply (Val ty (cast EQ X)).
   Defined.
 
-  Definition eval_record_project_aux (fields: smaplist typ) (rc: eval_recordtyp eval_typ fields) (k: ident) (ty:typ) : res (eval_typ ty).
+  Definition eval_record_project_aux (fields: smaplist typ) (rc: eval_recordtyp eval_typ fields) (k: ident) (ty:typ) : option(eval_typ ty).
+    simpl in rc.
+    unfold eval_recordtyp in rc.
+    destruct (Bool.bool_dec (good_proj k fields) true) as [GP| BP].
+    - specialize (gproject eval_typ rc k GP).
+      intro.
+      destruct (exists_typeof_field eval_typ _ _ GP) as (ty1 & EQ).
+      apply (cast EQ) in X.
+      exact (cast_typ X ty).
+    - exact fail.
+  Defined.
+
+(*  Definition eval_record_project_aux (fields: smaplist typ) (rc: eval_recordtyp eval_typ fields) (k: ident) (ty:typ) : option(eval_typ ty).
     simpl in rc.
     unfold eval_recordtyp in rc.
     destruct (good_proj k fields) eqn:GP.
@@ -515,8 +525,9 @@ Section DENOT.
       exact (cast_typ X ty).
     - exact fail.
   Defined.
+    *)
 
-  Definition eval_record_project (ty:typ) : forall (v: eval_typ ty) (k: ident) (tyr : typ), res (eval_typ tyr) :=
+  Definition eval_record_project (ty:typ) : forall (v: eval_typ ty) (k: ident) (tyr : typ), option(eval_typ tyr) :=
     match ty with
     | TRecord _ fields => fun v k tyr => eval_record_project_aux fields v k tyr
     | _ => fun _ _ _ => fail
@@ -528,10 +539,10 @@ Section DENOT.
     | Val t _ => t
     end.
 
-  Definition typof_field_dec (k:ident) (fields: smaplist typ) : res {t : typ| typof_field k fields = OK t}.
+  Definition typof_field_dec (k:ident) (fields: smaplist typ) : option{t : typ| typof_field k fields = Some t}.
   Proof.
     destruct (typof_field k fields) as [t |] eqn:Etyp.
-    apply OK. exists t. reflexivity.
+    apply Some. exists t. reflexivity.
     apply fail.
   Defined.
 
@@ -541,8 +552,8 @@ Ltac change_good_proj :=
       change (good_proj K ((S,V)::L)) with ((K=?S)%string || good_proj K L)
   end.
 
-Fixpoint good_proj_map  (A B: Type) (F : A -> B) (k:key) (fields :smaplist A):
-    good_proj k fields = good_proj k (map F fields).
+Fixpoint good_proj_map  (A B: Type) (F : A -> B) (k:key) (fields:smaplist A):
+    good_proj k fields = good_proj k (MapList.map F fields).
 Proof.
   destruct fields.
   - simpl. reflexivity.
@@ -554,7 +565,7 @@ Proof.
 Defined.
 
 Definition good_proj_map_app     {A B: Type} (F : A -> B) {k:key} {fields :smaplist A}:
-  forall (GP : good_proj k fields = true), good_proj k (map F fields) = true.
+  forall (GP : good_proj k fields = true), good_proj k (MapList.map F fields) = true.
 Proof.
   intros.
   rewrite <- GP.
@@ -562,7 +573,7 @@ Proof.
 Defined.
 
 Fixpoint typeof_field_typ (k:key) (fields : smaplist typ) (GK: good_proj k fields = true) :
-  { ty : typ | find_type_of_field k fields = OK ty}.
+  { ty : typ | find_type_of_field k fields = Some ty}.
 Proof.
   destruct fields.
   - exfalso. apply (good_proj_nil GK).
@@ -573,7 +584,7 @@ Proof.
     repeat change_good_proj.
     destruct (k=? s)%string.
     + intro.
-      exists t0;reflexivity.
+      exists t;reflexivity.
     + simpl.
       intros.
       apply (typeof_field_typ k fields GK).
@@ -596,7 +607,7 @@ Definition fo_typ (t:typ) :=
   end.
 
 Definition cast_etyp {k:key} {fields : smaplist typ} {tv: typ} (v:  eval_typ tv)
-  (EQ : find_type_of_field k fields = OK tv):
+  (EQ : find_type_of_field k fields = Some tv):
   gtype_of_field eval_typ k fields.
 Proof.
   unfold gtype_of_field.
@@ -604,48 +615,44 @@ Proof.
 Defined.
 
 Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_typ fields) (k: ident) (tv: typ) (v: eval_typ tv) :
-  res (eval_recordtyp eval_typ fields) :=
+  option(eval_recordtyp eval_typ fields) :=
   dyn_upd eval_typ typ_eq_dec rc k tv v.
 
-  Definition eval_record_update (t1:typ) : forall (v1: eval_typ t1) (k: ident) (tv : typ) (v: eval_typ tv) (tyr:typ), res (eval_typ tyr) :=
+  Definition eval_record_update (t1:typ) : forall (v1: eval_typ t1) (k: ident) (tv : typ) (v: eval_typ tv) (tyr:typ), option(eval_typ tyr) :=
     match t1 with
     | TRecord n fields => fun st k tv v tyr =>
                             @ecast_typ (TRecord n fields) (eval_record_upd_aux fields st k tv v) tyr
     | _ => fun _ _ _ _ _ => fail
     end.
 
-  Definition typof_record_project (ty:typ) (f:ident): res typ :=
+  Definition typof_record_project (ty:typ) (f:ident): option typ :=
     match ty with
     | TRecord _ l => find_err key_eq f l
     |    _      => fail
     end.
 
-  Definition typof_array (ty:typ) : res typ :=
+  Definition typof_array (ty:typ) : option typ :=
     match ty with
-    | TArray e => OK e
+    | TArray e => Some e
     |    _      => fail
     end.
 
-  Definition res_eq_typ (v1 v2 : res value) : bool :=
-    match v1 , v2 with
-    | Error _ , _ | _ , Error _ => true
-    | OK v1 , OK v2 => proj_sumbool (typ_eq_dec (typeof_value v1) (typeof_value v2))
-    end.
 
-  Definition eval_ifthenelse (c:bool) (t2: typ) (v2:res (eval_typ t2)) (t3: typ)  (v3: res (eval_typ t3)) (tr:typ) : res (eval_typ tr) :=
+  Definition eval_ifthenelse (c:bool) (t2: typ) (v2:option(eval_typ t2)) (t3: typ)  (v3: option(eval_typ t3)) (tr:typ) : option(eval_typ tr) :=
     if c then ecast_typ v2 tr else ecast_typ v3 tr.
 
 
 
-  Definition eval_match (tv:typ) (v: eval_typ tv) (tr: typ) (cases: list (pattern * (res (eval_typ tr)))) : res (eval_typ tr) :=
-    (match tv as t0 return (eval_typ t0 -> res (eval_typ tr)) with
+  Definition eval_match (tv:typ) (v: eval_typ tv) (tr: typ) (cases: list (pattern * (option(eval_typ tr)))) : option(eval_typ tr) :=
+    (match tv as t0 return (eval_typ t0 -> option(eval_typ tr)) with
     | TEnum _ elems => 
         (fun v0 => match_with_err v0 cases)
     | _ => (fun _ => fail)
     end) v.
 
+
   Fixpoint eval_app (tparams: list typ) (tret: typ) (f: eval_funtyp eval_typ tparams (eval_typ tret)) (args: DList.dlist eval_typ tparams) (ty: typ):
-    res (eval_typ ty).
+    option(eval_typ ty).
   Proof.
     destruct args.
     - simpl in f. apply (ecast_typ (f tt) ty).
@@ -656,7 +663,7 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
   Defined.
 
   Fixpoint eval_app_typ (tparams: list typ) (tret: typ) (f: eval_funtyp eval_typ tparams (eval_typ tret)) (args: DList.dlist eval_typ tparams) (ty:typ):
-    res (eval_typ ty).
+    option(eval_typ ty).
   Proof.
     destruct args.
     - simpl in f. apply (ecast_typ (f tt) ty).
@@ -666,9 +673,9 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
       + apply (eval_app_typ _ _ (f e) args ty).
   Defined.
 
-  Fixpoint eval_app_res (tparams: list typ) (tret: typ) (f: eval_funtyp eval_typ tparams (eval_typ tret))
-    (args: DList.dlist (fun (ty:typ) => res (eval_typ ty)) tparams) (ty:typ):
-    res (eval_typ ty).
+  Fixpoint eval_app_option(tparams: list typ) (tret: typ) (f: eval_funtyp eval_typ tparams (eval_typ tret))
+    (args: DList.dlist (fun (ty:typ) => option(eval_typ ty)) tparams) (ty:typ):
+    option(eval_typ ty).
   Proof.
     destruct args.
     - simpl in f. apply (ecast_typ (f tt) ty).
@@ -676,15 +683,15 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
       destruct l.
       + apply (let* e' := e in ecast_typ (f e') ty).
       + eapply bind. apply e.
-      apply (fun x => eval_app_res _ _ (f x) args ty).
+      apply (fun x => eval_app_option _ _ (f x) args ty).
   Defined.
 
-  Lemma eval_app_res_eval_app : forall {B:Type} (F : forall (ty:typ), B -> res (eval_typ  ty)) lt l args,
-      DList.map2 (eval_typ ) F l lt = OK args ->
+  Lemma eval_app_res_eval_app : forall {B:Type} (F : forall (ty:typ), B -> option (eval_typ  ty)) lt l args,
+      DList.map2 (eval_typ ) F l lt = Some args ->
       forall tret f ty v,
-      eval_app_res  lt tret f args ty = OK v ->
+      eval_app_option lt tret f args ty = Some v ->
       exists vargs,
-        DList.mmap (eval_typ ) F l lt = OK vargs /\ eval_app  lt tret f vargs ty = OK v.
+        DList.mmap (eval_typ ) F l lt = Some vargs /\ eval_app  lt tret f vargs ty = Some v.
   Proof.
     induction lt.
     - destruct l; try discriminate.
@@ -725,10 +732,10 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
 
 
 
-  Definition typof_atom (te: tenv) (a: atom) : res typ :=
+  Definition typof_atom (te: tenv) (a: atom) : option typ :=
     btyp_to_typ te (typof_atom a).
 
-  Fixpoint eval_atom (te: tenv) (ge: genv) (le: lenv) (ty: typ) (a: atom) : res (eval_typ ty) :=
+  Fixpoint eval_atom (te: tenv) (ge: genv) (le: lenv) (ty: typ) (a: atom) : option(eval_typ ty) :=
     match a with
     | ATrue  => @cast_typ TBool true ty
     | AFalse => @cast_typ TBool false ty
@@ -767,14 +774,14 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
         | TFun tparams tret =>
             let* f := eval_var ge le f (TFun tparams tret) in
             let* vargs := DList.map2 _ (eval_atom te ge le) args tparams in
-            eval_app_res tparams tret f vargs ty
+            eval_app_option tparams tret f vargs ty
               (* let* vargs := DList.mmap _ (eval_atom te ge le) args tparams in
             eval_app tparams tret f vargs ty *)
         |  _  => fail
         end
     end.
 
-  Definition eval_comp (te: tenv) (ge: genv) (le: lenv) (ty: typ) (c: comp) : res (eval_typ ty) :=
+  Definition eval_comp (te: tenv) (ge: genv) (le: lenv) (ty: typ) (c: comp) : option(eval_typ ty) :=
     match c with
     | CpAtom a => eval_atom te ge le ty a
     | CpArraySet a1 a2 a3 bt =>
@@ -797,26 +804,26 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
         | TFun tparams tret =>
             let* f := eval_var ge le f (TFun tparams tret) in
             let* vargs := DList.map2 _ (eval_atom te ge le) args tparams in
-            eval_app_res tparams tret f vargs ty
+            eval_app_option tparams tret f vargs ty
             (*let* vargs := DList.mmap _ (eval_atom te ge le) args tparams in
             eval_app tparams tret f vargs ty *)
         |  _  => fail
         end
     end.
 
-  Definition cast_int (t:typ) (i:int) : res (eval_typ t) :=
+  Definition cast_int (t:typ) (i:int) : option(eval_typ t) :=
     match t with
-    | TInt32 s => OK i
+    | TInt32 s => Some i
     |  _       => fail
     end.
 
-  Definition cast_int64 (t:typ) (i:int64) : res (eval_typ t) :=
+  Definition cast_int64 (t:typ) (i:int64) : option(eval_typ t) :=
     match t with
-    | TInt64 s => OK i
+    | TInt64 s => Some i
     |  _       => fail
     end.
 
-  Fixpoint eval_literal (te: tenv) (l: literal) : res value :=
+  Fixpoint eval_literal (te: tenv) (l: literal) : option value :=
     match l with
     | LTrue => ret (Val TBool true)
     | LFalse => ret (Val TBool false)
@@ -826,12 +833,12 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
         let* av := mmap (eval_literal te) a in
         eval_array_lit av
     | LRecord rc _ rid =>
-        let* rcv := MapList.map_err (eval_literal te) rc in
+        let* rcv := map_err (eval_literal te) rc in
         let* fields := TEnv.get_rdef te rid in
         eval_record_lit rid rcv fields
     end.
 
-  Definition cast_typ_M (tret:typ) (v: value) : M (eval_typ tret) :=
+  Definition cast_typ_M (tret:typ) (v: value) : option (eval_typ tret) :=
     match v with
       | Val tv v =>
           match typ_eq_dec tv tret with
@@ -840,7 +847,7 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
           end
     end.
 
-  Definition eval_def_const (te: tenv) (ge: genv) (x: ident) (l: literal) (ty: btyp) : res genv :=
+  Definition eval_def_const (te: tenv) (ge: genv) (x: ident) (l: literal) (ty: btyp) : option genv :=
     let* ty' := btyp_to_typ te ty in
     let* vv := eval_literal te l in
     let* v'  := cast_value vv ty' in
@@ -868,7 +875,7 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
   Qed.
 
   Lemma genv_update_preserve_defs : forall ge k v ge',
-      genv_update ge k v = OK ge' ->
+      genv_update ge k v = Some ge' ->
       env_preserve_defs ge ge'.
   Proof.
     unfold env_preserve_defs,genv_update;intros.
@@ -881,7 +888,7 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
   Qed.
 
   Lemma eval_def_const_preserve_defs : forall te ge ge' x l ty,
-      eval_def_const te ge x l ty = OK ge' ->
+      eval_def_const te ge x l ty = Some ge' ->
       env_preserve_defs ge ge'.
   Proof.
     unfold eval_def_const.
@@ -889,12 +896,12 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
     destruct (Typing.btyp_to_typ te ty); try discriminate.
     destruct (eval_literal te l); try discriminate.
     simpl in H.
-    destruct (cast_value v t0); try discriminate.
+    destruct (cast_value v t); try discriminate.
     simpl in H.
     eapply genv_update_preserve_defs;eauto.
   Qed.
 
-  Definition eval_decl_const (te: tenv) (impl ge: genv) (x:ident) (bt:btyp) : res genv :=
+  Definition eval_decl_const (te: tenv) (impl ge: genv) (x:ident) (bt:btyp) : option genv :=
     let* ty :=  Typing.btyp_to_typ te bt  in
     let* v  := genv_get impl x in
     if typ_eq_dec ty (typeof_value v) then
@@ -902,7 +909,7 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
     else fail.
 
   Lemma eval_decl_const_preserve_defs : forall te impl ge ge' x  ty,
-      eval_decl_const te impl ge x ty = OK ge' ->
+      eval_decl_const te impl ge x ty = Some ge' ->
       env_preserve_defs ge ge'.
   Proof.
     unfold eval_decl_const.
@@ -911,13 +918,13 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
     simpl in H.
     destruct (genv_get impl x) eqn:GE; try discriminate.
     simpl in H.
-    destruct (typ_eq_dec t0 (typeof_value v)) eqn:TE; try discriminate.
+    destruct (typ_eq_dec t (typeof_value v)) eqn:TE; try discriminate.
     eapply genv_update_preserve_defs;eauto.
   Qed.
 
 
   Lemma genv_update_gss : forall ge ge' id v,
-      genv_update ge id v = OK ge' ->
+      genv_update ge id v = Some ge' ->
       ge' ! (StringIndexed.index id) = Some v.
   Proof.
     unfold genv_update; intros.
@@ -933,7 +940,7 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
 
     Context {EXPR : Type}.
 
-    Variable eval_expr : tenv -> genv -> lenv -> (forall (ty: typ) (e: EXPR), res (eval_typ ty)).
+    Variable eval_expr : tenv -> genv -> lenv -> (forall (ty: typ) (e: EXPR), option(eval_typ ty)).
 
   Fixpoint eval_fun_rec (te: tenv) (ge: genv) (le: lenv) (params: smaplist typ) (tret: typ) (e: EXPR) :
     eval_funtyp eval_typ (List.map snd  params) (eval_typ tret) :=
@@ -947,7 +954,7 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
             (eval_funtyp eval_typ (List.map (fun x : string * typ => snd x) l0) (eval_typ tret) ->
              let l1 := List.map snd l0 in
              match l1 with
-             | [] => res (eval_typ tret)
+             | [] => option(eval_typ tret)
              | _ :: _ => eval_funtyp eval_typ l1 (eval_typ tret)
             end)
           with
@@ -970,7 +977,7 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
             return
             (eval_funtyp eval_typ (List.map (fun x : string * typ => snd x) l0) (eval_typ tret) ->
              match List.map snd l0 with
-           | [] => res (eval_typ tret)
+           | [] => option(eval_typ tret)
            | _ :: _ => eval_funtyp eval_typ (List.map (fun x : string * typ => snd x) l0) (eval_typ tret)
            end)
       with
@@ -988,28 +995,28 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
   Definition eval_fun (te: tenv) (ge: genv) (params: smaplist typ) (tret: typ) (e: EXPR) : eval_typ (TFun (List.map (fun x => snd x) params) tret) :=
     eval_fun_rec te ge STree.empty params tret e.
 
-  (* Definition mk_fun_value (te: tenv) (ge: genv) (params: smaplist btyp) (tret: btyp) (e: EXPR) : res value :=
+  (* Definition mk_fun_value (te: tenv) (ge: genv) (params: smaplist btyp) (tret: btyp) (e: EXPR) : optionvalue :=
     if MapList.nodup Ident.eq_dec params then
       let* tret' := btyp_to_typ te tret in
       let* params' := MapList.map_err (btyp_to_typ te) params in
       ret (Val (TFun (List.map (fun x => snd x) params') tret') (eval_fun te ge params' tret' e))
     else fail. *)
 
-  Definition eval_def_fun (te: tenv) (ge: genv) (x: ident) (f: Syntax.function EXPR btyp) : res genv :=
+  Definition eval_def_fun (te: tenv) (ge: genv) (x: ident) (f: Syntax.function EXPR btyp) : option genv :=
     let '(tret, params) := (fn_return f, fn_params f) in
     if MapList.nodup Ident.eq_dec params then
       let* tret' := btyp_to_typ te tret in
-      let* params' := MapList.map_err (btyp_to_typ te) params in
+      let* params' := map_err (btyp_to_typ te) params in
       let fv := Val (TFun (List.map (fun x => snd x) params') tret') (eval_fun te ge params' tret' (fn_body f)) in
       genv_update ge x fv
     else fail.
 
-  Definition fields_btyp_to_typ (te: tenv) (fields: smaplist btyp) : res (smaplist typ) :=
-    MapList.map_err (btyp_to_typ te) fields.
+  Definition fields_btyp_to_typ (te: tenv) (fields: smaplist btyp) : option(smaplist typ) :=
+    map_err (btyp_to_typ te) fields.
 
 
 
-  Definition eval_decl_fun (te:tenv) (impl ge : genv) (x: ident) (params : list (Syntax.param_attr * btyp)) (tret:btyp) : res genv :=
+  Definition eval_decl_fun (te:tenv) (impl ge : genv) (x:Syntax.ident) (params : list (Syntax.param_attr * btyp)) (tret:btyp) : option genv :=
     let* tparams := mmap (Typing.btyp_to_typ te) (List.map snd params) in
     let* tret   := Typing.btyp_to_typ te tret in
     let* v := genv_get impl x in
@@ -1017,7 +1024,7 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
       genv_update ge x v
     else fail.
 
-  Definition eval_globdef (te: tenv) (impl ge: genv) (def: globdef EXPR btyp literal) : res genv :=
+  Definition eval_globdef (te: tenv) (impl ge: genv) (def: globdef EXPR btyp literal) : option genv :=
     match def with
     | DefConst x l ty => eval_def_const te ge x l ty
     | DefFun x f => eval_def_fun te ge x f
@@ -1027,7 +1034,7 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
 
   Lemma eval_globdef_add_gid:
     forall te impl ge ge' def, 
-      eval_globdef te impl ge def = OK ge' ->
+      eval_globdef te impl ge def = Some ge' ->
       STree.keys ge' = SSet.add (globdef_id def) (STree.keys ge).
   Proof.
     intros; destruct def; simpl in H.
@@ -1036,7 +1043,7 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
       destruct (genv_get ge i); try discriminate.
       inv EQ3. simpl. apply STree.keys_set.
     - unfold eval_def_fun in H.
-      destruct (nodup Ident.eq_dec (fn_params f)); try discriminate.
+      destruct (MapList.nodup Ident.eq_dec (fn_params f)); try discriminate.
       monadInv H. unfold genv_update in EQ2.
       destruct (genv_get ge i); try discriminate.
       inv EQ2. simpl. apply STree.keys_set. 
@@ -1052,25 +1059,24 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
       simpl. apply STree.keys_set.
   Qed. 
 
-
-  Definition eval_prog_rec (te:tenv) (impl:genv) (ge:genv) (prog:list (globdef EXPR btyp literal)) : res genv :=
-    list_fold_left_err
+  Definition eval_prog_rec (te:tenv) (impl:genv) (ge:genv) (prog:list (globdef EXPR btyp literal)) : option genv :=
+    fold_left_err
       (fun acc d => eval_globdef te impl acc d)
       prog ge.
 
 
-  Definition eval_prog (impl: genv) (prog: program EXPR btyp literal) : res (tenv * genv) :=
+  Definition eval_prog (impl: genv) (prog: program EXPR btyp literal) : option(tenv * genv) :=
     let* te := tenv_of_type_defs (prog_types prog) in
     let* ge' := eval_prog_rec te impl STree.empty (prog_defs prog)  in
     ret (te, ge').
 
   Lemma eval_def_fun_preserve_defs : forall te ge x f ge',
-      eval_def_fun te ge x f = OK ge' ->
+      eval_def_fun te ge x f = Some ge' ->
       env_preserve_defs ge ge'.
   Proof.
     unfold eval_def_fun.
     intros.
-    destruct (nodup Ident.eq_dec (fn_params f)); try discriminate.
+    destruct (MapList.nodup Ident.eq_dec (fn_params f)); try discriminate.
     destruct (btyp_to_typ te (fn_return f)); try discriminate.
     simpl in H. destruct (map_err (btyp_to_typ te) (fn_params f)); try discriminate.
     simpl in H.
@@ -1078,7 +1084,7 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
   Qed.
 
   Lemma eval_decl_fun_preserve_defs : forall te impl ge ge' f targs tret,
-      eval_decl_fun te impl ge f targs tret = OK ge' ->
+      eval_decl_fun te impl ge f targs tret = Some ge' ->
       env_preserve_defs ge ge'.
   Proof.
     unfold eval_decl_fun.
@@ -1086,14 +1092,14 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
     destruct (mmap (btyp_to_typ te) (List.map snd targs)) eqn:P; try discriminate.
     destruct (btyp_to_typ te tret); try discriminate.
     destruct (genv_get impl f) eqn:GET; try discriminate.
-    unfold bind,Errors.bind in H.
-    destruct (typ_eq_dec (TFun l t0) (typeof_value v)); try discriminate.
+    unfold bind,Res.bind in H.
+    destruct (typ_eq_dec (TFun l t) (typeof_value v)); try discriminate.
     eapply genv_update_preserve_defs; eauto.
   Qed.
 
 
   Lemma eval_globdef_preserve_defs : forall te impl ge ge' a,
-      eval_globdef te impl ge a = OK ge' ->
+      eval_globdef te impl ge a = Some ge' ->
       env_preserve_defs ge ge'.
   Proof.
     destruct a; simpl.
@@ -1110,7 +1116,7 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
 
   Lemma eval_prog_rec_preserve_defs :
     forall  prog impl ge  te ge'
-           (EVAL: eval_prog_rec te impl ge prog = OK  ge'),
+           (EVAL: eval_prog_rec te impl ge prog = Some  ge'),
       env_preserve_defs ge ge'.
   Proof.
     unfold eval_prog_rec.
@@ -1128,9 +1134,9 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
 
   Lemma genv_get_preserve_defs :
     forall  prog te impl ge   ge' x v
-           (EVAL: eval_prog_rec te impl ge prog = OK ge')
-           (GET : genv_get  ge x = OK v),
-      genv_get  ge' x = OK v.
+           (EVAL: eval_prog_rec te impl ge prog = Some ge')
+           (GET : genv_get  ge x = Some v),
+      genv_get  ge' x = Some v.
   Proof.
     intros.
     eapply eval_prog_rec_preserve_defs in EVAL.
@@ -1150,11 +1156,11 @@ End DENOT.
 
 Ltac erase_cast H :=
   match type of H with
-  | @cast_typ _ _ _ _ = OK _ =>
+  | @cast_typ _ _ _ _ = Some _ =>
       let EQt := fresh "EQt" in
       pose proof (cast_typ_ok_imp_typ_eq _ _ _ _ _ H) as EQt;
       subst; rewrite cast_typ_id in H
-  | @ecast_typ _ _ _ _ = OK _ =>
+  | @ecast_typ _ _ _ _ = Some _ =>
       let EQt := fresh "EQt" in
       pose proof (ecast_typ_ok_imp_typ_eq _ _ _ _ _ H) as EQt;
       subst; rewrite ecast_typ_id in H

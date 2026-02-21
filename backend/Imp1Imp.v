@@ -1,7 +1,7 @@
 (* Imperative Imp1 *)
 From Coq Require Import Bool List String PArith Lia.
 From compcert Require Import Integers Coqlib.
-From BarocqComp Require Import Denot Benum  Barray Brecord Error Maps2 Utils Syntax Types Typing.
+From BarocqComp Require Import Denot Benum  Barray Brecord OptionMonad Maps2 Utils Syntax Types Typing.
 From BarocqComp Require Import Imp1.
 From BarocqComp Require Printer Pp.
 
@@ -34,17 +34,18 @@ End Forall2.
 
 Section MAPACC.
   Context {A B MEM:Type}.
-  Variable F : A -> MEM -> res (B * MEM).
+  Variable F : A -> MEM -> option (B * MEM).
 
-  Fixpoint mmap_fold (l:list A) (m:MEM) : res (list B * MEM) :=
+  Fixpoint mmap_fold (l:list A) (m:MEM) : option (list B * MEM) :=
     match l with
-    | nil => OK(nil,m)
-    | e::l => let* (fe,m1) := F e m in
-              let* (l ,mr) := mmap_fold l m1 in
-              OK (fe::l,mr)
-    end.
+    | nil => Some(nil,m)
+      | e::l => let* (fe,m1) := F e m in
+                let* (l ,mr) := mmap_fold l m1 in
+                Some (fe::l,mr)
+      end.
 
 End MAPACC.
+
 
 Inductive cedge :=
   | CField (id:ident)
@@ -87,12 +88,12 @@ Definition get_addr_of_ptr {ty:typ} (p:ptr ty) : addr + ident :=
   | PtrAbs a _ => inl a
   end.
 
-Definition addr_of_ptr {ty:typ} (p:ptr ty) : res addr :=
+Definition addr_of_ptr {ty:typ} (p:ptr ty) : option addr :=
   match p with
-  | PtrA a _ => OK a
-  | PtrR a _ _ => OK a
-  | PtrF id _ _ => fail
-  | PtrAbs a _ => OK a
+  | PtrA a _ => Some a
+  | PtrR a _ _ => Some a
+  | PtrF id _ _ => None
+  | PtrAbs a _ => Some a
   end.
 
 
@@ -379,8 +380,7 @@ Section S.
     apply (mval_eq_dec_cast  _ v1 _ v2 eq_refl).
   Defined.
 
-
-  Definition memt := addr -> res {ty : typ & mval ty}.
+  Definition memt := addr -> option {ty : typ & mval ty}.
 
   Record mem : Type := mkmem {
                            _mem  : memt;
@@ -403,7 +403,7 @@ Section S.
   Defined.
 
   Program Fixpoint xeq_mem (f1 f2:memt) (mx:positive) (DEC : Acc Pos.lt mx) : bool:=
-    if res_eq_dec _ sig_mval_eq_dec (f1 mx) (f2 mx)
+    if option_eq_dec sig_mval_eq_dec (f1 mx) (f2 mx)
     then
       if Pos.eq_dec mx xH then true
       else xeq_mem f1 f2 (Pos.pred mx) (Acc_inv DEC _)
@@ -417,16 +417,16 @@ Section S.
 
   Fixpoint typ_of_fun (l:list typ) (r:typ) :=
     match l with
-    | nil => unit -> res (val r * mem)
+    | nil => unit -> option (val r * mem)
     | tx::tparams' => val tx ->
                       match tparams' with
-                      | nil => res (val r * mem)
+                      | nil => option (val r * mem)
                       | _ :: _ => typ_of_fun tparams' r
                       end
     end.
 
   Fixpoint eval_app (tparams:list typ) (r:typ) (f: typ_of_fun tparams r)
-    (args: DList.dlist val tparams) {struct args} : res (val r * mem).
+    (args: DList.dlist val tparams) {struct args} : option (val r * mem).
   Proof.
     destruct args.
     - simpl in f. apply (f tt).
@@ -443,15 +443,16 @@ Section S.
   | GFun  (args : list typ) (tret : typ) (fct: Fun args tret)
   | GConst  (ty:typ) (v : val ty).
 
-  Definition genv := ident -> res gval.
+
+  Definition genv := ident -> option gval.
 
 
-  Definition  get {ty:typ} (p:ptr ty) (m:mem) : res (mval ty):=
+  Definition  get {ty:typ} (p:ptr ty) (m:mem) : option (mval ty):=
     let* a := addr_of_ptr p in
     let* ma := _mem m a in
     let (tv,v) := ma in
     match typ_eq_dec tv ty with
-    | left EQ => OK (cast (f_equal mval EQ) v)
+    | left EQ => Some (cast (f_equal mval EQ) v)
     | _  => fail
     end.
 
@@ -463,10 +464,10 @@ Section S.
     | PEnum _ _ e => e
     end.
 
-  Definition eval_val_pval {ty:typ} (p:val ty) : res (eval_typ abs ty) :=
+  Definition eval_val_pval {ty:typ} (p:val ty) : option (eval_typ abs ty) :=
     match p with
-    | Vprim _ pv => OK (eval_pval pv)
-    |  _        => efail
+    | Vprim _ pv => Some (eval_pval pv)
+    |  _        => fail
     end.
 
 
@@ -508,17 +509,17 @@ Section S.
     end.
 
 
-  Definition  get_fun {args :list typ} {ret : typ}  (p:ptr (TFun args ret)) (ge:genv) : res (mem -> typ_of_fun args ret).
+  Definition  get_fun {args :list typ} {ret : typ}  (p:ptr (TFun args ret)) (ge:genv) : option (mem -> typ_of_fun args ret).
   Proof.
     apply decomp_ptr in p.
     simpl in p.
     eapply bind.
     apply (ge p).
     intro.
-    destruct X as [args' tret' |] ; [|apply efail].
+    destruct X as [args' tret' |] ; [|apply fail].
     unfold Fun in fct.
     destruct (typ_eq_dec (TFun args' tret') (TFun args ret)).
-    apply OK. inv e. apply fct.
+    apply Some. inv e. apply fct.
     apply fail.
   Defined.
 
@@ -579,8 +580,8 @@ Section S.
   Definition ge_has_fun (ge:genv) {ty :typ} (p:ptr ty) : bool:=
     match p with
     | PtrF fid _ _ => match ge fid with
-                      | Error _ => false
-                      | OK f    =>
+                      | None => false
+                      | Some f    =>
                           match f with
                           | GFun _ _ _ => true
                           | _             => false
@@ -590,11 +591,12 @@ Section S.
     end.
 
 
+
   Inductive wf_val (ge:genv) (m:mem) : forall (ty:typ), val ty -> Prop :=
   (** primitive values are well-formed *)
   | WFVprim : forall ty v, wf_val ge m ty (Vprim ty v)
   (* Pointer are well-formed if they are not dangling *)
-  | WFVPtr  : forall ty (p:ptr ty), ge_has_fun ge p = true \/ isOK (get p m)  -> wf_val ge m ty (Vptr ty p).
+  | WFVPtr  : forall ty (p:ptr ty), ge_has_fun ge p = true \/ isSome (get p m)  -> wf_val ge m ty (Vptr ty p).
 
 
   Definition wf_mval (ge:genv) (m:mem) (ty:typ) (mv:mval ty) :=
@@ -606,7 +608,7 @@ Section S.
 
   Definition wf (ge:genv) (m: mem) :=
     forall a ty mv,
-      _mem m a = OK (existT _ ty mv) -> wf_mval ge m ty mv.
+      _mem m a = Some (existT _ ty mv) -> wf_mval ge m ty mv.
 
   Definition defs_has_typ (d:gval) (ty:typ)  : Prop :=
     match d with
@@ -637,7 +639,7 @@ Section S.
 
   Lemma wf_val_get : forall ge m ty (v:mval ty) p ,
       wf ge m ->
-      get p m = OK v -> wf_mval ge m ty v.
+      get p m = Some v -> wf_mval ge m ty v.
   Proof.
     intros.
     unfold wf in H.
@@ -716,7 +718,7 @@ Section S.
         subst. simpl.
         destruct H1 as [H1 | H1].
         rewrite ptr_array_has_fun  in H1. discriminate.
-        unfold isOK in H1. destruct H1 as (x & EQ).
+        unfold isSome in H1. destruct H1 as (x & EQ).
         specialize (eval_mem_ok ge m WF ty).
         rewrite EQ.
         specialize (decomp_mval_eq _ x).
@@ -745,7 +747,7 @@ Section S.
         subst. simpl.
         destruct H1 as [H1 | H1].
         rewrite ptr_record_has_fun  in H1. discriminate.
-        unfold isOK in H1. destruct H1 as (x & EQ).
+        unfold isSome in H1. destruct H1 as (x & EQ).
         rewrite EQ.
         specialize (decomp_mval_eq _ x).
         simpl.
@@ -804,14 +806,14 @@ Section S.
         simpl.
    *)
 
-  Definition _set (a:addr) (ty:typ) (v:mval ty) (m: addr -> res {ty:typ & mval ty}) :=
+  Definition _set (a:addr) (ty:typ) (v:mval ty) (m: addr -> option {ty:typ & mval ty}) :=
     fun x => if Pos.eq_dec a x then
-               OK (existT _ _ v)
+               Some (existT _ _ v)
              else m x.
 
   Lemma set_lt : forall a ty (v:mval ty) m,
       (a < (_fresh m))%positive ->
-      forall a1, (_fresh m <= a1)%positive -> _set a ty v (_mem m) a1 = efail.
+      forall a1, (_fresh m <= a1)%positive -> _set a ty v (_mem m) a1 = fail.
   Proof.
     unfold _set.
     intros.
@@ -821,15 +823,15 @@ Section S.
     apply _wf_fresh. lia.
   Qed.
 
-  Definition set {ty: typ} (p:ptr ty) (v:mval ty) (m:mem) : res mem :=
+  Definition set {ty: typ} (p:ptr ty) (v:mval ty) (m:mem) : option mem :=
     let* a := addr_of_ptr p
     in match Coqlib.plt a (_fresh m) with
-       | left LT => OK {| _mem := _set a ty v (_mem m); _fresh := _fresh m; _wf_fresh := set_lt a ty v m LT |}
-       | right _ => efail
+       | left LT => Some {| _mem := _set a ty v (_mem m); _fresh := _fresh m; _wf_fresh := set_lt a ty v m LT |}
+       | right _ => fail
        end.
 
   Lemma alloc_lt : forall m a,
-      (Pos.succ (_fresh m) <= a)%positive -> _mem m a = efail.
+      (Pos.succ (_fresh m) <= a)%positive -> _mem m a = fail.
   Proof.
     intros.
     apply _wf_fresh.
@@ -840,31 +842,31 @@ Section S.
     (mkmem (_mem m) (Pos.succ (_fresh m)) (alloc_lt m), _fresh m).
 
   Definition empty : mem :=
-    mkmem (fun _ => efail) xH (fun _ _ => eq_refl).
+    mkmem (fun _ => fail) xH (fun _ _ => eq_refl).
 
   Definition empty_fr (fr:positive) : mem :=
-    mkmem (fun _ => efail) fr (fun _ _ => eq_refl).
+    mkmem (fun _ => fail) fr (fun _ _ => eq_refl).
 
 
   Section CPYREC.
-    Variable copy_ptr : forall  (ty:typ) (pty: ptr ty) (cmem:mem), res mem.
+    Variable copy_ptr : forall  (ty:typ) (pty: ptr ty) (cmem:mem), option mem.
 
-    Definition copy_val  {ty:typ} (v:val ty) (cmem:mem) : res mem :=
-      match v in val ty' return ty' = ty -> res mem with
-      | Vprim _ _ => fun _ => OK cmem (* nothing to copy *)
+    Definition copy_val  {ty:typ} (v:val ty) (cmem:mem) : option mem :=
+      match v in val ty' return ty' = ty -> option mem with
+      | Vprim _ _ => fun _ => Some cmem (* nothing to copy *)
       | Vptr ty' p => fun EQ => copy_ptr ty (cast (f_equal ptr EQ) p) cmem
       end eq_refl.
 
-    Fixpoint copy_array  {ty:typ} (a : array (val ty)) (cmem:mem) : res mem :=
+    Fixpoint copy_array  {ty:typ} (a : array (val ty)) (cmem:mem) : option mem :=
       match a with
-      | nil     => OK cmem
+      | nil     => Some cmem
       | v1::vls => let* cmem := copy_val v1 cmem in
                    copy_array vls cmem
       end.
 
-    Fixpoint copy_record (lty:smaplist typ) : grecord val lty -> mem -> res mem :=
-      match lty as l return (grecord val l -> mem -> res mem) with
-      | nil => fun _  cmem => OK cmem
+    Fixpoint copy_record (lty:smaplist typ) : grecord val lty -> mem -> option mem :=
+      match lty as l return (grecord val l -> mem -> option mem) with
+      | nil => fun _  cmem => Some cmem
       | p :: lty =>
           fun gr cmem =>
             let* cmem := copy_val (proj_field (fst gr)) cmem
@@ -872,7 +874,7 @@ Section S.
       end.
   End CPYREC.
 
-  Fixpoint xcopy (m:mem) {ty:typ} (p : ptr ty) (cmem:mem) {struct ty}: res mem.
+  Fixpoint xcopy (m:mem) {ty:typ} (p : ptr ty) (cmem:mem) {struct ty}: option mem.
   Proof.
     destruct ty.
     (* Pointer to primitive is not possible *)
@@ -894,7 +896,7 @@ Section S.
       eapply bind.
       apply (copy_record (xcopy m) _ (decomp_mval _ mvA) cmem).
       apply (fun cmem => set p mvA cmem).
-    - apply (OK cmem).
+    - apply (Some cmem).
     - (* pointer to a abstract object *)
       eapply bind.
       apply (get p m).
@@ -902,19 +904,19 @@ Section S.
       apply (set p mvA cmem).
   Defined.
 
-  Definition copy  (m:mem) {ty:typ} (pty : ptr ty)   : res mem :=
+  Definition copy  (m:mem) {ty:typ} (pty : ptr ty)   : option mem :=
     xcopy m pty (empty_fr (_fresh m)).
 
-  Fixpoint copy_list (m:mem) (l : list {ty:typ & val ty}) : res mem :=
+  Fixpoint copy_list (m:mem) (l : list {ty:typ & val ty}) : option mem :=
     match l with
-    | nil =>  OK (empty_fr (_fresh m))
+    | nil =>  Some (empty_fr (_fresh m))
     | v ::l => let* cpm := copy_list m l in
                copy_val (@xcopy m) (projT2 v) cpm
     end.
 
-  Fixpoint copy_args (m:mem) {tparams:list typ} (args : DList.dlist (DList.resFtyp val) tparams)  : res mem :=
+  Fixpoint copy_args (m:mem) {tparams:list typ} (args : DList.dlist (DList.resFtyp val) tparams)  : option mem :=
     match args with
-    | DList.DNIL _ => OK (empty_fr (_fresh m))
+    | DList.DNIL _ => Some (empty_fr (_fresh m))
     | @DList.DCONS _ _ ty v l dl =>
         let* cpm := copy_args m dl in
         let* v := v in
@@ -930,13 +932,13 @@ Section S.
 
   (*        Lemma wf_set : forall (ge:genv) ty (p:ptr ty) (mv:mval ty) (m m':t),
             wf ge m -> wf_mval ge m _ mv ->
-            set p mv m = OK m' ->
+            set p mv m = Some m' ->
             wf ge m'.
         Proof.
           intros. unfold wf in *.
           intros.
           destruct (addr_of_ptr p)eqn:A ; try discriminate.
-          (* We have an addres *)
+          (* We have an addoption *)
           destruct (Pos.eq_dec a a0).
           + subst.
 
@@ -975,25 +977,25 @@ Section S.
           end.
    *)
 
-  Definition cast_pval {ty}  (pv : pval ty) (ty':typ): res (pval ty') :=
+  Definition cast_pval {ty}  (pv : pval ty) (ty':typ): option (pval ty') :=
     match typ_eq_dec ty ty' with
-    | left EQ => OK (cast (f_equal pval EQ) pv)
+    | left EQ => Some (cast (f_equal pval EQ) pv)
     | _ => fail
     end.
 
-  Definition cast_mval {ty}  (pv : mval ty) (ty':typ): res (mval ty') :=
+  Definition cast_mval {ty}  (pv : mval ty) (ty':typ): option (mval ty') :=
     match typ_eq_dec ty ty' with
-    | left EQ => OK (cast (f_equal mval EQ) pv)
+    | left EQ => Some (cast (f_equal mval EQ) pv)
     | _ => fail
     end.
 
-  Definition cast_val {ty:typ} (v: val ty) (ty':typ) : res (val ty') :=
+  Definition cast_val {ty:typ} (v: val ty) (ty':typ) : option (val ty') :=
     match typ_eq_dec ty ty' with
-    | left EQ => OK (cast (f_equal val EQ) v)
-    | right _ => efail
+    | left EQ => Some (cast (f_equal val EQ) v)
+    | right _ => fail
     end.
 
-  Definition env := ident -> res {ty & val ty}.
+  Definition env := ident -> option {ty & val ty}.
 
   Definition get_signed (is32:bool) (b:btyp) :=
     if is32 then
@@ -1014,80 +1016,80 @@ Section S.
     end.
 
 
-  Definition pval_of_typ (ty:typ) : eval_typ abs ty -> res (pval ty) :=
+  Definition pval_of_typ (ty:typ) : eval_typ abs ty -> option (pval ty) :=
     match ty with
-    | TBool => fun b => OK (PBool b)
-    | TInt32 s => fun i => OK (PInt32 s i)
-    | TInt64 s => fun i => OK (PInt64 s i)
-    | TEnum i l => fun e => OK (PEnum i l e)
+    | TBool => fun b => Some (PBool b)
+    | TInt32 s => fun i => Some (PInt32 s i)
+    | TInt64 s => fun i => Some (PInt64 s i)
+    | TEnum i l => fun e => Some (PEnum i l e)
     |  _        => (fun _ => fail)
     end.
 
-  Definition val_of_pval {ty:typ} (pv: res (pval ty)) : res (val ty) :=
+  Definition val_of_pval {ty:typ} (pv: option (pval ty)) : option (val ty) :=
     let* v := pv in
-    OK (Vprim _ v).
+    Some (Vprim _ v).
 
 
-  Definition typof_atom (te:tenv) (a: atom) : res typ :=
+  Definition typof_atom (te:tenv) (a: atom) : option typ :=
     btyp_to_typ te (typof_atom a).
 
-  Definition eval_val {ty:typ} (v : val ty) : res (eval_typ abs ty) :=
+  Definition eval_val {ty:typ} (v : val ty) : option (eval_typ abs ty) :=
     match v with
-    | Vprim _ v => OK (eval_pval v)
+    | Vprim _ v => Some (eval_pval v)
     | _  => fail
     end.
 
-  Definition val_of_eval_typ {ty:typ} (v : eval_typ abs ty) : res (val ty) :=
+  Definition val_of_eval_typ {ty:typ} (v : eval_typ abs ty) : option (val ty) :=
     match pval_of_typ ty v with
-    | OK v => OK (Vprim _ v)
+    | Some v => Some (Vprim _ v)
     | _    => fail
     end.
 
-  Definition index_of_pval {ty:typ} (v:pval ty) : res int64 :=
+  Definition index_of_pval {ty:typ} (v:pval ty) : option int64 :=
     if arch
     then
       match v with
-      | PInt32 Unsigned i =>  OK (Intop.U64.of_u32 i)
+      | PInt32 Unsigned i =>  Some (Intop.U64.of_u32 i)
       | _          => fail
       end
     else
       match v with
-      | PInt64 Unsigned i =>  OK i
+      | PInt64 Unsigned i =>  Some i
       | _          => fail
       end.
 
-  Definition index_of_val {ty :typ} (v:val ty) : res int64 :=
+  Definition index_of_val {ty :typ} (v:val ty) : option int64 :=
     match v with
     | Vprim _ pv => index_of_pval pv
     | _       => fail
     end.
 
-  Definition isptr {ty:typ} (v:val ty) : res (ptr ty) :=
+  Definition isptr {ty:typ} (v:val ty) : option (ptr ty) :=
     match v with
-    | Vptr _ p => OK p
+    | Vptr _ p => Some p
     | _        => fail
     end.
 
-  Definition eval_array_get {ty: typ} (m:mval ty) (i:Integers.Int64.int) (tr:typ) : res (val tr) :=
+  Definition eval_array_get {ty: typ} (m:mval ty) (i:Integers.Int64.int) (tr:typ) : option (val tr) :=
     match m with
     | MArray _ l =>  let* v := Barray.get l i in cast_val v tr
     | _ => fail
     end.
 
-  Definition ecast_val  (v:res {ty:typ & val ty}) (tyr:typ) : res (val tyr) :=
+  Definition ecast_val  (v:option {ty:typ & val ty}) (tyr:typ) : option (val tyr) :=
     match v with
-    | OK (existT _ ty v) =>  cast_val v tyr
+    | Some (existT _ ty v) =>  cast_val v tyr
     | _ => fail
     end.
 
-  Definition eval_record_proj {ty: typ} (m:mval ty) (k:ident) (tr:typ) : res (val tr) :=
+  Definition eval_record_proj {ty: typ} (m:mval ty) (k:ident) (tr:typ) : option (val tr) :=
     match m with
     | MRecord id fields r =>
         ecast_val (gprojT r k) tr
     | _ => fail
     end.
 
-  Definition eval_mem_access (m:mem) {ta:typ} (v1:val ta) (ce:cedge) (tr:typ) : res (val tr) :=
+  Definition eval_mem_access (m:mem) {ta:typ} (v1:val ta) (ce:cedge) (tr:typ) : option (val tr) :=
     let* p := isptr v1 in
     let* mv := get p m in
     match ce with
@@ -1105,20 +1107,20 @@ Section S.
     apply f.
   Defined.
 
-  Definition load_fun (ge:genv) {args:list typ} {ret:typ} (v :val (TFun args ret)) : res (mem -> typ_of_fun args ret) :=
+  Definition load_fun (ge:genv) {args:list typ} {ret:typ} (v :val (TFun args ret)) : option (mem -> typ_of_fun args ret) :=
     let fid := decomp_ptr _ (decomp_val _ v) in
     let* f := ge fid in
     match f with
     | GConst _ _ => fail
     | GFun args' ret' fc =>
         match typ_eq_dec (TFun args' ret') (TFun args ret)  with
-        | left EQ => OK (cast_function EQ fc)
+        | left EQ => Some (cast_function EQ fc)
         | _  => fail
         end
     end.
 
   Fixpoint eval_rapp (tparams : list typ) (tret : typ)
-    (args : DList.dlist (DList.resFtyp val) tparams) : forall (f: typ_of_fun tparams tret), res (val tret * mem).
+    (args : DList.dlist (DList.resFtyp val) tparams) : forall (f: typ_of_fun tparams tret), option (val tret * mem).
   Proof.
     destruct args.
     - simpl. apply (fun f => f tt).
@@ -1135,55 +1137,50 @@ Section S.
   Definition mk_fptr (id:ident) (args: list typ) (r:typ) : val (TFun args r) :=
     Vptr (TFun args r) (PtrF id args r).
 
-  Definition ecast {ty:typ} (v: val ty) (tyr: typ): res (val tyr) :=
+  Definition ecast {ty:typ} (v: val ty) (tyr: typ): option (val tyr) :=
     match typ_eq_dec ty tyr with
-    | left EQ => OK (cast (f_equal val EQ) v)
-    | right _ => efail
+    | left EQ => Some (cast (f_equal val EQ) v)
+    | right _ => fail
     end.
 
-  Definition get_lvar  (e:env) (id:ident) (tyr:typ) : res (val tyr) :=
+  Definition get_lvar  (e:env) (id:ident) (tyr:typ) : option (val tyr) :=
     match e id with
-    | OK (existT _ ty' v') => ecast v' tyr
-    | Error m => Error m
+    | Some (existT _ ty' v') => ecast v' tyr
+    | None => None
     end.
 
-  Locate cast.
-
-  Definition get_gvar (ge:genv) (id:ident) (tyr: typ) : res (val tyr) :=
+  Definition get_gvar (ge:genv) (id:ident) (tyr: typ) : option (val tyr) :=
     let* d := ge id in
     match d with
     | GFun args tret _ => match typ_eq_dec (TFun args tret) tyr with
-                             | left EQ => OK (cast (f_equal val EQ) (mk_fptr id args tret))
-                             | _  => fail
+                             | left EQ => Some (cast (f_equal val EQ) (mk_fptr id args tret))
+                             | _  => None
                              end
     | GConst ty v => match typ_eq_dec ty tyr with
-                      | left EQ => OK (cast (f_equal val EQ) v)
-                      | right _ => efail
-                      end
+                      | left EQ => Some (cast (f_equal val EQ) v)
+                      | right _ => None
+                     end
     end.
 
-  Check ecast.
-
-
-  Definition get_var (te:tenv) (ge:genv) (e:env) (id:ident) (bt:btyp) (tyr:typ) : res (val tyr) :=
+  Definition get_var (te:tenv) (ge:genv) (e:env) (id:ident) (bt:btyp) (tyr:typ) : option (val tyr) :=
     let* ty := btyp_to_typ te bt in
     if typ_eq_dec ty tyr
     then
       match e id with
-      | OK (existT _ ty' v') => ecast v' tyr
-      | Error _ => get_gvar ge id tyr
+      | Some (existT _ ty' v') => ecast v' tyr
+      | None => get_gvar ge id tyr
       end
     else fail.
 
-  Definition get_function (ge:genv) (e:env) (id:ident) (tyr: typ) : res (val tyr) :=
+  Definition get_function (ge:genv) (e:env) (id:ident) (tyr: typ) : option (val tyr) :=
     match e id with
-    | OK _ => efail (* shadowing, we do not do that *)
+    | Some _ => fail (* shadowing, we do not do that *)
     |  _    =>
          let* d := ge id in
          match d with
          | GFun args tret _ =>
              match typ_eq_dec (TFun args tret) tyr with
-             | left EQ => OK (cast (f_equal val EQ) (mk_fptr id args tret))
+             | left EQ => Some (cast (f_equal val EQ) (mk_fptr id args tret))
              | _  => fail
              end
          | _ => fail
@@ -1192,10 +1189,10 @@ Section S.
   .
 
   Section S.
-    Variable eval_atom :  tenv -> genv -> env -> mem -> forall (tyr: typ), atom -> res (val tyr).
+    Variable eval_atom :  tenv -> genv -> env -> mem -> forall (tyr: typ), atom -> option (val tyr).
 
     Definition eval_call (te:tenv) (ge:genv) (e:env) (m:mem) (f:ident)
-      (btf:btyp) (args: list atom) (tyr:typ) : res (val tyr * mem) :=
+      (btf:btyp) (args: list atom) (tyr:typ) : option (val tyr * mem) :=
         let* tyf := btyp_to_typ te btf in
         match tyf with
         | TFun tparams tret =>
@@ -1209,7 +1206,7 @@ Section S.
 
   End S.
 
-  Fixpoint eval_atom (te: tenv) (ge: genv) (e:env) (m: mem) (tyr:typ) (a:atom) {struct a} : res (val tyr) :=
+  Fixpoint eval_atom (te: tenv) (ge: genv) (e:env) (m: mem) (tyr:typ) (a:atom) {struct a} : option (val tyr) :=
     match a with
     | ATrue => val_of_pval (cast_pval (PBool true) tyr)
     | AFalse => val_of_pval (cast_pval (PBool false) tyr)
@@ -1238,8 +1235,8 @@ Section S.
         let* tye := btyp_to_typ te bt in
         let* v := eval_atom te ge e m tye a1  in
         let* v := eval_val v in
-        let* res := eval_unary_op abs op tye v tyr in
-        val_of_eval_typ res
+        let* r := eval_unary_op abs op tye v tyr in
+        val_of_eval_typ r
     | ABinaryOp op a1 a2 bt =>
         let* tye1 := typof_atom te a1 in
         let* tye2  := typof_atom te a2 in
@@ -1247,8 +1244,8 @@ Section S.
         let* v2 := eval_atom te ge e m tye2 a2 in
         let* v1 := eval_val v1 in
         let* v2 := eval_val v2 in
-        let* res := eval_binary_op abs op tye1 tye2 v1 v2 tyr in
-        let* pv := pval_of_typ _ res in val_of_pval (cast_pval pv tyr)
+        let* option := eval_binary_op abs op tye1 tye2 v1 v2 tyr in
+        let* pv := pval_of_typ _ option in val_of_pval (cast_pval pv tyr)
     | AArrayGet a1 i _ bt =>
         let* tya1 := typof_atom te a1 in
         let* v1 := eval_atom te ge e m tya1 a1 in
@@ -1265,11 +1262,11 @@ Section S.
         then ret vret else fail
     end.
 
-  Definition eval_array_set (m:mem) {ta:typ} (a:val ta) {ti:typ} (i:val ti) {te:typ} (v:val te): res mem :=
+  Definition eval_array_set (m:mem) {ta:typ} (a:val ta) {ti:typ} (i:val ti) {te:typ} (v:val te): option mem :=
     let*  i := index_of_val i in
     let*  p := isptr a in
     let* arr := get p m in
-    match arr in mval t return  t = ta -> res mem with
+    match arr in mval t return  t = ta -> option mem with
     | MArray te' l => fun EQ =>
                         let* v := cast_val v te' in
                         let* l' := Barray.set l i v in
@@ -1277,45 +1274,43 @@ Section S.
     | _ => fun _ => fail
     end eq_refl.
 
-  Definition eval_record_update (m:mem) {tr:typ} (r:val tr) (k:ident) {te:typ} (v:val te): res mem :=
+  Definition eval_record_update (m:mem) {tr:typ} (r:val tr) (k:ident) {te:typ} (v:val te): option mem :=
     let* p := isptr r in
     let* rc := get p m in
-    match rc in mval t return  t = tr -> res mem with
+    match rc in mval t return  t = tr -> option mem with
     | MRecord id fields r => fun EQ =>
                                let* r1 := dyn_upd val typ_eq_dec r k  _ v in
                                set p (cast (f_equal mval EQ) (MRecord _ _ r1))  m
     | _ => fun _ => fail
     end eq_refl.
 
-  Check eval_call.
-
-  Definition eval_comp (te:tenv) (ge:genv) (e:env) (m:mem) (c:comp) (tr:typ) : res (val tr  * mem) :=
+  Definition eval_comp (te:tenv) (ge:genv) (e:env) (m:mem) (c:comp) (tr:typ) : option (val tr  * mem) :=
     match c with
     | CpAtom a => let* va := eval_atom te ge e m tr a in
-                     OK (va,m)
+                     Some (va,m)
     | CpArraySet a i v bt =>
         let* tv := typof_atom te v in
         let* a := eval_atom te ge e m tr a in
         let* i := eval_atom te ge e m (typof_index arch) i in
         let* v := eval_atom te ge e m tv v in
         let* m := eval_array_set m a i v  in
-        OK (a, m)
+        Some (a,m)
     | CpRecordUpdate r id v bt =>
         let* trec := typof_atom te r in
         let* tv   := typof_atom te v in
         let* r := eval_atom te ge e m tr r in
         let* v := eval_atom te ge e m tv v in
         let* m := eval_record_update m r id v in
-        OK(r, m)
+        Some(r,m)
     | CpCall f btf args _ =>
         eval_call eval_atom te ge e m f btf args tr
     end.
 
-  Definition typof_comp (te:tenv) (c: comp) : res typ :=
+  Definition typof_comp (te:tenv) (c: comp) : option typ :=
     btyp_to_typ te (typof_comp c).
 
   Definition env_set (id:ident) {ty:typ} (v:val ty) (e:env) : env :=
-    fun x => if Ident.eq_dec x id then OK (existT _ ty v) else e x.
+    fun x => if Ident.eq_dec x id then Some (existT _ ty v) else e x.
 
 
   Definition typ_of_statement (ty:option typ) :=
@@ -1324,8 +1319,8 @@ Section S.
     | Some ty => val ty
     end.
 
-  Definition eval_match (tv:typ) (v: val tv) (ty: option typ) (cases: list (pattern * (res (typ_of_statement ty * mem)))) :
-    res (typ_of_statement ty * mem) :=
+  Definition eval_match (tv:typ) (v: val tv) (ty: option typ) (cases: list (pattern * (option (typ_of_statement ty * mem)))) :
+    option (typ_of_statement ty * mem) :=
     match v with
     | Vptr _ _ => fail
     | Vprim _ e => match e with
@@ -1340,14 +1335,14 @@ Section S.
     | _               => false (* cannot happen *)
     end.
 
-  Fixpoint eval_statement (te:tenv) (ge:genv) (e:env) (m:mem) (ty:option typ) (s:statement)  : res (typ_of_statement ty * mem) :=
+  Fixpoint eval_statement (te:tenv) (ge:genv) (e:env) (m:mem) (ty:option typ) (s:statement)  : option (typ_of_statement ty * mem) :=
     match s with
     | StSet id c =>
         match ty with
         | None =>
             let* tyid := typof_comp te c in
             let*(r,m') := eval_comp te ge e m c tyid in
-            OK (env_set id r e,m')
+            Some (env_set id r e,m')
         | _ => fail
         end
     | StIfThenElse a s1 s2 =>
@@ -1366,7 +1361,7 @@ Section S.
         | None => fail
         | Some ty =>
             let* va := eval_atom te ge e m ty a in
-            OK (va,m)
+            Some (va,m)
         end
     | StAttr a s => eval_statement te ge e m ty s
     end.
@@ -1389,29 +1384,30 @@ Section S.
 
   Definition env_empty : env := fun _ => fail.
 
-  Definition build_Fun (te:tenv) (ge:genv) (params:smaplist btyp) (tret:btyp) (s:statement) : res gval  :=
+
+
+
+  Definition build_Fun (te:tenv) (ge:genv) (params:smaplist btyp) (tret:btyp) (s:statement) : option gval  :=
     if MapList.nodup Ident.eq_dec params
     then
       let* tret' := btyp_to_typ te tret in
-      let* params' := MapList.map_err (btyp_to_typ te) params in
-      OK (GFun (List.map snd params') tret' (eval_fun_rec te ge  env_empty params' tret' s))
+      let* params' := Denot.map_err (btyp_to_typ te) params in
+      Some (GFun (List.map snd params') tret' (eval_fun_rec te ge  env_empty params' tret' s))
     else fail.
 
-
-
-  Fixpoint array_of_values (l :list {ty:typ & val ty}) (ty:typ) : res (array (val ty)) :=
+  Fixpoint array_of_values (l :list {ty:typ & val ty}) (ty:typ) : option (array (val ty)) :=
     match l with
-    | nil => OK nil
+    | nil => Some nil
     | e::l => let* a := array_of_values l ty in
               let (te,ve) := e in
               let* ve' := cast_val ve ty in
-              OK (ve' :: a)
+              Some (ve' :: a)
     end.
 
 
-  Fixpoint eval_record_lit (lv: smaplist {ty:typ & val ty}) (fields: smaplist typ) : res (eval_recordtyp val fields).
+  Fixpoint eval_record_lit (lv: smaplist {ty:typ & val ty}) (fields: smaplist typ) : option (eval_recordtyp val fields).
     destruct lv as [|[x [tv v]] lv']; destruct fields as [| [y t] fields'].
-    - apply (OK tt).
+    - apply (Some tt).
     - apply fail.
     - apply fail.
     - destruct (Ident.eq_dec x y).
@@ -1422,19 +1418,19 @@ Section S.
         apply (eval_record_lit lv' fields').
         intro rc.
         unfold eval_recordtyp in *. simpl in *.
-        apply (OK (Field y cv, rc)).
+        apply (Some (Field y cv, rc)).
       + apply fail.
   Defined.
 
 
   (* Like Barocq, the semantics is not typed *)
 
-  Fixpoint eval_literal (te: tenv) (l: literal) (m:mem): res ({ty:typ & val ty} * mem) :=
+  Fixpoint eval_literal (te: tenv)  (l: literal)  (m:mem): option ({ty:typ & val ty} * mem) :=
     match l with
-    | LTrue => OK  (existT _ _ (Vprim _ (PBool true)),m)
-    | LFalse => OK (existT _ _ (Vprim _ (PBool false)), m)
-    | LInt32 i s => OK (existT _ _  (Vprim _ (PInt32 s i)),m)
-    | LInt64 i s => OK (existT _ _ (Vprim _ (PInt64 s i)),m)
+    | LTrue => Some  (existT _ _ (Vprim _ (PBool true)),m)
+    | LFalse => Some (existT _ _ (Vprim _ (PBool false)), m)
+    | LInt32 i s => Some (existT _ _  (Vprim _ (PInt32 s i)),m)
+    | LInt64 i s => Some (existT _ _ (Vprim _ (PInt64 s i)),m)
     | LArray a bt _ =>
         let* ta := btyp_to_typ te bt in
         match ta with
@@ -1444,7 +1440,7 @@ Section S.
             let (m2,fa) := alloc m in
             let ptr     := PtrA fa elt in
             let* m := set ptr (MArray _ av) m2 in
-            OK(existT _ _ (Vptr _ ptr),m)
+            Some(existT _ _ (Vptr _ ptr),m)
         |  _         => fail
         end
     | LRecord rc ub rid =>
@@ -1452,12 +1448,12 @@ Section S.
         match tr with
         | TRecord id l =>
             let* (r,m) := mmap_fold (fun x m => let* (v,m) := eval_literal te (snd x) m in
-                                                OK ((fst x,v),m)) rc m in
+                                                Some ((fst x,v),m)) rc m in
             let* r := eval_record_lit r l in
             let (m1,fa) := alloc m in
             let ptr     := PtrR fa id l in
             let* m2 := set ptr (MRecord id l r) m1 in
-            OK(existT _ _ (Vptr _ ptr),m2)
+            Some(existT _ _ (Vptr _ ptr),m2)
         |  _         => fail
         end
     end.

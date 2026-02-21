@@ -1,5 +1,6 @@
 From Coq Require Import Bool List PArith Lia.
-From BarocqComp Require Import Error Maps2 Utils DList Types Syntax Benum Typing Imp1 Imp1Imp.
+From BarocqComp Require Import Maps2 Utils DList Types Syntax Benum Typing Imp1 Imp1Imp  OptionMonad.
+Open Scope option_monad_scope.
 
 (* Instrumented in-place semantics of Imp1 with invalid paths *)
 
@@ -95,19 +96,19 @@ Section SEM.
 
   (* =============== Memory API =============== *)
 
-  Definition load : forall {ty}, ptr ty -> mem -> res (mval ty) :=
+  Definition load : forall {ty}, ptr ty -> mem -> option (mval ty) :=
     @Imp1Imp.get abs.
 
-  Definition store : forall {ty}, ptr ty -> mval ty -> mem -> res mem :=
+  Definition store : forall {ty}, ptr ty -> mval ty -> mem -> option mem :=
     @Imp1Imp.set abs.
 
   (** [paths_to_mval e m a] returns the map of all paths pointing
       to the memory value located at address [a]. *)
   Parameter paths_to_mval : env -> mem -> addr -> InvSet.t.
 
-  Parameter follow_ppath : mem -> addr -> (forall (pp: ppath), res (val (pp_typ pp))).
+  Parameter follow_ppath : mem -> addr -> (forall (pp: ppath), option (val (pp_typ pp))).
 
-  Parameter follow_path : env -> mem -> ident -> (forall (pp: ppath), res (val (pp_typ pp))).
+  Parameter follow_path : env -> mem -> ident -> (forall (pp: ppath), option (val (pp_typ pp))).
 
   Parameter paths_aliased_with : env -> mem -> addr -> ppath -> InvSet.t.
 
@@ -122,10 +123,10 @@ Section SEM.
 
   Fixpoint typ_of_fun (l:list typ) (r:typ) :=
     match l with
-    | nil => unit -> res (val r * mem * list (option PPathSet.t))
+    | nil => unit -> option (val r * mem * list (option PPathSet.t))
     | tx::tparams' => val tx ->
                       match tparams' with
-                      | nil => res (val r * mem * list (option PPathSet.t))
+                      | nil => option (val r * mem * list (option PPathSet.t))
                       | _ :: _ => typ_of_fun tparams' r
                       end
     end.
@@ -142,24 +143,24 @@ Section SEM.
     | GConst ty _ => ty
     end.
 
-  Definition genv : Type := ident -> res gval.
+  Definition genv : Type := ident -> option gval.
 
-  Definition get_gvar (ge: genv) (x: ident) (tx: typ) : res (val tx) :=
+  Definition get_gvar (ge: genv) (x: ident) (tx: typ) : option (val tx) :=
     let* g := ge x in
     match g with
     | GFun tparams tret _ => cast_val (mk_fptr x tparams tret) tx
     | GConst tv v => cast_val v tx
     end.
 
-  Definition get_var (ge: genv) (e: env) (x: ident) (tx: typ) : res (val tx) :=
+  Definition get_var (ge: genv) (e: env) (x: ident) (tx: typ) : option (val tx) :=
     match e x with
-    | OK (existT _ _ v) => cast_val v tx
-    | Error _ => get_gvar ge x tx
+    | Some (existT _ _ v) => cast_val v tx
+    | None => get_gvar ge x tx
     end.
 
   (** [inv_arg_aliases_after_call e m inv ty arg pps_arg] computes the set of invalid paths after a function call
       involving argument [arg]. [pps_arg] is the set of partial paths of [arg] that the callee invalidated. *)
-  Definition inv_arg_aliases_after_call (e: env) (m: mem) (inv: InvSet.t) (ty: typ) (arg: val ty) (pps_arg: option PPathSet.t) : res InvSet.t :=
+  Definition inv_arg_aliases_after_call (e: env) (m: mem) (inv: InvSet.t) (ty: typ) (arg: val ty) (pps_arg: option PPathSet.t) : option InvSet.t :=
     match arg with
     | Vprim _ _ => ret inv
     | Vptr _ ptr =>
@@ -183,7 +184,7 @@ Section SEM.
   Fixpoint inv_after_call (e: env) (m: mem) (inv: InvSet.t) (tparams: list typ) (tret: typ)
                           (args: DList.dlist val_pps_t tparams)
                           (pps_args: list (option PPathSet.t))
-                          : res InvSet.t :=
+                          : option InvSet.t :=
     match args, pps_args with
     | DNIL _, nil => ret inv
     | @DCONS _ _ ta (a, _) tparams' args', pps_a :: pps_args' =>
@@ -194,7 +195,7 @@ Section SEM.
 
   Fixpoint eval_call (tparams : list typ) (tret : typ)
       (args : DList.dlist val_pps_t tparams) (f: typ_of_fun tparams tret)
-      {struct args} : res (val tret * mem * list (option PPathSet.t)).
+      {struct args} : option (val tret * mem * list (option PPathSet.t)).
   Proof.
     destruct args as [| ta [a pps_a] tparams args]; simpl in f.
     - apply (f tt).
@@ -214,10 +215,10 @@ Section SEM.
 
   Definition ieval_call (ge: genv) (e: env) (m: mem) (inv: InvSet.t) (fid: ident)  
       (tparams: list typ) (args: DList.dlist val_pps_t tparams)
-      (tret: typ) : res (val tret * mem * InvSet.t) :=
+      (tret: typ) : option (val tret * mem * InvSet.t) :=
     if all_args_forest m tparams args then
       match ge fid with
-      | OK (GFun tparams' tret' f) =>
+      | Some (GFun tparams' tret' f) =>
           match typ_eq_dec (TFun tparams' tret') (TFun tparams tret) with
           | left EQ =>
               let f := cast_function EQ f in
@@ -236,11 +237,11 @@ Section SEM.
     | Some pps => Some (PPathSet.prefixed_with (ce :: nil) pps)
     end.
 
-  Definition ieval_prim {tv: typ} (pv: pval tv) (ty: typ) : res (val ty * option PPathSet.t) :=
+  Definition ieval_prim {tv: typ} (pv: pval tv) (ty: typ) : option (val ty * option PPathSet.t) :=
     let* v := cast_pval pv ty in
     ret (Vprim ty v, None).
 
-  Fixpoint ieval_atom (te: tenv) (ge: genv) (e: env) (m: mem) (inv: InvSet.t) (ty: typ) (a: atom) : res (val ty * option PPathSet.t) :=
+  Fixpoint ieval_atom (te: tenv) (ge: genv) (e: env) (m: mem) (inv: InvSet.t) (ty: typ) (a: atom) : option (val ty * option PPathSet.t) :=
     match a with
     | ATrue => ieval_prim (PBool true) ty
     | AFalse => ieval_prim (PBool false) ty
@@ -320,7 +321,7 @@ Section SEM.
 
   (** [inv_aliases te ge e m a i t] returns the set of all paths directly aliased to the
       memory value [v], suffixed by [i].*)
-  Definition inv_aliases (e: env) (m: mem) {tv: typ} (v: val tv) (ce: cedge) (ty: typ) : res InvSet.t :=
+  Definition inv_aliases (e: env) (m: mem) {tv: typ} (v: val tv) (ce: cedge) (ty: typ) : option InvSet.t :=
     match v with
     | Vptr t ptr =>
         let* addr := addr_of_ptr ptr in
@@ -329,7 +330,7 @@ Section SEM.
     | _ => fail
     end.
 
-  Definition eval_array_set (m: mem) {ta: typ} (a: val ta) (i: Integers.int64) {tv: typ} (v: val tv) : res mem :=
+  Definition eval_array_set (m: mem) {ta: typ} (a: val ta) (i: Integers.int64) {tv: typ} (v: val tv) : option mem :=
     let* p := isptr a in
     let* a := load p m in
     match a with
@@ -345,7 +346,7 @@ Section SEM.
       updating the 'field' [i] of [a] with [v], and returns the set of invalid partial paths
       that the variable assigned to this computation inherits from.*)
   Definition ieval_set_field (te: tenv) (ge: genv) (e: env) (m: mem) (inv: InvSet.t)
-      (a: atom) (ce: cedge) (v: atom) (ty: typ) : res (val ty * mem * option PPathSet.t * InvSet.t) :=
+      (a: atom) (ce: cedge) (v: atom) (ty: typ) : option (val ty * mem * option PPathSet.t * InvSet.t) :=
     let* (va, ppsa) := ieval_atom te ge e m inv ty a in
     let* tv := typof_atom te v in
     let* (vv, ppsv) := ieval_atom te ge e m inv tv v in
@@ -372,7 +373,7 @@ Section SEM.
     let inv' := InvSet.union inv inv_a_i in
     ret (va, m', ppsr, inv').
   
-  Definition ieval_comp (te: tenv) (ge: genv) (e: env) (m: mem) (inv: InvSet.t) (c: comp) (ty: typ) : res (val ty * mem * option PPathSet.t * InvSet.t) :=
+  Definition ieval_comp (te: tenv) (ge: genv) (e: env) (m: mem) (inv: InvSet.t) (c: comp) (ty: typ) : option (val ty * mem * option PPathSet.t * InvSet.t) :=
     match c with
     | CpAtom a =>
         let* (va, ppsa) := ieval_atom te ge e m inv ty a in
@@ -406,8 +407,8 @@ Section SEM.
     | None => env
     end.
 
-  Definition ieval_match (tv:typ) (v: val tv) (ty: option typ) (cases: list (pattern * (res (inv_typ_of_statement ty * mem * InvSet.t)))) :
-    res (inv_typ_of_statement ty * mem * InvSet.t) :=
+  Definition ieval_match (tv:typ) (v: val tv) (ty: option typ) (cases: list (pattern * (option (inv_typ_of_statement ty * mem * InvSet.t)))) :
+    option (inv_typ_of_statement ty * mem * InvSet.t) :=
     match v with
     | Vptr _ _ => fail
     | Vprim _ e => match e with
@@ -416,7 +417,7 @@ Section SEM.
                    end
     end.
 
-  Fixpoint ieval_statement (te: tenv) (ge: genv) (e: env) (m: mem) (inv: InvSet.t) (ty: option typ) (s: Imp1.statement) : res (inv_typ_of_statement ty * mem * InvSet.t) :=
+  Fixpoint ieval_statement (te: tenv) (ge: genv) (e: env) (m: mem) (inv: InvSet.t) (ty: option typ) (s: Imp1.statement) : option (inv_typ_of_statement ty * mem * InvSet.t) :=
     match s with
     | StSet x c =>
         match ty with
@@ -487,47 +488,47 @@ Section SEM.
       : Fun (List.map snd params) tret :=
     ieval_fun_rec te ge (env_empty) params tret s.
 
-  Definition genv_update (ge: genv) (x: ident) (g: gval) : res genv :=
+  Definition genv_update (ge: genv) (x: ident) (g: gval) : option genv :=
     match ge x with
-    | Error _ =>
+    | None =>
         ret (fun y =>
               if Ident.eq_dec y x then ret g else
               ge y)
     | _ => fail
     end.
 
-  Definition eval_def_fun (te: tenv) (ge: genv) (x: ident) (f: function) : res genv :=
+  Definition eval_def_fun (te: tenv) (ge: genv) (x: ident) (f: function) : option genv :=
     let '(tret, params) := (fn_return f, fn_params f) in
     if MapList.nodup Ident.eq_dec params then
       let* tret := btyp_to_typ te tret in
-      let* params := MapList.map_err (btyp_to_typ te) params in
+      let* params := Denot.map_err (btyp_to_typ te) params in
       let g := GFun (List.map snd params) tret (ieval_fun te ge params tret (fn_body f)) in
       genv_update ge x g
     else fail.
 
-  Definition eval_def_const (te: tenv) (ge: genv) (m: mem) (x: ident) (l: literal) (bt: btyp) : res (genv * mem) :=
+  Definition eval_def_const (te: tenv) (ge: genv) (m: mem) (x: ident) (l: literal) (bt: btyp) : option (genv * mem) :=
     let* t := btyp_to_typ te bt in
     let* (vl, m') := eval_literal abs te l m in
-    let* vl := ecast_val (OK vl) t in
+    let* vl := ecast_val (Some vl) t in
     let* ge' := genv_update ge x (GConst t vl) in
     ret (ge', m').
 
-  Definition eval_decl_const (te: tenv) (impl ge: genv) (x: ident) (bt: btyp) : res genv :=
+  Definition eval_decl_const (te: tenv) (impl ge: genv) (x: ident) (bt: btyp) : option genv :=
     let* t := btyp_to_typ te bt in
     let* g := impl x in
     if typ_eq_dec t (typof_glob g) then
       genv_update ge x g
     else fail.
 
-  Definition eval_decl_fun (te: tenv) (impl ge: genv) (x: ident) (params: list (Syntax.param_attr * btyp)) (tret: btyp) : res genv :=
-    let* tparams := Errors.mmap (btyp_to_typ te) (List.map snd params) in
+  Definition eval_decl_fun (te: tenv) (impl ge: genv) (x: ident) (params: list (Syntax.param_attr * btyp)) (tret: btyp) : option genv :=
+    let* tparams := mmap (btyp_to_typ te) (List.map snd params) in
     let* tret := btyp_to_typ te tret in
     let* g := impl x in
     if typ_eq_dec (TFun tparams tret) (typof_glob g) then
       genv_update ge x g
     else fail.
 
-  Definition eval_globdef (te: tenv) (impl ge: genv) (m: mem) (def: globdef) : res (genv * mem) :=
+  Definition eval_globdef (te: tenv) (impl ge: genv) (m: mem) (def: globdef) : option (genv * mem) :=
     match def with
     | DefConst x l ty => eval_def_const te ge m x l ty
     | DefFun x f =>
@@ -541,10 +542,10 @@ Section SEM.
         ret (ge', m)
     end.
 
-  Definition eval_prog (impl: genv) (m: mem) (prog: program) : res (tenv * genv * mem) :=
+  Definition eval_prog (impl: genv) (m: mem) (prog: program) : option (tenv * genv * mem) :=
     let* te := tenv_of_type_defs (prog_types prog) in
     let* (ge', m') :=
-      list_fold_left_err
+      fold_left_err
         (fun '(acc_ge, acc_m) d => eval_globdef te impl acc_ge acc_m d)
         (prog_defs prog)
         (fun _ => fail, m)

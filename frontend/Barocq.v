@@ -1,8 +1,8 @@
 Set Universe Polymorphism.
 From Coq Require Import List String ListDec PArith Bool.
 From compcert Require Import Coqlib Integers Maps Ctypes.
-From BarocqComp Require Import Error Maps2 Utils Intop Barray Brecord Benum Types Typing Syntax Pp Printer.
-From BarocqComp Require Import Denot.
+From BarocqComp Require Import  Maps2 Utils Error Intop Barray Brecord Benum Types Typing Syntax Pp Printer.
+From BarocqComp Require Import OptionMonad Denot.
 From BarocqComp Require  DList.
 Import ListNotations.
 
@@ -93,7 +93,7 @@ Module Pp.
         Pp.seq (pp_expr a :: Bstr "[" :: pp_expr i :: Bstr "] <- " :: pp_expr v :: nil)
     | ERecordProj a i => Bcat (pp_expr a)
                          (Bcat (Bstr ".") (Bstr i))
-  | ERecordUpdate a fd v =>
+    | ERecordUpdate a fd v =>
       Pp.seq (pp_expr a :: Bstr "." :: Bstr fd :: Bstr " <- " :: pp_expr v :: nil)
 
     | EApp a l => Pp.seq (pp_expr a :: Bstr "(" :: pp_list (Bstr ", ") pp_expr l :: Bstr ")" :: nil)
@@ -271,6 +271,8 @@ Module Typing.
 
   Variable arch : Target.archi.
 
+  Import Error.
+
   Fixpoint typecheck_expr (be: benv) (gx: gcontext) (lx: lcontext) (e: Barocq.expr) : res BarocqTyped.expr :=
     match e with
     | Barocq.ETrue => ret ETrue
@@ -286,7 +288,7 @@ Module Typing.
         ret (EVar x t)
     | Barocq.ECast e1 ty =>
         let* e1' := typecheck_expr be gx lx e1 in
-        let* t := typecheck_cast (typof_expr e1') ty in
+        let* t := err_of_opt (typecheck_cast (typof_expr e1') ty) in
         ret (ECast e1' t)
     | Barocq.EUnaryOp op e1 =>
         let* e1' := typecheck_expr be gx lx e1 in
@@ -368,7 +370,7 @@ Module Typing.
   Definition typecheck_globdef (be:benv) (gx:gcontext) (d: Barocq.globdef) : res (benv * gcontext * BarocqTyped.globdef) :=
     match d with
     | Barocq.DefType x td =>
-        let* be' := TEnv.update_defs be x td in
+        let* be' := err_of_opt (TEnv.update_defs be x td) in
         ret (be', gx, (DefType x td))
     | Barocq.DefConst x l ty =>
         let* l' := typecheck_literal be l in
@@ -457,10 +459,10 @@ Section DENOT.
 
   Local Notation lenv := (lenv tabs).
 
-  Definition typof_expr (te:tenv) (e:expr) : res typ :=
+  Definition typof_expr (te:tenv) (e:expr) : option typ :=
     btyp_to_typ te (typof_expr e).
 
-  Fixpoint eval_expr (te: tenv) (ge: genv) (le: lenv) (ty:typ) (e: expr)  : res (eval_typ ty) :=
+  Fixpoint eval_expr (te: tenv) (ge: genv) (le: lenv) (ty:typ) (e: expr)  : option (eval_typ ty) :=
     match e with
     | ETrue  => @cast_typ tabs TBool true ty
     | EFalse => @cast_typ tabs TBool false ty
@@ -513,7 +515,7 @@ Section DENOT.
         | TFun tparams tret =>
             let* f := eval_expr te ge le  (TFun tparams tret) v in
             let* vargs := DList.map2 _ (eval_expr te ge le) args tparams in
-            eval_app_res tabs tparams tret f vargs ty
+            eval_app_option tabs tparams tret f vargs ty
         |  _  => fail
         end
     | EIfThenElse e1 e2 e3 _ =>
@@ -590,7 +592,7 @@ Section DENOT.
         | TFun tparams tret =>
             let* f := eval_expr te ge le  (TFun tparams tret) v in
             let* vargs := DList.map2 _ (eval_expr te ge le) args tparams in
-            eval_app_res tabs tparams tret f vargs ty
+            eval_app_option tabs tparams tret f vargs ty
         |  _  => fail
         end
     | EIfThenElse e1 e2 e3 _ =>
@@ -616,7 +618,7 @@ Section DENOT.
     destruct e; reflexivity.
   Qed.
 
-  Fixpoint eval_literal (te: tenv) (l: literal) : res (value tabs) :=
+  Fixpoint eval_literal (te: tenv) (l: literal) : option (value tabs) :=
     match l with
     | LTrue => ret (Val tabs TBool true)
     | LFalse => ret (Val tabs TBool false)
@@ -626,12 +628,12 @@ Section DENOT.
         let* av := mmap (eval_literal te) a in
         eval_array_lit tabs av
     | LRecord rc _ rid =>
-        let* rcv := MapList.map_err (eval_literal te) rc in
+        let* rcv := map_err (eval_literal te) rc in
         let* fields := TEnv.get_rdef te rid in
         eval_record_lit tabs rid rcv fields
     end.
 
-  Definition cast_typ_M (tret:typ) (v: value tabs ) : M (eval_typ tret) :=
+  Definition cast_typ_M (tret:typ) (v: value tabs ) : option (eval_typ tret) :=
     match v with
       | Val _ tv v =>
           match typ_eq_dec tv tret with
@@ -665,7 +667,7 @@ Section DENOT.
             (eval_funtyp eval_typ (List.map (fun x : string * typ => snd x) l0) (eval_typ tret) ->
              let l1 := List.map snd l0 in
              match l1 with
-             | [] => res (eval_typ tret)
+             | [] => option (eval_typ tret)
              | _ :: _ => eval_funtyp eval_typ l1 (eval_typ tret)
            end)
       with
@@ -689,7 +691,7 @@ Section DENOT.
             (eval_funtyp eval_typ (List.map (fun x : string * typ => snd x) l0) (eval_typ tret) ->
              let l1 := List.map snd l0 in
              match l1 with
-             | [] => res (eval_typ tret)
+             | [] => option (eval_typ tret)
              | _ :: _ => eval_funtyp eval_typ l1 (eval_typ tret)
            end)
       with
@@ -713,79 +715,50 @@ Section DENOT.
   Defined.
 
 
-  Definition mk_fun_value (te: tenv) (ge: genv) (params: smaplist btyp) (tret: btyp) (e: expr) : res (value tabs) :=
+  Definition mk_fun_value (te: tenv) (ge: genv) (params: smaplist btyp) (tret: btyp) (e: expr) : option (value tabs) :=
     if MapList.nodup Ident.eq_dec params then
       let* tret' := btyp_to_typ te tret in
-      let* params' := MapList.map_err (btyp_to_typ te) params in
+      let* params' := map_err (btyp_to_typ te) params in
       ret (Val tabs (TFun (List.map (fun x => snd x) params') tret') (eval_fun te ge params' tret' e))
     else fail.
 
-  Definition fields_btyp_to_typ (te: tenv) (fields: smaplist btyp) : res (smaplist typ) :=
-    MapList.map_err (btyp_to_typ te) fields.
+  Definition fields_btyp_to_typ (te: tenv) (fields: smaplist btyp) : option (smaplist typ) :=
+    map_err (btyp_to_typ te) fields.
 
-  Definition eval_def_type (te: tenv) (tid: ident) (td: type_def field_descr) : res tenv :=
+  Definition eval_def_type (te: tenv) (tid: ident) (td: type_def field_descr) : option tenv :=
     match td with
     | TdEnum elems =>
         TEnv.update_defs te tid (TdEnum elems)
     | TdRecord fields =>
-        let* fields' := MapList.map_err (btyp_to_typ te) (MapList.map fst fields) in
+        let* fields' := map_err (btyp_to_typ te) (MapList.map fst fields) in
         TEnv.update_defs te tid (TdRecord fields')
     end.
 
-  Definition eval_def_const (te: tenv) (ge: genv) (x: ident) (l: literal) (ty: btyp) : res (genv) :=
+  Definition eval_def_const (te: tenv) (ge: genv) (x: ident) (l: literal) (ty: btyp) : option (genv) :=
     let* ty' := btyp_to_typ te ty in
     let* vv := eval_literal te l in
     let* v'  := cast_value tabs vv ty' in
     genv_update tabs ge x (Val tabs ty' v').
 
-  Definition eval_def_fun (te: tenv) (ge: genv) (x: ident) (f: function) : res (genv) :=
+  Definition eval_def_fun (te: tenv) (ge: genv) (x: ident) (f: function) : option (genv) :=
     let* fv := mk_fun_value te ge (fn_params f) (fn_return f) (fn_body f) in
     genv_update tabs ge x fv.
 
   Definition eval_decl_const (te: tenv) (ge : genv) (x:ident) (bt:btyp) :=
     let* ty :=  Typing.btyp_to_typ te bt  in
     let* v  := genv_get tabs ge x in
-    if typ_eq_dec ty (typeof_value tabs v) then eret tt else fail.
+    if typ_eq_dec ty (typeof_value tabs v) then Some tt else fail.
 
   Definition eval_decl_fun (te:tenv) (ge : genv) (x:Syntax.ident) (params : list (Syntax.param_attr * btyp)) (tret:btyp) :=
     let* tparam := mmap (Typing.btyp_to_typ te) (List.map snd params) in
     let* tret   := Typing.btyp_to_typ te tret in
     let* v := genv_get tabs ge x in
-    if (typ_eq_dec (TFun tparam tret) (typeof_value tabs v)) then eret tt else fail.
+    if (typ_eq_dec (TFun tparam tret) (typeof_value tabs v)) then Some tt else fail.
 
 
-  (** Interpreter *)
-  Fixpoint interpret_rec (te: tenv) (ge: genv) (cmds: list command) : res (list (value tabs)) :=
-    match cmds with
-    | nil => ret nil
-    | c :: xprog' =>
-        match c with
-        | CmdDef (DefType x td) =>
-            let* te' := eval_def_type te x td in
-            interpret_rec te' ge xprog'
-        | CmdDef (DefConst x l ty) =>
-            let* ge' := eval_def_const te ge x l ty in
-            interpret_rec te ge' xprog'
-        | CmdDef (DefFun x f) =>
-            let* ge' := eval_def_fun te ge x f in
-            interpret_rec te ge' xprog'
-        | CmdDef (DeclType _ _) => failwith "the program contains abstract types"
-        | CmdDef (DeclConst _ _)
-        | CmdDef (DeclFun _ _ _) => failwith "the program contains abstract definitions"
-        | CmdExpr bt e =>
-            let* ty := typof_expr te e in
-            let* v := eval_expr te ge STree.empty ty e in
-            let* l := interpret_rec te ge xprog' in
-            ret (Val tabs ty v :: l)
-        end
-    end.
-
-  Definition interpret (iprog: list command) : res (list (value tabs)) :=
-    interpret_rec TEnv.empty STree.empty iprog.
 
   (** Evaluation of a definition with dynamic environments *)
-
-  Fixpoint eval_def_rec (te: tenv) (ge: genv) (prog: program) (x: ident) : res (value tabs) :=
+  Fixpoint eval_def_rec (te: tenv) (ge: genv) (prog: program) (x: ident) : option (value tabs) :=
     match prog with
     | nil => fail
     | d :: prog' =>
@@ -815,12 +788,12 @@ Section DENOT.
     | Error _ => unit
     end.
 
-  Definition eval_def (impl: genv) (prog: program) (x: ident) : res (value tabs) :=
+  Definition eval_def (impl: genv) (prog: program) (x: ident) : option (value tabs) :=
     eval_def_rec TEnv.empty impl prog x.
 
   (** Evaluation of a whole program *)
 
-  Fixpoint eval_prog_rec (te: tenv) (ge: (genv)) (prog: program) : res (tenv * (genv)) :=
+  Fixpoint eval_prog_rec (te: tenv) (ge: (genv)) (prog: program) : option (tenv * (genv)) :=
     match prog with
     | nil => ret (te,ge)
     | d :: prog' =>
@@ -844,13 +817,46 @@ Section DENOT.
         end
     end.
 
-  Definition eval_prog (impl: genv) (prog: program) : res (tenv* (genv)) :=
+  Definition eval_prog (impl: genv) (prog: program) : option (tenv* (genv)) :=
     eval_prog_rec TEnv.empty impl prog.
 
   (** Redefinition of eval_def by computing the whole global environment first *)
 
-  Definition eval_def2 (impl: genv) (prog: program) (x: ident) : res (value tabs) :=
+  Definition eval_def2 (impl: genv) (prog: program) (x: ident) : option (value tabs) :=
     let* (_, ge) := eval_prog impl prog in
     genv_get tabs ge x.
+
+
+  (** Interpreter *)
+  Import Error.
+  Fixpoint interpret_rec (te: tenv) (ge: genv) (cmds: list command) : res (list (value tabs)) :=
+    match cmds with
+    | nil => Error nil
+    | c :: xprog' =>
+        match c with
+        | CmdDef (DefType x td) =>
+            let* te' := err_of_opt (eval_def_type te x td) in
+            interpret_rec te' ge xprog'
+        | CmdDef (DefConst x l ty) =>
+            let* ge' := err_of_opt (eval_def_const te ge x l ty) in
+            interpret_rec te ge' xprog'
+        | CmdDef (DefFun x f) =>
+            let* ge' := err_of_opt (eval_def_fun te ge x f) in
+            interpret_rec te ge' xprog'
+        | CmdDef (DeclType _ _) => failwith "the program contains abstract types"
+        | CmdDef (DeclConst _ _)
+        | CmdDef (DeclFun _ _ _) => failwith "the program contains abstract definitions"
+        | CmdExpr bt e =>
+            let* ty := err_of_opt (typof_expr te e) in
+            let* v := err_of_opt (eval_expr te ge STree.empty ty e) in
+            let* l := interpret_rec te ge xprog' in
+            ret (Val tabs ty v :: l)
+        end
+    end.
+
+  Definition interpret (iprog: list command) : res (list (value tabs)) :=
+    interpret_rec TEnv.empty STree.empty iprog.
+
+
 
 End DENOT.

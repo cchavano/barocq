@@ -31,6 +31,8 @@ Definition concat (i1 i2: ident) : ident :=
 
 Definition eq_dec := string_dec.
 
+Definition eqb : ident -> ident -> bool := String.eqb.
+
 Definition compare (i1 i2: ident) : comparison :=
   String.compare i1 i2.
 

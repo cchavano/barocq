@@ -603,8 +603,8 @@ let eval_cbinop (op : binary_op) (v1 : cvalue) (v2 : cvalue) : cvalue =
             in
             let r =
               match div i1 i2 with
-              | Errors.OK r -> r
-              | Errors.Error _ -> error (Invalid_operand (ty, "division"))
+              | Some r -> r
+              | None -> error (Invalid_operand (ty, "division"))
             in
             VInt32 (r, s1)
           else assert false
@@ -615,8 +615,8 @@ let eval_cbinop (op : binary_op) (v1 : cvalue) (v2 : cvalue) : cvalue =
             in
             let r =
               match div i1 i2 with
-              | Errors.OK r -> r
-              | Errors.Error _ -> error (Invalid_operand (ty, "division"))
+              | Some r -> r
+              | None  -> error (Invalid_operand (ty, "division"))
             in
             VInt64 (r, s1)
           else assert false
@@ -632,8 +632,8 @@ let eval_cbinop (op : binary_op) (v1 : cvalue) (v2 : cvalue) : cvalue =
             in
             let r =
               match coq_mod i1 i2 with
-              | Errors.OK r -> r
-              | Errors.Error _ -> error (Invalid_operand (ty, "modulo"))
+              | Some r -> r
+              | None -> error (Invalid_operand (ty, "modulo"))
             in
             VInt32 (r, s1)
           else assert false
@@ -645,8 +645,8 @@ let eval_cbinop (op : binary_op) (v1 : cvalue) (v2 : cvalue) : cvalue =
             in
             let r =
               match coq_mod i1 i2 with
-              | Errors.OK r -> r
-              | Errors.Error _ -> error (Invalid_operand (ty, "modulo"))
+              | Some r -> r
+              | None -> error (Invalid_operand (ty, "modulo"))
             in
             VInt64 (r, s1)
           else assert false

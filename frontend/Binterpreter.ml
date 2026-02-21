@@ -43,5 +43,5 @@ let value_to_string (vv : value) : string =
 
 let interpret (arch : Target.archi) (p : Typed.command list) : unit =
   match interpret arch (Maps.PMap.init (Obj.magic ())) p with
-  | Errors.OK lv -> List.iter (fun v -> printf "%s\n" (value_to_string v)) lv
-  | Errors.Error msg -> raise @@ Error (C2C.string_of_errmsg msg)
+  | Res.OK lv -> List.iter (fun v -> printf "%s\n" (value_to_string v)) lv
+  | Res.Error msg -> raise @@ Error (PrintUtils.string_of_errmsg msg)

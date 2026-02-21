@@ -144,7 +144,7 @@ Definition set_path (p:option G.PathTree.t) (fd:EdgeLabel.t) (v: option G.PathTr
   | Some p => G.PathTree.set_path p fd v
 end.
 
-Definition check (str: string) (e1:InvMap.t) (e2:InvMap.t) :=
+Definition check (str: string) (e1:InvMap.t) (e2:InvMap.t) : res (unit:Type):=
   if InvMap.check e2
   then OK tt
   else
@@ -152,6 +152,7 @@ Definition check (str: string) (e1:InvMap.t) (e2:InvMap.t) :=
     let b2 := Bframe "-" "|" (InvMap.pp e2) in
     let err := Pp.seq ((Bstr str :: Bstr " before " :: b1 :: Bstr " after " :: b2 :: nil)) in
     Error (MSG nl :: (msg (Pp.pp err))).
+
 
 Definition show_path_above_alias (te:tenv) (ge:aenv) (d:domain) (env:InvMap.t) (a1:atom) (env': InvMap.t): res unit :=
   let pd := pp_domain d in
@@ -162,6 +163,8 @@ Definition show_path_above_alias (te:tenv) (ge:aenv) (d:domain) (env:InvMap.t) (
   Error (msg (Pp.pp (Bstack args
                             (Bstack (Bstr "===>")
                                (InvMap.pp env') Left) Left))).
+
+
 
 Definition set_field (te:tenv) (ge: aenv) (d:domain) (env:InvMap.t) (a1:atom) (i:EdgeLabel.t) (v:atom) :=
   let pa1  := eval_atom env a1 in
@@ -342,7 +345,7 @@ Fixpoint inv_globdefs (te:tenv) (age:aenv) (ge:genv) (gdefs:list globdef) : res 
 
 Definition check_program (p:program) : res (tenv *(aenv * genv)) :=
   (* Build the typing environment *)
-  let* te := tenv_of_type_defs (prog_types p) in
+  let* te := err_of_opt (tenv_of_type_defs (prog_types p)) in
   (* Perform alias analysis over all the functions *)
   let* age := eval_globdefs te STree.empty (prog_defs p) in
   (* Analyse the invalid path - could be done on the fly*)
@@ -372,18 +375,18 @@ Section CORRES.
     | match_Vrecord:
         forall rid fields vr ur a m,
           (forall fd (ty: typ) (vv: eval_typ tabs ty) (uv: Imp1Imp.val ty),
-            @Brecord.gprojt typ (eval_typ tabs) fields typ_eq_dec vr fd ty = OK vv ->
-            @Brecord.gprojt typ val fields typ_eq_dec ur fd ty = OK uv ->
+            @Brecord.gprojt typ (eval_typ tabs) fields typ_eq_dec vr fd ty = Some vv ->
+            @Brecord.gprojt typ val fields typ_eq_dec ur fd ty = Some uv ->
             match_vals ty vv uv m) ->
-          Imp1Imp.get tabs (PtrR a rid fields) m = OK (MRecord tabs rid fields ur) ->
+          Imp1Imp.get tabs (PtrR a rid fields) m = Some (MRecord tabs rid fields ur) ->
           match_vals (TRecord rid fields) vr (Imp1Imp.Vptr (TRecord rid fields) (PtrR a rid fields)) m
     | match_Varray:
         forall ty va ua a m,
         (forall i (vv: eval_typ tabs ty) (uv: Imp1Imp.val ty),
-          Barray.get va i = OK vv ->
-          Barray.get ua i = OK uv ->
+          Barray.get va i = Some vv ->
+          Barray.get ua i = Some uv ->
           match_vals ty vv uv m) ->
-        Imp1Imp.get tabs (PtrA a ty) m = OK (MArray tabs ty ua) ->
+        Imp1Imp.get tabs (PtrA a ty) m = Some (MArray tabs ty ua) ->
         match_vals (TArray ty) va (Imp1Imp.Vptr (TArray ty) (PtrA a ty)) m.
 
   Variable path : Type.

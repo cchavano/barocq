@@ -1,6 +1,8 @@
 From Coq Require Import PArith ZArith String DecimalString List Bool MSetPositive.
 From compcert Require Import Ctypesdefs Maps Integers.
-From BarocqComp Require Import Error Monads Ident.
+From BarocqComp Require Import  Monads Error Ident.
+From BarocqComp Require Import OptionMonad.
+Open Scope option_monad_scope.
 Import MonCounter.
 Import MonCounterErr.
 Import ListNotations.
@@ -61,23 +63,24 @@ Close Scope state_err_monad_scope.
 
 (** * Lists *)
 
-Definition list_nth_err {A: Type} (l: list A) (n: nat) : res A :=
-  err_of_opt (nth_error l n).
 
-Lemma list_nth_err_map_same : 
+Lemma nth_error_map_same :
   forall (A B: Type) (f: A -> B) (l: list A) (n: nat),
-  list_nth_err (map f l) n =
-  let* x := list_nth_err l n in
-  eret (f x).
+  nth_error (map f l) n =
+    let* x := (nth_error  l n) in
+    (Some (f x)).
 Proof.
-  unfold list_nth_err. induction l; destruct n.
+  induction l; destruct n.
   - reflexivity.
   - reflexivity.
   - reflexivity.
   - simpl. apply (IHl n).
 Qed.
 
-Fixpoint list_fold_left_err_compat {A B: Type} (f: A -> B -> res A) (l: list B) (a0: res A) : res A :=
+Definition list_nth_err {A: Type} (l:list A) (n:nat) : res A :=
+  err_of_opt (List.nth_error l n).
+
+Fixpoint list_fold_left_err_compat {A B: Type} (f: A -> B -> option A) (l: list B) (a0: option A) : option A :=
   match l with
   | nil => a0
   | x :: l' =>
@@ -86,12 +89,12 @@ Fixpoint list_fold_left_err_compat {A B: Type} (f: A -> B -> res A) (l: list B) 
   end.
 
 Fixpoint list_fold_left_err {A B: Type} (f: A -> B -> res A) (l: list B) (a0: A) : res A :=
-  match l with
-  | nil => OK a0
+  (match l with
+  | nil => eret a0
   | x :: l' =>
       let* acc := f a0 x in
       list_fold_left_err f l' acc
-  end.
+  end)%error_monad.
 
 
 Lemma list_fold_left_err_ext:
@@ -108,12 +111,12 @@ Proof.
 Qed.
 
 Fixpoint list_fold_right_err {A B: Type} (f: B -> A -> res A) (a0: A) (l: list B) : res A :=
-  match l with
+  (match l with
   | nil => OK a0
   | x :: l' =>
       let* r := list_fold_right_err f a0 l' in
       f x r
-  end.
+  end)%error_monad.
 
 Lemma list_fold_right_err_ext:
   forall {A B: Type} (f g: B -> A -> res A),
@@ -136,7 +139,8 @@ Lemma list_fold_right_err_ext_OK:
 Proof.
   induction l; intros.
   - simpl in H0. simpl. exact H0.
-  - simpl. simpl in H0. monadInv H0.
+  - simpl. simpl in H0.
+    Res.monadInv H0.
     rewrite IHl with (r := x); simpl. apply H.
     exact EQ0. exact EQ. 
 Qed.
@@ -153,12 +157,12 @@ Definition list_mem {A: Type} (EqDec: forall (x y: A), {x = y} + {x <> y}) (a: A
 Lemma list_map_transl_err_same:
   forall (A B C: Type) (l: list A) (l': list B) (transl: A -> res B) (f: A -> C) (g: B -> C)
   (transl_correct: forall a b, transl a = OK b -> g b = f a),
-    Errors.mmap transl l = OK l' ->
+    Res.mmap transl l = OK l' ->
     map g l' = map f l.
 Proof.
   induction l; intros.
   - simpl in H. inversion H. reflexivity.
-  - simpl in H. monadInv H. simpl.
+  - simpl in H. Res.monadInv H. simpl.
     f_equal. apply transl_correct. exact EQ.
     eapply IHl; eauto.
 Qed.
@@ -280,20 +284,20 @@ Proof.
 Qed.
 
 Fixpoint forall_err {A: Type} (P : A -> res bool) (l:list A) : res bool :=
-  match l with
+  (match l with
   | nil => OK true
   | e::l => let* b := P e in
             let* b1 := forall_err P l in
             OK (b && b1)
-  end.
+  end)%error_monad.
 
 
 Fixpoint forall_check {A: Type} (P : A -> res unit) (l:list A) : res unit :=
-  match l with
+  (match l with
   | nil => OK tt
   | e::l => let* _ := P e in
             forall_check P l
-  end.
+  end)%error_monad.
 
 
 
@@ -302,19 +306,19 @@ Section MERGE.
   Variable merge : A -> A -> res A.
 
   Fixpoint merge_list_rec (acc : A) (l:list (res A)) : res A :=
-  match l with
-  | nil => OK acc
-  | e::l => let* e := e in
-            let* m := merge e acc in
-            merge_list_rec m l
-  end.
+    (match l with
+     | nil => OK acc
+     | e::l => let* e := e in
+               let* m := merge e acc in
+               merge_list_rec m l
+     end)%error_monad.
 
   Definition merge_list (l: list (res A)) : res A :=
-    match l with
+    (match l with
     | nil => Error (msg "")
     | acc :: l => let* acc := acc in
                   merge_list_rec acc l
-    end.
+    end)%error_monad.
 
 End MERGE.
 
@@ -349,3 +353,8 @@ Ltac destruct_conj H :=
   end.
       
 Ltac inv H := Coqlib.inv H.
+
+Ltac rew H :=
+  match type of H with
+  | ?A = _ => destruct A ; try discriminate ; inv H
+  end.

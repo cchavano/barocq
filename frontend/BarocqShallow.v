@@ -1,5 +1,6 @@
+From Coq Require Import String.
 From compcert Require Import Ctypes Integers.
-From BarocqComp Require Import Barray Benum Maps2 Utils Types Syntax.
+From BarocqComp Require Import Barray Benum Maps2 Utils Types Syntax Pp Printer.
 
 Module BNF.
 
@@ -133,5 +134,27 @@ Module Monadic.
         end)
       nil
       types.
+
+  Fixpoint pp_atom (a:atom) :=
+    match a with
+    | ATrue  => Bstr "true"%string
+    | AFalse => Bstr "false"%string
+    | AInt32 i s => pp_sint s i
+    | AInt64 i s => pp_sint64 s i
+    | AConstr s _ => Bstr s
+    | AVar s _ => Bstr s
+    | ACast a b1 b2 => Pp.seq (pp_atom a :: Bstr " as " :: Bstr "___" :: nil)
+    | AUnaryOp o a _ => Bcat (Bstr (string_of_unary_op o)) (pp_atom a)
+    | ABinaryOp o a1 a2 _ => Bcat (pp_atom a1)
+                            (Bcat (Bstr (string_of_binary_op o)) (pp_atom a2))
+    | ARecordProj a id _ => Bcat (pp_atom a)
+                            (Bcat (Bstr ".") (Bstr id))
+    | ARecordUpdate a id v _ => Pp.seq (pp_atom a :: Bstr " <- " :: Bstr id :: Bstr " := " :: pp_atom v :: nil)
+    | ALambda lid a _  => Bstr "lambda"
+    | ALambdaRet lid _ _ => Bstr "lambda_ret"
+    | AApp f args _      => Pp.seq ((Bstr f) :: Bstr "(" :: Pp.seq (List.map Bstr args) :: Bstr ")" :: nil)
+    end.
+
+
 
 End Monadic.

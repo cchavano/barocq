@@ -2,8 +2,10 @@
 From compcert Require Import Maps.
 Require Import Uint63.
 Require Import String FMapInterface FMapList ZArith Int ListSet.
-From BarocqComp Require Import Error Maps2 Types Syntax Imp1 Graph Typing Utils Pp.
+From BarocqComp Require Import OptionMonad Error Maps2 Types Syntax Imp1 Graph Typing Utils Pp.
 From Coq Require Import FMapPositive.
+Open Scope error_monad_scope.
+
 
 (** WARNING: Known limitations.
     - The use of global variables is limited to primitive types.
@@ -13,38 +15,6 @@ From Coq Require Import FMapPositive.
     This would be doable but require either more precise typing of function arguments
     or put a default contract on function pointers.
  *)
-
-Section MAPERR.
-  Context {A B: Type}.
-  Variable F : A -> res B.
-
-  Fixpoint maperr (l:list A) : res (list B) :=
-    match l with
-    | nil => OK nil
-    | e :: l' => let* e' := F e in
-                 let* l' := maperr l' in
-                 OK (e'::l')
-    end.
-
-End MAPERR.
-
-
-Section FOLDERR.
-  Context {A B: Type}.
-  Variable F : A -> B -> res B.
-
-  Fixpoint fold_right_err (l:list A) (a:B) : res B :=
-    match l with
-    | nil => OK a
-    | e :: l' => let* r' := fold_right_err l' a in
-                 F e r'
-    end.
-
-End FOLDERR.
-
-
-
-
 
 Module EdgeLabel <: OrderedType.
 
@@ -65,7 +35,7 @@ Definition pp (e:edge) :=
 Definition next_label (t:typ) (e:edge) :=
   match t, e with
   | TArray ty , (Index _ | Top) => OK ty
-  | TRecord _ l  , Field fd => Brecord.find_type_of_field fd l
+  | TRecord _ l  , Field fd => err_of_opt (Brecord.find_type_of_field fd l)
   | _  , _ => fail
   end.
 
@@ -217,7 +187,7 @@ Fixpoint subst_atom (env : smaplist atom) (a:atom): res atom :=
       let* a := subst_atom env a in
       OK (ARecordProj a fd ly bt)
   | APureCall id bt1 la bt2 =>
-      let* l := maperr (subst_atom env) la in
+      let* l := mmap (subst_atom env) la in
       OK (APureCall id bt1 l bt2)
   | ATrue | AFalse | AInt32 _ _ | AInt64 _ _ | AConstr _ _ _  => OK a
   end.
@@ -240,7 +210,7 @@ Module GEXPR.
   | Get (e:t) (field : EdgeLabel.t).
 
 
-  Fixpoint incl_idents (l1 l2 :list ident) : res unit :=
+  Fixpoint incl_idents (l1 l2 :list ident) : res (unit:Type) :=
     match l1 with
     | nil => OK tt
     | e::l1' => if List.existsb (String.eqb e) l2
@@ -1296,7 +1266,7 @@ Definition init_domain (l:list (ident * typ)) :=
  *)
 
 Definition domain_of_function (te:tenv) (f:function) : res domain :=
-  let* params := MapList.map_err (btyp_to_typ te) (fn_params f) in
+  let* params := err_of_opt (Denot.map_err (btyp_to_typ te) (fn_params f)) in
   if MapList.nodup  Ident.eq_dec params
   then let modified := assigned (fn_body f) in
        if List.forallb (fun i_t => negb (SSet.mem (fst i_t) modified)) params
@@ -1324,8 +1294,8 @@ Definition eval_function (te:tenv) (env:aenv) (f:function) : res afunction :=
   match d with
   | inr (r,pure) =>
       let* r := sfunction_of_path (fn_params f) r in
-      let* tr := btyp_to_typ te (fn_return f) in
-      let* params := MapList.map_err (btyp_to_typ te) (fn_params f) in
+      let* tr := err_of_opt (btyp_to_typ te (fn_return f)) in
+      let* params := err_of_opt (Denot.map_err (btyp_to_typ te) (fn_params f)) in
       OK (mk_function tr params (r,pure))
   |  _    => fail
   end.
@@ -1349,7 +1319,7 @@ Fixpoint get_write_arg (l:list (param_attr * btyp)) : res positive :=
   end.
 
 Definition get_return (te:tenv)(l:list (param_attr * btyp)) (r:btyp) : res sfunction  :=
-  let* ty := btyp_to_typ te r in
+  let* ty := err_of_opt (btyp_to_typ te r) in
   if typ_is_prim ty then OK RPrim
   else let* i := get_write_arg l  in
        OK (RDeep (GEXPR.Var (Printer.string_of_positive i) )).
@@ -1374,11 +1344,11 @@ Definition eval_globdef (te:tenv) (env:aenv) (gd:globdef) : res aenv :=
                             MSG "cannot analyze function " ::
                             MSG id :: MSG nl :: e)
                        end
-  | DeclConst id t  => let* ty := btyp_to_typ te t in
+  | DeclConst id t  => let* ty := err_of_opt (btyp_to_typ te t) in
                        OK (STree.set id (ALit (typ_is_prim ty )) env)
   | DeclFun id params r => let* ret := get_return te params r in
-                           let* params := MapList.map_err (btyp_to_typ te) params in
-                           let* r      := btyp_to_typ te r in
+                           let* params := err_of_opt (mmap_assoc (btyp_to_typ te) params) in
+                           let* r      := err_of_opt (btyp_to_typ te r) in
                            OK (STree.set id (AFun (afunction_of_sfunction params r ret)) env)
   end.
 
@@ -1529,6 +1499,6 @@ Fixpoint transl_globdefs (te:tenv) (env: aenv) (l:list globdef) : res (list glob
   end.
 
 Definition transl_program (te:tenv)  (p: program) : res program :=
-  let* te := tenv_of_type_defs (prog_types p) in
+  let* te := err_of_opt (tenv_of_type_defs (prog_types p)) in
   let* gds :=  transl_globdefs te STree.empty (prog_defs p) in
   OK (mk_program gds (prog_types p) (prog_tabs p)).
