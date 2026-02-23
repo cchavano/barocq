@@ -62,6 +62,7 @@ Definition bind2 (A B C: Type) (f: option (A * B)) (g: A -> B -> option C) : opt
   | None => None
   end.
 
+
 (** The [do] notation, inspired by Haskell's, keeps the code readable. *)
 
 Declare Scope option_monad_scope.
@@ -103,6 +104,41 @@ Proof.
   destruct p; simpl; intros. exists a; exists b; auto.
   intros; discriminate.
 Qed.
+
+Local Open Scope option_monad_scope.
+
+Lemma assoc_bind : forall {A B C: Type}
+                          (e1 : option A)
+                          (e2 : A -> option B)
+                          (e3 : B -> option C),
+    (let* x := (let* y := e1 in e2 y) in e3 x) =
+      (let* y := e1 in let* x := e2 y in e3 x).
+Proof.
+  intros.
+  destruct e1.
+  - simpl. reflexivity.
+  - simpl. reflexivity.
+Qed.
+
+Lemma bind_equal : forall {A B:Type} (e1:option A) (e2 e2': A -> option B),
+    (forall x, e1 = Some x -> e2 x = e2' x) ->
+    (let* x := e1 in e2 x) =
+    (let* x := e1 in e2' x).
+Proof.
+  intros.
+  destruct e1 ;auto.
+  simpl. apply H; auto.
+Qed.
+
+Lemma bind_ret : forall {A B:Type} (e:A) (f: A -> option B),
+    bind (ret e) f = f e.
+Proof.
+  reflexivity.
+Qed.
+
+
+
+
 
 (** Assertions *)
 

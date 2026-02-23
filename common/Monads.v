@@ -21,7 +21,7 @@ Module MonError. (*<: MONAD. *)
 
   Definition ret {A: Type} (a: A) : M A := OK a.
 
-  Polymorphic Definition bind {A B: Type} (f: M A) (g: A -> M B) : M B := Res.bind f g.
+   Definition bind {A B: Type} (f: M A) (g: A -> M B) : M B := Res.bind f g.
 
   Definition bind_catch {A B: Type} (f: M A) (g: A -> M B) (m: string) : M B :=
     match f with
@@ -29,19 +29,19 @@ Module MonError. (*<: MONAD. *)
     | Error _ => Error (msg m)
     end. 
 
-  Polymorphic Definition bind2 {A B C: Type} (f: M (A * B)) (g: A -> B -> M C) : M C := Res.bind2 f g.
+   Definition bind2 {A B C: Type} (f: M (A * B)) (g: A -> B -> M C) : M C := Res.bind2 f g.
 
-  Polymorphic Definition fail {A: Type} : M A := Error nil.
+   Definition fail {A: Type} : M A := Error nil.
 
-  Polymorphic Definition failwith {A: Type} (m: string) : M A := Error (msg m).
+   Definition failwith {A: Type} (m: string) : M A := Error (msg m).
 
-  Polymorphic Definition err_of_opt {A: Type} (o: option A) : M A :=
+   Definition err_of_opt {A: Type} (o: option A) : M A :=
     match o with
     | Some v => OK v
     | None => fail
     end.
 
-  Polymorphic Definition ignore_err {A: Type} (r: M A) : M A :=
+   Definition ignore_err {A: Type} (r: M A) : M A :=
     match r with
     | Error _ => fail
     | _ => r
