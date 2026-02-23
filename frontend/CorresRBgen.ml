@@ -584,6 +584,11 @@ module HelperTactics = struct
       "Ltac corres_rb_rec :=\n\
        %srewrite_prelude;\n\
        %smatch goal with\n\
+       %s| [ |- bind (ret ?X) _ = _ ]    => rewrite bind_ret with (e:=X); corres_rb_rec\n\
+       %s| [ |- _ = bind (ret ?X) _ ]    => rewrite bind_ret with (e:=X); corres_rb_rec\n\
+       %s| [ |- (bind (bind ?E1 ?E2) ?E3) = _ ] => rewrite assoc_bind; corres_rb_rec\n\
+       %s| [ |- _ = (bind (bind ?E1 ?E2) ?E3) ] => rewrite assoc_bind; corres_rb_rec\n\
+       %s| [ |- bind ?X _ = bind ?X _] => apply bind_equal; intros;corres_rb_rec\n\
        %s| [ |- _ = match ?E with _ => _ end ] =>\n\
        %sdestruct E; try reflexivity; corres_rb_rec\n\
        %s| [ |- ret _ = Some _] => finish\n\
@@ -591,6 +596,11 @@ module HelperTactics = struct
        %sreflexivity ||\n\
        %s(corres_rb_match G; corres_rb_rec)\n\
        %send.\n"
+      indent
+      indent
+      indent
+      indent
+      indent
       indent
       indent
       indent
@@ -610,7 +620,7 @@ module HelperTactics = struct
       indent
       indent;
     fprintf out "\n";
-    fprintf out "Ltac corres_rb_timeout :=\n%stimeout 300 corres_rb.\n" indent
+    fprintf out "Ltac corres_rb_timeout :=\n%stimeout 600 corres_rb.\n" indent
 
   let imports () : string =
     sprintf

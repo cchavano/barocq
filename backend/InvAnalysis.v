@@ -257,7 +257,6 @@ Definition inv_comp  (te:tenv) (age: aenv) (d:domain) (ge:genv)  (env:InvMap.t) 
   | CpCall id _ args _  => call te age d ge id args env
   end.
 
-  Check inv_comp.
 
 Definition join (v1 v2 : option G.PathTree.t * InvMap.t) : res (option G.PathTree.t * InvMap.t) :=
   OK (InvMap.merge (fst v1) (fst v2) , InvMap.join (snd v1) (snd v2)).
@@ -287,8 +286,6 @@ Fixpoint inv_statement (te:tenv) (age:aenv) (d:domain) (ge:genv) (env:InvMap.t) 
         Error (MSG "#[aliasing]":: MSG nl :: MSG (Pp.pp (InvMap.pp env)):: MSG nl :: MSG (Pp.pp (pp_domain d)) :: nil)
       else inv_statement te age d ge env s
   end.
-
-Check inv_statement.
 
 
 Definition get_inv_arguments (inv:InvMap.t) (l:list (string * btyp)) :=
@@ -361,8 +358,6 @@ Section CORRES.
 
   Variable tabs : PMap.t Type.
 
-  Check Imp1Imp.genv.
-  
   Inductive match_vals: forall ty, eval_typ tabs ty -> Imp1Imp.val ty -> Imp1Imp.mem tabs -> Prop :=
     | match_Vbool: forall b m,
         match_vals TBool b (Imp1Imp.Vprim TBool (PBool b)) m
