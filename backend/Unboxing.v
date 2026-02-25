@@ -4,13 +4,13 @@ From BarocqComp Require Import Utils Syntax Types Typing Imp1 Maps2.
 Fixpoint check_statement (s: statement) : bool :=
   match s with
   | StSet x (CpArraySet a i v _) =>
-      let ta := typof_atom a in
+      let ta := btypof_atom a in
       match ta with
       | BArray ((BRecord _ _ | BArray _ _)) (LyUnboxed _) => false
       | _ => true
       end
   | StSet x (CpRecordUpdate a f v _) =>
-      let ta := typof_atom a in
+      let ta := btypof_atom a in
       match ta with
       | BRecord rid ub =>
           if list_mem Ident.eq_dec f ub then false

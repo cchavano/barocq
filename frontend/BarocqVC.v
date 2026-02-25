@@ -798,11 +798,8 @@ Section S.
   Proof.
     specialize (eq_genv_eval_expr arch te ge ge').
     destruct e; intros; simpl; try (apply res_rel_cast_typ_refl;reflexivity).
-    - unfold eval_constr.
-      destruct (Typing.TEnv.get_constr_typ te i); try constructor.
-      simpl. destruct (Typing.TEnv.get_edef te i1); try constructor.
-      simpl. destruct (bool_dec (existsb (String.eqb i) l) true);try constructor.
-      apply res_rel_cast_typ_refl;reflexivity.
+    - unfold eval_constr. destruct ty; simpl; try constructor.
+      apply res_rel_refl; intro; reflexivity.
     - unfold eval_var.
       unfold lenv_get.
       unfold eq_env in H0.

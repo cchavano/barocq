@@ -1,5 +1,5 @@
 (* Imperative Imp1 *)
-From Coq Require Import Bool List String PArith Lia.
+From Coq Require Import Bool List String PArith Lia Eqdep.
 From compcert Require Import Integers Coqlib.
 From BarocqComp Require Import Denot Benum  Barray Brecord OptionMonad Maps2 Utils Syntax Types Typing.
 From BarocqComp Require Import Imp1.
@@ -983,6 +983,24 @@ Section S.
     | _ => fail
     end.
 
+  Lemma cast_pval_id:
+    forall ty pv, @cast_pval ty pv ty = Some pv.
+  Proof.
+    intros. unfold cast_pval.
+    destruct (typ_eq_dec ty ty); try contradiction.
+    assert (e = eq_refl). apply UIP_refl. rewrite H.
+    simpl. reflexivity.
+  Qed.
+
+  Lemma cast_pval_ok_imp_typ_eq:
+    forall ty pv ty' pv',
+      @cast_pval ty pv ty' = Some pv' ->
+      ty = ty'.
+  Proof.
+    intros. unfold cast_pval in H.
+    destruct (typ_eq_dec ty ty'); (tauto || discriminate).
+  Qed.
+
   Definition cast_mval {ty}  (pv : mval ty) (ty':typ): option (mval ty') :=
     match typ_eq_dec ty ty' with
     | left EQ => Some (cast (f_equal mval EQ) pv)
@@ -994,6 +1012,24 @@ Section S.
     | left EQ => Some (cast (f_equal val EQ) v)
     | right _ => fail
     end.
+
+  Lemma cast_val_id:
+    forall ty pv, @cast_val ty pv ty = Some pv.
+  Proof.
+    intros. unfold cast_val.
+    destruct (typ_eq_dec ty ty); try contradiction.
+    assert (e = eq_refl). apply UIP_refl. rewrite H.
+    simpl. reflexivity.
+  Qed.
+
+  Lemma cast_val_ok_imp_typ_eq:
+    forall ty pv ty' pv',
+      @cast_val ty pv ty' = Some pv' ->
+      ty = ty'.
+  Proof.
+    intros. unfold cast_val in H.
+    destruct (typ_eq_dec ty ty'); (tauto || discriminate).
+  Qed.
 
   Definition env := ident -> option {ty & val ty}.
 
@@ -1028,10 +1064,6 @@ Section S.
   Definition val_of_pval {ty:typ} (pv: option (pval ty)) : option (val ty) :=
     let* v := pv in
     Some (Vprim _ v).
-
-
-  Definition typof_atom (te:tenv) (a: atom) : option typ :=
-    btyp_to_typ te (typof_atom a).
 
   Definition eval_val {ty:typ} (v : val ty) : option (eval_typ abs ty) :=
     match v with
@@ -1306,12 +1338,8 @@ Section S.
         eval_call eval_atom te ge e m f btf args tr
     end.
 
-  Definition typof_comp (te:tenv) (c: comp) : option typ :=
-    btyp_to_typ te (typof_comp c).
-
   Definition env_set (id:ident) {ty:typ} (v:val ty) (e:env) : env :=
     fun x => if Ident.eq_dec x id then Some (existT _ ty v) else e x.
-
 
   Definition typ_of_statement (ty:option typ) :=
     match ty with
@@ -1366,8 +1394,6 @@ Section S.
     | StAttr a s => eval_statement te ge e m ty s
     end.
 
-
-
   Fixpoint eval_fun_rec (te: tenv) (ge: genv)  (e: env) (params: smaplist typ) (tret: typ)  (s: statement) :
     mem -> typ_of_fun (List.map snd params) tret.
   Proof.
@@ -1383,9 +1409,6 @@ Section S.
   Defined.
 
   Definition env_empty : env := fun _ => fail.
-
-
-
 
   Definition build_Fun (te:tenv) (ge:genv) (params:smaplist btyp) (tret:btyp) (s:statement) : option gval  :=
     if MapList.nodup Ident.eq_dec params
@@ -1404,7 +1427,6 @@ Section S.
               Some (ve' :: a)
     end.
 
-
   Fixpoint eval_record_lit (lv: smaplist {ty:typ & val ty}) (fields: smaplist typ) : option (eval_recordtyp val fields).
     destruct lv as [|[x [tv v]] lv']; destruct fields as [| [y t] fields'].
     - apply (Some tt).
@@ -1421,7 +1443,6 @@ Section S.
         apply (Some (Field y cv, rc)).
       + apply fail.
   Defined.
-
 
   (* Like Barocq, the semantics is not typed *)
 

@@ -8,14 +8,14 @@ Open Scope option_monad_scope.
 
 Definition ppath : Type := (list cedge) * typ.
 
-Definition pp_edges (pp: ppath) : list cedge :=
+Definition ppath_edges (pp: ppath) : list cedge :=
   fst pp.
 
-Definition pp_typ (pp: ppath) : typ :=
+Definition ppath_typ (pp: ppath) : typ :=
   snd pp.
 
 Definition ppath_prefix_with (pre: list cedge) (pp: ppath) : ppath :=
-  (pre ++ (pp_edges pp), pp_typ pp).
+  (pre ++ (ppath_edges pp), ppath_typ pp).
 
 Definition ppath_prefixed_with (pre: list cedge) (pp: ppath) : bool :=
   let fix aux pre edges :=
@@ -27,7 +27,7 @@ Definition ppath_prefixed_with (pre: list cedge) (pp: ppath) : bool :=
     | _, _ => false
     end
   in
-  aux pre (pp_edges pp).
+  aux pre (ppath_edges pp).
   
 Module PPathSet.
 
@@ -45,7 +45,13 @@ Module PPathSet.
 
   Parameter fold : forall {A: Type},  (A -> ppath -> A) -> t -> A -> A.
 
-  Parameter union_opt : option t -> option t -> option t.
+  Definition union_opt (pps1 pps2: option t) : option t :=
+    match pps1, pps2 with
+    | Some pps1, Some pps2 => Some (union pps1 pps2)
+    | Some pps, _
+    | _, Some pps => Some pps
+    | None, None => None
+    end.
 
   Parameter prefixed_with : list cedge -> t -> t.
 
@@ -62,11 +68,21 @@ End PPathSet.
 
 Parameter path : Type.
 
+Parameter mk_path : ident -> ppath -> path.
+
+Parameter path_typ : path -> typ.
+
+Parameter path_pp : path -> ppath.
+
+Parameter path_var : path -> ident.
+
 Module InvSet.
 
   Parameter t : Type.
 
   Parameter empty : t.
+
+  Parameter mem : path -> t -> bool.
 
   Parameter get : ident -> t -> option PPathSet.t.
 
@@ -79,6 +95,17 @@ Module InvSet.
   Parameter suffix_with : list cedge -> typ -> t -> t.
 
   Parameter union : t -> t -> t.
+
+  Definition valid_var (x: ident) (inv: t) : bool :=
+    match get x inv with
+    | Some _ => false
+    | None => true
+    end.
+
+  Axiom get_mem_None :
+    forall x inv,  
+      get x inv = None <->
+      (forall pp, mem (mk_path x pp) inv = false).
 
 End InvSet.
 
@@ -106,18 +133,13 @@ Section SEM.
       to the memory value located at address [a]. *)
   Parameter paths_to_mval : env -> mem -> addr -> InvSet.t.
 
-  Parameter follow_ppath : mem -> addr -> (forall (pp: ppath), option (val (pp_typ pp))).
+  Parameter follow_ppath : mem -> addr -> (forall (pp: ppath), option (val (ppath_typ pp))).
 
-  Parameter follow_path : env -> mem -> ident -> (forall (pp: ppath), option (val (pp_typ pp))).
+  Parameter follow_path : env -> mem -> ident -> (forall (pp: ppath), option (val (ppath_typ pp))).
 
   Parameter paths_aliased_with : env -> mem -> addr -> ppath -> InvSet.t.
 
   Parameter paths_aliased_below : env -> mem -> addr -> ppath -> InvSet.t.
-
-  Definition val_pps_t (ty: typ) : Type := val ty * option PPathSet.t.
-
-  (** [all_args_forest m tparams args] checks that the arguments [args] form a forest in memory [m]. *)
-  Parameter all_args_forest : mem -> forall tparams, DList.dlist val_pps_t tparams -> bool.
 
   (* ====================================================== *)
 
@@ -182,29 +204,28 @@ Section SEM.
     end.
 
   Fixpoint inv_after_call (e: env) (m: mem) (inv: InvSet.t) (tparams: list typ) (tret: typ)
-                          (args: DList.dlist val_pps_t tparams)
+                          (args: DList.dlist val tparams)
                           (pps_args: list (option PPathSet.t))
                           : option InvSet.t :=
     match args, pps_args with
     | DNIL _, nil => ret inv
-    | @DCONS _ _ ta (a, _) tparams' args', pps_a :: pps_args' =>
+    | @DCONS _ _ ta a tparams' args', pps_a :: pps_args' =>
         let* inv' := inv_arg_aliases_after_call e m inv ta a pps_a in
         inv_after_call e m inv' tparams' tret args' pps_args'
     | _, _ => fail
     end.
 
+
   Fixpoint eval_call (tparams : list typ) (tret : typ)
-      (args : DList.dlist val_pps_t tparams) (f: typ_of_fun tparams tret)
+      (args : DList.dlist val tparams) (f: typ_of_fun tparams tret)
       {struct args} : option (val tret * mem * list (option PPathSet.t)).
   Proof.
-    destruct args as [| ta [a pps_a] tparams args]; simpl in f.
+    destruct args as [| ta a tparams args]; simpl in f.
     - apply (f tt).
-    - destruct pps_a eqn:Epps_a.
-      + apply fail.
-      + specialize (f a).
-        destruct tparams.
-        * apply f.
-        * apply (eval_call _ _ args f).
+    - specialize (f a).
+      destruct tparams.
+      + apply f.
+      + apply (eval_call _ _ args f).
   Defined.
 
   Definition cast_function {t1 t2: list typ} {tr1 tr2: typ} (EQ: TFun t1 tr1 = TFun t2 tr2) (f : Fun t1 tr1)
@@ -213,23 +234,28 @@ Section SEM.
     inversion EQ. rewrite H0, H1 in f. apply f.
   Defined.
 
-  Definition ieval_call (ge: genv) (e: env) (m: mem) (inv: InvSet.t) (fid: ident)  
-      (tparams: list typ) (args: DList.dlist val_pps_t tparams)
-      (tret: typ) : option (val tret * mem * InvSet.t) :=
-    if all_args_forest m tparams args then
-      match ge fid with
-      | Some (GFun tparams' tret' f) =>
-          match typ_eq_dec (TFun tparams' tret') (TFun tparams tret) with
-          | left EQ =>
-              let f := cast_function EQ f in
-              let* (vm, pps_args) := eval_call tparams tret args (f m) in
-              let* inv' := inv_after_call e m inv tparams tret args pps_args in
-              ret (vm, inv')
-            | _ => fail
-            end
-      | _ => fail
-      end
-    else fail.
+  Lemma cast_function_id:
+    forall tparams tret (f: Fun tparams tret), cast_function eq_refl f = f.
+  Proof.
+    intros. unfold cast_function.
+    simpl. reflexivity.
+  Qed.
+
+  Definition ieval_call (ge: genv) (e: env) (m: mem) (fid: ident)  
+      (tparams: list typ) (tret: typ) (args: DList.dlist val tparams)
+      (ty: typ) : option (val tret * mem * InvSet.t) :=
+    match ge fid with
+    | Some (GFun tparams' tret' f) =>
+        match typ_eq_dec (TFun tparams' tret') (TFun tparams tret) with
+        | left EQ =>
+            let f := cast_function EQ f in
+            let* (vr, mr, pps_args) := eval_call tparams tret args (f m) in
+            let* invr := inv_after_call e m InvSet.empty tparams tret args pps_args in
+            ret (vr, mr, invr)
+          | _ => fail
+          end
+    | _ => fail
+    end.
 
   Definition inv_get_field (pps: option PPathSet.t) (ce: cedge) : option PPathSet.t :=
     match pps with
@@ -241,15 +267,32 @@ Section SEM.
     let* v := cast_pval pv ty in
     ret (Vprim ty v, None).
 
+  Section CALL_ARGS.
+
+    Variable ieval_atom : tenv -> genv -> env -> mem -> InvSet.t -> forall (ty: typ), atom -> option (val ty * option PPathSet.t).
+
+    Definition ieval_args (te: tenv) (ge: genv) (e: env) (m: mem) (inv: InvSet.t)
+        (targs: list typ) (args: list atom)
+        : option (DList.dlist val targs) :=
+      DList.mmap _
+        (fun t a =>
+          let* (va, pps_a) := ieval_atom te ge e m inv t a in
+          match pps_a with
+          | None => ret va
+          | _ => fail (* invalid argument *)
+          end)
+        args targs.
+
+  End CALL_ARGS.
+
   Fixpoint ieval_atom (te: tenv) (ge: genv) (e: env) (m: mem) (inv: InvSet.t) (ty: typ) (a: atom) : option (val ty * option PPathSet.t) :=
     match a with
     | ATrue => ieval_prim (PBool true) ty
     | AFalse => ieval_prim (PBool false) ty
     | AInt32 i s => ieval_prim (PInt32 s i) ty
     | AInt64 i s => ieval_prim (PInt64 s i) ty
-    | AConstr c _ btc =>
-        let* tc := btyp_to_typ te btc in
-        match tc with
+    | AConstr c _ _ =>
+        match ty with
         | TEnum eid elems =>
             let* e := make_enum elems c in
             ieval_prim (PEnum eid elems e) ty
@@ -306,17 +349,20 @@ Section SEM.
         ret (vr, inv_get_field pps1 (CField fd))
     | APureCall f btf args _ =>
         let* tf := btyp_to_typ te btf in
-        let* vf := get_var ge e f tf in
-        match vf with
-        | Vptr _ (PtrF fid tparams tret) =>
-            let* vargs := DList.mmap _ (fun t a => ieval_atom te ge e m inv t a) args tparams in
-            let* (vr, _, _) := ieval_call ge e m inv fid tparams vargs tret in
-            (* Pure calls do not modify the memory nor invalidate their arguments,
-               so we can "safely" ignore the new memory and new set of invalid paths. *)
-            let* vr := cast_val vr ty in
-            ret (vr, None)
-        | _ => fail
-        end
+        if InvSet.valid_var f inv then
+          let* vf := get_var ge e f tf in
+          match vf with
+          | Vptr _ (PtrF fid tparams tret) =>
+              (* let* vargs := DList.mmap _ (fun t a => ieval_atom te ge e m inv t a) args tparams in *)
+              let* vargs := ieval_args ieval_atom te ge e m inv tparams args in
+              let* (vr, _, _) := ieval_call ge e m fid tparams tret vargs ty in
+              (* Pure calls do not modify the memory nor invalidate their arguments,
+                so we can "safely" ignore the new memory and new set of invalid paths. *)
+              let* vr := cast_val vr ty in
+              ret (vr, None)
+          | _ => fail
+          end
+        else fail
     end.
 
   (** [inv_aliases te ge e m a i t] returns the set of all paths directly aliased to the
@@ -342,12 +388,13 @@ Section SEM.
     | _ => fail
     end.
 
-  (** [inv_set_field te ge e m inv a i v] adds to [inv] the set of invalid paths resulting from
-      updating the 'field' [i] of [a] with [v], and returns the set of invalid partial paths
+  (** [inv_set_field te ge e m inv a ce v ty] adds to [inv] the set of invalid paths resulting from
+      updating the 'field' [ce] of [a] with [v], and returns the set of invalid partial paths
       that the variable assigned to this computation inherits from.*)
   Definition ieval_set_field (te: tenv) (ge: genv) (e: env) (m: mem) (inv: InvSet.t)
       (a: atom) (ce: cedge) (v: atom) (ty: typ) : option (val ty * mem * option PPathSet.t * InvSet.t) :=
-    let* (va, ppsa) := ieval_atom te ge e m inv ty a in
+    let* ta := typof_atom te a in
+    let* (va, ppsa) := ieval_atom te ge e m inv ta a in
     let* tv := typof_atom te v in
     let* (vv, ppsv) := ieval_atom te ge e m inv tv v in
     let* m' :=
@@ -371,8 +418,9 @@ Section SEM.
     let ppsr := PPathSet.union_opt pps_ce pps_ce' in
     let* inv_a_i := inv_aliases e m vv ce tv in
     let inv' := InvSet.union inv inv_a_i in
+    let* va := cast_val va ty in
     ret (va, m', ppsr, inv').
-  
+
   Definition ieval_comp (te: tenv) (ge: genv) (e: env) (m: mem) (inv: InvSet.t) (c: comp) (ty: typ) : option (val ty * mem * option PPathSet.t * InvSet.t) :=
     match c with
     | CpAtom a =>
@@ -381,7 +429,8 @@ Section SEM.
     | CpRecordUpdate r fd v _ =>
         ieval_set_field te ge e m inv r (CField fd) v ty
     | CpArraySet a i v _ =>
-        let* (vi, ppsi) := ieval_atom te ge e m inv (Denot.typof_index arch) i in
+        let* ti := typof_atom te i in
+        let* (vi, ppsi) := ieval_atom te ge e m inv ti i in
         match ppsi with
         | Some _ => fail
         | None =>
@@ -390,25 +439,27 @@ Section SEM.
         end
     | CpCall f btf args _ =>
         let* tf := btyp_to_typ te btf in
-        let* vf := get_var ge e f tf in
-        match vf with
-        | Vptr _ (PtrF fid tparams tret) =>
-            let* vargs := DList.mmap _ (fun t a => ieval_atom te ge e m inv t a) args tparams in
-            let* (vr, m, inv') := ieval_call ge e m inv fid tparams vargs tret in
-            let* vr := cast_val vr ty in
-            ret (vr, m, None, inv')
-        | _ => fail
-        end
+        if InvSet.valid_var f inv then
+          let* vf := get_var ge e f tf in
+          match vf with
+          | Vptr _ (PtrF fid tparams tret) =>
+              let* vargs := ieval_args ieval_atom te ge e m inv tparams args in
+              let* (vr, mr, invr) := ieval_call ge e m fid tparams tret vargs ty in
+              let* vr := cast_val vr ty in
+              ret (vr, mr, None, InvSet.union inv invr)
+          | _ => fail
+          end
+        else fail
     end.
 
-  Definition inv_typ_of_statement (ty: option typ) : Type :=
+  Definition typ_of_statement (ty: option typ) : Type :=
     match ty with
     | Some t => val t * option PPathSet.t
     | None => env
     end.
 
-  Definition ieval_match (tv:typ) (v: val tv) (ty: option typ) (cases: list (pattern * (option (inv_typ_of_statement ty * mem * InvSet.t)))) :
-    option (inv_typ_of_statement ty * mem * InvSet.t) :=
+  Definition ieval_match (tv:typ) (v: val tv) (ty: option typ) (cases: list (pattern * (option (typ_of_statement ty * mem * InvSet.t)))) :
+    option (typ_of_statement ty * mem * InvSet.t) :=
     match v with
     | Vptr _ _ => fail
     | Vprim _ e => match e with
@@ -417,7 +468,7 @@ Section SEM.
                    end
     end.
 
-  Fixpoint ieval_statement (te: tenv) (ge: genv) (e: env) (m: mem) (inv: InvSet.t) (ty: option typ) (s: Imp1.statement) : option (inv_typ_of_statement ty * mem * InvSet.t) :=
+  Fixpoint ieval_statement (te: tenv) (ge: genv) (e: env) (m: mem) (inv: InvSet.t) (ty: option typ) (s: Imp1.statement) : option (typ_of_statement ty * mem * InvSet.t) :=
     match s with
     | StSet x c =>
         match ty with
@@ -455,7 +506,9 @@ Section SEM.
     | StReturn a =>
         match ty with
         | Some tyr =>
-            let* (va, ppsa) := ieval_atom te ge e m inv tyr a in
+            let* ta := typof_atom te a in
+            let* (va, ppsa) := ieval_atom te ge e m inv ta a in
+            let* va := cast_val va tyr in
             ret ((va, ppsa), m, inv)
         | _ => fail
         end
@@ -465,28 +518,28 @@ Section SEM.
   Definition params_inv (params: smaplist typ) (inv: InvSet.t) : list (option PPathSet.t) :=
     MapList.fold_right (fun pid _ acc => (InvSet.get pid inv) :: acc) nil params.
 
-  Fixpoint ieval_fun_rec (te: tenv) (ge: genv) (e: env) (params: smaplist typ) (tret: typ) (s: statement)
-      : Fun (List.map snd params) tret.
+  Fixpoint ieval_fun_rec (te: tenv) (ge: genv) (e: env) (params_all params_rec: smaplist typ) (tret: typ) (s: statement)
+      : Fun (List.map snd params_rec) tret.
   Proof.
-    unfold Fun in *; destruct params.
+    unfold Fun in *; destruct params_rec.
     - simpl.
       apply
         (fun m _ =>
-          let* (v, ppsv, m', _) := ieval_statement te ge e m InvSet.empty (Some tret) s in
+          let* (v, ppsv, m', inv) := ieval_statement te ge e m InvSet.empty (Some tret) s in
           match ppsv with
-          | None => ret (v, m', nil)
+          | None => ret (v, m', params_inv params_all inv)
           | _ => fail
           end).
     - simpl. intros m v.
-      specialize (ieval_fun_rec te ge (env_set (fst p) v e) params tret s m).
-      destruct params; simpl.
+      specialize (ieval_fun_rec te ge (env_set (fst p) v e) params_all params_rec tret s m).
+      destruct params_rec; simpl.
       * apply (ieval_fun_rec tt).
       * apply ieval_fun_rec.
   Defined.
 
   Definition ieval_fun (te: tenv) (ge: genv) (params: smaplist typ) (tret: typ) (s: statement)
       : Fun (List.map snd params) tret :=
-    ieval_fun_rec te ge (env_empty) params tret s.
+    ieval_fun_rec te ge (env_empty) params params tret s.
 
   Definition genv_update (ge: genv) (x: ident) (g: gval) : option genv :=
     match ge x with

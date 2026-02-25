@@ -365,8 +365,6 @@ Section IN.
   
 End IN.
 
-
-
 Section Forall2Rec.
   Context {A : Type}.
   Context {F1 : A -> Type}.

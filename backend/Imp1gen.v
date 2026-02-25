@@ -52,7 +52,7 @@ Fixpoint norm_tailcomp (t: ImpBNF.tailcomp) : res Imp1.statement :=
   | ImpBNF.TcComp c =>
       match c with
       | CpAtom a => ret (StReturn a)
-      | _ => ret (StSequence (StSet "res" c) (StReturn (AVar "res" (typof_comp c))))
+      | _ => ret (StSequence (StSet "res" c) (StReturn (AVar "res" (btypof_comp c))))
       end
   | ImpBNF.TcAttr a c =>
       let* t1 := norm_tailcomp c in
@@ -230,8 +230,9 @@ Section CORRECTNESS.
         eapply norm_statement_fuel_gt; eauto.
       + inv H. simpl in H0. monadInv H0. inv EQ2. simpl.
         rewrite EQ; simpl. unfold typof_tailcomp in TYPOF_TAIL.
-        simpl in TYPOF_TAIL. rewrite TYPOF_TAIL in EQ.
-        inv EQ. rewrite ecast_typ_id. setoid_rewrite EQ1; simpl.
+        simpl in TYPOF_TAIL. unfold Typing.typof_comp in EQ.
+        rewrite TYPOF_TAIL in EQ. inv EQ.
+        rewrite ecast_typ_id. setoid_rewrite EQ1; simpl.
         exists x0, le. split; reflexivity.
       + Res.monadInv H. inv EQ2. simpl in H0. monadInv H0.
         simpl. setoid_rewrite EQ0; simpl.
@@ -315,33 +316,19 @@ Section CORRECTNESS.
     - simpl in H0. monadInv H0. inv EQ2.
       destruct c eqn:Ec; simpl in EQ.
       1: { inv H. erase_cast EQ1.
-           simpl; simpl in EQ1. unfold typof_atom.
+           simpl; simpl in EQ1. simpl in EQ.
+           unfold Typing.typof_comp in EQ. simpl in EQ.
+           unfold Typing.typof_atom.
            rewrite EQ; simpl. rewrite ecast_typ_id.
            exact EQ1. }
-      + inversion H. rewrite <- Ec in *. simpl.
-           assert (Typing.btyp_to_typ te (typof_comp c) = Some x).
-           rewrite Ec. simpl. exact EQ. rewrite H0; simpl.
-           erase_cast EQ1. setoid_rewrite EQ1; simpl.
-           unfold typof_atom. simpl. rewrite EQ; simpl.
-           rewrite ecast_typ_id. unfold eval_var.
-           unfold lenv_get, lenv_update. rewrite STree.gss; simpl.
-           apply cast_typ_id.
-      + inversion H. rewrite <- Ec in *. simpl.
-           assert (Typing.btyp_to_typ te (typof_comp c) = Some x).
-           rewrite Ec. simpl. exact EQ. rewrite H0; simpl.
-           erase_cast EQ1. setoid_rewrite EQ1; simpl.
-           unfold typof_atom. simpl. rewrite EQ; simpl.
-           rewrite ecast_typ_id. unfold eval_var.
-           unfold lenv_get, lenv_update. rewrite STree.gss; simpl.
-           apply cast_typ_id.
-      + inversion H. rewrite <- Ec in *. simpl.
-           assert (Typing.btyp_to_typ te (typof_comp c) = Some x).
-           rewrite Ec. simpl. exact EQ. rewrite H0; simpl.
-           erase_cast EQ1. setoid_rewrite EQ1; simpl.
-           unfold typof_atom. simpl. rewrite EQ; simpl.
-           rewrite ecast_typ_id. unfold eval_var.
-           unfold lenv_get, lenv_update. rewrite STree.gss; simpl.
-           apply cast_typ_id.
+      all: ltac:(inversion H; rewrite <- Ec in *; simpl;
+        rewrite EQ; simpl;
+        erase_cast EQ1; rewrite EQ1; simpl;
+        unfold Typing.typof_atom; simpl; unfold Typing.typof_comp in EQ;
+        simpl in EQ; rewrite EQ; simpl;
+        rewrite ecast_typ_id; unfold eval_var;
+        unfold lenv_get, lenv_update; rewrite STree.gss; simpl;
+        apply cast_typ_id).
     - simpl in H1. Res.monadInv H1. inv EQ2.
       simpl in H2. monadInv H2. simpl.
       setoid_rewrite EQ0; simpl.
@@ -461,46 +448,26 @@ Section CORRECTNESS.
     - simpl in H. Res.monadInv H. inv EQ2. simpl in H0.
       monadInv H0. simpl. simpl in WF_TAIL.
       destruct_conj WF_TAIL. erewrite IHtc; eauto.
-    - simpl in H. destruct c.
-      + inv H. simpl in H0. simpl. monadInv H0.
-        erase_cast EQ0. unfold typof_atom in EQ.
+    - simpl in H. destruct c eqn:Ec.
+      1: inv H. simpl in H0. simpl. monadInv H0.
+        erase_cast EQ0. unfold Typing.typof_comp. simpl.
+        unfold Typing.typof_atom in EQ.
         rewrite EQ; simpl. rewrite ecast_typ_id.
-        setoid_rewrite EQ0; simpl. exists le. reflexivity.
-      + remember (CpArraySet a a0 a1 b) as c.
-        inversion H. clear H. rewrite <- H2 in H0.
-        simpl in H0. monadInv H0. monadInv EQ.
-        inversion EQ4. simpl. rewrite EQ0; simpl.
-        clear EQ4. erase_cast EQ2.
-        assert (x1 = ty). { simpl in EQ0. unfold typof_atom in EQ1.
-        simpl in EQ1. congruence. } subst.
-        rewrite ecast_typ_id. setoid_rewrite EQ. exists le.
-        simpl. unfold eval_var in EQ2. unfold lenv_get, lenv_update in EQ2.
-        rewrite STree.gss in EQ2. simpl in EQ2. erase_cast EQ2.
-        inv EQ2. reflexivity.
-      + remember (CpRecordUpdate a i a0 b) as c.
-        inversion H. clear H. rewrite <- H2 in H0.
-        simpl in H0. monadInv H0. monadInv EQ.
-        inversion EQ4. simpl. rewrite EQ0; simpl.
-        clear EQ4. erase_cast EQ2.
-        assert (x1 = ty). { simpl in EQ0. unfold typof_atom in EQ1.
-        simpl in EQ1. congruence. } subst.
-        rewrite ecast_typ_id. setoid_rewrite EQ. exists le.
-        simpl. unfold eval_var in EQ2. unfold lenv_get, lenv_update in EQ2.
-        rewrite STree.gss in EQ2. simpl in EQ2. erase_cast EQ2.
-        inv EQ2. reflexivity.
-      + remember (CpCall i b l b0).
-        inversion H. clear H. rewrite <- H2 in H0.
-        simpl in H0. monadInv H0. monadInv EQ.
-        inversion EQ4. simpl. rewrite EQ0; simpl.
-        clear EQ4. erase_cast EQ2.
-        assert (x1 = ty). { simpl in EQ0. unfold typof_atom in EQ1.
-        simpl in EQ1. congruence. } subst.
-        rewrite ecast_typ_id. setoid_rewrite EQ. exists le.
-        simpl. unfold eval_var in EQ2. unfold lenv_get, lenv_update in EQ2.
-        rewrite STree.gss in EQ2. simpl in EQ2. erase_cast EQ2.
-        inv EQ2. reflexivity.
+        rewrite EQ0; simpl. exists le. reflexivity.
+      all: ltac:(rewrite <- Ec in *;
+        inversion H; clear H; rewrite <- H2 in H0;
+        simpl in H0; monadInv H0; monadInv EQ;
+        inversion EQ4; simpl; rewrite EQ0; simpl;
+        clear EQ4; erase_cast EQ2;
+        assert (x1 = ty) by (simpl in EQ0; unfold Typing.typof_atom in EQ1;
+        simpl in EQ1; unfold Typing.typof_comp in EQ0; simpl in EQ0;
+        congruence); subst;
+        rewrite ecast_typ_id; rewrite EQ; exists le;
+        simpl; unfold eval_var in EQ2; unfold lenv_get, lenv_update in EQ2;
+        rewrite STree.gss in EQ2; simpl in EQ2; erase_cast EQ2;
+        inv EQ2; reflexivity).
     - simpl in H. Res.monadInv H. inv EQ2. simpl in H0.
-      monadInv H0. simpl. setoid_rewrite EQ0; simpl.
+      monadInv H0. simpl. rewrite EQ0; simpl.
       simpl in WF_TAIL. destruct_conj WF_TAIL. 
       destruct x1. eapply IHtc1; eauto. eapply IHtc2; eauto.
     - simpl in H0. Res.monadInv H0. inv EQ0.
@@ -549,7 +516,8 @@ Section CORRECTNESS.
             unfold typof_tailcomp. rewrite C3.
             exact H.
           + inv H. simpl in H0. monadInv H0. inv EQ2.
-            unfold typof_tailcomp. simpl. rewrite EQ; simpl.
+            unfold typof_tailcomp. simpl.
+            unfold Typing.typof_comp in *. rewrite EQ; simpl.
             rewrite ecast_typ_id. setoid_rewrite EQ1; simpl. reflexivity.
           + Res.monadInv H. inv EQ2. simpl in WF_STMT. destruct_conj WF_STMT.
             simpl in H0. monadInv H0. unfold typof_tailcomp.

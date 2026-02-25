@@ -135,7 +135,7 @@ End TAILCOMP_IND.
 
 Fixpoint btypof_tailcomp (tc: tailcomp) : btyp :=
   match tc with
-  | TcComp c => Syntax.typof_comp c
+  | TcComp c => btypof_comp c
   | TcBegin _ _ ty
   | TcIfThenElse _ _ _ ty
   | TcSwitch _ _ ty => ty
@@ -165,7 +165,7 @@ Qed.
 Fixpoint wf_tailcomp (te: tenv) (tc: tailcomp) : bool :=
   match tc with
   | TcComp c =>
-      convertible_btyp te (typof_comp c)
+      convertible_btyp te (btypof_comp c)
   | TcBegin s tc1 ty =>
       convertible_btyp te ty
       && btyp_eqb (btypof_tailcomp tc1) ty
@@ -236,7 +236,7 @@ Section DENOT.
         let* le' := eval_statement te ge le s in
         eval_tailcomp_rec te ge le' ty tc1
     | TcComp c =>
-        let* tc := btyp_to_typ te (typof_comp c) in
+        let* tc := typof_comp te c in
         let* vc := ecast_typ tabs (eval_comp te ge le tc c) ty in
         ret (vc, le)
     | TcIfThenElse a tc1 tc _ =>

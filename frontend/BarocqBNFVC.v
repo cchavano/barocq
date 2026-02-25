@@ -723,17 +723,14 @@ Section S.
   Proof.
     specialize (eq_genv_eval_atom arch te ge ge').
     destruct a; intros; simpl; try (apply ExtEqual.option_rel_cast_typ_refl;reflexivity).
-    - unfold eval_constr.
-      destruct (Typing.TEnv.get_constr_typ te i); try constructor.
-      simpl. destruct (Typing.TEnv.get_edef te i1); try constructor.
-      simpl. destruct (bool_dec (existsb (String.eqb i) l) true);try constructor.
-      apply option_rel_cast_typ_refl;reflexivity.
+    - unfold eval_constr. destruct ty; simpl; try constructor.
+      apply option_rel_refl; intro; reflexivity.
     - eapply eq_env_eval_var; eauto.
       simpl.
       rewrite STree.gss.  reflexivity.
     - destruct (Typing.btyp_to_typ te b); try reflexivity.
       simpl.
-      destruct (Denot.typof_atom te a); try constructor.
+      destruct (Typing.typof_atom te a); try constructor.
       simpl.
       specialize (eq_genv_eval_atom t0 a le le' H H0).
       inv eq_genv_eval_atom.
@@ -742,7 +739,7 @@ Section S.
       eapply ExtEqual.ext_equal_eval_cast with (t:=t)in H3;eauto.
       apply ext_equal_ecast_typ; auto.
       constructor.
-    - destruct (Denot.typof_atom te a); try constructor.
+    - destruct (Typing.typof_atom te a); try constructor.
       simpl.
       specialize (eq_genv_eval_atom t a le le' H H0).
       inv eq_genv_eval_atom.
@@ -750,8 +747,8 @@ Section S.
       simpl.
       apply ExtEqual.ext_equal_eval_unary_op; auto.
     - simpl in H.
-      destruct (Denot.typof_atom te a1); try constructor.
-      destruct (Denot.typof_atom te a2); try constructor.
+      destruct (Typing.typof_atom te a1); try constructor.
+      destruct (Typing.typof_atom te a2); try constructor.
       simpl.
       generalize (eq_genv_eval_atom t a1 le le' (eq_env_vars_of_atom_acc _ _ _ _ _ _ H) H0).
       generalize (eq_genv_eval_atom t0 a2 le le' (eq_env_vars_of_atom _ _ _ _ _ _ H) H0).

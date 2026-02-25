@@ -37,15 +37,14 @@ Section DENOT.
     | StSet x c =>
         match ty with
         | None =>
-            let* tyc := btyp_to_typ te (typof_comp c) in
+            let* tyc := typof_comp te c in
             let* vc := eval_comp te ge le tyc c in
             ret (lenv_update tabs le x (Val tabs tyc vc))
         | _ => fail
         end
     | StIfThenElse a s1 s2 =>
         let* va := eval_atom te ge le TBool a in
-        if va then eval_statement_rec te ge le ty s1
-        else eval_statement_rec te ge le ty s2
+        eval_statement_rec te ge le ty (if va then s1 else s2)
     | StSwitch a cases =>
         let* ta := typof_atom te a in
         let* va := eval_atom te ge le ta a in
@@ -64,8 +63,8 @@ Section DENOT.
     | StAttr _ s1 => eval_statement_rec te ge le ty s1
     end.
 
-  Definition eval_statement (te: tenv) (ge: genv) (le: lenv) (tr: typ) (body: statement) : option (eval_typ tr) :=
-     eval_statement_rec te ge le (Some tr) body.
+  Definition eval_statement (te: tenv) (ge: genv) (le: lenv) (tr: typ) (s: statement) : option (eval_typ tr) :=
+     eval_statement_rec te ge le (Some tr) s.
 
   Definition eval_prog (impl: genv) (prog: program) : option (tenv * genv) :=
     eval_prog tabs eval_statement impl prog.

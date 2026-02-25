@@ -223,21 +223,21 @@ Section CORRECTNESS.
     - apply var_defined_env_get in H1; try tauto.
       destruct H1. eapply eval_var_match_lenv_eq; eauto.
     - destruct (Typing.btyp_to_typ te t); simpl; try reflexivity.
-      destruct (typof_atom te a); simpl; try reflexivity.
+      destruct (Typing.typof_atom te a); simpl; try reflexivity.
       erewrite IHa; eauto.
-    - destruct (typof_atom te a); simpl; try reflexivity.
+    - destruct (Typing.typof_atom te a); simpl; try reflexivity.
       erewrite IHa; eauto.
-    - destruct (typof_atom te a1); simpl; try reflexivity.
-      destruct (typof_atom te a2); simpl; try reflexivity.
+    - destruct (Typing.typof_atom te a1); simpl; try reflexivity.
+      destruct (Typing.typof_atom te a2); simpl; try reflexivity.
       apply andb_prop in H1. destruct H1.
       erewrite IHa1; eauto.
       erewrite IHa2; eauto.
-    - destruct (typof_atom te a1); simpl; try reflexivity.
-      destruct (typof_atom te a2); simpl; try reflexivity.
+    - destruct (Typing.typof_atom te a1); simpl; try reflexivity.
+      destruct (Typing.typof_atom te a2); simpl; try reflexivity.
       apply andb_prop in H1. destruct H1.
       erewrite IHa1; eauto.
       erewrite IHa2; eauto.
-    - destruct (typof_atom te a); simpl; try reflexivity.
+    - destruct (Typing.typof_atom te a); simpl; try reflexivity.
       erewrite IHa; eauto.
     - destruct (Typing.btyp_to_typ te tf); simpl; try reflexivity.
       apply andb_prop in H2. destruct H2.
@@ -299,17 +299,17 @@ Section CORRECTNESS.
     induction c; simpl; intros.
     - apply eval_atom_match_lenv_eq; tauto.
     - destruct_conj H1.
-      destruct (typof_atom te a); simpl; try reflexivity.
-      destruct (typof_atom te a0); simpl; try reflexivity.
-      destruct (typof_atom te a1); simpl; try reflexivity.
+      destruct (Typing.typof_atom te a); simpl; try reflexivity.
+      destruct (Typing.typof_atom te a0); simpl; try reflexivity.
+      destruct (Typing.typof_atom te a1); simpl; try reflexivity.
       erewrite eval_atom_match_lenv_eq; eauto.
       destruct (eval_atom arch tabs te ge le1 t a); simpl; try reflexivity.
       erewrite eval_atom_match_lenv_eq; eauto.
       destruct (eval_atom arch tabs te ge le1 t0 a0); simpl; try reflexivity.
       erewrite eval_atom_match_lenv_eq; eauto.
     - destruct_conj H1.
-      destruct (typof_atom te a); simpl; try reflexivity.
-      destruct (typof_atom te a0); simpl; try reflexivity.
+      destruct (Typing.typof_atom te a); simpl; try reflexivity.
+      destruct (Typing.typof_atom te a0); simpl; try reflexivity.
       erewrite eval_atom_match_lenv_eq; eauto.
       destruct (eval_atom arch tabs te ge le1 t a); simpl; try reflexivity.
       erewrite eval_atom_match_lenv_eq; eauto.
@@ -353,12 +353,14 @@ Section CORRECTNESS.
     destruct e; simpl; intros.
     (* atom *)
     - inv TRANSL. monadInv EVAL_EXPR. simpl. eexists.
-      repeat split; eauto. unfold typof_atom in EQ.
+      repeat split; eauto. unfold Typing.typof_comp. simpl.
+      unfold Typing.typof_atom in EQ.
       rewrite EQ; simpl. erase_cast EQ0.
       erewrite eval_atom_match_lenv_eq; simpl; eauto.
       rewrite ecast_typ_id.  setoid_rewrite EQ0; simpl. reflexivity.
     (* array set *)
     - inv TRANSL. simpl.
+      unfold Typing.typof_comp; simpl.
       repeat destruct_bind; try discriminate.
       simpl.
       monadInv EVAL_EXPR. destruct_conj WF_EXPR.
@@ -371,8 +373,8 @@ Section CORRECTNESS.
       setoid_rewrite EQ3.
       eexists. simpl. split; eauto.
     (* record update *)
-    -
-      inv TRANSL; simpl.
+    - inv TRANSL; simpl.
+      unfold Typing.typof_comp; simpl.
       repeat destruct_bind; try discriminate.
       simpl.  destruct_conj WF_EXPR.
       monadInv EVAL_EXPR.
@@ -384,10 +386,11 @@ Section CORRECTNESS.
     (* application *)
     - destruct a; simpl; try discriminate.
       simpl in TRANSL. inv TRANSL. simpl.
+      unfold Typing.typof_comp; simpl.
       destruct_conj WF_EXPR. simpl in C.
       apply var_defined_env_get in C; try tauto. destruct C.
       simpl in EVAL_EXPR. monadInv EVAL_EXPR.
-      unfold typof_atom in EQ1. simpl in EQ1.
+      unfold Typing.typof_atom in EQ1. simpl in EQ1.
       rewrite EQ, EQ1; simpl.
       destruct x1; try discriminate.
       monadInv EQ2.
@@ -472,15 +475,17 @@ Section CORRECTNESS.
       BarocqBNF.eval_expr_rec arch tabs te ge le1 ty e = None ->
       (ImpBNF.eval_tailcomp_rec arch tabs te ge le2 ty tc = None).
   Proof.
-    destruct e; simpl; intros.
-    - inv TRANSL. simpl. unfold typof_atom in H.
-      destruct (Typing.btyp_to_typ te (Syntax.typof_atom a)); simpl in H; simpl; eauto.
+    destruct e; simpl; intros; simpl.
+    - inv TRANSL. simpl. unfold Typing.typof_atom in H.
+      unfold Typing.typof_comp; simpl.
+      destruct (Typing.btyp_to_typ te (btypof_atom a)); simpl in H; simpl; eauto.
       erewrite eval_atom_match_lenv_eq; eauto. setoid_rewrite H; simpl; eauto.
     - inv TRANSL. destruct_conj WF_EXPR. simpl.
+      unfold Typing.typof_comp; simpl.
       destruct (Typing.btyp_to_typ te b); simpl in H; simpl; eauto.
-      destruct (typof_atom te a); simpl in H; simpl; ecast_typ_err_resolve.
-      destruct (typof_atom te a0); simpl in H; simpl; ecast_typ_err_resolve.
-      destruct (typof_atom te a1); simpl in H; simpl; ecast_typ_err_resolve.
+      destruct (Typing.typof_atom te a); simpl in H; simpl; ecast_typ_err_resolve.
+      destruct (Typing.typof_atom te a0); simpl in H; simpl; ecast_typ_err_resolve.
+      destruct (Typing.typof_atom te a1); simpl in H; simpl; ecast_typ_err_resolve.
       erewrite eval_atom_match_lenv_eq; eauto.
       destruct (eval_atom arch tabs te ge le1 t0 a); simpl in H; simpl; ecast_typ_err_resolve.
       erewrite eval_atom_match_lenv_eq; eauto.
@@ -490,9 +495,10 @@ Section CORRECTNESS.
       destruct (eval_array_set arch tabs t0 e t e0 t1 e1 ty); simpl in H; simpl; eauto.
       rewrite ecast_typ_id in H. discriminate.
     - inv TRANSL. simpl. destruct_conj WF_EXPR.
+      unfold Typing.typof_comp; simpl.
       destruct (Typing.btyp_to_typ te b); simpl in H; simpl; eauto.
-      destruct (typof_atom te a); simpl in H; simpl; ecast_typ_err_resolve.
-      destruct (typof_atom te a0); simpl in H; simpl; ecast_typ_err_resolve.
+      destruct (Typing.typof_atom te a); simpl in H; simpl; ecast_typ_err_resolve.
+      destruct (Typing.typof_atom te a0); simpl in H; simpl; ecast_typ_err_resolve.
       erewrite eval_atom_match_lenv_eq; eauto.
       destruct (eval_atom arch tabs te ge le1 t0 a); simpl in H; simpl; ecast_typ_err_resolve.
       erewrite eval_atom_match_lenv_eq; eauto.
@@ -502,7 +508,8 @@ Section CORRECTNESS.
     - destruct a; simpl in H; try discriminate.
       simpl in TRANSL. inv TRANSL. simpl.
       destruct_conj WF_EXPR.
-      unfold typof_atom in H. simpl in H.
+      unfold Typing.typof_atom in H. simpl in H.
+      unfold Typing.typof_comp; simpl.
       destruct (Typing.btyp_to_typ te b); simpl in H; simpl; eauto.
       destruct (Typing.btyp_to_typ te b0); simpl in H; simpl; ecast_typ_err_resolve.
       destruct t0; simpl; unfold efail in H; eauto.
@@ -536,7 +543,7 @@ Section CORRECTNESS.
       + eapply transl_expr_correct_err with (e := e1); eauto.
       + eapply transl_expr_correct_err with (e := e2); eauto. 
     - Res.monadInv TRANSL. inv EQ0. simpl. destruct_conj WF_EXPR.
-      destruct (typof_atom te a); simpl in H; simpl; eauto.
+      destruct (Typing.typof_atom te a); simpl in H; simpl; eauto.
       erewrite eval_atom_match_lenv_eq; eauto.
       destruct (eval_atom arch tabs te ge le1 t a); simpl in H; simpl; eauto.
       destruct t; simpl in H; inv H; simpl; try unfold efail; eauto.

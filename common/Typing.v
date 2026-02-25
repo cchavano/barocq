@@ -180,6 +180,12 @@ Definition typof_var (gx: gcontext) (lx: lcontext) (x: ident) : res btyp :=
       end
   end.
 
+Definition typof_atom (te: tenv) (a: atom) : option typ :=
+  btyp_to_typ te (btypof_atom a).
+
+Definition typof_comp (te:tenv) (c: comp) : option typ :=
+  btyp_to_typ te (btypof_comp c).
+
 Definition typecheck_cast (from: btyp) (to: btyp) : option btyp :=
   match from with
   | BBool | BInt32 _ | BInt64 _ =>
@@ -354,10 +360,10 @@ Definition typecheck_call (ty: btyp) (targs: list btyp) : res btyp :=
 Fixpoint typecheck_array_lit (a: array literal) : res btyp :=
   match a with
   | nil => failwith "Typing.typecheck_array_lit: empty array"
-  | l :: nil => ret (typof_literal l)
+  | l :: nil => ret (btypof_literal l)
   | l :: a' =>
       let* t := typecheck_array_lit a' in
-      if btyp_eq_dec (typof_literal l) t then ret t
+      if btyp_eq_dec (btypof_literal l) t then ret t
       else failwith "Typing.typecheck_array_lit: type mismatch"
   end.
 
@@ -365,7 +371,7 @@ Fixpoint typecheck_struct_lit (l1: smaplist literal) (l2: smaplist btyp) : bool 
   match l1, l2 with
   | nil, nil => true
   | (x1, l1) :: l1', (x2, tx2) :: l2' =>
-      let tx1 := typof_literal l1 in
+      let tx1 := btypof_literal l1 in
       if btyp_eq_dec tx1 tx2 then typecheck_struct_lit l1' l2'
       else false
   | _, _ => false

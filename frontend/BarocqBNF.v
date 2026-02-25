@@ -19,7 +19,7 @@ Inductive expr : Type :=
 
 Fixpoint btypof_expr (e: expr) : btyp :=
   match e with
-  | EAtom a => Syntax.typof_atom a
+  | EAtom a => btypof_atom a
   | EArraySet _ _ _ ty
   | ERecordUpdate _ _ _ ty
   | EApp _ _ ty

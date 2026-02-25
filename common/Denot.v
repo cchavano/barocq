@@ -112,12 +112,10 @@ Section DENOT.
                  cast_value v ty
     end.
 
-  Definition eval_constr  (te: tenv) (x: ident) (ty:typ) : option (eval_typ ty) :=
-    let* eid := TEnv.get_constr_typ te x in
-    let* elems := TEnv.get_edef te eid in
-    match (bool_dec (existsb (String.eqb x) elems) true) with
-    | left EQ =>  @cast_typ (TEnum eid elems)   (mk_enum elems x EQ) ty
-    | right _ => fail
+  Definition eval_constr (te: tenv) (x: ident) (ty:typ) : option (eval_typ ty) :=
+    match ty with
+    | TEnum eid elems => Benum.make_enum elems x
+    | _ => fail
     end.
 
   Definition partial {A B: Type} (F : A -> B) : A -> option B :=
@@ -662,7 +660,7 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
       + apply (eval_app _ _ (f e) args ty).
   Defined.
 
-  Fixpoint eval_app_typ (tparams: list typ) (tret: typ) (f: eval_funtyp eval_typ tparams (eval_typ tret)) (args: DList.dlist eval_typ tparams) (ty:typ):
+  (* Fixpoint eval_app_typ (tparams: list typ) (tret: typ) (f: eval_funtyp eval_typ tparams (eval_typ tret)) (args: DList.dlist eval_typ tparams) (ty:typ):
     option(eval_typ ty).
   Proof.
     destruct args.
@@ -671,7 +669,7 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
       destruct l.
       +  apply (ecast_typ (f e) ty).
       + apply (eval_app_typ _ _ (f e) args ty).
-  Defined.
+  Defined. *)
 
   Fixpoint eval_app_option(tparams: list typ) (tret: typ) (f: eval_funtyp eval_typ tparams (eval_typ tret))
     (args: DList.dlist (fun (ty:typ) => option(eval_typ ty)) tparams) (ty:typ):
@@ -729,13 +727,7 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
         auto.
   Qed.
 
-
-
-
-  Definition typof_atom (te: tenv) (a: atom) : option typ :=
-    btyp_to_typ te (typof_atom a).
-
-  Fixpoint eval_atom (te: tenv) (ge: genv) (le: lenv) (ty: typ) (a: atom) : option(eval_typ ty) :=
+  Fixpoint eval_atom (te: tenv) (ge: genv) (le: lenv) (ty: typ) (a: atom) : option (eval_typ ty) :=
     match a with
     | ATrue  => @cast_typ TBool true ty
     | AFalse => @cast_typ TBool false ty
@@ -1011,12 +1003,10 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
       genv_update ge x fv
     else fail.
 
-  Definition fields_btyp_to_typ (te: tenv) (fields: smaplist btyp) : option(smaplist typ) :=
+  Definition fields_btyp_to_typ (te: tenv) (fields: smaplist btyp) : option (smaplist typ) :=
     map_err (btyp_to_typ te) fields.
 
-
-
-  Definition eval_decl_fun (te:tenv) (impl ge : genv) (x:Syntax.ident) (params : list (Syntax.param_attr * btyp)) (tret:btyp) : option genv :=
+  Definition eval_decl_fun (te:tenv) (impl ge : genv) (x: ident) (params : list (Syntax.param_attr * btyp)) (tret:btyp) : option genv :=
     let* tparams := mmap (Typing.btyp_to_typ te) (List.map snd params) in
     let* tret   := Typing.btyp_to_typ te tret in
     let* v := genv_get impl x in
@@ -1131,7 +1121,6 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
   Qed.
 
 
-
   Lemma genv_get_preserve_defs :
     forall  prog te impl ge   ge' x v
            (EVAL: eval_prog_rec te impl ge prog = Some ge')
@@ -1155,13 +1144,12 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
 End DENOT.
 
 Ltac erase_cast H :=
+  let EQt := fresh "EQt" in
   match type of H with
   | @cast_typ _ _ _ _ = Some _ =>
-      let EQt := fresh "EQt" in
       pose proof (cast_typ_ok_imp_typ_eq _ _ _ _ _ H) as EQt;
       subst; rewrite cast_typ_id in H
   | @ecast_typ _ _ _ _ = Some _ =>
-      let EQt := fresh "EQt" in
       pose proof (ecast_typ_ok_imp_typ_eq _ _ _ _ _ H) as EQt;
       subst; rewrite ecast_typ_id in H
   end.

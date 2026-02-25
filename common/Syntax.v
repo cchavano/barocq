@@ -16,7 +16,7 @@ Inductive literal :=
   | LArray : list literal -> btyp -> layout -> literal
   | LRecord : smaplist literal -> list ident -> ident -> literal.
 
-Definition typof_literal (l: literal) : btyp :=
+Definition btypof_literal (l: literal) : btyp :=
   match l with
   | LTrue
   | LFalse => BBool
@@ -108,7 +108,7 @@ Inductive atom :=
   | ARecordProj : atom -> ident -> layout -> btyp -> atom
   | APureCall : ident -> btyp -> list atom -> btyp -> atom.
 
-Definition typof_atom (a: atom) : btyp :=
+Definition btypof_atom (a: atom) : btyp :=
   match a with
   | ATrue | AFalse => BBool
   | AInt32 i s => BInt32 s
@@ -210,9 +210,9 @@ Inductive comp : Type :=
   | CpRecordUpdate : atom -> ident -> atom -> btyp -> comp
   | CpCall : ident -> btyp -> list atom -> btyp -> comp.
 
-Definition typof_comp (c: comp) : btyp :=
+Definition btypof_comp (c: comp) : btyp :=
   match c with
-  | CpAtom a => typof_atom a
+  | CpAtom a => btypof_atom a
   | CpArraySet _ _ _ ty
   | CpRecordUpdate _ _ _ ty
   | CpCall _ _ _ ty => ty

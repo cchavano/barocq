@@ -374,7 +374,7 @@ Module Typing.
         ret (be', gx, (DefType x td))
     | Barocq.DefConst x l ty =>
         let* l' := typecheck_literal be l in
-        if btyp_eq_dec ty (typof_literal l') then
+        if btyp_eq_dec ty (btypof_literal l') then
           let* gx' := gcontext_update gx x ty in
           ret (be,gx',DefConst x l ty)
         else

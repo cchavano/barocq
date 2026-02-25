@@ -111,36 +111,36 @@ Module Typing.
         ret (AVar x t)
     | Syntax.ACast a1 ty =>
         let* a1' := typecheck_atom be gx lx a1 in
-        let* t := err_of_opt (typecheck_cast (Syntax.typof_atom a1') ty) in
+        let* t := err_of_opt (typecheck_cast (btypof_atom a1') ty) in
         ret (ACast a1' t)
     | Syntax.AUnaryOp op a1 _ =>
         let* a1' := typecheck_atom be gx lx a1 in
-        let ty1 := Syntax.typof_atom a1' in
+        let ty1 := btypof_atom a1' in
         let* t := typecheck_unary_op op ty1 in
         ret (AUnaryOp op a1' t)
     | Syntax.ABinaryOp op a1 a2 _ =>
         let* a1' := typecheck_atom be gx lx a1 in
         let* a2' := typecheck_atom be gx lx a2 in
-        let ty1 := Syntax.typof_atom a1' in
-        let ty2 := Syntax.typof_atom a2' in
+        let ty1 := btypof_atom a1' in
+        let ty2 := btypof_atom a2' in
         let* t := typecheck_binary_op op ty1 ty2 in
         ret (ABinaryOp op a1' a2' t)
     | Syntax.AArrayGet a i _ _ =>
         let* a' := typecheck_atom be gx lx a in
         let* i' := typecheck_atom be gx lx i in
-        let ta := Syntax.typof_atom a' in
-        let ti := Syntax.typof_atom i' in
+        let ta := btypof_atom a' in
+        let ti := btypof_atom i' in
         let* (ty, ly) := typecheck_array_get2 arch ta ti in
         ret (AArrayGet a' i' ly ty)
     | Syntax.ARecordProj a f _ _ =>
         let* a' := typecheck_atom be gx lx a in
-        let ta := Syntax.typof_atom a' in
+        let ta := btypof_atom a' in
         let* (ty, ly) := typecheck_record_proj2 be ta f in
         ret (ARecordProj a' f ly ty)
     | Syntax.APureCall f _ args _ =>
         let* tf := typof_var gx lx f in
         let* args' := mmap (typecheck_atom be gx lx) args in
-        let targs := map Syntax.typof_atom args' in
+        let targs := map btypof_atom args' in
         let* ty := typecheck_call tf targs in
         ret (APureCall f tf args' ty)
     end.
@@ -154,22 +154,22 @@ Module Typing.
         let* a1' := typecheck_atom be gx lx a1 in
         let* a2' := typecheck_atom be gx lx a2 in
         let* a3' := typecheck_atom be gx lx a3 in
-        let ty1 := Syntax.typof_atom a1' in
-        let ty2 := Syntax.typof_atom a2' in
-        let ty3 := Syntax.typof_atom a3' in
+        let ty1 := btypof_atom a1' in
+        let ty2 := btypof_atom a2' in
+        let ty3 := btypof_atom a3' in
         let* ty := typecheck_array_set arch ty1 ty2 ty3 in
         ret (CpArraySet a1' a2' a3' ty)
     | Syntax.CpRecordUpdate a1 x a2 _ =>
         let* a1' := typecheck_atom be gx lx a1 in
         let* a2' := typecheck_atom be gx lx a2 in
-        let ty1 := Syntax.typof_atom a1' in
-        let ty2 := Syntax.typof_atom a2' in
+        let ty1 := btypof_atom a1' in
+        let ty2 := btypof_atom a2' in
         let* ty := typecheck_record_update be ty1 ty2 x in
         ret (CpRecordUpdate a1' x a2' ty)
     | Syntax.CpCall f _ args _ =>
         let* tf := typof_var gx lx f in
         let* args' := mmap (typecheck_atom be gx lx) args in
-        let targs := map Syntax.typof_atom args' in
+        let targs := map btypof_atom args' in
         let* ty := typecheck_call tf targs in
         ret (CpCall f tf args' ty)
     end.
@@ -215,13 +215,13 @@ Module Typing.
     match s with
     | Imp1.StSet x c =>
         let* c' := typecheck_comp be gx lx c in
-        let* lx' := lcontext_update lx x (typof_comp c') in
+        let* lx' := lcontext_update lx x (btypof_comp c') in
         ret (StSet x c', lx')
     | Imp1.StIfThenElse a s1 s2 =>
         let* (s1', lx1) := typecheck_statement be gx lx tret s1 in
         let* (s2', lx2) := typecheck_statement be gx lx tret s2 in
         let* a' := typecheck_atom be gx lx a in
-        match Syntax.typof_atom a' with
+        match btypof_atom a' with
         | BBool =>
             let* lx' := merge_contexts lx1 lx2 in
             ret (StIfThenElse a' s1' s2', lx')
@@ -229,7 +229,7 @@ Module Typing.
         end
     | Imp1.StSwitch a cases =>
         let* a' := typecheck_atom be gx lx a in
-        let* (cases_typed, lx') := typecheck_match be gx lx tret (Syntax.typof_atom a') cases in
+        let* (cases_typed, lx') := typecheck_match be gx lx tret (btypof_atom a') cases in
         ret (StSwitch a' cases_typed, lx')
     | Imp1.StSequence s1 s2 =>
         let* (s1', lx1) := typecheck_statement be gx lx tret s1 in
@@ -237,7 +237,7 @@ Module Typing.
         ret (StSequence s1' s2', lx2)
     | Imp1.StReturn a =>
         let* a' := typecheck_atom be gx lx a in
-        let ty := Syntax.typof_atom a' in
+        let ty := btypof_atom a' in
         if btyp_eq_dec ty tret then
           ret (StReturn a', lx)
         else
@@ -268,7 +268,7 @@ Module Typing.
         match d with
         | DefConst x l ty =>
             let* l' := typecheck_literal be l in
-            if btyp_eq_dec ty (typof_literal l') then
+            if btyp_eq_dec ty (btypof_literal l') then
               let* gx := gcontext_update gx x ty in
               let* rd := typecheck_globdefs_rec be gx defs' in
               ret (DefConst x l' ty :: rd)
