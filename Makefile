@@ -2,7 +2,8 @@
 
 COMMON=\
 	Unsigned63.v ZifyUint63.v Monads.v Error.v Utils.v Barray.v Brecord.v Benum.v Maps2.v Res.v OptionMonad.v \
-	Types.v Syntax.v Typing.v Intop.v Ident.v Target.v MergeSort.v DList.v Graph.v ExtOrdered.v Pp.v Printer.v
+	ZlistPlus.v Types.v Syntax.v Typing.v Intop.v Ident.v Target.v MergeSort.v DList.v \
+	Graph.v ExtOrdered.v Pp.v Printer.v
 
 FRONTEND=\
 	Denot.v Barocq.v Renaming.v BarocqBNF.v BarocqBNFgen.v BarocqBNFUndo.v \

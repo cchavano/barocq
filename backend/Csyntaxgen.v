@@ -330,7 +330,7 @@ Section TRANSL.
 
   Definition literal_size (l: Imp2.literal) : Z :=
     match l with
-    | Imp2.LArray a _ _ => Z.of_nat (Barray.length a)
+    | Imp2.LArray a _ _ => Barray.Zlength a
     | _ => Z.of_nat 0
     end.
 

@@ -608,20 +608,13 @@ module SR = struct
     let eid = ident_to_string ed_name in
     let cast_body =
       sprintf
-        "%slet ni := I32.to_nat i in\n\
-         %sif Int.cmp Clt i Int.zero || Nat.leb %d%%nat ni then fail\n\
-         %selse\n\
-         %snth_error\n\
+        "%scast_enum\
          %s[\n\
          %s\n\
          %s]\n\
-         %sni"
+         %si"
         indent
         indent
-        (List.length ed_elems)
-        indent
-        indent2
-        indent3
         (list_to_string
            ~sep:";\n"
            (fun constr -> sprintf "%s%s" indent4 (ident_to_string constr))

@@ -279,23 +279,12 @@ module EnumConv = struct
 
   let gen_of_i32_corres ((ed_name, ed_elems) : ident * ident list) : string =
     let eid = ident_to_string ed_name in
-    let nb_elems = List.length ed_elems in
     let proof : string =
       sprintf
         "%sintro. unfold Benum.of_i32. unfold cast_i32_to_%s.\n\
-         %sassert (Hlength: List.length elems_of_%s = %d%%nat). reflexivity. \
-         rewrite Hlength.\n\
-         %sdestruct (Int.cmp Clt i Int.zero). reflexivity.\n\
-         %sdestruct (Nat.leb %d%%nat (Intop.I32.to_nat i)). reflexivity.\n\
-         %sapply cast_eqb_sound. reflexivity."
+         %sapply castZ_eqb_sound. reflexivity."
         indent
         eid
-        indent
-        eid
-        nb_elems
-        indent
-        indent
-        nb_elems
         indent
     in
     sprintf

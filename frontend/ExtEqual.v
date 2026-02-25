@@ -2,7 +2,7 @@
 From Coq Require Import ZArith List MSetPositive Bool ZifyBool.
 From compcert Require Import Coqlib Integers Maps.
 From BarocqComp Require Import Barocq ExtOrdered.
-From BarocqComp Require Import Denot Types Target OptionMonad Barray Brecord Benum Ident Maps2 Utils.
+From BarocqComp Require Import Denot Types Target OptionMonad Barray Brecord Benum Ident Maps2 Utils ZlistPlus.
 From Coq Require Import Datatypes List MSetPositive Lia.
 From BarocqComp Require Import Typing.
 
@@ -203,15 +203,26 @@ Section S.
       simpl in H. auto.
   Qed.
 
+  Lemma ext_equal_Zlength : forall ty a1 a2,
+      ext_eq_array ty a1 a2 ->
+      Zlength a1 = Zlength a2.
+  Proof.
+    intros.
+    apply ext_equal_length in H.
+    rewrite! Zlength_correct.
+    congruence.
+  Qed.
+
+
+
   Lemma ext_equal_valid_index : forall ty a1 a2,
       ext_eq_array ty a1 a2 ->
       forall i,
         valid_index a1 i = valid_index a2 i.
   Proof.
     intros.
-    apply ext_equal_length in H.
+    apply ext_equal_Zlength in H.
     unfold valid_index.
-    unfold Barray.length.
     rewrite H. reflexivity.
   Qed.
 
@@ -723,6 +734,22 @@ Section S.
     - apply ext_equal_cmp_op;auto.
   Qed.
 
+
+  Lemma ext_equal_get : forall ta a1 a2,
+      ext_equal (TArray ta) a1 a2 ->
+      forall i,
+        option_rel (ext_equal ta) (get a1 i)  (get a2 i).
+  Proof.
+    simpl. intros.
+    unfold get.
+    rewrite! list_nth_z_eq.
+    destruct (Z_lt_dec (Int64.unsigned i) 0). constructor.
+    apply H.
+  Qed.
+
+
+
+
   Lemma ext_equal_array_get : forall arch ta a1 a2  ti i1 i2 ty,
       ext_equal ta a1 a2 ->
       ext_equal ti i1 i2 ->
@@ -735,27 +762,46 @@ Section S.
     destruct ta; try constructor.
     destruct arch.
     - destruct (typ_eq_dec ti (TInt32 Unsigned)); subst; try constructor.
+      simpl in *; subst.
       eapply ext_equal_ecast_typ.
-      unfold Barray.get.
-      simpl in H0. subst.
-      rewrite ext_equal_valid_index with (a2:= a2).
-      simpl in *.
-      destruct (valid_index a2 (Intop.U64.of_u32 i2)).
-      auto.
-      constructor. auto.
+      apply ext_equal_get; auto.
     - destruct (typ_eq_dec ti (TInt64 Unsigned)); subst; try constructor.
       simpl in *.
       subst.
       eapply ext_equal_ecast_typ.
-      unfold Barray.get.
-      rewrite ext_equal_valid_index with (a2:= a2).
-      destruct (valid_index a2  i2).
-      auto.
-      constructor.
-      repeat intro. auto.
+      apply ext_equal_get; auto.
   Qed.
 
-  Lemma nth_error_set_rec : forall {T:Type}  n (a:list T) v x,
+  Lemma ext_equal_app : forall te a1 a2 a3 a4,
+      ext_eq_array te a1 a2 ->
+      ext_eq_array te a3 a4 ->
+      ext_eq_array te (a1 ++ a3) (a2 ++ a4).
+  Proof.
+    unfold ext_eq_array.
+    intros.
+    assert (LEN: (x < length a1 \/ length a1 <= x)%nat) by lia.
+    assert (length a1 = length a2) by (apply ext_equal_length in H; auto).
+    assert (length a3 = length a4) by (apply ext_equal_length in H0; auto).
+    destruct LEN as [LEN | LEN].
+    - rewrite! nth_error_app1; auto. lia.
+    - rewrite! nth_error_app2; auto.
+      rewrite H1; auto.
+      lia.
+  Qed.
+
+  Lemma ext_equal_cons : forall te a1 a2 e1 e2,
+      ext_eq_array te a1 a2 ->
+      ext_equal te e1 e2 ->
+      ext_eq_array te (e1 :: a1) (e2 :: a2).
+  Proof.
+    unfold ext_eq_array.
+    intros.
+    destruct x.
+    - rewrite! nth_error_cons_0. constructor ; auto.
+    - rewrite! nth_error_cons_succ. auto.
+  Qed.
+
+  (*  Lemma nth_error_set_rec : forall {T:Type}  n (a:list T) v x,
       nth_error (set_rec a n v) x =
         if (Nat.eq_dec x  n) && (n <? length a)%nat then Some v
         else nth_error a x.
@@ -788,7 +834,41 @@ Section S.
         rewrite H. reflexivity.
         simpl. reflexivity.
   Qed.
+   *)
 
+  Lemma ext_equal_skipn :
+    forall (te : typ) (i :nat) (a1 a2 : array (# te)),
+    ext_eq_array te a1 a2 -> ext_eq_array te (skipn i a1) (skipn i a2).
+  Proof.
+    unfold ext_eq_array.
+    intros.
+    rewrite! nth_error_skipn.
+    auto.
+  Qed.
+
+
+  Lemma ext_equal_firstn :
+    forall (te : typ) (i :nat) (a1 a2 : array (# te)),
+    ext_eq_array te a1 a2 -> ext_eq_array te (firstn i a1) (firstn i a2).
+  Proof.
+    unfold ext_eq_array.
+    intros.
+    rewrite! nth_error_firstn.
+    destruct (x <?i)%nat.
+    auto. constructor.
+  Qed.
+
+
+
+  Lemma ext_equal_sublist : forall te i j a1 a2,
+      ext_eq_array te a1 a2 ->
+      ext_eq_array te (sublist.sublist i j a1) (sublist.sublist i j a2).
+  Proof.
+    unfold sublist.sublist.
+    intros.
+    apply ext_equal_skipn.
+    apply ext_equal_firstn; auto.
+  Qed.
 
   Lemma ext_eq_array_set : forall te a1 a2 v1 v2 i,
       ext_eq_array te a1 a2 ->
@@ -799,20 +879,12 @@ Section S.
     intros.
     rewrite (ext_equal_valid_index _ _ _ H i).
     destruct (valid_index a2 i); try constructor.
-    unfold ext_eq_array.
-    intros.
-    generalize (Intop.U64.to_nat i) as n.
-    assert (LEN : length a1 = length a2).
-    {
-      apply ext_equal_length; auto.
-    }
-    specialize (H x).
-    intros.
-    rewrite! nth_error_set_rec.
-    rewrite LEN.
-    destruct (Nat.eq_dec x n && (n <? Datatypes.length a2)%nat).
-    constructor ; auto.
-    apply H.
+    apply ext_equal_app.
+    apply ext_equal_sublist; auto.
+    apply ext_equal_cons; auto.
+    exploit ext_equal_Zlength; eauto.
+    intro LEN ; rewrite LEN.
+    apply ext_equal_sublist; auto.
   Qed.
 
 

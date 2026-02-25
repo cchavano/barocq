@@ -1,6 +1,6 @@
 From Coq Require Import PArith ZArith String DecimalString List Bool MSetPositive.
-From compcert Require Import Ctypesdefs Maps Integers.
-From BarocqComp Require Import  Monads Error Ident.
+From compcert Require Import Coqlib Ctypesdefs Maps Integers.
+From BarocqComp Require Import  Monads Error Ident ZlistPlus.
 From BarocqComp Require Import OptionMonad.
 Open Scope option_monad_scope.
 Import MonCounter.
@@ -60,6 +60,21 @@ Definition fresh_var_err (pre: string) : crmon ident :=
   MonCounterErr.ret (Ident.concat pre (Ident.of_str_pos n)).
 
 Close Scope state_err_monad_scope.
+
+
+Definition cast_enum {A: Type} (l:list A) (i:int) : option A :=
+  list_nth_z l (Int.signed i).
+
+Lemma cast_enum_Some : forall {A: Type} (l:list A) (i:int),
+    0 <= Int.signed i < Zlength l ->
+    exists v, cast_enum l i = Some v.
+Proof.
+  intros.
+  unfold cast_enum.
+  destruct (list_nth_z l (Int.signed i)) eqn:GET.
+  eexists ; split; eauto.
+  rewrite <- list_nth_z_Some in H. congruence.
+Qed.
 
 (** * Lists *)
 

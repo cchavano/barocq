@@ -49,7 +49,6 @@ Proof.
   congruence.
 Qed.
 
-
 Definition bind (A B: Type) (f: option A) (g: A -> option B) : option B :=
   match f with
   | Some x => g x

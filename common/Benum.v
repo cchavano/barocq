@@ -1,6 +1,7 @@
 From Coq Require Import List Bool BinNums.
-From compcert Require Import Integers.
-From BarocqComp Require Import Ident Intop Utils.
+From compcert Require Import Coqlib Integers.
+From VST Require Import Zlist.
+From BarocqComp Require Import Ident Intop Utils ZlistPlus.
 From BarocqComp Require Import OptionMonad.
 Open Scope option_monad_scope.
 
@@ -154,17 +155,18 @@ Definition to_i32 {elems: list ident} (e: enum elems) : int :=
   in
   aux elems Int.zero.
 
+
 Definition of_i32 (elems: list ident) (i: int) : option (enum elems) :=
-  if Int.cmp Clt i Int.zero
-     || Nat.leb (List.length elems) (I32.to_nat i) then fail
-  else
-    let* ei := nth_error elems (I32.to_nat i) in
+    let* ei := list_nth_z elems (Int.signed i) in
     make_enum elems ei.
 
 Inductive pattern : Type := 
   | PIdent (i: ident) (z: Z) : pattern
   | PWildcard : pattern.
-  
+
+
+
+
 (* Fixpoint match_with {elems: list ident} {A: Type} (e: enum elems) (cases: list (pattern * A)) : res A :=
   match cases with
   | nil => fail
@@ -318,6 +320,7 @@ Proof.
   apply forallb_enum_correct; auto.
 Qed.
 
+
 Definition cast_eqb {A: Type} (l:list ident) (F : A -> enum l) (l1:list ident)  (l2:list A) :=
   forall2b (fun x y => match make_enum l x with
                        | None => false
@@ -353,4 +356,16 @@ Proof.
       + apply (IHl1 n); auto.
   }
   apply H0;auto.
+Qed.
+
+Lemma castZ_eqb_sound : forall {A: Type} (l:list ident) (F: A -> enum l) (l': list A) (n:Z),
+    cast_eqb l F l l' = true ->
+    (let* ei := list_nth_z l n
+     in make_enum l ei) =
+      (let* en := list_nth_z l' n in Some (F en)).
+Proof.
+  intros.
+  rewrite! list_nth_z_eq.
+  destruct (Z_lt_dec n 0). reflexivity.
+  apply cast_eqb_sound; auto.
 Qed.

@@ -25,6 +25,7 @@ ocaml               (version 4.14.2)
 menhir              (version 20240715)
 coq                 (version 8.20.1)
 coq-record-update   (version 0.3.6)
+coq-vst-zlist       (version 2.13)
 ```
 
 Finally, install the modified version of CompCert:
