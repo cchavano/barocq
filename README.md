@@ -1,10 +1,10 @@
 # Barocq
 
-Barocq is a restricted functional programming language with built-in records and arrays.
+Barocq is a minimal, first-order, purely functional programming language with built-in enums, records and arrays.
 
 # Overview
 
-The purpose of Barocq is to integrate C-like features into a functionnal language to easily write system code (e.g. microkernel). Barocq is compiled to Clight, an intermediate language of the [CompCert](https://github.com/AbsInt/CompCert) C compiler. Clight programs can be pretty-printed as compilable C files.
+The purpose of Barocq is to integrate C-like features into a functionnal language to easily write system code (e.g. microkernel). Barocq is compiled to Csyntax, the source language of the [CompCert](https://github.com/AbsInt/CompCert) C compiler. Csyntax programs can be pretty-printed as compilable C files.
 A Barocq program can also be translated to a shallow and deep embedding in Coq/Rocq.
 
 # Dependencies
@@ -60,7 +60,7 @@ Without any additionnal option, a C file will be created at `path/to/a.c`.
 To generate the shallow and deep embeddings, as well as the correspondence proofs, use:
 
 ```bash
-barocq -gen-corres-all path/to/file.br
+barocq -gen-corres path/to/file.br
 ```
 
 Other compiler flags and options are described with `barocq -help`.
