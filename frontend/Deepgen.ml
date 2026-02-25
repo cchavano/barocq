@@ -7,7 +7,8 @@ open Typed
 
 let ident_to_deep (id : ident) : string = sprintf "\"%s\"" (ident_to_string id)
 
-let pre_ident_to_deep (prefix:string) (id : ident) : string = sprintf "\"%s%s\"" prefix (ident_to_string id)
+let pre_ident_to_deep (prefix : string) (id : ident) : string =
+  sprintf "\"%s%s\"" prefix (ident_to_string id)
 
 let int_to_deep (i : Integers.Int.int) (s : signedness) : string =
   let si =
@@ -783,34 +784,37 @@ module BarocqBNFDeep = struct
           (btyp_to_deep typ)
 
   let print_globdefs (out : out_channel) (defs : globdef list) : unit =
-    output_list  ~delim:("", "\n") ~sep:"\n\n" globdef_to_rocqdef out defs
+    output_list ~delim:("", "\n") ~sep:"\n\n" globdef_to_rocqdef out defs
 
+  let elems_to_deep (o : out_channel) (elems : ident list) : unit =
+    output_list
+      ~sep:";\n"
+      (fun o e -> Printf.fprintf o "%s%s" indent2 (ident_to_deep e))
+      o
+      elems
 
-let elems_to_deep (o:out_channel) (elems : ident list) : unit =
-  output_list
-    ~sep:";\n"
-    (fun o e -> Printf.fprintf o "%s%s" indent2 (ident_to_deep e))
-    o elems
+  let fields_to_deep (o : out_channel) (fields : (ident * field_descr) list) :
+      unit =
+    output_list
+      ~sep:";\n"
+      (fun o (id, (ty, ly)) ->
+        Printf.fprintf
+          o
+          "%s(%s, (%s, %s))"
+          indent2
+          (ident_to_deep id)
+          (btyp_to_deep ty)
+          (opt_parens_layout ly))
+      o
+      fields
 
-let fields_to_deep (o:out_channel) (fields : (ident * field_descr) list) : unit =
-  output_list
-    ~sep:";\n"
-    (fun o (id, (ty, ly)) ->
-      Printf.fprintf o
-        "%s(%s, (%s, %s))"
-        indent2
-        (ident_to_deep id)
-        (btyp_to_deep ty)
-        (opt_parens_layout ly))
-    o fields
-
-(*let rocq_name_of_type (id:ident) (td : (btyp * layout) type_def) =
+  (*let rocq_name_of_type (id:ident) (td : (btyp * layout) type_def) =
   match td with
   | TdEnum _ -> sprintf "enum_%s" (ident_to_string id)
   | TdRecord _ -> sprintf "record_%s" (ident_to_string id)
 *)
 
-(*let type_def_to_rocqdef (id:ident) (o:out_channel)  (td : (btyp * layout) type_def) : unit =
+  (*let type_def_to_rocqdef (id:ident) (o:out_channel)  (td : (btyp * layout) type_def) : unit =
   match td with
   | TdEnum elems ->
     Printf.fprintf o "Definition %s : %s :=\n%sTdEnum[\n%a\n%s]."
@@ -825,12 +829,11 @@ let fields_to_deep (o:out_channel) (fields : (ident * field_descr) list) : unit 
       indent
       fields_to_deep fields indent
 *)
-let struct_or_union_to_string = function 
-  | SU_struct -> "SU_struct"
-  | SU_union -> "SU_union"
-  
+  let struct_or_union_to_string = function
+    | SU_struct -> "SU_struct"
+    | SU_union -> "SU_union"
 
-(*let print_prog_tabs out elems =
+  (*let print_prog_tabs out elems =
   output_list
   ~delim:("Definition prog_tabs : prog_tabs_t := [\n", "\n].\n")
       ~sep:";\n"
@@ -838,7 +841,7 @@ let struct_or_union_to_string = function
       out
       elems
 *)
-(*  let fields_to_deep (o : out_channel) (fields : (ident * field_descr) list) :
+  (*  let fields_to_deep (o : out_channel) (fields : (ident * field_descr) list) :
       unit =
     output_list
       ~sep:";\n"
@@ -881,7 +884,6 @@ let struct_or_union_to_string = function
           fields_to_deep
           fields
           indent
-
 
   let print_prog_tabs out l =
     output_list
@@ -927,21 +929,22 @@ let struct_or_union_to_string = function
     | Syntax.DefConst _ | Syntax.DefFun _ -> true
     | _ -> false
 
-
-let print_program (out : out_channel) (prog : BarocqBNF.program) : unit =
-  let types = prog.Syntax.prog_types in 
-  let defs  = prog.Syntax.prog_defs  in
-  fprintf out "%s" imports;
-  fprintf out "\n";
-  fprintf out "%s" prim_types;
-  fprintf out "\n";
-  (* program types *) 
-  List.iter (fun (id,td) -> Printf.fprintf out "%a\n" (type_def_to_coqdef id) td) types;
-  (* programs definitions *)
-  List.iter (fun d -> Printf.fprintf out "%a\n" globdef_to_rocqdef d) defs;
-  fprintf out "\n";
-  (* Put all the program types into a list *)
-     output_list
+  let print_program (out : out_channel) (prog : BarocqBNF.program) : unit =
+    let types = prog.Syntax.prog_types in
+    let defs = prog.Syntax.prog_defs in
+    fprintf out "%s" imports;
+    fprintf out "\n";
+    fprintf out "%s" prim_types;
+    fprintf out "\n";
+    (* program types *)
+    List.iter
+      (fun (id, td) -> Printf.fprintf out "%a\n" (type_def_to_coqdef id) td)
+      types;
+    (* programs definitions *)
+    List.iter (fun d -> Printf.fprintf out "%a\n" globdef_to_rocqdef d) defs;
+    fprintf out "\n";
+    (* Put all the program types into a list *)
+    output_list
       ~delim:("Definition prog_types : prog_types_t := [\n", "\n].\n")
       ~sep:";\n"
       (fun o (id, td) ->
@@ -954,18 +957,20 @@ let print_program (out : out_channel) (prog : BarocqBNF.program) : unit =
       out
       types;
     fprintf out "\n";
-  (* Put all the program defs into a list *)
-  output_list
-    ~delim:("Definition prog_defs : list globdef := [\n", "\n].\n")
+    (* Put all the program defs into a list *)
+    output_list
+      ~delim:("Definition prog_defs : list globdef := [\n", "\n].\n")
       ~sep:";\n"
       globdef_to_deep
       out
       defs;
-  fprintf out "\n";
-  print_prog_tabs out prog.Syntax.prog_tabs;
-  fprintf out "\n";
-  Printf.fprintf out "Definition prog := mk_program prog_defs prog_types prog_tabs.\n"
-  
+    fprintf out "\n";
+    print_prog_tabs out prog.Syntax.prog_tabs;
+    fprintf out "\n";
+    Printf.fprintf
+      out
+      "Definition prog := mk_program prog_defs prog_types prog_tabs.\n"
+
   (*;
     print_decomp_remark out
   end

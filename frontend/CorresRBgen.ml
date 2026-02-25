@@ -458,16 +458,15 @@ module HelperTactics = struct
         indent3
         indent3
     in
-    if enums = []
-    then 
-      fprintf out "Ltac pattern_match_err_corres E := fail."
-    else begin fprintf
+    if enums = [] then fprintf out "Ltac pattern_match_err_corres E := fail."
+    else begin
+      fprintf
         out
         "Ltac pattern_match_err_corres E :=\n%smatch type of E with\n"
         indent;
       print_list out ~delim:("", "\n") ~sep:"\n" gen_enum_simpl enums;
       fprintf out "%send.\n" indent
-        end
+    end
 
   let print_helper_match_tac (out : out_channel) (prog : program) : unit =
     let funs =
@@ -584,10 +583,14 @@ module HelperTactics = struct
       "Ltac corres_rb_rec :=\n\
        %srewrite_prelude;\n\
        %smatch goal with\n\
-       %s| [ |- bind (ret ?X) _ = _ ]    => rewrite bind_ret with (e:=X); corres_rb_rec\n\
-       %s| [ |- _ = bind (ret ?X) _ ]    => rewrite bind_ret with (e:=X); corres_rb_rec\n\
-       %s| [ |- (bind (bind ?E1 ?E2) ?E3) = _ ] => rewrite assoc_bind; corres_rb_rec\n\
-       %s| [ |- _ = (bind (bind ?E1 ?E2) ?E3) ] => rewrite assoc_bind; corres_rb_rec\n\
+       %s| [ |- bind (ret ?X) _ = _ ]    => rewrite bind_ret with (e:=X); \
+       corres_rb_rec\n\
+       %s| [ |- _ = bind (ret ?X) _ ]    => rewrite bind_ret with (e:=X); \
+       corres_rb_rec\n\
+       %s| [ |- (bind (bind ?E1 ?E2) ?E3) = _ ] => rewrite assoc_bind; \
+       corres_rb_rec\n\
+       %s| [ |- _ = (bind (bind ?E1 ?E2) ?E3) ] => rewrite assoc_bind; \
+       corres_rb_rec\n\
        %s| [ |- bind ?X _ = bind ?X _] => apply bind_equal; intros;corres_rb_rec\n\
        %s| [ |- _ = match ?E with _ => _ end ] =>\n\
        %sdestruct E; try reflexivity; corres_rb_rec\n\

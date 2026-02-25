@@ -80,12 +80,10 @@ let opt_parens (is_simpl : 'a -> bool) (to_string : 'a -> string) (x : 'a) :
     string =
   if is_simpl x then to_string x else sprintf "(%s)" (to_string x)
 
-
 let string_of_errmsg msg =
   let string_of_err = function
-  | Res.MSG s -> camlstring_of_coqstring s
-  | Res.CTX i -> extern_atom i
-  | Res.POS i -> Z.to_string (Z.Zpos i)
-  in String.concat "" (List.map string_of_err msg)
-
-
+    | Res.MSG s -> camlstring_of_coqstring s
+    | Res.CTX i -> extern_atom i
+    | Res.POS i -> Z.to_string (Z.Zpos i)
+  in
+  String.concat "" (List.map string_of_err msg)

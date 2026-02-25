@@ -608,19 +608,15 @@ module SR = struct
     let eid = ident_to_string ed_name in
     let cast_body =
       sprintf
-        "%scast_enum\
-         %s[\n\
-         %s\n\
-         %s]\n\
-         %si"
+        "%scast_enum%s[\n%s\n%s]\n%si"
         indent
         indent
         (list_to_string
            ~sep:";\n"
-           (fun constr -> sprintf "%s%s" indent4 (ident_to_string constr))
+           (fun constr -> sprintf "%s%s" indent2 (ident_to_string constr))
            ed_elems)
-        indent3
-        indent3
+        indent
+        indent
     in
     sprintf
       "Definition cast_i32_to_%s (i: int) : option %s :=\n%s."
@@ -829,7 +825,8 @@ module SB = struct
       "From Coq Require Import Bool List BinIntDef String.\n\
        From compcert Require Import Integers.\n\
        From RecordUpdate Require Import RecordUpdate.\n\
-       From BarocqComp Require Import Ident OptionMonad Barray Benum Brecord Intop.\n\
+       From BarocqComp Require Import Ident OptionMonad Barray Benum Brecord \
+       Intop.\n\
        From %s Require Import %s_Types.\n\
        Import BoolNotations ListNotations.\n\n\
        Open Scope Z_scope.\n\

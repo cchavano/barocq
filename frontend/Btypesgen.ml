@@ -853,7 +853,8 @@ let imports () : string =
     "From Coq Require Import List String BinIntDef.\n\
      From compcert Require Import Integers.\n\
      From RecordUpdate Require Import RecordUpdate.\n\
-     From BarocqComp Require Import Ident OptionMonad Barray Benum Brecord Utils.\n\
+     From BarocqComp Require Import Ident OptionMonad Barray Benum Brecord \
+     Utils.\n\
      From %s Require Import %s.\n\
      Import ListNotations.\n\n\
      Open Scope Z_scope.\n\

@@ -29,7 +29,7 @@ module Deeptypes = struct
     | MRes tr -> is_simpl_mtyp tr
     | _ -> false
 
-  let rec mtyp_to_typ_string (prefix:string) (ty : mtyp) : string =
+  let rec mtyp_to_typ_string (prefix : string) (ty : mtyp) : string =
     match ty with
     | MBool -> Printf.sprintf "%stbool" prefix
     | MInt32 Types.Signed -> Printf.sprintf "%stint32" prefix
@@ -47,7 +47,7 @@ module Deeptypes = struct
     | MAbs tid -> sprintf "TAbs \"%s\"" (ident_to_string tid)
     | MRes tr -> mtyp_to_typ_string prefix tr
 
-  and opt_parens (prefix:string) (ty : mtyp) : string =
+  and opt_parens (prefix : string) (ty : mtyp) : string =
     PrintUtils.opt_parens is_simpl_mtyp (mtyp_to_typ_string prefix) ty
 
   let type_def_to_string (indent : string)
@@ -480,21 +480,22 @@ module VCgen = struct
     let cid_str = ident_to_string cid in
     let constval_shallow = sprintf "%s.%s" !shallowfile cid_str in
     let constval_deep =
-        if is_abs then sprintf "Some (VAL Deeptypes.typof_%s %s)" cid_str constval_shallow
-        else 
+      if is_abs then
+        sprintf "Some (VAL Deeptypes.typof_%s %s)" cid_str constval_shallow
+      else
         sprintf
           "Barocq.eval_literal abs_types_impl typing_env %s.const_%s"
           !deepfile
           cid_str
-      in
-      sprintf
-        "%s check_value abs_types_impl (%s) (Deeptypes.typof_%s) (VAL \
-         Deeptypes.typof_%s %s)"
-        indent2
-        constval_deep
-        cid_str
-        cid_str
-        constval_shallow
+    in
+    sprintf
+      "%s check_value abs_types_impl (%s) (Deeptypes.typof_%s) (VAL \
+       Deeptypes.typof_%s %s)"
+      indent2
+      constval_deep
+      cid_str
+      cid_str
+      constval_shallow
 
   let gen_fun_vc (is_abs : bool) (fid : ident) (params : (ident * mtyp) list)
       (tret : mtyp) : string =
@@ -509,8 +510,8 @@ module VCgen = struct
       if is_abs then sprintf "%s.%s" !shallowfile fid_shallow
       else
         sprintf
-          "eval_fun arch abs_types_impl typing_env ge params_%s \
-           %s (Syntax.fn_body %s.fun_%s)"
+          "eval_fun arch abs_types_impl typing_env ge params_%s %s \
+           (Syntax.fn_body %s.fun_%s)"
           fid_shallow
           (Deeptypes.mtyp_to_typ_string "Deeptypes." tret)
           !deepfile
@@ -564,8 +565,9 @@ let prelude_imports () : string =
   sprintf
     "From Coq Require Import String List.\n\
      From compcert Require Import Integers.\n\
-     From BarocqComp Require Import Ident OptionMonad Maps2 Barray Benum Brecord \
-     Types Typing Denot ExtEqual BarocqBNF BarocqBNFVC CorresBD_Tactics Syntax.\n\
+     From BarocqComp Require Import Ident OptionMonad Maps2 Barray Benum \
+     Brecord Types Typing Denot ExtEqual BarocqBNF BarocqBNFVC \
+     CorresBD_Tactics Syntax.\n\
      From %s Require Import %s_Types %s %s.\n\n\
      Import ListNotations.\n\n\
      Open Scope string_scope.\n"
@@ -578,8 +580,8 @@ let imports () : string =
   sprintf
     "From Coq Require Import String.\n\
      From compcert Require Import Integers.\n\
-     From BarocqComp Require Import Target Monads OptionMonad Barray Brecord Types \
-     Barocq.\n\
+     From BarocqComp Require Import Target Monads OptionMonad Barray Brecord \
+     Types Barocq.\n\
      From BarocqComp Require Import CorresBD_Tactics.\n\
      From %s Require Import %s_Types %s %s %s_CorresBD_Prelude \
      %s_CorresBD_Proof.\n\n\
@@ -663,7 +665,8 @@ let tac =
    let h := fresh \"HASP\" in\n\
    ltac2:(has_property ident:(HASP) @ge constr:(abs_types_impl));[ \n\
    (eapply BarocqBNFVC.has_property_find_err; eauto) |\n\
-   apply BarocqBNFVC.has_property_equal with (1:= EVAL) in h;[apply h|reflexivity]\n\
+   apply BarocqBNFVC.has_property_equal with (1:= EVAL) in h;[apply \
+   h|reflexivity]\n\
    ].\n"
 
 let print_corres (out : out_channel) (arch : Target.archi) (prog : program) :
@@ -681,9 +684,9 @@ let print_corres (out : out_channel) (arch : Target.archi) (prog : program) :
   fprintf out "(** * Program correspondence theorems *)\n\n";
   fprintf
     out
-    "Definition eval_def := BarocqBNF.eval_def2 %s abs_types_impl abs_defs_impl \
-     %s.prog.\n\
-     \n%s\n"
+    "Definition eval_def := BarocqBNF.eval_def2 %s abs_types_impl \
+     abs_defs_impl %s.prog.\n\n\
+     %s\n"
     arch_str
     !deepfile
     tac;

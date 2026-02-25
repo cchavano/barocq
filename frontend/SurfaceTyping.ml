@@ -616,7 +616,7 @@ let eval_cbinop (op : binary_op) (v1 : cvalue) (v2 : cvalue) : cvalue =
             let r =
               match div i1 i2 with
               | Some r -> r
-              | None  -> error (Invalid_operand (ty, "division"))
+              | None -> error (Invalid_operand (ty, "division"))
             in
             VInt64 (r, s1)
           else assert false
