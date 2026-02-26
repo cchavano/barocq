@@ -32,7 +32,7 @@ make
 make install install-dev
 ```
 
-`make install` installs the binary executable `barocq` under the `bin/` folder of the current opam switch.
+`make install` installs the binary executable `barocq` under the `bin/` folder of the current opam switch.\
 `make install-dev` installs the Barocq Rocq library in the current opam switch.
 
 # Usage
