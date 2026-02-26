@@ -7,45 +7,33 @@ Barocq is a minimal, first-order, purely functional programming language with bu
 The purpose of Barocq is to integrate C-like features into a functionnal language to easily write system code (e.g. microkernel). Barocq is compiled to Csyntax, the source language of the [CompCert](https://github.com/AbsInt/CompCert) C compiler. Csyntax programs can be pretty-printed as compilable C files.
 A Barocq program can also be translated to a shallow and deep embedding in Coq/Rocq.
 
-# Dependencies
+# Installing the Barocq compiler
 
 The Barocq compiler depends on OCaml, Rocq and a customized version of the CompCert compiler.
 First, install the OCaml Package Manager (OPAM).
-It is recommended to create a new opam switch for building Barocq.
+It is recommended to create a new opam switch with OCaml 4.14.2 for building Barocq.
 Once the switch is initialized, add the Rocq package repository:
 
 ```bash
 opam repo add rocq-released https://rocq-prover.org/opam/released
 ```
 
-Then, install the following dependencies with `opam install`:
-
-```text
-ocaml               (version 4.14.2)
-menhir              (version 20250912)
-coq                 (version 8.20.1)
-coq-record-update   (version 0.3.6)
-coq-vst-zlist       (version 2.13)
-```
-
-Finally, install the modified version of CompCert:
+## Using opam
 
 ```bash
-opam pin -y -b add https://gitlab.inria.fr/cchavano/compcert-ce.git
+opam install .
 ```
 
-The `-b` option tells opam to keep the build directory of CompCert, which is necessary to build the Barocq compiler.
-
-# Building the project
-
-The commands are the following:
+## Using make
 
 ```bash
+opam install --deps-only -b .
 make
-make install
+make install install-dev
 ```
 
 `make install` installs the binary executable `barocq` under the `bin/` folder of the current opam switch.
+`make install-dev` installs the Barocq Rocq library in the current opam switch.
 
 # Usage
 
