@@ -145,7 +145,7 @@ end
 let gen_const_corres (cid : ident) (ty : mtyp) : string =
   let thm =
     sprintf
-      "eval_def %s = Some (VAL Deeptypes.typof_%s %s)"
+      "eval_def %s = Some (VAL Deeptypes.typof_%s (%s))"
       (Deepgen.ident_to_deep cid)
       (ident_to_string cid)
       (conv_value RtoB ty (sprintf "%s.%s" !shallowfile (ident_to_string cid)))
