@@ -197,7 +197,7 @@ Definition subst_edge (env : smaplist atom) (e: EdgeLabel.t) :=
   | EdgeLabel.Top => Error (MSG "index is unknown" :: nil)
   | EdgeLabel.Field fd => OK (EdgeLabel.Field fd)
   | EdgeLabel.Index i  => let* a := subst_atom env i in
-                          OK (EdgeLabel.Index i)
+                          OK (EdgeLabel.Index a)
   end.
 
 Module GEXPR.
@@ -734,7 +734,7 @@ Section CALL.
   Fixpoint bind_args (te:tenv) (env:aenv) (d:domain) (args: list atom) (params : list (ident * typ)) {struct args} :=
   match args with
   | nil => match params with
-           | nil => OK (d,nil)
+           | nil => OK (d,nil,nil)
            |  _  => fail
            end
   | a1::args1 => match params with
@@ -745,9 +745,9 @@ Section CALL.
                         Error (MSG (Pp.pp (seq (Bstr "Expression ":: Printer.pp_atom a1:: Bstr " is invalid."::nil))) ::nil)
                     | OK (d,k) =>
                         let* b := compat_typ d k ty in
-                        let* (d,bargs) := bind_args te env d args1 params1 in
+                        let* (d,bargs,bargs_a) := bind_args te env d args1 params1 in
                         if b
-                        then OK (d, (i1,k)::bargs)
+                        then OK (d, (i1,k)::bargs,(i1,a1)::bargs_a)
                         else
                           Error (MSG (Pp.pp (seq (Bstr "Expression " :: Printer.pp_atom a1 ::
                                                     Bstr " has incompatible types."::nil))) :: nil)
@@ -781,15 +781,17 @@ Fixpoint no_alias (d:domain) (l : list (ident * KVar)) : res unit :=
       end
   end.
 
-Fixpoint aeval_expr (te:tenv) (env:aenv) (vars : list (ident * KVar)) (d:domain) (e:GEXPR.t) : res (domain * KVar) :=
+Fixpoint aeval_expr (te:tenv) (env:aenv) (vars : smaplist KVar) (vars_a: smaplist atom) (d:domain) (e:GEXPR.t) : res (domain * KVar) :=
   match e with
   (*| GEXPR.Atm a => aeval_atom te env d a - to prevent a recursive call *)
-  | GEXPR.Get e fd => let* (d,v) := aeval_expr te env vars d e in
+  | GEXPR.Get e fd => let* (d,v) := aeval_expr te env vars vars_a d e in
                       match v with
                       | KDead => Error (MSG "(bug) Return expression is dead" :: nil)
                       | KPrim => Error (MSG "(bug) Return expression - cannot dereference a primitive type" :: nil)
                       | KFun _ => Error (MSG "(bug) Return expression - cannot dereference a function" :: nil)
-                      | KNode n => bind_path d n fd
+                      | KNode n =>
+                          let* fd := subst_edge vars_a fd in
+                          bind_path d n fd
                       end
   | GEXPR.Var id    => match MapList.find_err string_dec id vars with
                        | OK kv => OK (d,kv)
@@ -802,14 +804,14 @@ Definition aeval_call(te:tenv) (env: aenv) (d:domain) (id:ident) (bt: btyp) (arg
     | OK af =>
         let fret := fn_body af in
         match bind_args te env d args (fn_params af) with
-        | OK (d,params) =>
-            match no_alias  d params with
+        | OK (d,params,params_a) =>
+            match no_alias d params with
             | OK _ =>
                 (* Apply the function summary *)
                 match fret with
                 | (RPrim,pure) => OK (set_pure pure d,KPrim)
                 | (RDeep e,pure) =>
-                    aeval_expr te env params (set_pure pure d) e
+                    aeval_expr te env params params_a (set_pure pure d) e
                 end
             | Error m => Error (MSG "function " :: MSG id :: m)
             end
