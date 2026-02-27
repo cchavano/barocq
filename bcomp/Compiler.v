@@ -52,7 +52,6 @@ Definition insert_log (opt:compiler_opt) (ir:ir_name) {A : Type} (F: A -> box) (
                then (G a) :: progs else progs in
   (l,progs).
 
-
 Definition compile (opt : compiler_opt) (arch: Target.archi) (globinfo: option (ident * ident)) (prog: Barocq.program) : res (list ir_prog * Log.t) :=
   let (log,progs) := insert_log opt Ir_Barocq Barocq.Pp.pp_program Barocq prog Log.empty nil in
   let prog := Renaming.rename_program prog in

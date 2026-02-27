@@ -179,7 +179,7 @@ Module Typing.
     STree.fold
       (fun acc k v =>
         let* acc := acc in
-        lcontext_update acc k v)
+        lcontext_update_imp acc k v)
       lx2
       (ret lx1).
 
@@ -215,7 +215,7 @@ Module Typing.
     match s with
     | Imp1.StSet x c =>
         let* c' := typecheck_comp be gx lx c in
-        let* lx' := lcontext_update lx x (btypof_comp c') in
+        let* lx' := lcontext_update_imp lx x (btypof_comp c') in
         ret (StSet x c', lx')
     | Imp1.StIfThenElse a s1 s2 =>
         let* (s1', lx1) := typecheck_statement be gx lx tret s1 in
@@ -250,7 +250,7 @@ Module Typing.
   Definition typecheck_function (be: benv) (gx: gcontext) (f: function) : res function :=
     let* lx :=
       list_fold_left_err
-        (fun acc '(x, tx) => lcontext_update acc x tx)
+        (fun acc '(x, tx) => lcontext_update_imp acc x tx)
         (fn_params f)
         STree.empty
     in

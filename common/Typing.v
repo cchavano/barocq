@@ -149,7 +149,10 @@ Definition lcontext_get (lx: lcontext) (x: ident) : res btyp :=
   | None => failwith "Typing.lcontext_get: unknown identifier"
   end.
 
-Definition lcontext_update (lx: lcontext) (x: ident) (ty: btyp) : res lcontext :=
+Definition lcontext_update (lx: lcontext) (x: ident) (ty: btyp) : lcontext :=
+  STree.set x ty lx.
+
+Definition lcontext_update_imp (lx: lcontext) (x: ident) (ty: btyp) : res lcontext :=
   match lcontext_get lx x with
   | OK t =>
       if btyp_eq_dec ty t then OK (STree.set x ty lx)
@@ -157,7 +160,7 @@ Definition lcontext_update (lx: lcontext) (x: ident) (ty: btyp) : res lcontext :
         failwith "Typing.lcontext_update: variable shadowing with a different type"
   | Error _ => OK (STree.set x ty lx)
   end.
-
+  
 Definition typof_constr (be: benv) (c: ident) : res btyp :=
   match err_of_opt (TEnv.get_constr_typ be c) with
   | OK eid => OK (BEnum eid)

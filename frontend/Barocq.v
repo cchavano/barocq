@@ -345,18 +345,18 @@ Module Typing.
         ret (EMatch e1' cases' t)
     | Barocq.ELetIn x e1 e2 =>
         let* e1' := typecheck_expr be gx lx e1 in
-        let* lx' := lcontext_update lx x (typof_expr e1') in
+        let lx' := lcontext_update lx x (typof_expr e1') in
         let* e2' := typecheck_expr be gx lx' e2 in
         ret (ELetIn x e1' e2' (typof_expr e2'))
     | Barocq.EAttr _ e => typecheck_expr be gx lx e
     end.
 
   Definition typecheck_function (arch: Target.archi) (be: benv) (gx: gcontext) (f: Barocq.function) : res BarocqTyped.function :=
-    let* lx :=
-      list_fold_left_err
+    let lx :=
+      List.fold_left
         (fun acc '(x, tx) => lcontext_update acc x tx)
         (fn_params f)
-        ( STree.empty)
+        (STree.empty)
     in
     let* body := typecheck_expr be gx lx (fn_body f) in
     if btyp_eq_dec (typof_expr body) (fn_return f) then

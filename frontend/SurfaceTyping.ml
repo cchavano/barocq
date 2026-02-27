@@ -59,7 +59,6 @@ type error_cause =
   | Unknown_field of string * string
   | Module_not_found of string
   | Wrong_argument_number of int * int
-  | Variable_shadowing_diff_type of string * btyp
   | Already_defined_type of string
   | Already_defined_glob of string
   | Duplicate_record_field of string * string
@@ -163,11 +162,6 @@ let msg_from_failure (cause : error_cause) : string =
         plurial
         curr
         verb
-  | Variable_shadowing_diff_type (id, ty) ->
-      sprintf
-        "cannot shadow variable %s with a value of type %s"
-        id
-        (btyp_to_string ty)
   | Already_defined_type tid -> sprintf "type %s is already defined" tid
   | Already_defined_glob gid ->
       sprintf "global identifier %s is already used" gid
@@ -914,11 +908,7 @@ let gcontext_update_local (gte : gtenv) (gx : gcontext) (x : ident) (ty : btyp)
     end
 
 let lcontext_update (lx : lcontext) (x : ident) (ty : btyp) : lcontext =
-  match IdentMap.find_opt x.content lx with
-  | Some ty1 ->
-      if ty1 = ty then IdentMap.add x.content ty lx
-      else error (Variable_shadowing_diff_type (x.content, ty)) ~loc:(Some x)
-  | None -> IdentMap.add x.content ty lx
+  IdentMap.add x.content ty lx
 
 let cident_to_string (cid : cident) : string =
   match cid with

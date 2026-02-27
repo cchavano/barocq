@@ -519,17 +519,14 @@ Module Monadification.
     | None => efail
     end.
 
-  Definition lcontext_update (lx: lcontext) (x: ident) (ty: mtyp) : res lcontext :=
-    match lcontext_get lx x with
-    | OK t => eret (STree.set x ty lx) (* overwrite *)
+  Definition lcontext_update (lx: lcontext) (x: ident) (ty: mtyp) : lcontext :=
+    STree.set x ty lx. (* overwrite *)
                    (*
         if mtyp_eq_dec ty t then eret (STree.set x ty lx)
         else
           Error (MSG "lcontext_update: types do not match. Variable "
                      ::
                      MSG x :: MSG " has type ":: MSG (Pp.pp (pp_mtyp t)) :: MSG " instead of " :: MSG (Pp.pp (pp_mtyp ty)) :: nil) *)
-    | Error _ => eret (STree.set x ty lx)
-    end.
 
   Open Scope state_err_monad_scope.
 
@@ -1039,11 +1036,11 @@ Module Monadification.
         let t := typof_expr e1' in
         match t with
         | MRes tr =>
-            let* lx' := lcontext_update lx x tr in
+            let lx' := lcontext_update lx x tr in
             let* e2' := monadify_expr_rec me gx lx' e2 true in
             eret (ELetMon x e1' e2' (typof_expr e2'))
         | _ =>
-            let* lx' := lcontext_update lx x t in
+            let lx' := lcontext_update lx x t in
             let* e2' := monadify_expr_rec me gx lx' e2 (mflag || false) in
             eret (ELetIn x e1' e2' (typof_expr e2'))
         end
@@ -1064,8 +1061,8 @@ Module Monadification.
 
   Definition monadify_function (me: menv) (gx: gcontext) (f: BNF.function) : res function :=
     let params := MapList.map monadify_btyp (Syntax.fn_params f) in
-    let* lx :=
-      list_fold_left_err
+    let lx :=
+      List.fold_left
         (fun acc '(x, tx) => lcontext_update acc x tx)
         params
         (STree.empty)
