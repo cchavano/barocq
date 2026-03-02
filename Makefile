@@ -56,7 +56,7 @@ compcert.ini:
 $(EXTRDEP): | builddir
 	@echo RETRIEVE extractionMachdep.v
 	@cp $(COMPCERT_DIR)/$(ARCH)/extractionMachdep.v $(BUILD_DIR)/bcomp/
-	@sed -i 's\Require\From compcert Require\g' $(EXTRDEP)
+	@sed -i'' 's\Require\From compcert Require\g' $(EXTRDEP)
 
 
 extrdep: $(EXTRDEP) 
