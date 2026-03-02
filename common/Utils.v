@@ -7,6 +7,13 @@ Import MonCounter.
 Import MonCounterErr.
 Import ListNotations.
 
+Lemma elim_if : forall {A: Type} (c:bool) (e1 e1' e2 e2':A),
+  e1 = e1' -> e2 = e2' ->
+  (if c then e1 else e2) = (if c then e1' else e2').
+Proof.
+  destruct c; auto.
+Qed.
+
 Polymorphic Definition cast {A B: Type} (EQ : A = B) (v: A) : B.
   rewrite EQ in v. exact v.
 Defined.
@@ -18,6 +25,7 @@ Lemma cast_ok_imp_eq:
 Proof.
   tauto.
 Qed.
+
 
 (** Given a goal of the form [Forall P l], instead of doing [repeat Forall_cons] (slow),
     do [apply Forall_app_sound]  (fast) *)

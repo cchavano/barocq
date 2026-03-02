@@ -135,9 +135,11 @@ Proof.
   reflexivity.
 Qed.
 
-
-
-
+Lemma bind_if : forall {A B: Type} (c:bool) (e1 e2:option A) (e3: A -> option B),
+    bind (if c then e1 else e2) e3 = if c then (bind e1 e3) else (bind e2 e3).
+Proof.
+  destruct c; reflexivity.
+Qed.
 
 (** Assertions *)
 

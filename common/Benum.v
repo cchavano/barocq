@@ -61,6 +61,30 @@ Fixpoint make_enum (elems: list ident) (i: ident) : option (enum elems) :=
            end e)
   end.
 
+
+Lemma make_enum_rew : forall (elems: list ident) (i: ident),
+    make_enum elems i =
+  match elems as l0 return (option (enum l0)) with
+  | [] => fail
+  | s0 :: l0 =>
+      if Ident.eq_dec i s0
+      then
+       ret match l0 as l2 return enum (s0:: l2) with
+         | [] => Constr s0
+         | s3 :: l2 => inl (Constr s0)
+         end
+      else
+        let* e :=  make_enum l0 i in
+        ret
+          (match l0 as l2 return (enum l2 -> enum (s0 :: l2)) with
+           | [] => fun e1 : enum [] => False_rect (enum [s0]) e1
+           | s3 :: l2 => fun e1 : enum (s3 :: l2) => inr e1
+           end e)
+  end.
+Proof.
+  destruct elems; reflexivity.
+Qed.
+
 Fixpoint mk_enum (elems:list ident) (s:ident) : forall (H : existsb  (Ident.eqb s) elems = true), enum elems.
 Proof.
   destruct elems; intro EX.
@@ -70,7 +94,8 @@ Proof.
     { destruct elems.
       apply (Constr i).
       apply (inl (Constr i)). }
-    { unfold orb in EX.
+    {
+      unfold orb in EX.
       specialize (mk_enum elems s EX).
       destruct elems.
       discriminate.
@@ -134,6 +159,7 @@ Proof.
       reflexivity.
 Qed.
 
+
 Definition ident_of_constr {elems: list ident} (e: enum elems) : ident.
   induction elems as [| e0 elems0].
   - destruct e.
@@ -160,61 +186,11 @@ Definition of_i32 (elems: list ident) (i: int) : option (enum elems) :=
     let* ei := list_nth_z elems (Int.signed i) in
     make_enum elems ei.
 
-Inductive pattern : Type := 
+Inductive pattern : Type :=
   | PIdent (i: ident) (z: Z) : pattern
   | PWildcard : pattern.
 
 
-
-
-(* Fixpoint match_with {elems: list ident} {A: Type} (e: enum elems) (cases: list (pattern * A)) : res A :=
-  match cases with
-  | nil => fail
-  | (pi, ai) :: cases' =>
-      match pi with
-      | PIdent i =>
-          let* ei := make_enum elems i in
-          if enum_eq ei e then ret ai
-          else match_with e cases'
-      | PWildcard => ret ai
-      end
-  end.
-
-Fixpoint match_with2 {elems: list ident} {A E: Type} (e: enum elems) (cases: list (pattern * A))
-  (E_eq_dec: forall (x y: E), {x = y} + {x <> y}) (f: enum elems -> E) : res A :=
-  match cases with
-  | nil => fail
-  | (pi, ai) :: cases' =>
-      match pi with
-      | PIdent i =>
-          let* ei := make_enum elems i in
-          if E_eq_dec (f ei) (f e) then ret ai
-          else match_with2 e cases' E_eq_dec f
-      | PWildcard => ret ai
-      end
-  end.
-
-Lemma match_with_eq_match_with2 :
-  forall (elems: list ident) (A E: Type) (e: enum elems) (cases: list (pattern * A))
-  (E_eq_dec: forall (x y: E), {x = y} + {x <> y})
-  (econv_to: enum elems -> E)
-  (econv_from: E -> enum elems)
-  (INV1: forall (a: enum elems) (b: E), econv_to (econv_from b) = b)
-  (INV2: forall (a: enum elems) (b: E), econv_from (econv_to a) = a),
-  match_with e cases = match_with2 e cases E_eq_dec econv_to.
-Proof.
-  induction cases as [| (pi, ai) cases']; intros.
-  - simpl. reflexivity.
-  - simpl. destruct pi.
-    + destruct (make_enum elems i); simpl.
-      * unfold enum_eq. erewrite <- Utils.bij_eq_iff with (EQB := E_eq_dec); eauto.
-        destruct (E_eq_dec (econv_to e0) (econv_to e)).
-        reflexivity.
-        apply (IHcases' E_eq_dec econv_to econv_from INV1 INV2).
-      * reflexivity.
-    + reflexivity.
-Qed. *)
-  
 Fixpoint match_with_err {elems: list ident} {A: Type} (e: enum elems) (cases: list (pattern * option A)) : option A :=
   match cases with
   | nil => fail
@@ -227,6 +203,8 @@ Fixpoint match_with_err {elems: list ident} {A: Type} (e: enum elems) (cases: li
       | PWildcard => ai
       end
   end.
+
+
 
 Fixpoint match_with_err2 {elems: list ident} {A E: Type} (e: enum elems) (cases: list (pattern * option A))
   (E_eq_dec: forall (x y: E), {x = y} + {x <> y}) (f: enum elems -> E) : option A :=
@@ -307,6 +285,104 @@ Proof.
   unfold enum_eq. intros.
   destruct (enum_eq_dec x y); auto.
   congruence.
+Qed.
+
+Lemma enum_eq_refl : forall l (x:enum l),
+    enum_eq x x = true.
+Proof.
+  unfold enum_eq; intros.
+  destruct (enum_eq_dec x x); congruence.
+Qed.
+
+Lemma match_with_err_head : forall {elems : list ident} {A: Type} id EQ (cases : list (pattern * option A)) x v1,
+    match_with_err (mk_enum elems id EQ) ((PIdent id x, v1) :: cases) = v1.
+Proof.
+  simpl.
+  intros.
+  rewrite mk_enum_make_enum with (H:= EQ).
+  simpl. rewrite enum_eq_refl.
+  reflexivity.
+Qed.
+
+
+Lemma make_enum_inv : forall elems id id' (EQ: existsb (eqb id) elems = true) (EQ':existsb (eqb id') elems = true),
+    make_enum elems id = make_enum elems id' ->
+    id = id'.
+Proof.
+  intros.
+  induction elems ; simpl in H.
+  - simpl in EQ. discriminate.
+  - destruct (eq_dec id a);
+    destruct (eq_dec id' a).
+    + subst.
+      reflexivity.
+    + subst.
+      destruct (make_enum elems id') eqn:MK.
+      * simpl in *.
+        inv H.
+        destruct elems.
+        exfalso ; apply e.
+        discriminate.
+      * simpl in H.
+        discriminate.
+    + destruct (make_enum elems id) eqn:MK.
+      simpl in H.
+      inv H.
+      destruct elems.
+      * exfalso;  apply e0.
+      * discriminate.
+      * inv H.
+    +
+      unfold eqb in EQ,EQ'.
+      simpl in EQ,EQ'.
+      rewrite <- eqb_neq in n.
+      rewrite n in EQ.
+      rewrite <- eqb_neq in n0.
+      rewrite n0 in EQ'.
+      simpl in EQ,EQ'.
+      rewrite mk_enum_make_enum with (H:= EQ) in H.
+      rewrite mk_enum_make_enum with (H:= EQ') in H.
+      simpl in *.
+      inv H.
+      destruct elems.
+      discriminate.
+      apply IHelems; auto.
+      rewrite mk_enum_make_enum with (H:= EQ).
+      rewrite mk_enum_make_enum with (H:= EQ').
+      congruence.
+Qed.
+
+
+
+Lemma mk_enum_inv : forall elems id id' EQ EQ',
+    mk_enum elems id EQ = mk_enum elems id' EQ' ->
+    id = id'.
+Proof.
+  intros.
+  eapply make_enum_inv; eauto.
+  rewrite mk_enum_make_enum with (H:= EQ).
+  rewrite mk_enum_make_enum with (H:= EQ').
+  congruence.
+Qed.
+
+Lemma match_with_err_tail : forall {elems : list ident} {A: Type} id id' EQ (cases : list (pattern * option A)) x v1,
+    existsb (eqb id') elems = true->
+    id <> id' ->
+    match_with_err (mk_enum elems id EQ) ((PIdent id' x, v1) :: cases) = match_with_err (mk_enum elems id EQ) cases.
+Proof.
+  simpl.
+  intros.
+  destruct (make_enum elems id') eqn:MK.
+  - simpl.
+    destruct (enum_eq e (mk_enum elems id EQ)) eqn:EQ1.
+    apply enum_eq_sound in EQ1. subst.
+    apply make_enum_mk_enum in MK.
+    destruct MK as (EQ1 & MK).
+    apply mk_enum_inv in MK. congruence.
+    reflexivity.
+  - simpl.
+    rewrite mk_enum_make_enum with (H:= H) in MK.
+    discriminate.
 Qed.
 
 Lemma forallb_enum_equal : forall (l:list ident) (F: enum l -> enum l),
