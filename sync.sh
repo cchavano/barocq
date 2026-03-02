@@ -1,8 +1,10 @@
+#!/usr/bin/env bash
+
 check()
 {
-    H1=`sha256hmac $1 | cut -d' ' -f1`
+    H1=`sha256sum $1 | cut -d' ' -f1`
     if [ -e $2 ]; then
-	H2=`sha256hmac $2 | cut -d' ' -f1`
+	H2=`sha256sum $2 | cut -d' ' -f1`
 	[[ $H1 != $H2 ]]
 	return 
     else
