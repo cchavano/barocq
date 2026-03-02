@@ -173,7 +173,7 @@ Definition set_field (te:tenv) (ge: aenv) (d:domain) (env:InvMap.t) (a1:atom) (i
 (*  let* _   := show_path_above_alias ge d env a1 env' in*)
   let* (_,_,b) := write te ge d a1 (i::nil) v in
   if b  (* no-op - nothinh happens *)
-  then OK (pa1  , env)
+  then OK (set_path pa1 i pv , env)  (* could mandate pv to have no invalid path? *)
   else
     OK (set_path pa1 i pv,env').
 
