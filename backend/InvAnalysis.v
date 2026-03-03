@@ -265,6 +265,7 @@ Definition join (v1 v2 : option G.PathTree.t * InvMap.t) : res (option G.PathTre
 
 Fixpoint inv_statement (te:tenv) (age:aenv) (d:domain) (ge:genv) (env:InvMap.t) (s:statement) :=
   match s with
+  | StSkip     => OK (None, env)
   | StSet id c => let* (p,env') := inv_comp te age d ge env c in
                   OK (None, InvMap.set id p env')
   | StIfThenElse _ s1 s2 =>

@@ -34,6 +34,11 @@ Section DENOT.
 
   Fixpoint eval_statement_rec (te: tenv) (ge: genv) (le: lenv) (ty: option typ) (s: statement) : option (typ_of_statement ty) :=
     match s with
+    | StSkip    => match ty with
+                   | None => Some le
+                   | Some _ => fail
+                   end
+
     | StSet x c =>
         match ty with
         | None =>

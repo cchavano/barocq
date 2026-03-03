@@ -419,6 +419,10 @@ Section SEM.
 
   Fixpoint ieval_statement (te: tenv) (ge: genv) (e: env) (m: mem) (inv: InvSet.t) (ty: option typ) (s: Imp1.statement) : option (inv_typ_of_statement ty * mem * InvSet.t) :=
     match s with
+    | StSkip    => match ty with
+                   | Some _ => fail
+                   | None   => Some (e,m,inv)
+                   end
     | StSet x c =>
         match ty with
         | Some _ => fail

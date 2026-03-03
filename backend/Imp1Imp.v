@@ -1337,6 +1337,10 @@ Section S.
 
   Fixpoint eval_statement (te:tenv) (ge:genv) (e:env) (m:mem) (ty:option typ) (s:statement)  : option (typ_of_statement ty * mem) :=
     match s with
+    | StSkip   => match ty with
+                  | None => Some (e,m)
+                  | Some _ => fail
+                  end
     | StSet id c =>
         match ty with
         | None =>
