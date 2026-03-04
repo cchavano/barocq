@@ -80,7 +80,7 @@ Separate Extraction
   BarocqBNFUndo.decompile_program
   Compiler.aliascheck_program
   Compiler.compile_to_imp1
-  Compiler.compile Compiler.ir_name
+  Compiler.compile Compiler.ir_name Compiler.opt_flag
   BarocqShallow.Monadic.get_record_typedefs
   BarocqShallowgen.monadify_norm_program
   BarocqShallowgen.monadify_norm2_program

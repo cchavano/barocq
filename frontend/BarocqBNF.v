@@ -123,7 +123,7 @@ Module Pp.
     end.
 
   Definition pp_program (p:program) : box :=
-    Printer.pp_program Printer.pp_btyp  pp_expr p.
+    Printer.pp_program Printer.pp_btyp  Printer.pp_literal pp_expr p.
 
 End Pp.
 

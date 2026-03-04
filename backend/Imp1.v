@@ -54,7 +54,7 @@ Module Pp.
     | StAttr a s => Bcat (Bstr "[#") (Bcat (Bstr a) (Bcat (Bstr "]") (pp_statement s)))
     end.
 
-  Definition pp_program (p:program) := Printer.pp_program  Printer.pp_btyp pp_statement p.
+  Definition pp_program (p:program) := Printer.pp_program  Printer.pp_btyp Printer.pp_literal pp_statement p.
 
 End Pp.
 

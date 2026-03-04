@@ -194,6 +194,6 @@ Definition pp_layout (p:layout) :=
   | LyUnboxed z => pp_option (fun z => Bstr (string_of_Z z)) z
   end.
 
-Definition pp_program {B T:Type} (pp_typ : T -> box) (pp_body : B -> box)
-  (p:program B T literal) : box :=
-    Pp.stack Left (List.map (Printer.pp_globdef Printer.pp_literal (pp_function pp_body pp_typ) pp_typ) p.(prog_defs)).
+Definition pp_program {B T L:Type} (pp_typ : T -> box) (pp_literal : L -> box) (pp_body : B -> box)
+  (p:program B T L) : box :=
+    Pp.stack Left (List.map (Printer.pp_globdef pp_literal (pp_function pp_body pp_typ) pp_typ) p.(prog_defs)).

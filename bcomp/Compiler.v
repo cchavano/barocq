@@ -2,24 +2,42 @@ From Coq Require Import String List.
 From BarocqComp Require Import Error Utils Ident Pp Barocq Imp1.
 From BarocqComp Require Import Renaming BarocqBNFgen ImpBNFgen Imp1gen Unboxing Imp2gen GlobRewrite Csyntaxgen.
 From BarocqComp Require Import Imp1ElimAlias InvAnalysis.
+From BarocqComp Require Import Imp2Copy.
 From BarocqComp Require Import BarocqBNFUndo. (* force dependency *)
+
 Inductive ir_name :=
 | Ir_Barocq
 | Ir_BBNF
 | Ir_IBNF
 | Ir_Imp1
+| Ir_Copy (* After copy propagation *)
 | Ir_Imp2
 | Ir_Csyntax.
+
+Inductive opt_flag :=
+| Opt_Copy (* Perform copy propagation *)
+| Opt_Other (* Just to trick extraction *)
+.
+
+Definition opt_flag_eqb (o1 o2:opt_flag) :=
+  match o1, o2 with
+  | Opt_Copy , Opt_Copy => true
+  | Opt_Other , Opt_Other => true
+  | _ , _ => false
+  end.
+
+
 
 
 Definition pp_ir (i:ir_name) :=
   match i with
-  | Ir_Barocq  => Bstr "barocq"
-  | Ir_BBNF    => Bstr "bbnf"
-  | Ir_IBNF    => Bstr "ibnf"
-  | Ir_Imp1    => Bstr "imp1"
-  | Ir_Imp2    => Bstr "imp2"
-  | Ir_Csyntax => Bstr "csyntax"
+  | Ir_Barocq     => Bstr "barocq"
+  | Ir_BBNF       => Bstr "bbnf"
+  | Ir_IBNF       => Bstr "ibnf"
+  | Ir_Imp1       => Bstr "imp1"
+  | Ir_Copy       => Bstr "copy"
+  | Ir_Imp2       => Bstr "imp2"
+  | Ir_Csyntax    => Bstr "csyntax"
   end.
 
 Definition ir_name_eq_dec (p1 p2:ir_name) : {p1 = p2} + {p1 <> p2}.
@@ -30,10 +48,14 @@ Defined.
 
 Record compiler_opt :=
   {
-    dbg_analysis : bool; (* outputs the static analysis result - this makes the compiler fail *)
+    dbg_analysis : bool; (* outputs the static analysis result - this makes the compiler to fail *)
     ir_log : list ir_name;
-    ir_gen : list ir_name
+    ir_gen : list ir_name;
+    ir_opt : list opt_flag
   }.
+
+Definition has_opt (o:opt_flag) (c:compiler_opt) :=
+  List.existsb (opt_flag_eqb o) (ir_opt c).
 
 (* Compiler target *)
 
@@ -70,6 +92,9 @@ Definition compile (opt : compiler_opt) (arch: Target.archi) (globinfo: option (
     let* imp1_typed := Imp1ElimAlias.transl_program te imp1_typed in
     if Unboxing.check_program imp1_typed then
       let imp2 := Imp2gen.transl_program imp1_typed in
+      let (log,progs) := insert_log opt Ir_Imp2 Imp2.Pp.pp_program Imp2 imp2 log progs in
+      let imp2 := if has_opt Opt_Copy opt then Imp2Copy.transl_program imp2 else imp2 in
+      let (log,progs) := insert_log opt Ir_Copy Imp2.Pp.pp_program Imp2 imp2 log progs in
       let imp2_grw :=
         match globinfo with
         | Some ginfo => GlobRewrite.rewrite_program ginfo imp2
