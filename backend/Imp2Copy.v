@@ -180,7 +180,7 @@ Fixpoint transl_statement (ren:STree.t constant) (s:statement) : (STree.t consta
                   let (ren',st) := flush_rename ren id in
                   match constant_of_atom c' with
                   | None => (STree.remove id ren', stseq st (StSet id c'),false)
-                  | Some c' => (STree.set id c' ren, st,false)
+                  | Some c' => (STree.set id c' ren', st,false)
                   end
   | StEcomp ec  => (ren, StEcomp (transl_ecomp ren ec),false)
   | StIfThenElse a1 s1 s2 =>
