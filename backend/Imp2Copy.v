@@ -8,6 +8,13 @@ Inductive constant :=
 | CInt64 (i:int64) (s:signedness)
 | CVar   (v:Syntax.ident) (bt:typ2).
 
+Definition is_var (v:Syntax.ident) (c:constant) :=
+  match c with
+  | CVar v' _ => if Ident.eq_dec v v' then true else false
+  | _ => false
+  end.
+
+
 Definition layout_eq_dec (l1 l2:layout) : {l1 = l2} + {l1 <> l2}.
 Proof.
   decide equality.
@@ -160,13 +167,20 @@ Definition remove_opt (o:option ident) (ren : STree.t constant) : STree.t consta
   | Some id => STree.remove id ren
   end.
 
+Definition flush_rename (ren:STree.t constant) (id:ident) : STree.t constant * statement :=
+  STree.fold (fun acc x c => if is_var id c
+                             then (fst acc, stseq (StSet x (atom_of_constant c)) (snd acc))
+                             else (STree.set x c (fst acc) , snd acc)) ren (STree.empty,StSkip).
+
 Fixpoint transl_statement (ren:STree.t constant) (s:statement) : (STree.t constant * statement * bool) :=
   match s with
   | StSkip     => (ren,StSkip,false)
   | StSet id c => let c' := rename_atom ren c in
+                  (* TODO - if c' is a variable, no need to flush *)
+                  let (ren',st) := flush_rename ren id in
                   match constant_of_atom c' with
-                  | None => (STree.remove id ren, StSet id c',false)
-                  | Some c' => (STree.set id c' ren, StSkip,false)
+                  | None => (STree.remove id ren', stseq st (StSet id c'),false)
+                  | Some c' => (STree.set id c' ren, st,false)
                   end
   | StEcomp ec  => (ren, StEcomp (transl_ecomp ren ec),false)
   | StIfThenElse a1 s1 s2 =>
