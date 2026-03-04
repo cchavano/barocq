@@ -159,7 +159,7 @@ Section TRANSL.
           | LyBoxed
           | LyUnboxed (Some _)
           | LyPrim => ret eindex
-          | LyUnboxed None => ret (Eaddrof eindex (tptr ty'))
+          | LyUnboxed None => ret (Ebinop Oadd e1 e2 ty')
           end
       | ARecordProj a f ly ty =>
           let* e := transl_atom a in
