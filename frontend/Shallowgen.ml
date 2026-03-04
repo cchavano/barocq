@@ -36,6 +36,7 @@ let rec mtyp_to_rocq (ty : mtyp) : string =
 and opt_parens (ty : mtyp) : string =
   PrintUtils.opt_parens is_simpl_mtyp mtyp_to_rocq ty
 
+
 let int_to_rocq (i : Integers.Int.int) (s : signedness) : string =
   let si =
     match s with
@@ -44,7 +45,9 @@ let int_to_rocq (i : Integers.Int.int) (s : signedness) : string =
         if Integers.Int.lt i Integers.Int.zero then sprintf "(%s)" si else si
     | Unsigned -> u32_to_string i
   in
-  sprintf "Int.repr %s" si
+  match s with
+  | Signed -> sprintf "%s" si (* There is a Rocq coercion *)
+  | Unsigned -> sprintf "%sU" si
 
 let int64_to_rocq (i : Integers.Int64.int) (s : signedness) : string =
   let si =
@@ -55,8 +58,10 @@ let int64_to_rocq (i : Integers.Int64.int) (s : signedness) : string =
         else si
     | Unsigned -> u64_to_string i
   in
+  match s with
+  | Signed -> sprintf "%sL" si
+  | Unsigned -> sprintf "%sUL" si
 
-  sprintf "Int64.repr %s" si
 
 let cast_to_rocq (src_ty : mtyp) (dst_ty : mtyp) : string =
   let modl ty =
@@ -92,6 +97,76 @@ let unary_op_to_rocq (ty : mtyp) (op : unary_op) : string =
   | UopNotint -> sprintf "%s.not " intmod
   | UopNeg -> sprintf "%s.neg " intmod
   | UopPlus -> ""
+
+
+let notation_of_add (ty:mtyp) = 
+  match ty with
+  | MInt32 _ -> "+₃₂"
+  | MInt64 _ -> "+₆₄"
+  |     _    -> failwith "+ is only defined for typed Int32 and Int64"
+
+let notation_of_mul (ty:mtyp) = 
+  match ty with
+  | MInt32 _ -> "*₃₂"
+  | MInt64 _ -> "*₆₄"
+  |     _    -> failwith "* is only defined for typed Int32 and Int64"
+
+let notation_of_mod (ty:mtyp) = 
+  match ty with
+  | MInt32 Unsigned -> "modu₃₂"
+  | MInt32 Signed   -> "mods₃₂"
+  | MInt64 Unsigned -> "modu₆₄"
+  | MInt64 Signed   -> "mods₆₄"
+  |     _    -> failwith "mod is only defined for typed Int32 and Int64"
+
+
+let notation_of_andint (ty:mtyp) = 
+  match ty with
+  | MInt32 _ -> "&₃₂"
+  | MInt64 _ -> "&₆₄"
+  |     _    -> failwith "& is only defined for typed Int32 and Int64"
+
+let notation_of_orint (ty:mtyp) = 
+  match ty with
+  | MInt32 _ -> "|₃₂"
+  | MInt64 _ -> "|₆₄"
+  |     _    -> failwith "| is only defined for typed Int32 and Int64"
+
+let notation_of_xorint (ty:mtyp) = 
+  match ty with
+  | MInt32 _ -> "^₃₂"
+  | MInt64 _ -> "^₆₄"
+  |     _    -> failwith "^ is only defined for typed Int32 and Int64"
+
+let notation_of_shl (ty:mtyp) = 
+  match ty with
+  | MInt32 _   -> "<<₃₂"
+  | MInt64 _   -> "<<₆₄"
+  |     _    -> failwith "<< is only defined for typed Int32 and Int64"
+
+let notation_of_shr (ty:mtyp) = 
+  match ty with
+  | MInt32 Unsigned -> ">>u₃₂"
+  | MInt32 Signed   -> ">>₃₂"
+  | MInt64 Unsigned -> ">>u₆₄"
+  | MInt64 Signed   -> ">>s₆₄"
+  |     _    -> failwith ">> is only defined for typed Int32 and Int64"
+
+let notation_of_sub (ty:mtyp) = 
+  match ty with
+  | MInt32 _ -> "-₃₂"
+  | MInt64 _ -> "-₆₄"
+  |     _    -> failwith "- is only defined for typed Int32 and Int64"
+
+
+let is_infix (op:binary_op) =
+  match op with
+  | BopAdd | BopMul | BopMod -> true
+  | BopAndbool | BopOrbool -> true
+  | BopAndint  | BopOrint | BopXorint -> true
+  | BopShr | BopShl -> true
+  | BopSub -> true
+  | _ -> false (* TODO: more infix operators *)
 
 let binary_op_to_rocq (ty : mtyp) (op : binary_op) : string =
   let intmod, suffix =
@@ -141,16 +216,16 @@ let binary_op_to_rocq (ty : mtyp) (op : binary_op) : string =
   | BopAndbool -> "&&"
   | BopOrbool -> "||"
   | BopXorbool -> "xorb"
-  | BopAdd -> intop "add"
-  | BopSub -> intop "sub"
-  | BopMul -> intop "mul"
+  | BopAdd -> notation_of_add ty
+  | BopSub -> notation_of_sub ty
+  | BopMul -> notation_of_mul ty
   | BopDiv -> intop "div"
-  | BopMod -> intop "mod"
-  | BopAndint -> intop "and"
-  | BopOrint -> intop "or"
-  | BopXorint -> intop "xor"
-  | BopShl -> intop "shl"
-  | BopShr -> intop "shr"
+  | BopMod -> notation_of_mod ty
+  | BopAndint -> notation_of_andint ty
+  | BopOrint -> notation_of_orint ty
+  | BopXorint -> notation_of_xorint ty
+  | BopShl -> notation_of_shl ty
+  | BopShr -> notation_of_shr ty
   | BopEq -> begin
       match ty with
       | MBool -> "eqb"
@@ -243,14 +318,15 @@ let rec atom_to_rocq (a : atom) : string =
       sprintf "%s%s" (unary_op_to_rocq ty op) (opt_parens a)
   | ABinaryOp (op, a1, a2, ty) ->
       let ty1 = typof_atom a1 in
-      begin match op with
-      | BopAndbool | BopOrbool ->
+      begin
+        if is_infix op
+        then 
           sprintf
             "%s %s %s"
             (opt_parens a1)
             (binary_op_to_rocq ty1 op)
             (opt_parens a2)
-      | _ ->
+        else
           sprintf
             "%s %s %s"
             (binary_op_to_rocq ty1 op)
@@ -629,7 +705,7 @@ module SR = struct
      From compcert Require Import Integers.\n\
      From RecordUpdate Require Import RecordUpdate.\n\
      From BarocqComp Require Import OptionMonad Barray Intop Utils.\n\
-     Import BoolNotations ListNotations.\n\n\
+     Import BoolNotations ListNotations BarocqNotations.\n\n\
      Open Scope Z_scope.\n\
      Open Scope option_monad_scope.\n"
 
@@ -828,7 +904,7 @@ module SB = struct
        From BarocqComp Require Import Ident OptionMonad Barray Benum Brecord \
        Intop.\n\
        From %s Require Import %s_Types.\n\
-       Import BoolNotations ListNotations.\n\n\
+       Import BoolNotations ListNotations BarocqNotations.\n\n\
        Open Scope Z_scope.\n\
        Open Scope string_scope.\n\
        Open Scope option_monad_scope.\n"

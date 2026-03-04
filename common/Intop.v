@@ -121,3 +121,39 @@ Module U64.
     Z.to_nat (Int64.unsigned x).
 
 End U64.
+
+(* Notations *)
+Module BarocqNotations.
+Infix "+₆₄" := Int64.add (at level 50,left associativity).
+Infix "+₃₂" := Int.add (at level 50,left associativity).
+Infix "-₆₄" := Int64.sub (at level 50,left associativity).
+Infix "-₃₂" := Int.sub (at level 50,left associativity).
+Infix "*₆₄" := Int64.mul (at level 40,left associativity).
+Infix "*₃₂" := Int.mul (at level 40,left associativity).
+Infix "modu₆₄" := U64.mod (at level 40,left associativity).
+Infix "modu₃₂" := U32.mod (at level 40,left associativity).
+Infix "mods₆₄" := I64.mod (at level 40,left associativity).
+Infix "mods₃₂" := I32.mod (at level 40,left associativity).
+
+Infix "<<₃₂"  := Int.shl (at level 39,left associativity).
+Infix "<<₆₄"  := Int64.shl (at level 39,left associativity).
+
+Infix ">>₃₂"  := Int.shr (at level 39,left associativity).
+Infix ">>u₃₂" := Int.shru (at level 39,left associativity).
+Infix ">>₆₄"  := Int64.shr (at level 39,left associativity).
+Infix ">>u₆₄" := Int64.shru (at level 39,left associativity).
+
+Infix "&₃₂"    := Int.and (at level 40,left associativity).
+Infix "&₆₄"    := Int64.and (at level 40,left associativity).
+Infix "^₃₂"    := Int.xor (at level 45,left associativity).
+Infix "^₆₄"    := Int64.xor (at level 45,left associativity).
+Infix "|₃₂"    := Int.or (at level 50,left associativity).
+Infix "|₆₄"    := Int64.or (at level 50,left associativity).
+
+
+Notation "X 'UL'" := (Int64.repr X).
+Notation "X 'L'" := (Int64.repr X).
+Notation "X 'U'" := (Int.repr X).
+Coercion Int.repr : Z >-> Int.int.
+
+End BarocqNotations.

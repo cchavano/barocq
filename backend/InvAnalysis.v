@@ -164,16 +164,18 @@ Definition show_path_above_alias (te:tenv) (ge:aenv) (d:domain) (env:InvMap.t) (
                             (Bstack (Bstr "===>")
                                (InvMap.pp env') Left) Left))).
 
-
-
 Definition set_field (te:tenv) (ge: aenv) (d:domain) (env:InvMap.t) (a1:atom) (i:EdgeLabel.t) (v:atom) :=
   let pa1  := eval_atom env a1 in
-  let v    := eval_atom env v in
+  let pv    := eval_atom env v in
   let* may  := path_above_alias te ge d a1 in
   let env' := inv_may_alias env may  i in
   let* _   := check "set_field" env env' in
 (*  let* _   := show_path_above_alias ge d env a1 env' in*)
-  OK (set_path pa1 i v,env').
+  let* (_,_,b) := write te ge d a1 (i::nil) v in
+  if b  (* no-op - nothinh happens *)
+  then OK (set_path pa1 i pv , env)  (* could mandate pv to have no invalid path? *)
+  else
+    OK (set_path pa1 i pv,env').
 
 Fixpoint get_fields (p:option G.PathTree.t) (l :list EdgeLabel.t) : option G.PathTree.t :=
   match l with
@@ -263,6 +265,7 @@ Definition join (v1 v2 : option G.PathTree.t * InvMap.t) : res (option G.PathTre
 
 Fixpoint inv_statement (te:tenv) (age:aenv) (d:domain) (ge:genv) (env:InvMap.t) (s:statement) :=
   match s with
+  | StSkip     => OK (None, env)
   | StSet id c => let* (p,env') := inv_comp te age d ge env c in
                   OK (None, InvMap.set id p env')
   | StIfThenElse _ s1 s2 =>

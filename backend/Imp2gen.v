@@ -49,6 +49,7 @@ Definition set_or_skip (x: ident) (a: atom) : Imp2.statement :=
 
 Fixpoint transl_statement (s: Imp1.statement) : Imp2.statement :=
   match s with
+  | Imp1.StSkip => Imp2.StSkip
   | Imp1.StSet x (CpAtom a) =>
       set_or_skip x (transl_atom a)
   | Imp1.StSet x (CpArraySet a1 a2 a3 _) =>

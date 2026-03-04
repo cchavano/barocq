@@ -8,12 +8,13 @@ From BarocqComp Require Printer.
 (** ** Statements *)
  
 Inductive statement : Type :=
-  | StSet : ident -> comp -> statement
-  | StIfThenElse : atom -> statement -> statement -> statement
-  | StSwitch : atom -> list (pattern * statement) -> statement
-  | StSequence : statement -> statement -> statement
-  | StReturn : atom -> statement
-  | StAttr   : ident -> statement -> statement.
+| StSkip
+| StSet : ident -> comp -> statement
+| StIfThenElse : atom -> statement -> statement -> statement
+| StSwitch : atom -> list (pattern * statement) -> statement
+| StSequence : statement -> statement -> statement
+| StReturn : atom -> statement
+| StAttr   : ident -> statement -> statement.
 
 (** ** Functions *)
 
@@ -35,6 +36,7 @@ Module Pp.
 
   Fixpoint pp_statement (s:statement) :=
     match s with
+    | StSkip    => Bstr "skip"
     | StSet i c => Bcat (Bstr i) (Bcat (Bstr "=") (Printer.pp_comp c))
     | StIfThenElse a s1 s2 =>
         let s1 := Bcat (Bstr " then ") (pp_statement s1) in
@@ -52,7 +54,7 @@ Module Pp.
     | StAttr a s => Bcat (Bstr "[#") (Bcat (Bstr a) (Bcat (Bstr "]") (pp_statement s)))
     end.
 
-  Definition pp_program (p:program) := Printer.pp_program  Printer.pp_btyp pp_statement p.
+  Definition pp_program (p:program) := Printer.pp_program  Printer.pp_btyp Printer.pp_literal pp_statement p.
 
 End Pp.
 
@@ -213,6 +215,7 @@ Module Typing.
       end
     in
     match s with
+    | Imp1.StSkip    => ret (StSkip,lx)
     | Imp1.StSet x c =>
         let* c' := typecheck_comp be gx lx c in
         let* lx' := lcontext_update_imp lx x (btypof_comp c') in

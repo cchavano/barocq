@@ -53,6 +53,8 @@ let opt_debug_aliasing = ref false
 
 let opt_export_csyntax = ref false
 
+let opt_copy = ref false
+
 let target_arch = ref (if Archi.ptr64 then Target.Ptr64 else Target.Ptr32)
 
 let set_target_arch (s : string) : unit =
@@ -70,6 +72,7 @@ let set_opt_print s =
     | "bbnf" -> Compiler.Ir_BBNF
     | "ibnf" -> Compiler.Ir_IBNF
     | "imp1" -> Compiler.Ir_Imp1
+    | "copy" -> Compiler.Ir_Copy
     | "imp2" -> Compiler.Ir_Imp2
     | _ -> failwith "Invalid intermediate language")
     :: !opt_print
@@ -103,12 +106,13 @@ let options =
       Arg.Set opt_print_tokens,
       "\t\t\tPrint parsed tokens (stop after lexing)" );
     ( "-print",
-      Arg.Symbol (["barocq"; "bbnf"; "ibnf"; "imp1"; "imp2"], set_opt_print),
+      Arg.Symbol (["barocq"; "bbnf"; "ibnf"; "imp1"; "copy"; "imp2"], set_opt_print),
       "\tPretty-print the IR" );
     ("-export-csyntax", Arg.Set opt_export_csyntax, "Export the Csyntax AST");
     ( "-debug-aliasing",
       Arg.Set opt_debug_aliasing,
       "\t\t\tDisplay the alias analysis debugging information on stderr" );
+    ( "-opt-copy", Arg.Set opt_copy,"\tPerform copy propagation");
     ( "-types-impl",
       Arg.Set_string file_types_impl,
       "<file>\t\t\tUse <file> as the C implementation for abstract types" );
@@ -184,34 +188,33 @@ let print_token_stream (files : string list) : unit =
   List.iter aux files
 
 let irname = function
-  | Compiler.Ir_Barocq -> "barocq"
-  | Compiler.Ir_BBNF -> "bbnf"
-  | Compiler.Ir_IBNF -> "ibnf"
-  | Compiler.Ir_Imp1 -> "imp1"
-  | Compiler.Ir_Imp2 -> "imp2"
-  | Compiler.Ir_Csyntax -> "csyntax"
+ | Compiler.Ir_Barocq  -> "barocq"
+ | Compiler.Ir_BBNF    -> "bbnf"
+ | Compiler.Ir_IBNF    -> "ibnf"
+ | Compiler.Ir_Imp1    -> "imp1"
+ | Compiler.Ir_Copy    -> "copy"
+ | Compiler.Ir_Imp2    -> "imp2"
+ | Compiler.Ir_Csyntax ->  "csyntax"
+
+
 
 let gen_compile_opt () =
   let irs_log = !opt_print in
   (* Always generate C *)
-  let irs_gen =
-    if !opt_gen_corres then [Compiler.Ir_BBNF; Compiler.Ir_Csyntax]
-    else [Compiler.Ir_Csyntax]
-  in
-  let opt =
-    {
-      Compiler.dbg_analysis = !opt_debug_aliasing;
-      Compiler.ir_log = irs_log;
-      Compiler.ir_gen = irs_gen;
-    }
-  in
-  if !debug then begin
-    Printf.fprintf stdout "[debug]";
-    List.iter
-      (fun s -> Printf.fprintf stdout "%s, " (irname s))
-      opt.Compiler.ir_gen;
-    output_string stdout "\n"
-  end;
+  let irs_gen = if !opt_gen_corres then [Compiler.Ir_BBNF; Compiler.Ir_Csyntax;]
+    else  [Compiler.Ir_Csyntax] in 
+  let optim = if !opt_copy then [Compiler.Opt_Copy] else [] in 
+  let opt = { Compiler.dbg_analysis = !opt_debug_aliasing;
+              Compiler.ir_log = irs_log;
+              Compiler.ir_gen = irs_gen;
+              Compiler.ir_opt = optim;
+            } in
+  if !debug then
+    begin
+      Printf.fprintf stdout "[debug]";
+      List.iter (fun s -> Printf.fprintf stdout "%s, " (irname s)) opt.Compiler.ir_gen;
+      output_string stdout "\n"
+    end ;
   opt
 
 let output_log o l =

@@ -1,6 +1,6 @@
 From Coq Require Import List.
 From compcert Require Import Integers Maps.
-From BarocqComp Require Import Types Syntax Benum.
+From BarocqComp Require Import Types Syntax Benum Pp Printer.
 
 (** * Abstract syntax *)
 
@@ -100,3 +100,79 @@ Definition globdef : Type := Syntax.globdef statement typ2 literal.
 (** ** Programs *)
 
 Definition program : Type := Syntax.program statement typ2 literal.
+
+Module Pp.
+  Import String.
+  Import ListNotations.
+
+  Fixpoint pp_atom (a:atom) : box :=
+    match a with
+    | ATrue =>  Bstr "true"
+    | AFalse => Bstr "false"
+    | AInt32 i s => pp_sint s i
+    | AInt64 i s => pp_sint64 s i
+    | AConstr s _ _ =>  Bstr s
+    | AVar s _     => Bstr s
+    | ACast a0 bt => seq [pp_atom a0; Bstr " as "; Bstr "??"]
+    | AUnaryOp o a0 _ => Bcat (Bstr (string_of_unary_op o)) (pp_atom a0)
+    | ABinaryOp o a1 a2 _ => Bcat (pp_atom a1) (Bcat (Bstr (string_of_binary_op o)) (pp_atom a2))
+    | AArrayGet a0 i _ _ => Bcat (pp_atom a0) (array_index pp_atom i)
+    | ARecordProj a0 i _ _ => Bcat (pp_atom a0) (Bcat (Bstr ".") (Bstr i))
+    | APureCall f _ l _ => seq [Bstr f; Bstr "("; pp_list (Bstr ", ") pp_atom l; Bstr ")"]
+    end.
+
+  Definition pp_ecomp  (ec:ecomp) :=
+    match ec with
+    | EcArraySet a i v =>
+        Bcat (pp_atom a)
+          (Bcat
+             (Bcat (array_index pp_atom i)
+                (Bstr "<-")) (pp_atom v))
+    | EcRecordUpdate a f v => Bcat (pp_atom a)
+                              (Bcat
+                                  (Bcat (Bcat (Bstr ".") (Bstr f)) (Bstr "<-"))
+                                  (pp_atom v))
+  end.
+
+  Definition pp_opt_ident (o:option ident) :=
+    match o with
+    | None => Bstr "()"
+    | Some id => Bstr id
+    end.
+
+  Definition pp_option_atom (o:option atom) :=
+    match o with
+    | None => Bstr "()"
+    | Some a => pp_atom a
+    end.
+
+
+
+  Fixpoint pp_statement (s:statement) :=
+    match s with
+    | StSkip    => Bstr "skip"
+    | StSet i c => Bcat (Bstr i) (Bcat (Bstr "=") (pp_atom c))
+    | StEcomp e  => pp_ecomp e
+    | StCall r f _ l _ => seq [pp_opt_ident r ; Bstr " := ";Bstr f; Bstr "("; pp_list (Bstr ", ") pp_atom l; Bstr ")"]
+    | StIfThenElse a s1 s2 =>
+        let s1 := Bcat (Bstr " then ") (pp_statement s1) in
+        let s2 := Bcat (Bstr " else ") (pp_statement s2) in
+        let c  := pp_atom a in
+        let cd := Bcat (Bstr "if ") c in
+        Bstack cd (Bstack s1 s2 Left) Left
+    | StSwitch a l => Bstr "case..."
+    | StSequence s1 s2 =>
+        let s1 := pp_statement s1 in
+        let s2 := pp_statement s2 in
+        Bstack (Bcat s1 (Bstr ";"))
+               s2 Left
+    | StReturn a => Bcat (Bstr "return ") (pp_option_atom a)
+    end.
+
+  Definition pp_typ2 (t:typ2) : box := Bstr "???".
+
+  Definition pp_literal (l:literal) : box := Bstr "???".
+
+  Definition pp_program (p:program) := Printer.pp_program  pp_typ2 pp_literal pp_statement  p.
+
+End Pp.

@@ -1100,6 +1100,7 @@ Definition expr_of_path (l : list EdgeLabel.t) :=
 
 Fixpoint eval_statement (te:tenv) (env: aenv) (s:statement) (d:domain) : res (domain + (sfunction * bool)) :=
   match s with
+  | StSkip    => OK (inl d)
   | StSet v c => match eval_comp te env d c  with
                  | OK (d,k) =>  OK (inl (update_variable v d k))
                  | Error m  => Error (MSG "In statement " ::
@@ -1221,6 +1222,7 @@ Definition any_alias (env:aenv) (d:domain)  :=
 
 Fixpoint assigned (s:statement) : SSet.t :=
   match s with
+  | StSkip     => SSet.empty
   | StSet id _ => SSet.add id  SSet.empty
   | StIfThenElse _ s1 s2 => SSet.union (assigned s1) (assigned s2)
   | StSwitch _ l => List.fold_right (fun e acc => SSet.union (assigned (snd e)) acc) SSet.empty l
@@ -1390,6 +1392,7 @@ Definition comp_has_update (c:comp) :=
 
 Fixpoint statement_has_update (s:statement) :=
   match s with
+  | StSkip     => false
   | StSet id c => comp_has_update c
   | StIfThenElse a s1 s2 => statement_has_update s1 || statement_has_update s2
   | StSwitch a l =>
@@ -1422,6 +1425,7 @@ Definition comp_is_var (id:ident) (c:comp) :=
 Definition is_nop (s:statement) :=
   match s with
   | StSet id c => comp_is_var id c
+  | StSkip     => true
   | _          => false
   end.
 
@@ -1433,6 +1437,7 @@ Definition mk_seq (s1 s2:statement) :=
 
 Fixpoint has_nop (s:statement) :=
   match s with
+  | StSkip           => true
   | StSequence s1 s2 => has_nop s1 || has_nop s2
   | StIfThenElse _ s1 s2 =>
       (if is_nop s1 then false else has_nop s1)
@@ -1448,6 +1453,7 @@ Fixpoint has_nop (s:statement) :=
 
 Fixpoint transl_statement (te:tenv) (env: aenv) (d:domain) (s:statement) : res statement :=
   match s with
+  | StSkip     => OK StSkip
   | StSet id c => let* c' := transl_comp te env d c in
                   OK (StSet id c')
   | StIfThenElse a s1 s2 =>
