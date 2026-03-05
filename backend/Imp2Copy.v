@@ -172,6 +172,49 @@ Definition flush_rename (ren:STree.t constant) (id:ident) : STree.t constant * s
                              then (fst acc, stseq (StSet x (atom_of_constant c)) (snd acc))
                              else (STree.set x c (fst acc) , snd acc)) ren (STree.empty,StSkip).
 
+Definition inter_rename_aux (r1 r2 : option constant) :=
+  match r1 , r2 with
+  | None , None => None
+  | None , Some _ | Some _ , None => None
+  | Some c1 , Some c2 => if constant_eq_dec c1 c2 then Some c1 else None
+  end.
+
+Definition diff_rename_aux (r1 r2 : option constant) :=
+  match r1 , r2 with
+  | None , None => None
+  | None , Some c  => None
+  | Some c , None  => Some c
+  | Some c1 , Some c2 => if constant_eq_dec c1 c2 then None else Some c1
+  end.
+
+Definition inter_rename (r1 r2: STree.t constant) :=
+  STree.combine inter_rename_aux r1 r2.
+
+Definition diff_rename (r1 r2: STree.t constant) :=
+  STree.combine diff_rename_aux r1 r2.
+
+
+Definition inter_list (l : list ((Benum.pattern * statement) * (STree.t constant * bool))) : STree.t constant :=
+  match l with
+  | nil => STree.empty
+  | cons e  l =>
+      List.fold_left (fun acc e => inter_rename (fst (snd e)) acc) l (fst (snd e))
+  end.
+
+Definition filter_pattern (shared_ren:STree.t constant) (p : (Benum.pattern * statement) * (STree.t constant * bool))
+   :=
+
+  let dren := diff_rename (fst (snd p)) shared_ren in
+  (fst (fst p) , stseq (snd (fst p)) (statement_of_renaming dren)).
+
+Definition gen_switch (l : list ((Benum.pattern * statement) * (STree.t constant * bool))) : STree.t constant *
+                                                                                         list (Benum.pattern * statement) * bool :=
+  let is_return := List.forallb (fun x => snd (snd x)) l in
+  if is_return
+  then (STree.empty, List.map fst l, is_return) (* ignore the renaming, we simply return *)
+  else let shared_ren := inter_list l in
+       (shared_ren, List.map (filter_pattern shared_ren) l, is_return).
+
 Fixpoint transl_statement (ren:STree.t constant) (s:statement) : (STree.t constant * statement * bool) :=
   match s with
   | StSkip     => (ren,StSkip,false)
@@ -195,8 +238,9 @@ Fixpoint transl_statement (ren:STree.t constant) (s:statement) : (STree.t consta
       let a1 := rename_atom ren a in
       let l  := List.map (fun x =>
                             let '(ren',s',b) := transl_statement ren (snd x) in
-                            ((fst x, stseq s' (if b then StSkip else (statement_of_renaming ren'))),b)) l in
-      (STree.empty , StSwitch a1 (List.map fst l), List.forallb snd l)
+                            ((fst x, s'),(ren',b))) l in
+      let '(ren,l',b) := gen_switch l in
+      (ren, StSwitch a1 l',b)
   | StSequence s1 s2 =>
       let '(ren,s1',_) := transl_statement ren s1 in
       let '(ren,s2',b) := transl_statement ren s2 in
