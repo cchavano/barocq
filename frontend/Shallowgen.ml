@@ -392,13 +392,13 @@ let rec expr_to_rocq_rec (prefix : string) (e : expr) : string =
           if Archi.ptr64 then opt_parens a2
           else sprintf "(uint_to_uint64 %s)" (opt_parens a2)
         in
-        sprintf "Barray.get %s %s" (opt_parens a1) sa2
+        sprintf "%s.[%s]" (opt_parens a1) sa2
     | EArraySet (a1, a2, a3, _) ->
         let sa2 =
           if Archi.ptr64 then opt_parens a2
           else sprintf "(uint_to_uint64 %s)" (opt_parens a2)
         in
-        sprintf "Barray.set %s %s %s" (opt_parens a1) sa2 (opt_parens a3)
+        sprintf "%s.[%s <- %s]" (opt_parens a1) sa2 (opt_parens a3)
     | EApp (a1, args, _) ->
         let sargs =
           match args with

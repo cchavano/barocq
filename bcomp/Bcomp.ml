@@ -478,7 +478,7 @@ let () =
             eprintf "%s: Typing error\n>> %s\n" (Location.to_string loc) msg
         | None -> assert false
       end
-    | CompilerError msg -> eprintf "Compilation error: %s\n" msg
+    | CompilerError msg -> eprintf "Compilation error:\n%s\n" msg
     | UnexpectedError msg ->
         eprintf "Unexpected error: %s\nPlease, make a bug report.\n" msg
     | UnknownTargetArch ->

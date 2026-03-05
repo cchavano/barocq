@@ -188,3 +188,9 @@ Section Specs.
 
   
 End Specs.
+
+
+Notation "t .[ i ]" := (get t i)
+  (at level 2, left associativity, format "t .[ i ]").
+Notation "t .[ i <- a ]" := (set t i a)
+  (at level 2, left associativity, format "t .[ i <- a ]").
