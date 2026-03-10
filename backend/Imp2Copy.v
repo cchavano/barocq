@@ -29,6 +29,8 @@ Proof.
   generalize layout_eq_dec.
   decide equality.
   apply List.list_eq_dec.
+  apply Ident.eq_dec.
+  apply List.list_eq_dec.
   apply typ2_eq_dec.
 Defined.
 

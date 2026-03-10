@@ -26,7 +26,7 @@ Section TRANSL.
         | LyUnboxed (Some sz) => Tarray ta' sz noattr
         | _ => Tarray ta' 0%Z noattr (* ill-typed program *)
         end
-    | TRecord t =>
+    | TRecord t _ =>
         let tr := Tstruct (Ident.to_pos t) noattr in
         match ly with
         | LyBoxed => tptr tr
@@ -64,7 +64,7 @@ Section TRANSL.
     | TInt64 _ => Xlong
     | TEnum _ => Xint
     | TArray _ _
-    | TRecord _
+    | TRecord _ _
     | TFun _ _ 
     | TAbs _ => Xptr
     end.
@@ -72,7 +72,7 @@ Section TRANSL.
   Definition transl_typ2_lit (ty: typ2) (n: Z) : Ctypes.type :=
     match ty with
     | TArray ta ly => Tarray (transl_typ2_rec ly ta) n noattr
-    | TRecord t => Tstruct (Ident.to_pos t) noattr
+    | TRecord t  _ => Tstruct (Ident.to_pos t) noattr
     | _ => transl_typ2 ty
     end.
 
@@ -171,7 +171,7 @@ Section TRANSL.
           | LyUnboxed _, TArray _ _ =>
               let tfield := transl_typ2 ty in
               ret (Efield (Evalof (Ederef e tderef) tderef) (Ident.to_pos f) tfield)
-          | LyUnboxed _, TRecord _ => ret (Eaddrof efield (tptr tfield))
+          | LyUnboxed _, TRecord _ _ => ret (Eaddrof efield (tptr tfield))
           | _, _ => fail
           end
       | APureCall f tf args tr =>
@@ -191,16 +191,26 @@ Section TRANSL.
   Definition transl_ecomp (ec: Imp2.ecomp) : res Csyntax.statement :=
     match ec with
     | EcArraySet a1 a2 a3 =>
-        let* e1 := transl_atom a1 in
-        let* e2 := transl_atom a2 in
-        let* e3 := transl_atom a3 in
-        ret (Sdo (Eassign (Eindex e1 e2 (typeof e3)) e3 (typeof e3)))
+        match Imp2.typof_atom a1 with
+        | TArray ((TRecord _ _| TArray _ _)) (LyUnboxed _) => fail
+        | _ =>
+            let* e1 := transl_atom a1 in
+            let* e2 := transl_atom a2 in
+            let* e3 := transl_atom a3 in
+            ret (Sdo (Eassign (Eindex e1 e2 (typeof e3)) e3 (typeof e3)))
+        end
     | EcRecordUpdate a1 f a2 =>
-        let* e1 := transl_atom a1 in
-        let* e2 := transl_atom a2 in
-        let tderef := deref_pointer (typeof e1) in
-        let tfield := typeof e2 in
-        ret (Sdo (Eassign (Efield (Evalof (Ederef e1 tderef) tderef) (Ident.to_pos f) tfield) e2 (typeof e2)))
+        match Imp2.typof_atom a1 with
+        | TRecord rid ub =>
+            if list_mem Ident.eq_dec f ub then fail
+            else
+              let* e1 := transl_atom a1 in
+              let* e2 := transl_atom a2 in
+              let tderef := deref_pointer (typeof e1) in
+              let tfield := typeof e2 in
+              ret (Sdo (Eassign (Efield (Evalof (Ederef e1 tderef) tderef) (Ident.to_pos f) tfield) e2 (typeof e2)))
+        | _ => fail
+        end
     end.
 
   Fixpoint transl_statement (s: Imp2.statement) (tret: Ctypes.type): res Csyntax.statement :=
@@ -344,7 +354,7 @@ Section TRANSL.
             let t := transl_typ2_lit ty (literal_size l) in
             let (t, readonly) :=
               match ty, l with
-              | TRecord _, LVar _ _ => (tptr t, true)
+              | TRecord _ _, LVar _ _ => (tptr t, true)
               | (TBool | TInt32 _ | TInt64 _ | TEnum _), _ => (t, true)
               | _, _ => (t, false)
               end

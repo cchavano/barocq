@@ -13,7 +13,7 @@ Inductive typ2 : Type :=
   | TInt64 : signedness -> typ2
   | TArray : typ2 -> layout -> typ2
   | TEnum : ident -> typ2
-  | TRecord : ident -> typ2
+  | TRecord : ident -> list ident -> typ2
   | TFun : list typ2 -> typ2 -> typ2
   | TAbs : ident -> typ2.
 
@@ -36,7 +36,7 @@ Definition typof_literal (l: literal) : typ2 :=
   | LInt64 _ s => TInt64 s
   | LVar _ ty => ty
   | LArray _ ta ly => TArray ta ly
-  | LRecord _ _ rid => TRecord rid
+  | LRecord _ ub rid => TRecord rid ub
   end.
 
 (** ** Atoms *)

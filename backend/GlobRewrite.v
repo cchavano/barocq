@@ -10,7 +10,7 @@ Section REWRITE.
 
   Definition is_glob_typ (ty: typ2) :=
     match ty with
-    | TRecord rid =>
+    | TRecord rid _ =>
         if Ident.eq_dec rid ginfo_tid then true
         else false
     | _ => false
@@ -20,7 +20,7 @@ Section REWRITE.
     match t with
     | TFun tparams tret =>
         TFun (List.map rewrite_typ tparams) (rewrite_typ tret)
-    | TRecord rid =>
+    | TRecord rid _ =>
         if Ident.eq_dec rid ginfo_tid then TVoid
         else t
     | _ => t

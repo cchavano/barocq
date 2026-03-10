@@ -13,7 +13,7 @@ Fixpoint transl_btyp (ty: btyp) : typ2 :=
   | BInt64 s => TInt64 s
   | BEnum eid => TEnum eid
   | BArray ta ly => TArray (transl_btyp ta) ly
-  | BRecord rid _ => TRecord rid
+  | BRecord rid ub => TRecord rid ub
   | BFun tparams tret => TFun (List.map transl_btyp tparams) (transl_btyp tret)
   | BAbs t => TAbs t
   end.
@@ -130,7 +130,7 @@ Fixpoint transl_literal_rec (ly: bool) (l: Syntax.literal) (defs: smaplist Imp2.
       let* (rc', defs) := transl_record_lit transl_literal_rec rc ub defs in
       if ly then
         let* x := fresh_var in
-        ret (LVar x (TRecord rid), (x, LRecord rc' ub rid) :: defs)
+        ret (LVar x (TRecord rid ub), (x, LRecord rc' ub rid) :: defs)
       else
         ret (LRecord rc' ub rid, defs)
   end.

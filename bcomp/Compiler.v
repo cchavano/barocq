@@ -1,6 +1,6 @@
 From Coq Require Import String List.
 From BarocqComp Require Import Error Utils Ident Pp Barocq Imp1.
-From BarocqComp Require Import Renaming BarocqBNFgen ImpBNFgen Imp1gen Unboxing Imp2gen GlobRewrite Csyntaxgen.
+From BarocqComp Require Import Renaming BarocqBNFgen ImpBNFgen Imp1gen Imp2gen GlobRewrite Csyntaxgen.
 From BarocqComp Require Import Imp1ElimAlias InvAnalysis.
 From BarocqComp Require Import Imp2Copy.
 From BarocqComp Require Import BarocqBNFUndo. (* force dependency *)
@@ -89,7 +89,6 @@ Definition compile (opt : compiler_opt) (arch: Target.archi) (globinfo: option (
   then Error (msg (Pp.pp (InvAnalysis.pp_inv (snd age))))
   else
     let* imp1_typed := Imp1ElimAlias.transl_program te imp1_typed in
-    if Unboxing.check_program imp1_typed then
       let imp2 := Imp2gen.transl_program imp1_typed in
       let (log,progs) := insert_log opt Ir_Imp2 Imp2.Pp.pp_program Imp2 imp2 log progs in
       let imp2 := if has_opt Opt_Copy opt then Imp2Copy.transl_program imp2 else imp2 in
@@ -101,8 +100,7 @@ Definition compile (opt : compiler_opt) (arch: Target.archi) (globinfo: option (
         end
       in 
       let* clight := Csyntaxgen.transl_program imp2_grw in
-      eret (Csyntax clight::progs,log)
-    else fail.
+      eret (Csyntax clight::progs,log).
 
 Definition compile_to_imp1 (arch: Target.archi) (prog: Barocq.program) : res Imp1.program :=
   let prog := Renaming.rename_program prog in
