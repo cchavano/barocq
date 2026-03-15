@@ -213,34 +213,22 @@ Section TRANSL.
         end
     end.
 
-  Fixpoint transl_statement (s: Imp2.statement) (tret: Ctypes.type): res Csyntax.statement :=
+  Fixpoint transl_statement (s: Imp2.statement): res Csyntax.statement :=
     let fix transl_switch_cases (cases: list (pattern * Imp2.statement)) : res Csyntax.labeled_statements :=
       match cases with
       | nil => fail
       | (p, sp) :: nil =>
-          let* sp' := transl_statement sp tret in
+          let* sp' := transl_statement sp in
           match p with
           | PIdent i z =>
-              let* default_retval :=
-                match tret with
-                | Tvoid => ret None
-                | Tpointer _ _ =>
-                    let t := if Archi.ptr64 then tlong else tint in
-                    ret (Some (Eval Vnullptr t))
-                | Tint _ _ _ => ret (Some (Eval (Vint Int.zero) tret))
-                | Tlong _ _ => ret (Some (Eval (Vlong Int64.zero) tret))
-                | _ => fail
-                end
-              in
-              ret (LScons (Some z) (Ssequence sp' Sbreak)
-                    (LScons None (Sreturn default_retval) LSnil))
+              ret (LScons (Some z) (Ssequence sp' Sbreak) LSnil)
           | PWildcard =>
               ret (LScons None sp' LSnil)
           end
       | (p, sp) :: ((_ :: _) as cases') =>
           match p with
           | PIdent i z =>
-              let* sc' := transl_statement sp tret in
+              let* sc' := transl_statement sp in
               let* ccases := transl_switch_cases cases' in
               ret (LScons (Some z) (Ssequence sc' Sbreak) ccases)
           | PWildcard => fail (* Ill-typed program *)
@@ -266,8 +254,8 @@ Section TRANSL.
         end
     | StIfThenElse a s1 s2 =>
         let* e := transl_atom a in
-        let* s1' := transl_statement s1 tret in
-        let* s2' := transl_statement s2 tret in
+        let* s1' := transl_statement s1 in
+        let* s2' := transl_statement s2 in
         ret (Sifthenelse e s1' s2')
     | StSwitch a cases =>
         let* e := transl_atom a in
@@ -278,8 +266,8 @@ Section TRANSL.
         | _ => fail
         end
     | StSequence s1 s2 =>
-        let* s1' := transl_statement s1 tret in
-        let* s2' := transl_statement s2 tret in
+        let* s1' := transl_statement s1 in
+        let* s2' := transl_statement s2 in
         ret (Ssequence s1' s2')
     | StReturn a =>
         match a with
@@ -312,7 +300,7 @@ Section TRANSL.
     let ty := transl_typ2 (fn_return f) in
     let params := List.map (fun '(pid, pty) => (Ident.to_pos pid, transl_typ2 pty)) (fn_params f) in
     let vars := List.map (fun '(pid, pty) => (Ident.to_pos pid, transl_typ2 pty)) (all_locals (fn_body f)) in
-    let* body := transl_statement (fn_body f) ty in
+    let* body := transl_statement (fn_body f) in
     ret {|
       Csyntax.fn_return := ty;
       Csyntax.fn_callconv := cc_default;
