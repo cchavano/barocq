@@ -477,8 +477,6 @@ Proof.
   congruence.
 Qed.
 
-Eval compute in (record (("a"%string, (nat:Type)) ::("b"%string,(bool:Type)) :: nil)).
-
 Ltac findtyp X L :=
   match L with
   | unit => fail
@@ -495,10 +493,7 @@ Ltac type_of_field K R :=
     findtyp K ty
 .
 
-Notation "X <- K := V" := (upd (T:= (ltac:(type_of_field K X))) X K V eq_refl) (at level 100).
-
-
-
+Notation "X @ K <- V" := (upd (T:= (ltac:(type_of_field K X))) X K V eq_refl) (at level 100).
 
 
 (*Lemma type_of_field_fst : forall k A fields,

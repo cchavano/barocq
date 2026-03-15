@@ -358,7 +358,7 @@ let rec atom_to_rocq (a : atom) : string =
             (atom_to_rocq a2)
       | BarocqShallowgen.ShallowB ->
           sprintf
-            "%s <- %s := %s" (* Notation is using ltac in terms *)
+            "%s @ %s <- %s" (* Notation is using ltac in terms *)
             (opt_parens a1)
             (Deepgen.ident_to_deep x)
             (opt_parens a2)
