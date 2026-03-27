@@ -2,6 +2,4 @@ module Machine
 
 type state of "struct"
 
-decl read_time : (@read state) -> u64
-
 decl write_timecmp : (@write state, u64) -> state

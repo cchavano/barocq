@@ -22,9 +22,7 @@ record state {
   mc: Machine::state,
 }
 
-defn sync(ks: state) : state =
-  ks.mc <- Machine::write_timecmp(ks.mc, ks.deadline)
-
+@static @inline
 defn update_proc_status(ks: state, pid: u64, status: proc_status) : state =
   let procs = ks.procs in
   let proc = procs[pid] in
@@ -32,14 +30,14 @@ defn update_proc_status(ks: state, pid: u64, status: proc_status) : state =
   let procs = procs[pid] <- proc in
   ks.procs <- procs
 
-defn schedule(ks: state) : state =
-  if Machine::read_time(ks.mc) > ks.deadline then
+defn schedule(ks: state, now: u64) : state =
+  if now > ks.deadline then
     let curr_pid = ks.curr_pid in
     let next_pid = (curr_pid + 1ul) % nb_procs in
-    let next_deadline = ks.deadline + quantum in
+    let next_deadline = now + quantum in
     let ks = update_proc_status(ks, curr_pid, READY) in
     let ks = update_proc_status(ks, next_pid, RUNNING) in
     let ks = { ks with curr_pid <- next_pid, deadline <- next_deadline, } in
-    sync(ks)
+    ks.mc <- Machine::write_timecmp(ks.mc, ks.deadline)
   else
     ks

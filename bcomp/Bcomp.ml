@@ -53,7 +53,7 @@ let opt_debug_aliasing = ref false
 
 let opt_export_csyntax = ref false
 
-let opt_copy = ref false
+let flag_copy_prop = ref false
 
 let target_arch = ref (if Archi.ptr64 then Target.Ptr64 else Target.Ptr32)
 
@@ -113,7 +113,7 @@ let options =
     ( "-debug-aliasing",
       Arg.Set opt_debug_aliasing,
       "\t\t\tDisplay the alias analysis debugging information on stderr" );
-    ("-opt-copy", Arg.Set opt_copy, "\tPerform copy propagation");
+    ("-fcopy-prop", Arg.Set flag_copy_prop, "\tPerform copy propagation");
     ( "-types-impl",
       Arg.Set_string file_types_impl,
       "<file>\t\t\tUse <file> as the C implementation for abstract types" );
@@ -204,7 +204,7 @@ let gen_compile_opt () =
     if !opt_gen_corres then [Compiler.Ir_BBNF; Compiler.Ir_Csyntax]
     else [Compiler.Ir_Csyntax]
   in
-  let optim = if !opt_copy then [Compiler.Opt_Copy] else [] in
+  let optim = if !flag_copy_prop then [Compiler.Opt_Copy] else [] in
   let opt =
     {
       Compiler.dbg_analysis = !opt_debug_aliasing;

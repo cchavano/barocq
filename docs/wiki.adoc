@@ -571,12 +571,10 @@ module Machine
 
 type state of "struct"
 
-decl read_time : (@read state) -> u64
-
 decl write_timecmp : (@write state, u64) -> state
 ----
 
-This module defines the API to interact with the underlying machine. It declares an abstract type - the machine state - that will be implemented as a C struct. Then, it declares two abstract functions: `read_time` and `write_timecmp`, which respectively read time from the machine state and write the compare time in the machine state.
+This module defines the FFI to interact with the underlying machine. It first declares an abstract type - the machine state - that will be implemented as a C struct. Then it declares function `write_timecmp`, that writes the time compare register of the machine state.
 
 Now, let's look at `kernel.br`.
 
@@ -607,9 +605,6 @@ record state {
   mc: Machine::state,
 }
 
-defn sync(ks: state) : state =
-  ks.mc <- Machine::write_timecmp(ks.mc, ks.deadline)
-
 defn update_proc_status(ks: state, pid: u64, status: proc_status) : state =
   let procs = ks.procs in
   let proc = procs[pid] in
@@ -617,15 +612,15 @@ defn update_proc_status(ks: state, pid: u64, status: proc_status) : state =
   let procs = procs[pid] <- proc in
   ks.procs <- procs
 
-defn schedule(ks: state) : state =
-  if Machine::read_time(ks.mc) > ks.deadline then
+defn schedule(ks: state, now: u64) : state =
+  if now > ks.deadline then
     let curr_pid = ks.curr_pid in
     let next_pid = (curr_pid + 1ul) % nb_procs in
-    let next_deadline = ks.deadline + quantum in
+    let next_deadline = now + quantum in
     let ks = update_proc_status(ks, curr_pid, READY) in
     let ks = update_proc_status(ks, next_pid, RUNNING) in
     let ks = { ks with curr_pid <- next_pid, deadline <- next_deadline, } in
-    sync(ks)
+    ks.mc <- Machine::write_timecmp(ks.mc, ks.deadline)
   else
     ks
 ----
@@ -634,7 +629,7 @@ The kernel state is composed of the current process id, the array of processes, 
 
 Two constants describe the kernel configuration: the number of processes `nb_procs`, and the quantum value for a round-robin scheduling `quantum`.
 
-Finally, three core functions are defined. `sync` is used to synchronize the kernel data with the machine state. `update_proc_status` modifies the status of the given process. `schedule` chooses the next process to be scheduled. This function checks whether the current process has missed its deadline. If so, it selects the next process to run, updates the status of the current and next processes and synchronizes with the machine state.
+Finally, two core functions are defined. `update_proc_status` modifies the status of the given process. `schedule` chooses the next process to be scheduled. This function checks whether the current process has missed its deadline. If so, it selects the next process to run, updates the status of the current and next processes and increases the deadline.
 
 You may notice that to modify the status of a process, `update_proc_status` contains all the steps from getting the process, modyfing its status and updating the process table back. In fact, Barocq does *not* support _deep updates_ for the moment. If you try to write `ks.procs[next_id].status \<- v`, this instruction is interpreted as:
 
@@ -647,7 +642,7 @@ To compile those files with the Barocq compiler, we use the following command:
 
 [source,bash]
 ----
-barocq -o kernel.c -gen-header -types-impl machine.h machine.br kernel.br
+barocq -fcopy-prop -o kernel.c -gen-header -types-impl machine.h machine.br kernel.br
 ----
 
 This command will generate a C file `kernel.c` and the associated header file `kernel.h`. All definitions are grouped together in `kernel.c` and prefixed with the name of the module from which they originate. For exemple, the function `schedule` becomes `Kernel_schedule`. The option `-types-impl` allows the user to specify the location of the file containing the implemention of all abstract types. This option appends the necessary `#include` directive at the beginning of `kernel.h` and `kernel.c`. You can find the source files and the compilation artefacts of this example under the `example` directory.
@@ -656,16 +651,15 @@ This command will generate a C file `kernel.c` and the associated header file `k
 
 The Barocq compiler can generate a shallow and a deep embedding of a Barocq program, as well as the correspondence proofs between them.
 
-The following command generates a file `kernel_ShallowR.v` that contains the shallow embedding of the entire Barocq program:
+The following command generates all of the Rocq files (embeddings + correspondence proofs) in the `rocq` folder.
 
 [source,bash]
 ----
-barocq -orocq kernel -gen-shallow machine.br kernel.br
+barocq -odir rocq -orocq kernel -gen-corres machine.br kernel.br
 ----
 
-This file can be found in the `example` directory. To compile it, you need to install the Barocq Rocq development files with `make install-dev`.
-
-The correcntess of the translation to a Rocq shallow embedding is verified via an a-posteriori validation. This validation requires proving some correspondence theorems between the shallow embedding and the semantics given to the deep embedding. To generate all the files needed for the correspondence proofs, use the `-gen-corres-all` option. Compiling the correspondence proofs with Rocq can take a lot of time (several minutes) depending on the program size.
+The correcntess of the translation to a Rocq shallow embedding is verified via an a-posteriori validation. This validation requires proving some correspondence theorems between the shallow embedding and the semantics given to the deep embedding. We divide the proofs by generating two shallow embeddings: a high-level one (`kernel_ShallowR.v`) that uses the native Rocq enums and records, and a low-level one (`kernel_ShallowB.v`) that uses the Barocq encoding of enums and records. The high-level embedding is well-suited for formal verification.
+The correspondence proofs are generated for ShallowR / ShallowB (`kernel_CorresRB.v`), ShallowB / Deep (`kernel_CorresBD.v`), and by transitivity, ShallowR / Deep (`kernel_CorresRD.v`).
 
 == Coding good practices
 

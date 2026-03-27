@@ -29,9 +29,10 @@ extern unsigned long long const Kernel_nb_procs;
 
 extern unsigned long long const Kernel_quantum;
 
-extern unsigned long long Machine_read_time(struct Machine_state *);
-extern struct Machine_state *Machine_write_timecmp(struct Machine_state *, unsigned long long);
-struct Kernel_state *Kernel_sync(struct Kernel_state *);
-struct Kernel_state *Kernel_update_proc_status(struct Kernel_state *, unsigned long long, enum Kernel_proc_status);
-struct Kernel_state *Kernel_schedule(struct Kernel_state *);
+extern unsigned long long const Kernel_nb_procs;
+
+extern unsigned long long const Kernel_quantum;
+
+struct Kernel_state *Kernel_schedule(struct Kernel_state *, unsigned long long);
+
 
