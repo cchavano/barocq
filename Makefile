@@ -1,7 +1,7 @@
 -include Makefile.config
 
 COMMON=\
-	Unsigned63.v ZifyUint63.v Monads.v Error.v Utils.v Barray.v Brecord.v Benum.v Maps2.v Res.v OptionMonad.v \
+	Unsigned63.v ZifyUint63.v StateMonads.v Res.v Utils.v Barray.v Brecord.v Benum.v Maps2.v Option.v \
 	ZlistPlus.v Types.v Syntax.v Typing.v Intop.v Ident.v Target.v MergeSort.v DList.v \
 	Graph.v ExtOrdered.v Pp.v Printer.v \
 	Denot.v

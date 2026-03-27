@@ -1,9 +1,10 @@
 From Coq Require Import List String BinaryString.
 From compcert Require Import Maps Ctypesdefs.
-From BarocqComp Require Import Ident Error.
+From BarocqComp Require Import Ident Res.
 From BarocqComp Require Import Pp.
-
 Import ListNotations.
+
+Local Open Scope error_monad_scope.
 
 (** * A collection of different kind of maps. *)
 
@@ -220,9 +221,9 @@ Module MapList.
 
   Fixpoint find_err (k: key) (l: t V) : res V :=
     match l with
-    | nil => fail
+    | nil => efail
     | (x, v) :: l' =>
-        if key_eq x k then ret v
+        if key_eq x k then eret v
         else find_err k l'
     end.
 
@@ -230,7 +231,7 @@ Module MapList.
     List.map (fun kv => (fst kv, f (snd kv))) l.
 
   Definition map_err (A: Type) (f: V -> res A) (l: t V) : res (t A) :=
-    mmap (fun '(x, v) => let* a := f v in ret (x, a)) l.
+    mmap (fun '(x, v) => do a <- f v; eret (x, a)) l.
 
   Fixpoint mem (k: key) (l: t V) : bool :=
     match l with

@@ -1,9 +1,11 @@
 (** Invalid Path for imp1 *)
 Require Import Uint63.
 Require Import String FMapInterface FMapList ZArith Int ListSet.
-From BarocqComp Require Import Error Maps2 Types Syntax Imp1 Graph Typing Utils Pp Printer.
+From BarocqComp Require Import Res Maps2 Types Syntax Imp1 Graph Typing Utils Pp Printer.
 From BarocqComp Require Import Imp1ElimAlias.
 From Coq Require Import FMapPositive.
+
+Local Open Scope error_monad_scope.
 
 (** The analysis requires an alias analysis.
     We have the [Imp1ElimAlias] and this is hardcoded.
@@ -158,7 +160,7 @@ Definition show_path_above_alias (te:tenv) (ge:aenv) (d:domain) (env:InvMap.t) (
   let pd := pp_domain d in
   let pe := InvMap.pp env in
   let a  := pp_atom a1 in
-  let* res := path_above_alias te ge d a1 in
+  do res <- path_above_alias te ge d a1;
   let args := Pp.seq (Bstr "path_above_alias:" :: Bstr "alias domain" :: Bframe "-" "|" pd :: Bstr "invalid" :: Bframe "-" "|" pe :: Bstr "atom " :: a :: nil) in
   Error (msg (Pp.pp (Bstack args
                             (Bstack (Bstr "===>")
@@ -167,11 +169,11 @@ Definition show_path_above_alias (te:tenv) (ge:aenv) (d:domain) (env:InvMap.t) (
 Definition set_field (te:tenv) (ge: aenv) (d:domain) (env:InvMap.t) (a1:atom) (i:EdgeLabel.t) (v:atom) :=
   let pa1  := eval_atom env a1 in
   let pv    := eval_atom env v in
-  let* may  := path_above_alias te ge d a1 in
+  do may  <- path_above_alias te ge d a1;
   let env' := inv_may_alias env may  i in
-  let* _   := check "set_field" env env' in
-(*  let* _   := show_path_above_alias ge d env a1 env' in*)
-  let* (_,_,b) := write te ge d a1 (i::nil) v in
+  do _   <- check "set_field" env env';
+(*  do _   <- show_path_above_alias ge d env a1 env';*)
+  do (_,_,b) <- write te ge d a1 (i::nil) v;
   if b  (* no-op - nothinh happens *)
   then OK (set_path pa1 i pv , env)  (* could mandate pv to have no invalid path? *)
   else
@@ -217,9 +219,9 @@ Definition inv_below_alias (env:InvMap.t) (l : (list EdgeLabel.t) * string) (p:G
 Definition invalid_argument (te:tenv) (age: aenv) (d:domain) (a:atom) (inv: option G.PathTree.t) (env:InvMap.t) :=
   match inv with
   | None => OK env (* The argument is still completly valid *)
-  | Some p => let* maya := path_above_alias te age d a in
+  | Some p => do maya <- path_above_alias te age d a;
               let env'  := inv_suffix_alias env maya p in
-              let* mayb := path_below_alias te age d a in
+              do mayb <- path_below_alias te age d a;
               OK (List.fold_right (fun e acc => inv_below_alias acc e p) env' mayb)
   end.
 
@@ -231,7 +233,7 @@ Fixpoint invalid_arguments (te:tenv) (age: aenv) (d:domain) (inv: InvMap.t) (arg
            end
   | a1::args' => match l with
                  | nil => Error (msg "Wrong number of arguments")
-                 | (_,p1)::lp => let* inv1 := invalid_argument te age d a1 p1 inv in
+                 | (_,p1)::lp => do inv1 <- invalid_argument te age d a1 p1 inv;
                                  invalid_arguments te age d inv1 args' lp
                  end
   end.
@@ -246,7 +248,7 @@ Definition call (te:tenv) (age: aenv) (d:domain) (ge:genv) (id:ident) (args:list
           let fargs := Afunction.fn_aparams af in
           let (_,p) := Afunction.fn_areturn af in
           (** Invalidate the aliases of the arguments *)
-          let* env' := invalid_arguments te age d env args fargs in
+          do env' <- invalid_arguments te age d env args fargs;
           OK (p,env')
           end
   end.
@@ -266,18 +268,18 @@ Definition join (v1 v2 : option G.PathTree.t * InvMap.t) : res (option G.PathTre
 Fixpoint inv_statement (te:tenv) (age:aenv) (d:domain) (ge:genv) (env:InvMap.t) (s:statement) :=
   match s with
   | StSkip     => OK (None, env)
-  | StSet id c => let* (p,env') := inv_comp te age d ge env c in
+  | StSet id c => do (p,env') <- inv_comp te age d ge env c;
                   OK (None, InvMap.set id p env')
   | StIfThenElse _ s1 s2 =>
-      let* e1 := inv_statement te age d ge env s1 in
-      let* e2 := inv_statement te age d ge env s2 in
+      do e1 <- inv_statement te age d ge env s1;
+      do e2 <- inv_statement te age d ge env s2;
       join e1 e2
   | StSwitch a l =>
       let ld := List.map (fun x => inv_statement te age d ge env (snd x)) l in
       merge_list join ld
   | StSequence s1 s2 =>
-      let* e1 := inv_statement te age d ge env s1 in
-      let* d' := eval_statement te age s1 d in
+      do e1 <- inv_statement te age d ge env s1;
+      do d' <- eval_statement te age s1 d;
       match d' with
       | inl d' => inv_statement te age d' ge (snd e1) s2
       | inr _  => Error (msg "statement is wrongly typed")
@@ -306,8 +308,8 @@ Definition error_of_path (p : G.PathTree.t) :=
 
 
 Definition inv_def_function (te:tenv)  (age:aenv) (ge:genv) (f:function) : res Afunction.t :=
-  let* d := domain_of_function te f in
-  let*(r,inv)  := inv_statement te age d ge InvMap.empty (fn_body f) in
+  do d <- domain_of_function te f;
+  do (r,inv) <- inv_statement te age d ge InvMap.empty (fn_body f);
   match r with
   | None => OK (Afunction.mk (fn_return f,r) (get_inv_arguments inv (fn_params f)))
   | Some p => Error (msg (Pp.pp (error_of_path p)))
@@ -319,11 +321,8 @@ Definition inv_of_attr (a:param_attr) :=
   | AttrWrite | AttrNone => Some (Node nil)
   end.
 
-
-
 Definition inv_decl_function (l:list (param_attr * btyp)) (r:btyp) :=
   Afunction.mk (r,None) (List.map (fun '(p,t) => (t,inv_of_attr p)) l).
-
 
 Definition inv_globdef (te:tenv) (age:aenv) (ge:genv) (gd:globdef) : res genv :=
   match gd with
@@ -339,16 +338,16 @@ Definition inv_globdef (te:tenv) (age:aenv) (ge:genv) (gd:globdef) : res genv :=
 Fixpoint inv_globdefs (te:tenv) (age:aenv) (ge:genv) (gdefs:list globdef) : res genv :=
   match gdefs with
   | nil =>  OK ge
-  | gd :: gdefs' => let* ge' := inv_globdef te age ge gd in
+  | gd :: gdefs' => do ge' <- inv_globdef te age ge gd;
                     inv_globdefs te age ge' gdefs'
   end.
 
 Definition check_program (p:program) : res (tenv *(aenv * genv)) :=
   (* Build the typing environment *)
-  let* te := err_of_opt (tenv_of_type_defs (prog_types p)) in
+  do te <- Res.of_opt (tenv_of_type_defs (prog_types p));
   (* Perform alias analysis over all the functions *)
-  let* age := eval_globdefs te STree.empty (prog_defs p) in
+  do age <- eval_globdefs te STree.empty (prog_defs p);
   (* Analyse the invalid path - could be done on the fly*)
-  let* inv := inv_globdefs te age STree.empty (prog_defs p) in
+  do inv <- inv_globdefs te age STree.empty (prog_defs p);
   OK (te,(age,inv)).
   

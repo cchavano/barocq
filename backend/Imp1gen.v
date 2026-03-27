@@ -1,93 +1,93 @@
 From Coq Require Import List String Lia Eqdep RelationClasses.
-From BarocqComp Require Import Error Utils Brecord Types Syntax ImpBNF Imp1 Maps2 Denot Imp1Pure.
+From BarocqComp Require Import Res Utils Brecord Types Syntax ImpBNF Imp1 Maps2 Denot Imp1Pure.
 Import ListNotations.
 
+Local Open Scope error_monad_scope.
 Close Scope Z_scope.
 Open Scope string_scope.
 
 Fixpoint norm_statement (fuel: nat) (s: ImpBNF.statement) : res Imp1.statement :=
   match fuel with
-  | O => fail
+  | O => efail
   | S fuel' =>
       let '(ImpBNF.StSetTailcomp x t) := s in
       match t with
       | ImpBNF.TcBegin s tc _ =>
-          let* s' := norm_statement fuel' s in
-          let* sc := norm_statement fuel' (ImpBNF.StSetTailcomp x tc) in
-          ret (StSequence s' sc)
+          do s' <- norm_statement fuel' s;
+          do sc <- norm_statement fuel' (ImpBNF.StSetTailcomp x tc);
+          eret (StSequence s' sc)
       | ImpBNF.TcIfThenElse a t1 t2 _ =>
-          let* s1 := norm_statement fuel' (ImpBNF.StSetTailcomp x t1) in
-          let* s2 := norm_statement fuel' (ImpBNF.StSetTailcomp x t2) in
-          ret (StIfThenElse a s1 s2)
+          do s1 <- norm_statement fuel' (ImpBNF.StSetTailcomp x t1);
+          do s2 <- norm_statement fuel' (ImpBNF.StSetTailcomp x t2);
+          eret (StIfThenElse a s1 s2)
       | ImpBNF.TcSwitch a cases _ =>
-          let* cases' :=
+          do cases' <-
             Utils.list_fold_right_err
               (fun '(ci, ti) acc =>
-                 let* si := norm_statement fuel' (ImpBNF.StSetTailcomp x ti) in
-                 ret ((ci, si) :: acc))
+                 do si <- norm_statement fuel' (ImpBNF.StSetTailcomp x ti);
+                 eret ((ci, si) :: acc))
               nil
-              cases
-          in
-          ret (StSwitch a cases')
-      | ImpBNF.TcComp c => ret (StSet x c)
+              cases;
+          eret (StSwitch a cases')
+      | ImpBNF.TcComp c => eret (StSet x c)
       | ImpBNF.TcAttr a c =>
-          let* s1 := norm_statement fuel' (StSetTailcomp x c) in
-          ret (StAttr a s1)
+          do s1 <- norm_statement fuel' (StSetTailcomp x c);
+          eret (StAttr a s1)
       end
   end.
 
 Fixpoint norm_tailcomp (t: ImpBNF.tailcomp) : res Imp1.statement :=
   match t with
   | ImpBNF.TcBegin s t1 _ =>
-      let* s' := norm_statement (statement_depth s + 1) s in
-      let* t1' := norm_tailcomp t1 in
-      ret (StSequence s' t1')
+      do s' <- norm_statement (statement_depth s + 1) s;
+      do t1' <- norm_tailcomp t1;
+      eret (StSequence s' t1')
   | ImpBNF.TcIfThenElse a t1 t2 _ =>
-      let* t1' := norm_tailcomp t1 in
-      let* t2' := norm_tailcomp t2 in
-      ret (StIfThenElse a t1' t2')
+      do t1' <- norm_tailcomp t1;
+      do t2' <- norm_tailcomp t2;
+      eret (StIfThenElse a t1' t2')
   | ImpBNF.TcSwitch a cases _ =>
-      let* cases' := MapList.map_err norm_tailcomp cases in
-      ret (StSwitch a cases')
+      do cases' <- MapList.map_err norm_tailcomp cases;
+      eret (StSwitch a cases')
   | ImpBNF.TcComp c =>
       match c with
-      | CpAtom a => ret (StReturn a)
-      | _ => ret (StSequence (StSet "res" c) (StReturn (AVar "res" (btypof_comp c))))
+      | CpAtom a => eret (StReturn a)
+      | _ => eret (StSequence (StSet "res" c) (StReturn (AVar "res" (btypof_comp c))))
       end
   | ImpBNF.TcAttr a c =>
-      let* t1 := norm_tailcomp c in
-      ret (StAttr a t1)
+      do t1 <- norm_tailcomp c;
+      eret (StAttr a t1)
   end.
 
 Definition norm_function (te: Typing.tenv) (f: ImpBNF.function) : res Imp1.function :=
   if wf_tailcomp te (fn_body f) then
-    let* body := norm_tailcomp (fn_body f) in
-    ret {|
+    do body <- norm_tailcomp (fn_body f);
+    eret {|
       fn_return := fn_return f;
       fn_params := fn_params f;
       fn_body := body
     |}
-  else fail.
+  else efail.
 
 Definition norm_globdef (te: Typing.tenv) (def: ImpBNF.globdef) : res Imp1.globdef :=
   match def with
-  | DefConst x l ty => ret (DefConst x l ty)
+  | DefConst x l ty => eret (DefConst x l ty)
   | DefFun x f =>
-      let* f' := norm_function te f in
-      ret (DefFun x f')
-  | DeclConst x ty => ret (DeclConst x ty)
-  | DeclFun f tparams tret => ret (DeclFun f tparams tret)
+      do f' <- norm_function te f;
+      eret (DefFun x f')
+  | DeclConst x ty => eret (DeclConst x ty)
+  | DeclFun f tparams tret => eret (DeclFun f tparams tret)
   end.
 
 Definition norm_program (prog: ImpBNF.program) : res Imp1.program :=
-  let* te := err_of_opt (Typing.tenv_of_type_defs (prog_types prog)) in
-  let* defs := mmap (norm_globdef te) (prog_defs prog) in
+  do te <- Res.of_opt (Typing.tenv_of_type_defs (prog_types prog));
+  do defs <- mmap (norm_globdef te) (prog_defs prog);
   let prog' := {|
     prog_defs := defs;
     prog_types := prog_types prog;
     prog_tabs := prog_tabs prog
   |} in
-  ret prog'.
+  eret prog'.
 
 Section CORRECTNESS.
 
@@ -110,7 +110,6 @@ Section CORRECTNESS.
         rewrite IHfuel with (s1 := x0); auto.
       + monadInv H. inv EQ0. simpl.
         specialize (IHfuel _ FUEL_GT).
-        unfold "let* _ := _ in _" in *.
         remember (
           fun '(ci, ti) (acc: list (Benum.pattern * statement)) =>
             do si <- norm_statement fuel (StSetTailcomp i ti);
@@ -133,7 +132,7 @@ Section CORRECTNESS.
   Variable arch : Target.archi.
   Variable tabs : Maps.PMap.t Type.
 
-  Import OptionMonad.
+  Import Option.
 
   Lemma norm_statement_set_fw:
     forall te ge fuel
@@ -653,10 +652,10 @@ Section CORRECTNESS.
   Lemma norm_program_correct_aux:
     forall te impl defs defs' a0,
       Res.mmap (norm_globdef te) defs = OK defs' ->
-      OptionMonad.fold_left_err
+      Option.fold_left_err
         (fun acc d =>
           eval_globdef tabs  (eval_statement arch tabs) te impl acc d) defs' a0 =
-      OptionMonad.fold_left_err
+      Option.fold_left_err
         (fun acc d =>
           eval_globdef tabs  (eval_tailcomp arch tabs) te impl acc d) defs a0.
   Proof.

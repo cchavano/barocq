@@ -1,4 +1,6 @@
-From BarocqComp Require Import OptionMonad Benum Maps2 Syntax Types Typing Imp1 Denot.
+From BarocqComp Require Import Option Benum Maps2 Syntax Types Typing Imp1 Denot.
+
+Local Open Scope option_monad_scope.
 
 (* Denotational pure semantics of Imp1 *)
 

@@ -1,11 +1,11 @@
 From Coq Require Import Bool List BinIntDef.
 From compcert Require Import Integers.
 From RecordUpdate Require Import RecordUpdate.
-From BarocqComp Require Import Error Barray Intop Utils.
+From BarocqComp Require Import Res Barray Intop Utils.
 Import BoolNotations ListNotations.
 
 Open Scope Z_scope.
-Open Scope error_monad_scope.
+Local Open Scope error_monad_scope.
 
 (** * Type definitions *)
 

@@ -14,29 +14,20 @@
 (*                                                                     *)
 (* *********************************************************************)
 
-(** Error reporting and the error monad. *)
+(** Option monad. *)
 
 From Coq Require Import String RelationClasses.
 From compcert Require Import Coqlib.
-(*From BarocqComp Require Import Plist.
-Import PListNotations. *)
 Import ListNotations.
-(*Set Universe Polymorphism.*)
 Close Scope string_scope.
 
 Set Implicit Arguments.
 
-(** * The error monad *)
+(** * The option monad *)
 
-(** Compilation functions that can fail have return type [res A].
-  The return value is either [OK res] to indicate success,
-  or [Error msg] to indicate failure. *)
+Definition ret {A: Type} (v: A) : option A := Some v.
 
-(** To automate the propagation of errors, we use a monadic style
-  with the following [bind] operation. *)
-
-Definition ret {A:Type} (v:A) := Some v.
-Definition fail {A:Type} := None (A:=A).
+Definition fail {A: Type} : option A := None.
 
 Definition isSome {A: Type} (v: option A) := exists x, v = Some x.
 
@@ -61,10 +52,10 @@ Definition bind2 (A B C: Type) (f: option (A * B)) (g: A -> B -> option C) : opt
   | None => None
   end.
 
-
-(** The [do] notation, inspired by Haskell's, keeps the code readable. *)
+(** The [let*] notation keeps the code readable. *)
 
 Declare Scope option_monad_scope.
+Delimit Scope option_monad_scope with option_monad.
 
 Notation "'let*' X := A 'in' B" := (bind A (fun X => B))
     (at level 200, X name, A at level 100, B at level 200)
@@ -81,8 +72,6 @@ Notation "'let*' ( X , Y , Z ) := A 'in' B" := (bind2 A (fun '(X, Y) Z => B))
 Notation "'let*' ( X , Y , Z , W ) := A 'in' B" := (bind2 A (fun '(X, Y, Z) W => B))
     (at level 200, X name, Y name, Z name, W name, A at level 100, B at level 200)
     : option_monad_scope.
-
-
 
 Remark bind_inversion:
   forall (A B: Type) (f: option A) (g: A -> option B) (y: B),
@@ -145,8 +134,6 @@ Qed.
 
 (** This is the familiar monadic map iterator. *)
 
-Local Open Scope option_monad_scope.
-
 Section mmap.
   Context (A B: Type).
   Variable (f: A -> option B).
@@ -171,7 +158,6 @@ Section mmap.
   Qed.
 End mmap.
 
-
 Section FOLD.
   Context {A B: Type}.
   Variable f : A -> B -> option A.
@@ -183,7 +169,6 @@ Section FOLD.
   end.
 
 End FOLD.
-
 
 Section ASSOC.
 
@@ -240,13 +225,11 @@ Qed.
     decide equality.
   Qed.
 
-
-
 (** * Reasoning over monadic computations *)
 
 (** The [monadInv H] tactic below simplifies hypotheses of the form
 <<
-        H: (do x <- a; b) = Some res
+        H: (let* x := a in b) = Some res
 >>
     By definition of the bind operation, both computations [a] and
     [b] must succeed for their composition to succeed.  The tactic

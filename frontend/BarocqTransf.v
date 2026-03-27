@@ -1,5 +1,5 @@
 From Coq Require Import List String.
-From BarocqComp Require Import Error Utils Types  Maps2 Syntax Barocq.
+From BarocqComp Require Import Res Utils Types  Maps2 Syntax Barocq.
 
 (** * Barocq to Barocq transformations *)
 
@@ -31,7 +31,7 @@ Fixpoint create_deep_access_expr (e: BarocqTyped.expr) : Barocq.expr :=
     | BarocqTyped.EInt64 i s => (Barocq.EInt64 i s, acs)
     | BarocqTyped.EConstr x _ => (Barocq.EConstr x, acs)
     | BarocqTyped.EVar x _ => (Barocq.EVar x, acs)
-    | BarocqTyped.EArrayGet e1 e2 ty =>
+    | BarocqTyped.EArrayGet e1 e2 tyE=>
         let e2' := create_deep_access_expr e2 in
         if orb (btyp_is_prim ty) (negb (list_is_empty acs)) then
           create_deep_access_rec e1 (AcArrayIndex e2' :: acs)

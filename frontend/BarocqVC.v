@@ -3,13 +3,14 @@
 Set Universe Polymorphism.
 From Coq Require Import String List.
 From compcert Require Import Integers Maps.
-From BarocqComp Require Import Target Denot ExtEqual Ident Monads OptionMonad Barray Brecord Types Barocq Maps2 MergeSort Utils.
+From BarocqComp Require Import Target Denot ExtEqual Ident StateMonads Option Barray Brecord Types Barocq Maps2 MergeSort Utils.
 From compcert Require Import Coqlib.
 From Coq Require Import ZifyBool.
 
 Open Scope string_scope.
 Import Typed.
 
+Local Open Scope option_monad_scope.
 
 Definition ident_of_globdef (g : globdef) :=
   match g with
@@ -1648,7 +1649,7 @@ Section S.
     simpl in GEN.
     destruct (find_err string_dec x checked) eqn:FIND.
     simpl in GEN. inv GEN.
-    unfold bind. unfold Errors.bind.
+    unfold bind. unfold Res.bind.
     apply has_property_find_err with (ge:=ge)  in FIND; auto.
     destruct FIND as (v' & GET & HAS).
     simpl in GET.
@@ -1659,7 +1660,7 @@ Section S.
       destruct (typ_eq_dec t1 t0); try congruence.
       tauto.
     }
-    unfold bind,Res.bind.
+    unfold bind, Res.bind.
     rewrite H.
     destruct (typ_eq_dec (TFun l t) (TFun l t)); try congruence.
     eexists.

@@ -1,6 +1,6 @@
 From Coq Require Import BinIntDef.
 From compcert Require Import Integers.
-From BarocqComp Require Import OptionMonad.
+From BarocqComp Require Import Option.
 
 Local Open Scope bool_scope.
 

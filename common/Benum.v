@@ -2,8 +2,8 @@ From Coq Require Import List Bool BinNums.
 From compcert Require Import Coqlib Integers.
 From VST Require Import Zlist.
 From BarocqComp Require Import Ident Intop Utils ZlistPlus.
-From BarocqComp Require Import OptionMonad.
-Open Scope option_monad_scope.
+From BarocqComp Require Import Option.
+Local Open Scope option_monad_scope.
 
 Import ListNotations.
 

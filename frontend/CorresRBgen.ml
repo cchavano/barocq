@@ -373,17 +373,17 @@ module HelperTactics = struct
     in
     create_aux rprog.prog_defs bprog.prog_defs
 
-  let ltac_fun_only_rewrite (fid : ident) (tparams : (ident * mtyp) list) (tret : mtyp) : string * string =
+  let ltac_fun_only_rewrite (fid : ident) (tparams : (ident * mtyp) list)
+      (tret : mtyp) : string * string =
     let fid = ident_to_string fid in
-    let tac = sprintf "rewrite corresRB_%s" fid in 
-    (sprintf
-      "%s_ShallowB.%s %s"
-      !coqlib
-      fid
-      (list_to_string ~sep:" " (fun _ -> "_") tparams), 
-      tac)
+    let tac = sprintf "rewrite corresRB_%s" fid in
+    ( sprintf
+        "%s_ShallowB.%s %s"
+        !coqlib
+        fid
+        (list_to_string ~sep:" " (fun _ -> "_") tparams),
+      tac )
 
-  
   let ltac_fun_rewrite (fid : ident) (tparams : (ident * mtyp) list)
       (tret : mtyp) : string =
     let fid = ident_to_string fid in
@@ -435,14 +435,13 @@ module HelperTactics = struct
     | DeclFun (fid, tparams, tret) ->
         ltac_fun_rewrite fid (params_of_absfun tparams) tret
 
-  let ltac_def_only_rewrite (def: globdef) : string * string = 
+  let ltac_def_only_rewrite (def : globdef) : string * string =
     match def with
     | DefConst (cid, _, _) | DeclConst (cid, _) -> assert false
     | DefFun (fid, f) -> ltac_fun_only_rewrite fid f.fn_params f.fn_return
     | DeclFun (fid, tparams, tret) ->
         ltac_fun_only_rewrite fid (params_of_absfun tparams) tret
 
-  
   let print_pattern_match_corres_tac (out : out_channel)
       (enums : ident list Maps2.smaplist) : unit =
     let gen_enum_simpl ((ed_name, ed_elems) : ident * ident list) : string =
@@ -485,10 +484,11 @@ module HelperTactics = struct
         indent;
       print_list out ~delim:("", "\n") ~sep:"\n" gen_enum_simpl enums;
       fprintf out "%send.\n" indent
-        end
+    end
 
   let print_helper_rewrite_tac (out : out_channel) (prog : program) : unit =
-    let funs =       List.filter
+    let funs =
+      List.filter
         (fun (d : BarocqShallow.Monadic.globdef) ->
           match d with
           | DefFun _ | DeclFun _ -> true
@@ -497,12 +497,13 @@ module HelperTactics = struct
     in
     fprintf out "Ltac corres_rewrite P :=\n";
     fprintf out "%smatch P with\n" indent;
-    List.iter (fun d ->
-        let (p,tac) = ltac_def_only_rewrite d in 
-        fprintf out "%s| %s => %s\n" indent p tac) funs;
-    fprintf out "%send.\n" indent 
+    List.iter
+      (fun d ->
+        let p, tac = ltac_def_only_rewrite d in
+        fprintf out "%s| %s => %s\n" indent p tac)
+      funs;
+    fprintf out "%send.\n" indent
 
-  
   let print_helper_match_tac (out : out_channel) (prog : program) : unit =
     let funs =
       List.filter
@@ -614,10 +615,11 @@ module HelperTactics = struct
 
   let print_match_concl_goal indent out l =
     fprintf out "%smatch goal with\n" indent;
-    List.iter (fun (p,tac) -> fprintf out "%s| [ |- %s ] => %s\n" indent p tac) l;
+    List.iter
+      (fun (p, tac) -> fprintf out "%s| [ |- %s ] => %s\n" indent p tac)
+      l;
     fprintf out "%send.\n" indent
-      
-  
+
   let print_helper_rec_tac (out : out_channel) (prog : program) : unit =
     let rules =
       [
@@ -630,17 +632,16 @@ module HelperTactics = struct
         ("bind ?X _ = bind ?Y _", "apply bind_equal; intro; intros _");
         (" _ = let* x := if ?C then _ else _ in _", "rewrite bind_if");
         ("(let* x := if ?C then _ else _ in _) = _", "rewrite bind_if");
-        ("(if ?C then _  else _) = (if ?D then _ else _)",  "apply elim_if");
+        ("(if ?C then _  else _) = (if ?D then _ else _)", "apply elim_if");
         ("bind ?X _ = _   ", "corres_rewrite X");
-        (" _ ",  "progress rewrite_prelude");
+        (" _ ", "progress rewrite_prelude");
         ("_ = match ?E with _ => _ end", "destruct E; try reflexivity");
-        ("ret _ = Some _",  "finish");
-        ("?G = _ ",  "reflexivity || (corres_rb_match G)")] in 
-    fprintf
-      out
-      "Ltac corres_rb_rec :=\n";
-    fprintf out "%srepeat\n%a" indent 
-      (print_match_concl_goal indent2) rules
+        ("ret _ = Some _", "finish");
+        ("?G = _ ", "reflexivity || (corres_rb_match G)");
+      ]
+    in
+    fprintf out "Ltac corres_rb_rec :=\n";
+    fprintf out "%srepeat\n%a" indent (print_match_concl_goal indent2) rules
 
   let print_helper_tac (out : out_channel) : unit =
     fprintf
@@ -657,9 +658,9 @@ module HelperTactics = struct
     sprintf
       "From Coq Require Import String.\n\
        From compcert Require Import Integers.\n\
-       From BarocqComp Require Import Utils OptionMonad.\n\
+       From BarocqComp Require Import Utils Option.\n\
        From %s Require Import %s_Types %s_ShallowR %s_ShallowB.\n\
-       Open Scope option_monad_scope.\n"
+       Local Open Scope option_monad_scope.\n"
       !coqlib
       !coqlib
       !coqlib
@@ -694,9 +695,10 @@ let imports () : string =
   sprintf
     "From Coq Require Import String.\n\
      From compcert Require Import Integers.\n\
-     From BarocqComp Require Import OptionMonad.\n\
+     From BarocqComp Require Import Option.\n\
      From %s Require Import %s_Types %s_ShallowR %s_ShallowB \
      %s_CorresRB_Tactics.\n\n\
+     Open Scope option_monad_scope.\n\
      Open Scope string_scope.\n"
     !coqlib
     !coqlib

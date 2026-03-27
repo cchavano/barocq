@@ -6,12 +6,13 @@ This is adapted from the [BarocqVC] version.
 
 From Coq Require Import String List.
 From compcert Require Import Integers Maps.
-From BarocqComp Require Import Denot Syntax Target Ident OptionMonad Barray Brecord Types BarocqBNF Maps2 MergeSort Utils.
+From BarocqComp Require Import Denot Syntax Target Ident Option Barray Brecord Types BarocqBNF Maps2 MergeSort Utils.
 From BarocqComp Require Import ExtEqual.
 From compcert Require Import Coqlib.
 From Coq Require Import ZifyBool.
 
 Open Scope string_scope.
+Local Open Scope option_monad_scope.
 
 
 Definition ident_of_globdef (g : globdef) :=
@@ -1632,7 +1633,7 @@ Section S.
     intros.
     destruct (mmap (Typing.btyp_to_typ te) (map snd tparams)); try discriminate.
     destruct (Typing.btyp_to_typ te tret); try discriminate.
-    simpl in GEN. unfold bind,Res.bind.
+    simpl in GEN. unfold bind, Res.bind.
     destruct (genv_get tabs ge0 x); try discriminate.
     simpl in GEN.
     destruct (cast_value tabs v (TFun l t)) eqn:CAST ; try discriminate.
@@ -1774,7 +1775,7 @@ Section S.
     intros.
     destruct (mmap (Typing.btyp_to_typ te) (map snd targs)); try discriminate.
     destruct (Typing.btyp_to_typ te ty); try discriminate.
-    unfold bind,Res.bind in EVAL.
+    unfold bind, Res.bind in EVAL.
     destruct (genv_get tabs ge0 x) eqn:GET; try discriminate.
     destruct (typ_eq_dec (TFun l t) (typeof_value tabs v)) eqn:TYP;
       try discriminate.

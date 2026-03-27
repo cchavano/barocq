@@ -1,8 +1,8 @@
 From Coq Require Import List ZArith Zcomplements ZifyBool Lia.
 From VST Require Import Zlist.
 From compcert Require Import Integers Coqlib.
-From BarocqComp Require Import Intop Utils OptionMonad ZlistPlus.
-Open Scope option_monad_scope.
+From BarocqComp Require Import Intop Utils Option ZlistPlus.
+Local Open Scope option_monad_scope.
 
 Import ListNotations.
 

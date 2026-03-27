@@ -2,11 +2,11 @@
 From Coq Require Import ZArith List MSetPositive Bool ZifyBool.
 From compcert Require Import Coqlib Integers Maps.
 From BarocqComp Require Import Barocq ExtOrdered.
-From BarocqComp Require Import Denot Types Target OptionMonad Barray Brecord Benum Ident Maps2 Utils ZlistPlus.
+From BarocqComp Require Import Denot Types Target Option Barray Brecord Benum Ident Maps2 Utils ZlistPlus.
 From Coq Require Import Datatypes List MSetPositive Lia.
 From BarocqComp Require Import Typing.
 
-
+Local Open Scope option_monad_scope.
 
 (** [ext_equal t (v1 v2: #t)] defines extentional extentionnality of typed values.
     - For non-functional values, this is equality (=)

@@ -260,8 +260,8 @@ module Barocq = struct
             (list_to_string ~sep:";\n" (match_case_to_string prefix') cases)
             prefix
             (btyp_to_deep bt)
-      | ELetIn (x, e1, e2, bt) -> begin
-          match e1 with
+      | ELetIn (x, e1, e2, bt) ->
+          begin match e1 with
           | EIfThenElse _ | EMatch _ ->
               sprintf
                 "ELetIn %s\n%s(%s)\n%s(%s) (%s)"
@@ -279,7 +279,7 @@ module Barocq = struct
                 prefix'
                 (expr_to_deep prefix' e2)
                 (btyp_to_deep bt)
-        end
+          end
       | EAttr (x, e1) ->
           sprintf "EAttr %s (%s)" (ident_to_deep x) (expr_to_deep prefix e1))
 
@@ -360,8 +360,8 @@ module Barocq = struct
     let typ_format = sprintf "Definition %s : %s :=\n%s%s." in
     let def_format = sprintf "Definition %s : %s := %s." in
     match def with
-    | DefType (id, td) -> begin
-        match td with
+    | DefType (id, td) ->
+        begin match td with
         | TdEnum elems ->
             typ_format
               (sprintf "enum_%s" (ident_to_string id))
@@ -374,7 +374,7 @@ module Barocq = struct
               "type_def field_descr"
               indent
               (sprintf "TdRecord [\n%s\n%s]" (fields_to_deep fields) indent)
-      end
+        end
     | DefConst (id, l, _) ->
         def_format
           (sprintf "const_%s" (ident_to_string id))
@@ -663,8 +663,8 @@ module BarocqBNFDeep = struct
           cases
           prefix
           (btyp_to_deep bt)
-    | ELetIn (x, e1, e2, bt) -> begin
-        match e1 with
+    | ELetIn (x, e1, e2, bt) ->
+        begin match e1 with
         | EIfThenElse _ | EMatch _ ->
             Printf.fprintf
               o
@@ -688,7 +688,7 @@ module BarocqBNFDeep = struct
               (expr_to_deep prefix')
               e2
               (btyp_to_deep bt)
-      end
+        end
     | EAttr (x, e1) ->
         Printf.fprintf
           o

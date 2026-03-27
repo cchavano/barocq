@@ -1,14 +1,15 @@
 Set Universe Polymorphism.
 From Coq Require Import String Bool List Eqdep.
 From compcert Require Import Coqlib Maps Integers.
-From BarocqComp Require Import  DList Error Utils Types Syntax Barray Benum Brecord Maps2 Typing Intop.
-From BarocqComp Require DList .
-From BarocqComp Require Import OptionMonad.
+From BarocqComp Require Import DList Res Option Utils Types Syntax Barray Benum Brecord Maps2 Typing Intop.
+From BarocqComp Require DList.
 Import ListNotations.
+
+Local Open Scope option_monad_scope.
+Local Open Scope error_monad_scope.
 
 Definition map_err  {V A : Type} (f : V -> option A) (l : list (ident* V))  :=
   mmap (fun v => let* a := f (snd v) in Some (fst v, a)) l.
-
 
 Section DENOT.
 
@@ -1082,7 +1083,7 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
     destruct (mmap (btyp_to_typ te) (List.map snd targs)) eqn:P; try discriminate.
     destruct (btyp_to_typ te tret); try discriminate.
     destruct (genv_get impl f) eqn:GET; try discriminate.
-    unfold bind,Res.bind in H.
+    unfold bind, Res.bind in H.
     destruct (typ_eq_dec (TFun l t) (typeof_value v)); try discriminate.
     eapply genv_update_preserve_defs; eauto.
   Qed.

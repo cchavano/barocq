@@ -276,10 +276,11 @@ let imports () : string =
   sprintf
     "From Coq Require Import String.\n\
      From compcert Require Import Integers.\n\
-     From BarocqComp Require Import Target Monads OptionMonad Barray Brecord \
+     From BarocqComp Require Import Target StateMonads Option Barray Brecord \
      Types Barocq.\n\
      From %s Require Import %s_Types %s %s %s_CorresBD_Prelude.\n\
      From %s Require %s_CorresRB %s_CorresBD.\n\n\
+     Open Scope option_monad_scope.\n\
      Open Scope string_scope.\n"
     !coqlib
     !coqlib

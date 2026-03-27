@@ -1,6 +1,6 @@
 From Coq Require Import Bool List PArith Lia.
-From BarocqComp Require Import Maps2 Utils DList Types Syntax Benum Typing Imp1 Imp1Imp  OptionMonad.
-Open Scope option_monad_scope.
+From BarocqComp Require Import Maps2 Utils DList Types Syntax Benum Typing Imp1 Imp1Imp  Option.
+Local Open Scope option_monad_scope.
 
 (* Instrumented in-place semantics of Imp1 with invalid paths *)
 

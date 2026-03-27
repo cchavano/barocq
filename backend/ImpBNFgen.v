@@ -1,85 +1,86 @@
 From Coq Require Import String List Eqdep.
 From compcert Require Import Coqlib.
 From compcert Require Axioms.
-From BarocqComp Require Import Error Syntax Utils Types BarocqBNF ImpBNF Maps2 Denot.
+From BarocqComp Require Import Res Syntax Utils Types BarocqBNF ImpBNF Maps2 Denot.
 Import ListNotations.
 
 Open Scope string_scope.
 
+Local Open Scope error_monad_scope.
+
 Fixpoint transl_expr (e: expr) : res tailcomp :=
   match e with
-  | EAtom a => ret (TcComp (CpAtom a))
-  | EArraySet a1 a2 a3 ty => ret (TcComp (CpArraySet a1 a2 a3 ty))
-  | ERecordUpdate a1 x a2 ty => ret (TcComp (CpRecordUpdate a1 x a2 ty))
+  | EAtom a => eret (TcComp (CpAtom a))
+  | EArraySet a1 a2 a3 ty => eret (TcComp (CpArraySet a1 a2 a3 ty))
+  | ERecordUpdate a1 x a2 ty => eret (TcComp (CpRecordUpdate a1 x a2 ty))
   | EApp a args ty =>
-      let* (fid, tf) :=
+      do (fid, tf) <-
         match a with
-        | AVar x tx => ret (x, tx)
-        | _ => fail
-        end
-      in
-      ret (TcComp (CpCall fid tf args ty))
+        | AVar x tx => eret (x, tx)
+        | _ => efail
+        end;
+      eret (TcComp (CpCall fid tf args ty))
   | ELetIn x e1 e2 ty =>
-      let* tc1 := transl_expr e1 in
-      let* tc2 := transl_expr e2 in
-      ret (TcBegin (StSetTailcomp x tc1) tc2 ty)
+      do tc1 <- transl_expr e1;
+      do tc2 <- transl_expr e2;
+      eret (TcBegin (StSetTailcomp x tc1) tc2 ty)
   | EIfThenElse a e1 e2 ty =>
-      let* tc1 := transl_expr e1 in
-      let* tc2 := transl_expr e2 in
-      ret (TcIfThenElse a tc1 tc2 ty)
+      do tc1 <- transl_expr e1;
+      do tc2 <- transl_expr e2;
+      eret (TcIfThenElse a tc1 tc2 ty)
   | EMatch a cases ty =>
-      let* cases' := MapList.map_err transl_expr cases in
-      ret (TcSwitch a cases' ty)
+      do cases' <- MapList.map_err transl_expr cases;
+      eret (TcSwitch a cases' ty)
   | EAttr id e =>
-      let* tc := transl_expr e in
-      ret (TcAttr id tc)
+      do tc <- transl_expr e;
+      eret (TcAttr id tc)
   end.
 
 Definition check_params_noshadow {A T: Type} (ge: STree.t A) (ls_init: SSet.t) (params: smaplist T) : res SSet.t :=
   list_fold_left_err
     (fun acc '(pi, _) =>
       match STree.get pi ge with
-      | Some _ => fail
+      | Some _ => efail
       | None =>
-        if negb (SSet.mem pi acc) then ret (SSet.add pi acc)
-        else fail
+        if negb (SSet.mem pi acc) then eret (SSet.add pi acc)
+        else efail
       end)
     params
     (ls_init).
 
 Definition transl_function (gs: SSet.t) (f: BarocqBNF.function) : res ImpBNF.function :=
-  let* ls := check_params_noshadow gs SSet.empty (fn_params f) in
+  do ls <- check_params_noshadow gs SSet.empty (fn_params f);
   if wf_expr gs ls (fn_body f) then
-    let* body := transl_expr (fn_body f) in
-    ret {|
+    do body <- transl_expr (fn_body f);
+    eret {|
       fn_return := fn_return f;
       fn_params := fn_params f;
       fn_body := body
     |}
-  else fail.
+  else efail.
 
 Definition transl_globdef (gs: SSet.t) (def: BarocqBNF.globdef) : res ImpBNF.globdef :=
   match def with
-  | DefConst x l ty => ret (DefConst x l ty)
+  | DefConst x l ty => eret (DefConst x l ty)
   | DefFun x f =>
-      let* f' := transl_function gs f in
-      ret (DefFun x f')
-  | DeclConst x ty => ret (DeclConst x ty)
-  | DeclFun f tparams tret => ret (DeclFun f tparams tret)
+      do f' <- transl_function gs f;
+      eret (DefFun x f')
+  | DeclConst x ty => eret (DeclConst x ty)
+  | DeclFun f tparams tret => eret (DeclFun f tparams tret)
   end.
 
 Fixpoint transl_prog_defs (gs: SSet.t) (defs: list BarocqBNF.globdef) : res (list ImpBNF.globdef) :=
   match defs with
-  | nil => ret nil
+  | nil => eret nil
   | d :: defs' =>
-      let* d' := transl_globdef gs d in
-      let* dr := transl_prog_defs (SSet.add (globdef_id d) gs) defs' in
-      ret (d' :: dr)
+      do d' <- transl_globdef gs d;
+      do dr <- transl_prog_defs (SSet.add (globdef_id d) gs) defs';
+      eret (d' :: dr)
   end. 
 
 Definition transl_program (prog: BarocqBNF.program) : res ImpBNF.program :=
-  let* defs := transl_prog_defs SSet.empty (prog_defs prog) in
-  ret {|
+  do defs <- transl_prog_defs SSet.empty (prog_defs prog);
+  eret {|
     prog_defs := defs;
     prog_types := prog_types prog;
     prog_tabs := prog_tabs prog;
@@ -332,7 +333,7 @@ Section CORRECTNESS.
       congruence.
   Qed.
 
-  Import OptionMonad.
+  Import Option.
 
   Ltac destruct_bind :=
     match goal with

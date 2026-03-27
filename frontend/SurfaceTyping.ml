@@ -364,25 +364,25 @@ let gtenv_get_def (imports : ident list) (gte : gtenv) (cid : cident) : btyp =
   let rec gtenv_get_imports (imports : ident list) (tid : ident) : btyp =
     match imports with
     | [] -> error (Undefined_type tid.content) ~loc:(Some tid)
-    | m1 :: imports' -> begin
-        match gtenv_get_prefixed m1 tid with
+    | m1 :: imports' ->
+        begin match gtenv_get_prefixed m1 tid with
         | Some ty -> ty
         | None -> gtenv_get_imports imports' tid
-      end
+        end
   in
   match cid with
-  | IdSimple tid -> begin
-      match tenv_get_def !curr_mname gte.gtenv_local tid with
+  | IdSimple tid ->
+      begin match tenv_get_def !curr_mname gte.gtenv_local tid with
       | Some ty -> ty
       | None -> gtenv_get_imports imports tid
-    end
-  | IdPrefixed (mname, tid) -> begin
-      match gtenv_get_prefixed mname tid with
+      end
+  | IdPrefixed (mname, tid) ->
+      begin match gtenv_get_prefixed mname tid with
       | Some ty -> ty
       | None ->
           let tid' = compose_loc_idents mname tid in
           error (Undefined_type tid'.content) ~loc:(Some tid')
-    end
+      end
 
 (* let gtenv_get_enum_elems (imports : ident list) (gte : gtenv) (cid : cident) : string list =
   let gtenv_get_prefixed (mname : ident) (tid : ident) : string list option =
@@ -423,25 +423,25 @@ let gtenv_get_constr_typ (imports : ident list) (gte : gtenv) (cid : cident) :
   let rec gtenv_get_imports (imports : ident list) (cname : ident) : btyp =
     match imports with
     | [] -> error (Undefined_ident cname.content) ~loc:(Some cname)
-    | m1 :: imports' -> begin
-        match gtenv_get_prefixed m1 cname with
+    | m1 :: imports' ->
+        begin match gtenv_get_prefixed m1 cname with
         | Some ty -> ty
         | None -> gtenv_get_imports imports' cname
-      end
+        end
   in
   match cid with
-  | IdSimple cname -> begin
-      match tenv_get_constr_typ !curr_mname gte.gtenv_local cname with
+  | IdSimple cname ->
+      begin match tenv_get_constr_typ !curr_mname gte.gtenv_local cname with
       | Some ty -> ty
       | None -> gtenv_get_imports imports cname
-    end
-  | IdPrefixed (mname, cname) -> begin
-      match gtenv_get_prefixed mname cname with
+      end
+  | IdPrefixed (mname, cname) ->
+      begin match gtenv_get_prefixed mname cname with
       | Some ty -> ty
       | None ->
           let tid' = compose_loc_idents mname cname in
           error (Undefined_ident tid'.content) ~loc:(Some tid')
-    end
+      end
 
 let gtenv_update_local_enums (gte : gtenv) (eid : ident) (elems : string list) :
     gtenv =
@@ -505,25 +505,25 @@ let cenv_get (imports : ident list) (ce : cenv) (cid : cident) : cvalue =
   let rec cenv_get_imports (imports : ident list) (id : ident) : cvalue =
     match imports with
     | [] -> error (Undefined_ident id.content) ~loc:(Some id)
-    | m1 :: imports' -> begin
-        match cenv_get_prefixed m1 id with
+    | m1 :: imports' ->
+        begin match cenv_get_prefixed m1 id with
         | Some v -> v
         | None -> cenv_get_imports imports' id
-      end
+        end
   in
   match cid with
-  | IdSimple id -> begin
-      match IdentMap.find_opt id.content ce.cenv_local with
+  | IdSimple id ->
+      begin match IdentMap.find_opt id.content ce.cenv_local with
       | Some v -> check_cval id v
       | None -> cenv_get_imports imports id
-    end
-  | IdPrefixed (mname, id) -> begin
-      match cenv_get_prefixed mname id with
+      end
+  | IdPrefixed (mname, id) ->
+      begin match cenv_get_prefixed mname id with
       | Some v -> check_cval id v
       | None ->
           let id' = compose_loc_idents mname id in
           error (Undefined_ident id'.content) ~loc:(Some id')
-    end
+      end
 
 let cenv_update_local (ce : cenv) (x : ident) (v : cvalue) : cenv =
   match IdentMap.find_opt x.content ce.cenv_local with
@@ -549,47 +549,47 @@ let eval_cunop (op : unary_op) (v : cvalue) : cvalue =
 
 let eval_cbinop (op : binary_op) (v1 : cvalue) (v2 : cvalue) : cvalue =
   match op with
-  | BopAndbool -> begin
-      match (v1, v2) with
+  | BopAndbool ->
+      begin match (v1, v2) with
       | VBool b1, VBool b2 -> VBool (b1 && b2)
       | _ -> assert false
-    end
-  | BopOrbool -> begin
-      match (v1, v2) with
+      end
+  | BopOrbool ->
+      begin match (v1, v2) with
       | VBool b1, VBool b2 -> VBool (b1 || b2)
       | _ -> assert false
-    end
-  | BopXorbool -> begin
-      match (v1, v2) with
+      end
+  | BopXorbool ->
+      begin match (v1, v2) with
       | VBool b1, VBool b2 -> VBool (Datatypes.xorb b1 b2)
       | _ -> assert false
-    end
-  | BopAdd -> begin
-      match (v1, v2) with
+      end
+  | BopAdd ->
+      begin match (v1, v2) with
       | VInt32 (i1, s1), VInt32 (i2, s2) ->
           if s1 = s2 then VInt32 (Int.add i1 i2, s1) else assert false
       | VInt64 (i1, s1), VInt64 (i2, s2) ->
           if s1 = s2 then VInt64 (Int64.add i1 i2, s1) else assert false
       | _ -> assert false
-    end
-  | BopSub -> begin
-      match (v1, v2) with
+      end
+  | BopSub ->
+      begin match (v1, v2) with
       | VInt32 (i1, s1), VInt32 (i2, s2) ->
           if s1 = s2 then VInt32 (Int.sub i1 i2, s1) else assert false
       | VInt64 (i1, s1), VInt64 (i2, s2) ->
           if s1 = s2 then VInt64 (Int64.sub i1 i2, s1) else assert false
       | _ -> assert false
-    end
-  | BopMul -> begin
-      match (v1, v2) with
+      end
+  | BopMul ->
+      begin match (v1, v2) with
       | VInt32 (i1, s1), VInt32 (i2, s2) ->
           if s1 = s2 then VInt32 (Int.mul i1 i2, s1) else assert false
       | VInt64 (i1, s1), VInt64 (i2, s2) ->
           if s1 = s2 then VInt64 (Int64.mul i1 i2, s1) else assert false
       | _ -> assert false
-    end
-  | BopDiv -> begin
-      match (v1, v2) with
+      end
+  | BopDiv ->
+      begin match (v1, v2) with
       | VInt32 (i1, s1), VInt32 (i2, s2) ->
           if s1 = s2 then
             let div, ty =
@@ -615,9 +615,9 @@ let eval_cbinop (op : binary_op) (v1 : cvalue) (v2 : cvalue) : cvalue =
             VInt64 (r, s1)
           else assert false
       | _ -> assert false
-    end
-  | BopMod -> begin
-      match (v1, v2) with
+      end
+  | BopMod ->
+      begin match (v1, v2) with
       | VInt32 (i1, s1), VInt32 (i2, s2) ->
           if s1 = s2 then
             let coq_mod, ty =
@@ -645,41 +645,41 @@ let eval_cbinop (op : binary_op) (v1 : cvalue) (v2 : cvalue) : cvalue =
             VInt64 (r, s1)
           else assert false
       | _ -> assert false
-    end
-  | BopAndint -> begin
-      match (v1, v2) with
+      end
+  | BopAndint ->
+      begin match (v1, v2) with
       | VInt32 (i1, s1), VInt32 (i2, s2) ->
           if s1 = s2 then VInt32 (Int.coq_and i1 i2, s1) else assert false
       | VInt64 (i1, s1), VInt64 (i2, s2) ->
           if s1 = s2 then VInt64 (Int64.coq_and i1 i2, s1) else assert false
       | _ -> assert false
-    end
-  | BopOrint -> begin
-      match (v1, v2) with
+      end
+  | BopOrint ->
+      begin match (v1, v2) with
       | VInt32 (i1, s1), VInt32 (i2, s2) ->
           if s1 = s2 then VInt32 (Int.coq_or i1 i2, s1) else assert false
       | VInt64 (i1, s1), VInt64 (i2, s2) ->
           if s1 = s2 then VInt64 (Int64.coq_or i1 i2, s1) else assert false
       | _ -> assert false
-    end
-  | BopXorint -> begin
-      match (v1, v2) with
+      end
+  | BopXorint ->
+      begin match (v1, v2) with
       | VInt32 (i1, s1), VInt32 (i2, s2) ->
           if s1 = s2 then VInt32 (Int.xor i1 i2, s1) else assert false
       | VInt64 (i1, s1), VInt64 (i2, s2) ->
           if s1 = s2 then VInt64 (Int64.xor i1 i2, s1) else assert false
       | _ -> assert false
-    end
-  | BopShl -> begin
-      match (v1, v2) with
+      end
+  | BopShl ->
+      begin match (v1, v2) with
       | VInt32 (i1, s1), VInt32 (i2, s2) ->
           if s1 = s2 then VInt32 (Int.shl i1 i2, s1) else assert false
       | VInt64 (i1, s1), VInt64 (i2, s2) ->
           if s1 = s2 then VInt64 (Int64.shl i1 i2, s1) else assert false
       | _ -> assert false
-    end
-  | BopShr -> begin
-      match (v1, v2) with
+      end
+  | BopShr ->
+      begin match (v1, v2) with
       | VInt32 (i1, s1), VInt32 (i2, s2) ->
           if s1 = s2 then
             let shr = if s1 = Types.Signed then Int.shr else Int.shru in
@@ -691,18 +691,18 @@ let eval_cbinop (op : binary_op) (v1 : cvalue) (v2 : cvalue) : cvalue =
             VInt64 (shr i1 i2, s1)
           else assert false
       | _ -> assert false
-    end
-  | BopEq -> begin
-      match (v1, v2) with
+      end
+  | BopEq ->
+      begin match (v1, v2) with
       | VBool b1, VBool b2 -> VBool (b1 = b2)
       | VInt32 (i1, s1), VInt32 (i2, s2) ->
           if s1 = s2 then VBool (Int.eq i1 i2) else assert false
       | VInt64 (i1, s1), VInt64 (i2, s2) ->
           if s1 = s2 then VBool (Int64.eq i1 i2) else assert false
       | _ -> assert false
-    end
-  | BopNeq -> begin
-      match (v1, v2) with
+      end
+  | BopNeq ->
+      begin match (v1, v2) with
       | VBool b1, VBool b2 -> VBool (b1 <> b2)
       | VInt32 (i1, s1), VInt32 (i2, s2) ->
           if s1 = s2 then
@@ -715,7 +715,7 @@ let eval_cbinop (op : binary_op) (v1 : cvalue) (v2 : cvalue) : cvalue =
             VBool (cmp Cne i1 i2)
           else assert false
       | _ -> assert false
-    end
+      end
   | _ ->
       let cop =
         match op with
@@ -741,55 +741,55 @@ let eval_cbinop (op : binary_op) (v1 : cvalue) (v2 : cvalue) : cvalue =
 
 let eval_ccast (v : cvalue) (dst_ty : btyp) : cvalue =
   match v with
-  | VBool b -> begin
-      match dst_ty with
+  | VBool b ->
+      begin match dst_ty with
       | BBool -> VBool b
       | BInt32 Types.Signed -> VInt32 (I32.of_bool b, Types.Signed)
       | BInt32 Types.Unsigned -> VInt32 (U32.of_bool b, Types.Unsigned)
       | BInt64 Types.Signed -> VInt64 (I64.of_bool b, Types.Signed)
       | BInt64 Types.Unsigned -> VInt64 (U64.of_bool b, Types.Unsigned)
       | _ -> assert false
-    end
-  | VInt32 (i, s) -> begin
-      match dst_ty with
+      end
+  | VInt32 (i, s) ->
+      begin match dst_ty with
       | BBool ->
           if s = Types.Signed then VBool (I32.to_bool i)
           else VBool (U32.to_bool i)
-      | BInt32 s' -> begin
-          match (s, s') with
+      | BInt32 s' ->
+          begin match (s, s') with
           | Types.Signed, Types.Unsigned -> VInt32 (U32.of_i32 i, s')
           | Types.Unsigned, Types.Signed -> VInt32 (I32.of_u32 i, s')
           | _ -> VInt32 (i, s)
-        end
-      | BInt64 s' -> begin
-          match (s, s') with
+          end
+      | BInt64 s' ->
+          begin match (s, s') with
           | Types.Signed, Types.Signed -> VInt64 (I64.of_i32 i, s')
           | Types.Signed, Types.Unsigned -> VInt64 (U64.of_i32 i, s')
           | Types.Unsigned, Types.Signed -> VInt64 (I64.of_u32 i, s')
           | Types.Unsigned, Types.Unsigned -> VInt64 (U64.of_u32 i, s')
-        end
+          end
       | _ -> assert false
-    end
-  | VInt64 (i, s) -> begin
-      match dst_ty with
+      end
+  | VInt64 (i, s) ->
+      begin match dst_ty with
       | BBool ->
           if s = Types.Signed then VBool (I64.to_bool i)
           else VBool (U64.to_bool i)
-      | BInt32 s' -> begin
-          match (s, s') with
+      | BInt32 s' ->
+          begin match (s, s') with
           | Types.Signed, Types.Signed -> VInt32 (I32.of_i64 i, s')
           | Types.Signed, Types.Unsigned -> VInt32 (U32.of_i64 i, s')
           | Types.Unsigned, Types.Signed -> VInt32 (I32.of_u64 i, s')
           | Types.Unsigned, Types.Unsigned -> VInt32 (U32.of_u64 i, s')
-        end
-      | BInt64 s' -> begin
-          match (s, s') with
+          end
+      | BInt64 s' ->
+          begin match (s, s') with
           | Types.Signed, Types.Unsigned -> VInt64 (U64.of_i64 i, s')
           | Types.Unsigned, Types.Signed -> VInt64 (I64.of_u64 i, s')
           | _ -> VInt64 (i, s)
-        end
+          end
       | _ -> assert false
-    end
+      end
   | _ -> assert false
 
 let rec eval_const (imports : ident list) (gte : gtenv) (ce : cenv) (c : const)
@@ -842,8 +842,8 @@ and styp_layout_to_btyp (imports : ident list) (gte : gtenv) (ce : cenv)
     | SLUnboxed (stu, sz) ->
         let tu = styp_to_btyp imports gte ce stu in
         begin match tu with
-        | BArray (_, _) -> begin
-            match sz with
+        | BArray (_, _) ->
+            begin match sz with
             | Some sz ->
                 let sz_val = eval_const imports gte ce sz in
                 begin match (sz_val, !arr_index_btyp) with
@@ -855,7 +855,7 @@ and styp_layout_to_btyp (imports : ident list) (gte : gtenv) (ce : cenv)
                 end
                 (* else (tu, Types.LyUnboxed (Some s)) *)
             | None -> error Unboxed_array_missing_size
-          end
+            end
         | BFun _ -> error Forbidden_unlayout
         | _ ->
             if btyp_is_prim tu then (tu, Types.LyPrim)
@@ -872,26 +872,26 @@ let gcontext_get (imports : ident list) (gx : gcontext) (cid : cident) : btyp =
   let rec gcontext_get_imports (imports : ident list) (id : ident) : btyp =
     match imports with
     | [] -> error (Undefined_ident id.content) ~loc:(Some id)
-    | m1 :: imports' -> begin
-        match gcontext_get_prefixed m1 id with
+    | m1 :: imports' ->
+        begin match gcontext_get_prefixed m1 id with
         | Some ty -> ty
         | None -> gcontext_get_imports imports' id
-      end
+        end
   in
   let ty =
     match cid with
-    | IdSimple id -> begin
-        match IdentMap.find_opt id.content gx.gx_local with
+    | IdSimple id ->
+        begin match IdentMap.find_opt id.content gx.gx_local with
         | Some ty -> ty
         | None -> gcontext_get_imports imports id
-      end
-    | IdPrefixed (mname, id) -> begin
-        match gcontext_get_prefixed mname id with
+        end
+    | IdPrefixed (mname, id) ->
+        begin match gcontext_get_prefixed mname id with
         | Some ty -> ty
         | None ->
             let id' = compose_loc_idents mname id in
             error (Undefined_ident id'.content) ~loc:(Some id')
-      end
+        end
   in
   match ty with
   | BArray _ | BRecord _ | BAbs _ -> error Use_of_non_prim_glob
@@ -901,11 +901,13 @@ let gcontext_update_local (gte : gtenv) (gx : gcontext) (x : ident) (ty : btyp)
     : gcontext =
   match IdentMap.find_opt x.content gx.gx_local with
   | Some _ -> error (Already_defined_glob x.content) ~loc:(Some x)
-  | None -> begin
-      match IdentMap.find_opt x.content gte.gtenv_local.tenv_constr_types with
+  | None ->
+      begin match
+        IdentMap.find_opt x.content gte.gtenv_local.tenv_constr_types
+      with
       | Some _ -> error (Already_defined_glob x.content) ~loc:(Some x)
       | None -> { gx with gx_local = IdentMap.add x.content ty gx.gx_local }
-    end
+      end
 
 let lcontext_update (lx : lcontext) (x : ident) (ty : btyp) : lcontext =
   IdentMap.add x.content ty lx
@@ -926,11 +928,11 @@ let typof_constr (imports : ident list) (gte : gtenv) (x : cident) : btyp =
 let typof_var (imports : ident list) (gx : gcontext) (lx : lcontext)
     (x : cident) : btyp =
   match x with
-  | IdSimple x' -> begin
-      match IdentMap.find_opt x'.content lx with
+  | IdSimple x' ->
+      begin match IdentMap.find_opt x'.content lx with
       | Some ty -> ty
       | None -> gcontext_get imports gx x
-    end
+      end
   | IdPrefixed _ -> gcontext_get imports gx x
 
 let typecheck_unary_op (op : unary_op) (ty : btyp) : btyp =
@@ -944,45 +946,45 @@ let typecheck_unary_op (op : unary_op) (ty : btyp) : btyp =
 
 let typecheck_binary_op (op : binary_op) (ty1 : btyp) (ty2 : btyp) : btyp =
   match op with
-  | BopAndbool | BopOrbool | BopXorbool -> begin
-      match (ty1, ty2) with
+  | BopAndbool | BopOrbool | BopXorbool ->
+      begin match (ty1, ty2) with
       | BBool, BBool -> BBool
       | _, _ -> assert false
-    end
-  | BopEq | BopNeq -> begin
-      match (ty1, ty2) with
+      end
+  | BopEq | BopNeq ->
+      begin match (ty1, ty2) with
       | BBool, BBool -> BBool
       | BInt32 s1, BInt32 s2 | BInt64 s1, BInt64 s2 ->
           if s1 = s2 then BBool else assert false
       | BEnum (mname1, t1), BEnum (mname2, t2) ->
           if mname1 = mname2 && t1 = t2 then BBool else assert false
       | _, _ -> assert false
-    end
-  | BopLt | BopLe | BopGt | BopGe -> begin
-      match (ty1, ty2) with
+      end
+  | BopLt | BopLe | BopGt | BopGe ->
+      begin match (ty1, ty2) with
       | BInt32 s1, BInt32 s2 | BInt64 s1, BInt64 s2 ->
           if s1 = s2 then BBool else assert false
       | _, _ -> assert false
-    end
-  | _ -> begin
-      match (ty1, ty2) with
+      end
+  | _ ->
+      begin match (ty1, ty2) with
       | BInt32 s1, BInt32 s2 | BInt64 s1, BInt64 s2 ->
           if s1 = s2 then ty1 else assert false
       | _, _ -> assert false
-    end
+      end
 
 let typecheck_cast (from_ty : btyp) (to_ty : btyp) : btyp =
   match from_ty with
-  | BBool | BInt32 _ | BInt64 _ -> begin
-      match to_ty with
+  | BBool | BInt32 _ | BInt64 _ ->
+      begin match to_ty with
       | BBool | BInt32 _ | BInt64 _ | BEnum _ -> to_ty
       | _ -> error (Forbidden_cast (from_ty, to_ty))
-    end
-  | BEnum _ -> begin
-      match to_ty with
+      end
+  | BEnum _ ->
+      begin match to_ty with
       | BBool | BInt32 _ | BInt64 _ -> to_ty
       | _ -> error (Forbidden_cast (from_ty, to_ty))
-    end
+      end
   | _ -> error (Forbidden_cast (from_ty, to_ty))
 
 let typecheck_record_proj (gte : gtenv) (mname : string) (rid : string)
@@ -995,11 +997,11 @@ let typecheck_record_proj (gte : gtenv) (mname : string) (rid : string)
       | None -> assert false (* Ill-typed environment *)
   in
   match IdentMap.find_opt rid te.tenv_defs with
-  | Some (TdRecord fields) -> begin
-      match List.assoc_opt f.content fields with
+  | Some (TdRecord fields) ->
+      begin match List.assoc_opt f.content fields with
       | Some (tf, _) -> tf
       | None -> error (Unknown_field (f.content, rid'))
-    end
+      end
   | _ -> assert false (* Ill-typed environment *)
 
 let rec mname_of_ident (imports : ident list) (gte : gtenv) (gx : gcontext)
@@ -1026,11 +1028,11 @@ let transl_var_name (imports : ident list) (gte : gtenv) (gx : gcontext)
         let prefix =
           match IdentMap.find_opt x.content lx with
           | Some _ -> ""
-          | None -> begin
-              match IdentMap.find_opt x.content gx.gx_local with
+          | None ->
+              begin match IdentMap.find_opt x.content gx.gx_local with
               | Some _ -> !curr_mname
               | None -> mname_of_ident imports gte gx x
-            end
+              end
         in
         prefix_ident prefix x.content
     | IdPrefixed (mname, x) -> prefix_ident mname.content x.content
@@ -1107,41 +1109,41 @@ let check_expected_typ (texp : expected_typ) (ty : btyp) (r : 'a) : 'a =
   match texp with
   | Expect_typ t ->
       if t = ty then r else error (Type_mismatch (texp, Current_typ ty))
-  | Expect_int -> begin
-      match ty with
+  | Expect_int ->
+      begin match ty with
       | BInt32 _ | BInt64 _ -> r
       | _ -> error (Type_mismatch (texp, Current_typ ty))
-    end
-  | Expect_int_or_bool -> begin
-      match ty with
+      end
+  | Expect_int_or_bool ->
+      begin match ty with
       | BBool | BInt32 _ | BInt64 _ -> r
       | _ -> error (Type_mismatch (texp, Current_typ ty))
-    end
-  | Expect_int_or_bool_or_enum -> begin
-      match ty with
+      end
+  | Expect_int_or_bool_or_enum ->
+      begin match ty with
       | BBool | BInt32 _ | BInt64 _ | BEnum _ -> r
       | _ -> error (Type_mismatch (texp, Current_typ ty))
-    end
-  | Expect_array -> begin
-      match ty with
+      end
+  | Expect_array ->
+      begin match ty with
       | BArray _ -> r
       | _ -> error (Type_mismatch (texp, Current_typ ty))
-    end
-  | Expect_enum -> begin
-      match ty with
+      end
+  | Expect_enum ->
+      begin match ty with
       | BEnum _ -> r
       | _ -> error (Type_mismatch (texp, Current_typ ty))
-    end
-  | Expect_record -> begin
-      match ty with
+      end
+  | Expect_record ->
+      begin match ty with
       | BRecord _ -> r
       | _ -> error (Type_mismatch (texp, Current_typ ty))
-    end
-  | Expect_function -> begin
-      match ty with
+      end
+  | Expect_function ->
+      begin match ty with
       | BFun _ -> r
       | _ -> error (Type_mismatch (texp, Current_typ ty))
-    end
+      end
 
 let typecheck_pattern (imports : ident list) (gte : gtenv) (gx : gcontext)
     (mname : string) (eid : string) (x : pattern) (elems : string list)
@@ -1402,8 +1404,8 @@ and typecheck_match (imports : ident list) (gte : gtenv) (ce : cenv)
       | None -> assert false (* Ill-typed environment *)
   in
   match IdentMap.find_opt eid te.tenv_defs with
-  | Some (TdEnum elems) -> begin
-      match cases with
+  | Some (TdEnum elems) ->
+      begin match cases with
       | [] -> assert false (* Ill-parsed program *)
       | (x, ex) :: cases' ->
           let unmatched =
@@ -1412,7 +1414,7 @@ and typecheck_match (imports : ident list) (gte : gtenv) (ce : cenv)
           let bex, tx = typecheck_expr imports gte ce gx lx ex in
           let ber = aux elems unmatched cases' tx in
           ((transl_pattern imports gte gx lx elems x, bex) :: ber, tx)
-    end
+      end
   | _ -> assert false
 
 and typecheck_let_in (imports : ident list) (gte : gtenv) (ce : cenv)
@@ -1542,8 +1544,8 @@ and typecheck_const_record (imports : ident list) (gte : gtenv) (ce : cenv)
   | [] ->
       if List.length fields = 0 then []
       else error (Missing_record_fields (List.map fst fields))
-  | (fname, lit) :: rc' -> begin
-      match List.assoc_opt fname.content fields with
+  | (fname, lit) :: rc' ->
+      begin match List.assoc_opt fname.content fields with
       | Some (fty, ly) ->
           let c', _ = typecheck_const imports gte ce gx fty ly lit in
           let r =
@@ -1559,7 +1561,7 @@ and typecheck_const_record (imports : ident list) (gte : gtenv) (ce : cenv)
           let fname' = transl_field_name fname in
           (fname', c') :: r
       | None -> error (Unknown_field (fname.content, rid)) ~loc:(Some fname)
-    end
+      end
 
 let find_duplicate_ident (l : ident list) : ident option =
   let rec aux (l : ident list) =
@@ -1625,8 +1627,8 @@ let typecheck_abs_function (x : ident) (tparams : (param_attr * btyp) list)
     (tret : btyp) : btyp =
   let rec check_write_param tparams tret write =
     match tparams with
-    | [] -> begin
-        match write with
+    | [] ->
+        begin match write with
         | Some tw ->
             if tw = tret then ()
             else
@@ -1636,15 +1638,15 @@ let typecheck_abs_function (x : ident) (tparams : (param_attr * btyp) list)
         | None ->
             if btyp_is_prim tret then ()
             else error (Missing_param_write (x.content, tret)) ~loc:(Some x)
-      end
-    | (attr, t) :: tparams' -> begin
-        match attr with
+        end
+    | (attr, t) :: tparams' ->
+        begin match attr with
         | AttrWrite ->
             if write <> None then
               error (Too_many_param_write x.content) ~loc:(Some x)
             else check_write_param tparams' tret (Some t)
         | _ -> check_write_param tparams' tret write
-      end
+        end
   in
   let _ = check_write_param tparams tret None in
   BFun (List.map snd tparams, tret)
@@ -1653,8 +1655,8 @@ let typecheck_type_def (imports : ident list) (gte : gtenv) (ce : cenv)
     (gx : gcontext) (tid : ident) (td : SurfaceAST.type_def) :
     Barocq.globdef option * gtenv * cenv * gcontext =
   match td with
-  | SurfaceAST.TdEnum elems -> begin
-      match find_duplicate_ident elems with
+  | SurfaceAST.TdEnum elems ->
+      begin match find_duplicate_ident elems with
       | Some elem -> error (Already_defined_glob elem.content) ~loc:(Some elem)
       | _ ->
           let gte' =
@@ -1678,9 +1680,9 @@ let typecheck_type_def (imports : ident list) (gte : gtenv) (ce : cenv)
           let bid = transl_globdef_name !curr_mname tid in
           let belems = List.map (transl_globdef_name !curr_mname) elems in
           (Some (Barocq.DefType (bid, Syntax.TdEnum belems)), gte', ce', gx)
-    end
-  | SurfaceAST.TdRecord fields -> begin
-      match find_duplicate_ident (List.map fst fields) with
+      end
+  | SurfaceAST.TdRecord fields ->
+      begin match find_duplicate_ident (List.map fst fields) with
       | Some fname ->
           error
             (Duplicate_record_field (fname.content, tid.content))
@@ -1709,7 +1711,7 @@ let typecheck_type_def (imports : ident list) (gte : gtenv) (ce : cenv)
           in
           Hashtbl.add type_locs (prefix_ident !curr_mname tid.content) tid;
           (Some (Barocq.DefType (bid, Syntax.TdRecord bfields)), gte', ce, gx)
-    end
+      end
   | SurfaceAST.TdAlias ty ->
       let ty = styp_to_btyp imports gte ce ty in
       (None, gtenv_update_local_aliases gte tid ty, ce, gx)
@@ -1721,18 +1723,18 @@ let check_fun_visibility (fid : ident) (f : func) : bool =
   in
   let rec check_aux l ov =
     match l with
-    | [] -> begin
-        match ov with
+    | [] ->
+        begin match ov with
         | Some v -> v
         | None -> !curr_vis
-      end
-    | Vis vi :: l' -> begin
-        match ov with
+        end
+    | Vis vi :: l' ->
+        begin match ov with
         | Some v ->
             if v = vi then check_aux l' ov
             else error Incompatible_func_visibility ~loc:(Some fid)
         | None -> check_aux l' (Some vi)
-      end
+        end
     | _ :: l' -> check_aux l' ov
   in
   vis_to_bool (check_aux f.fn_attribs None)
@@ -1740,8 +1742,8 @@ let check_fun_visibility (fid : ident) (f : func) : bool =
 let check_unique_directive (id : ident) (ty : btyp) (is_glob : bool) : unit =
   if is_glob then
     match ty with
-    | BRecord (mname, rid, _) -> begin
-        match !ginfo with
+    | BRecord (mname, rid, _) ->
+        begin match !ginfo with
         | Some _ -> error Unique_directive_already_used ~loc:(Some id)
         | None ->
             ginfo :=
@@ -1751,7 +1753,7 @@ let check_unique_directive (id : ident) (ty : btyp) (is_glob : bool) : unit =
                   gi_tid = rid;
                   gi_vname = prefix_ident !curr_mname id.content;
                 }
-      end
+        end
     | _ -> error Unique_directive_unsupported_type ~loc:(Some id)
 
 let typecheck_globdef (imports : ident list) (gte : gtenv) (ce : cenv)
@@ -1831,11 +1833,11 @@ let typecheck_globdef (imports : ident list) (gte : gtenv) (ce : cenv)
 let rec typecheck_imports (imports : ident list) (gx : gcontext) : unit =
   match imports with
   | [] -> ()
-  | m1 :: imports' -> begin
-      match IdentMap.find_opt m1.content gx.gx_extern with
+  | m1 :: imports' ->
+      begin match IdentMap.find_opt m1.content gx.gx_extern with
       | Some _ -> typecheck_imports imports' gx
       | None -> error (Module_not_found m1.content) ~loc:(Some m1)
-    end
+      end
 
 let typecheck_command (imports : ident list) (gte : gtenv) (ce : cenv)
     (gx : gcontext) (cmd : command) :

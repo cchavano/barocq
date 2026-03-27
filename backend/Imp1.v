@@ -1,7 +1,10 @@
 From Coq Require Import Bool List String PArith Lia.
 From compcert Require Import Integers Maps.
-From BarocqComp Require Import  Barocq Benum Barray Brecord OptionMonad Maps2 Utils Syntax Types Typing Pp Denot.
+From BarocqComp Require Import  Barocq Benum Barray Brecord Option Res Maps2 Utils Syntax Types Typing Pp Denot.
 From BarocqComp Require Printer.
+
+Local Open Scope error_monad_scope.
+
 
 (** * Abstract syntax *)
 
@@ -59,27 +62,25 @@ Module Pp.
 End Pp.
 
 Section TRANSF.
-  Import Error.
-  Open Scope error_monad_scope.
 
   Variable trans_statement : statement -> res statement.
 
   Definition trans_function (f:function) :=
-    (let* b := trans_statement (fn_body f) in
+    do b <- trans_statement (fn_body f);
     OK {| fn_return := fn_return f;
           fn_params := fn_params f;
           fn_body   := b
-      |})%error_monad.
+      |}.
 
   Definition trans_globdef (gd : globdef) : res globdef :=
     match gd with
-    | DefFun id f    => let* f' := trans_function f in
+    | DefFun id f    => do f' <- trans_function f;
                         OK (DefFun id f')
     | _ => OK gd
     end.
 
   Definition trans_program (p:program) : res program :=
-    let* gd' :=  mmap trans_globdef (prog_defs p) in
+    do gd' <-  mmap trans_globdef (prog_defs p);
     OK {|
       prog_defs := gd';
       prog_types := prog_types p;
@@ -90,7 +91,7 @@ End TRANSF.
 
 
 Module Typing.
-  Import Error.
+  Import Res.
 
   Import ListNotations.
 
@@ -100,165 +101,164 @@ Module Typing.
 
   Fixpoint typecheck_atom (be: benv) (gx: gcontext) (lx: lcontext) (a: atom) : res atom :=
     match a with
-    | Syntax.ATrue => ret ATrue
-    | Syntax.AFalse => ret AFalse
-    | Syntax.AInt32 i s => ret (AInt32 i s)
-    | Syntax.AInt64 i s => ret (AInt64 i s)
+    | Syntax.ATrue => eret ATrue
+    | Syntax.AFalse => eret AFalse
+    | Syntax.AInt32 i s => eret (AInt32 i s)
+    | Syntax.AInt64 i s => eret (AInt64 i s)
     | Syntax.AConstr x i1 ty =>
-        let* t := typof_constr be x in
-        let* z := zval_of_constr be t x in
-        ret (AConstr x (Int.repr z) t)
+        do t <- typof_constr be x;
+        do z <- zval_of_constr be t x;
+        eret (AConstr x (Int.repr z) t)
     | Syntax.AVar x _ =>
-        let* t := typof_var gx lx x in
-        ret (AVar x t)
+        do t <- typof_var gx lx x;
+        eret (AVar x t)
     | Syntax.ACast a1 ty =>
-        let* a1' := typecheck_atom be gx lx a1 in
-        let* t := err_of_opt (typecheck_cast (btypof_atom a1') ty) in
-        ret (ACast a1' t)
+        do a1' <- typecheck_atom be gx lx a1;
+        do t <- Res.of_opt (typecheck_cast (btypof_atom a1') ty);
+        eret (ACast a1' t)
     | Syntax.AUnaryOp op a1 _ =>
-        let* a1' := typecheck_atom be gx lx a1 in
+        do a1' <- typecheck_atom be gx lx a1;
         let ty1 := btypof_atom a1' in
-        let* t := typecheck_unary_op op ty1 in
-        ret (AUnaryOp op a1' t)
+        do t <- typecheck_unary_op op ty1;
+        eret (AUnaryOp op a1' t)
     | Syntax.ABinaryOp op a1 a2 _ =>
-        let* a1' := typecheck_atom be gx lx a1 in
-        let* a2' := typecheck_atom be gx lx a2 in
+        do a1' <- typecheck_atom be gx lx a1;
+        do a2' <- typecheck_atom be gx lx a2;
         let ty1 := btypof_atom a1' in
         let ty2 := btypof_atom a2' in
-        let* t := typecheck_binary_op op ty1 ty2 in
-        ret (ABinaryOp op a1' a2' t)
+        do t <- typecheck_binary_op op ty1 ty2;
+        eret (ABinaryOp op a1' a2' t)
     | Syntax.AArrayGet a i _ _ =>
-        let* a' := typecheck_atom be gx lx a in
-        let* i' := typecheck_atom be gx lx i in
+        do a' <- typecheck_atom be gx lx a;
+        do i' <- typecheck_atom be gx lx i;
         let ta := btypof_atom a' in
         let ti := btypof_atom i' in
-        let* (ty, ly) := typecheck_array_get2 arch ta ti in
-        ret (AArrayGet a' i' ly ty)
+        do (ty, ly) <- typecheck_array_get2 arch ta ti;
+        eret (AArrayGet a' i' ly ty)
     | Syntax.ARecordProj a f _ _ =>
-        let* a' := typecheck_atom be gx lx a in
+        do a' <- typecheck_atom be gx lx a;
         let ta := btypof_atom a' in
-        let* (ty, ly) := typecheck_record_proj2 be ta f in
-        ret (ARecordProj a' f ly ty)
+        do (ty, ly) <- typecheck_record_proj2 be ta f;
+        eret (ARecordProj a' f ly ty)
     | Syntax.APureCall f _ args _ =>
-        let* tf := typof_var gx lx f in
-        let* args' := mmap (typecheck_atom be gx lx) args in
+        do tf <- typof_var gx lx f;
+        do args' <- mmap (typecheck_atom be gx lx) args;
         let targs := map btypof_atom args' in
-        let* ty := typecheck_call tf targs in
-        ret (APureCall f tf args' ty)
+        do ty <- typecheck_call tf targs;
+        eret (APureCall f tf args' ty)
     end.
 
   Definition typecheck_comp (be: benv) (gx: gcontext) (lx: lcontext) (c: comp) : res comp :=
     match c with
     | Syntax.CpAtom a =>
-        let* a' := typecheck_atom be gx lx a in
-        ret (CpAtom a')
+        do a' <- typecheck_atom be gx lx a;
+        eret (CpAtom a')
     | Syntax.CpArraySet a1 a2 a3 _ =>
-        let* a1' := typecheck_atom be gx lx a1 in
-        let* a2' := typecheck_atom be gx lx a2 in
-        let* a3' := typecheck_atom be gx lx a3 in
+        do a1' <- typecheck_atom be gx lx a1;
+        do a2' <- typecheck_atom be gx lx a2;
+        do a3' <- typecheck_atom be gx lx a3;
         let ty1 := btypof_atom a1' in
         let ty2 := btypof_atom a2' in
         let ty3 := btypof_atom a3' in
-        let* ty := typecheck_array_set arch ty1 ty2 ty3 in
-        ret (CpArraySet a1' a2' a3' ty)
+        do ty <- typecheck_array_set arch ty1 ty2 ty3;
+        eret (CpArraySet a1' a2' a3' ty)
     | Syntax.CpRecordUpdate a1 x a2 _ =>
-        let* a1' := typecheck_atom be gx lx a1 in
-        let* a2' := typecheck_atom be gx lx a2 in
+        do a1' <- typecheck_atom be gx lx a1;
+        do a2' <- typecheck_atom be gx lx a2;
         let ty1 := btypof_atom a1' in
         let ty2 := btypof_atom a2' in
-        let* ty := typecheck_record_update be ty1 ty2 x in
-        ret (CpRecordUpdate a1' x a2' ty)
+        do ty <- typecheck_record_update be ty1 ty2 x;
+        eret (CpRecordUpdate a1' x a2' ty)
     | Syntax.CpCall f _ args _ =>
-        let* tf := typof_var gx lx f in
-        let* args' := mmap (typecheck_atom be gx lx) args in
+        do tf <- typof_var gx lx f;
+        do args' <- mmap (typecheck_atom be gx lx) args;
         let targs := map btypof_atom args' in
-        let* ty := typecheck_call tf targs in
-        ret (CpCall f tf args' ty)
+        do ty <- typecheck_call tf targs;
+        eret (CpCall f tf args' ty)
     end.
 
   (* Should be checked if the contexts contains the same set of set variables. ? *)
   Definition merge_contexts (lx1 lx2: lcontext) : res lcontext :=
     STree.fold
       (fun acc k v =>
-        let* acc := acc in
+        do acc <- acc;
         lcontext_update_imp acc k v)
       lx2
-      (ret lx1).
+      (eret lx1).
 
   Fixpoint typecheck_statement (be: benv) (gx: gcontext) (lx: lcontext) (tret: btyp) (s: statement) : res (statement * lcontext) :=
     let fix typecheck_match_rec (be: benv) (gx: gcontext) (lx: lcontext) (te: btyp) (tret: btyp) (elems: list ident) (unmatched: list ident)
       (cases: list (Benum.pattern * statement)) : res (list (pattern * statement) * lcontext) :=
       match cases with
-      | nil => fail
+      | nil => efail
       | (x, sx) :: nil =>
-          let* unmatched' := typecheck_pattern be te elems x unmatched in
+          do unmatched' <- typecheck_pattern be te elems x unmatched;
           if list_is_empty unmatched' then
-            let* (sx', lx') := typecheck_statement be gx lx tret sx in
-            ret (((x, sx') :: nil), lx')
+            do (sx', lx') <- typecheck_statement be gx lx tret sx;
+            eret (((x, sx') :: nil), lx')
           else
-            failwith "Imp1.Typing.typecheck_match_rec: non-exhaustive pattern-matching"
+            efailwith "Imp1.Typing.typecheck_match_rec: non-exhaustive pattern-matching"
       | (x, sx) :: ((_ :: _) as cases') =>
-          let* unmatched' := typecheck_pattern be te elems x unmatched in
-          let* (sx', lx') := typecheck_statement be gx lx tret sx in
-          let* (cases_typed, lxr) := typecheck_match_rec be gx lx te tret elems unmatched' cases' in
-          let* lxm := merge_contexts lx' lxr in
-          ret (((x, sx') :: cases_typed), lxm)
+          do unmatched' <- typecheck_pattern be te elems x unmatched;
+          do (sx', lx') <- typecheck_statement be gx lx tret sx;
+          do (cases_typed, lxr) <- typecheck_match_rec be gx lx te tret elems unmatched' cases';
+          do lxm <- merge_contexts lx' lxr;
+          eret (((x, sx') :: cases_typed), lxm)
       end
     in
     let typecheck_match (be: benv) (gx: gcontext) (lx: lcontext) (tret: btyp) (ty: btyp)
       (cases: list (Benum.pattern * statement)) : res (list (pattern * statement) * lcontext) :=
       match ty with
       | BEnum te =>
-          let* elems := err_of_opt (TEnv.get_edef be te) in
+          do elems <- Res.of_opt (TEnv.get_edef be te);
           typecheck_match_rec be gx lx ty tret elems elems cases
-      | _ => failwith "Imp1.Typing.typecheck_match: enum type expected"
+      | _ => efailwith "Imp1.Typing.typecheck_match: enum type expected"
       end
     in
     match s with
-    | Imp1.StSkip    => ret (StSkip,lx)
+    | Imp1.StSkip    => eret (StSkip,lx)
     | Imp1.StSet x c =>
-        let* c' := typecheck_comp be gx lx c in
-        let* lx' := lcontext_update_imp lx x (btypof_comp c') in
-        ret (StSet x c', lx')
+        do c' <- typecheck_comp be gx lx c;
+        do lx' <- lcontext_update_imp lx x (btypof_comp c');
+        eret (StSet x c', lx')
     | Imp1.StIfThenElse a s1 s2 =>
-        let* (s1', lx1) := typecheck_statement be gx lx tret s1 in
-        let* (s2', lx2) := typecheck_statement be gx lx tret s2 in
-        let* a' := typecheck_atom be gx lx a in
+        do (s1', lx1) <- typecheck_statement be gx lx tret s1;
+        do (s2', lx2) <- typecheck_statement be gx lx tret s2;
+        do a' <- typecheck_atom be gx lx a;
         match btypof_atom a' with
         | BBool =>
-            let* lx' := merge_contexts lx1 lx2 in
-            ret (StIfThenElse a' s1' s2', lx')
-        | _ => failwith "Imp1.Typing.typecheck_statement: atom of type bool expected"
+            do lx' <- merge_contexts lx1 lx2;
+            eret (StIfThenElse a' s1' s2', lx')
+        | _ => efailwith "Imp1.Typing.typecheck_statement: atom of type bool expected"
         end
     | Imp1.StSwitch a cases =>
-        let* a' := typecheck_atom be gx lx a in
-        let* (cases_typed, lx') := typecheck_match be gx lx tret (btypof_atom a') cases in
-        ret (StSwitch a' cases_typed, lx')
+        do a' <- typecheck_atom be gx lx a;
+        do (cases_typed, lx') <- typecheck_match be gx lx tret (btypof_atom a') cases;
+        eret (StSwitch a' cases_typed, lx')
     | Imp1.StSequence s1 s2 =>
-        let* (s1', lx1) := typecheck_statement be gx lx tret s1 in
-        let* (s2', lx2) := typecheck_statement be gx lx1 tret s2 in
-        ret (StSequence s1' s2', lx2)
+        do (s1', lx1) <- typecheck_statement be gx lx tret s1;
+        do (s2', lx2) <- typecheck_statement be gx lx1 tret s2;
+        eret (StSequence s1' s2', lx2)
     | Imp1.StReturn a =>
-        let* a' := typecheck_atom be gx lx a in
+        do a' <- typecheck_atom be gx lx a;
         let ty := btypof_atom a' in
         if btyp_eq_dec ty tret then
-          ret (StReturn a', lx)
+          eret (StReturn a', lx)
         else
-          failwith "Imp1.Typing.typecheck_statement: return type mismatch"
+          efailwith "Imp1.Typing.typecheck_statement: return type mismatch"
     | Imp1.StAttr a s =>
-        let* (s',lx') := typecheck_statement be gx lx tret s in
-        ret (StAttr a s',lx')
+        do (s',lx') <- typecheck_statement be gx lx tret s;
+        eret (StAttr a s',lx')
     end.
 
   Definition typecheck_function (be: benv) (gx: gcontext) (f: function) : res function :=
-    let* lx :=
+    do lx <-
       list_fold_left_err
         (fun acc '(x, tx) => lcontext_update_imp acc x tx)
         (fn_params f)
-        STree.empty
-    in
-    let* (body, _) := typecheck_statement be gx lx (fn_return f) (fn_body f) in
-    ret {|
+        STree.empty;
+    do (body, _) <- typecheck_statement be gx lx (fn_return f) (fn_body f);
+    eret {|
       fn_return := fn_return f;
       fn_params := fn_params f;
       fn_body := body
@@ -266,30 +266,30 @@ Module Typing.
   
   Fixpoint typecheck_globdefs_rec (be: benv) (gx: gcontext) (defs: list globdef) : res (list globdef) :=
     match defs with
-    | nil => ret nil
+    | nil => eret nil
     | d :: defs' =>
         match d with
         | DefConst x l ty =>
-            let* l' := typecheck_literal be l in
+            do l' <- typecheck_literal be l;
             if btyp_eq_dec ty (btypof_literal l') then
-              let* gx := gcontext_update gx x ty in
-              let* rd := typecheck_globdefs_rec be gx defs' in
-              ret (DefConst x l' ty :: rd)
+              do gx <- gcontext_update gx x ty;
+              do rd <- typecheck_globdefs_rec be gx defs';
+              eret (DefConst x l' ty :: rd)
             else
-              failwith "Imp1.Typing.typecheck_globdefs: type mismatch in constant definition"
+              efailwith "Imp1.Typing.typecheck_globdefs: type mismatch in constant definition"
         | DefFun x f =>
-            let* f' := typecheck_function be gx f in
-            let* gx := gcontext_update gx x (mk_fun_btyp (fn_params f') (fn_return f')) in
-            let* rd := typecheck_globdefs_rec be gx defs' in
-            ret (DefFun x f' :: rd)
+            do f' <- typecheck_function be gx f;
+            do gx <- gcontext_update gx x (mk_fun_btyp (fn_params f') (fn_return f'));
+            do rd <- typecheck_globdefs_rec be gx defs';
+            eret (DefFun x f' :: rd)
         | DeclConst x ty =>
-            let* gx := gcontext_update gx x ty in
-            let* rd := typecheck_globdefs_rec be gx defs' in
-            ret (DeclConst x ty :: rd)
+            do gx <- gcontext_update gx x ty;
+            do rd <- typecheck_globdefs_rec be gx defs';
+            eret (DeclConst x ty :: rd)
         | DeclFun x tparams tret =>
-            let* gx := gcontext_update gx x (mk_fun_btyp tparams tret) in
-            let* rd := typecheck_globdefs_rec be gx defs' in
-            ret (DeclFun x tparams tret :: rd)
+            do gx <- gcontext_update gx x (mk_fun_btyp tparams tret);
+            do rd <- typecheck_globdefs_rec be gx defs';
+            eret (DeclFun x tparams tret :: rd)
         end
     end.
 
@@ -297,9 +297,9 @@ Module Typing.
     typecheck_globdefs_rec be STree.empty defs.
 
   Definition typecheck_program (prog: program) : res program :=
-    let* be := err_of_opt (TEnv.build (prog_types prog)) in
-    let* defs := typecheck_globdefs be (prog_defs prog) in
-    ret {|
+    do be <- Res.of_opt (TEnv.build (prog_types prog));
+    do defs <- typecheck_globdefs be (prog_defs prog);
+    eret {|
       prog_defs := defs;
       prog_types := prog_types prog;
       prog_tabs := prog_tabs prog;

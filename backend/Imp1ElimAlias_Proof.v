@@ -2,7 +2,7 @@
 From compcert Require Import Coqlib Maps.
 Require Import Uint63.
 Require Import String FMapInterface FMapList ZArith Int ListSet.
-From BarocqComp Require Import Error DList Maps2 Types Imp1 Graph Typing Utils Pp.
+From BarocqComp Require Import Res DList Maps2 Types Imp1 Graph Typing Utils Pp.
 From Coq Require Import FMapPositive.
 Require Import Syntax.
 From BarocqComp Require Import Imp1Imp Imp1ElimAlias.
@@ -583,7 +583,7 @@ Section S.
     intros.
     unfold get_var in EVAL.
     destruct (btyp_to_typ te bt) eqn:BT ; try discriminate.
-    unfold bind,Errors.bind in EVAL.
+    unfold bind,Res.bind in EVAL.
     destruct (typ_eq_dec t tyr); try discriminate.
     subst.
     specialize (GAMMA v).
@@ -601,7 +601,7 @@ Section S.
       destruct (Vars.get v avr); try tauto.
       specialize (GAMMAE v).
       destruct (STree.get v age) eqn:G, (ge v); try discriminate ; try tauto.
-      unfold bind,Errors.bind in EVAL.
+      unfold bind,Res.bind in EVAL.
       inv GAMMAE.
       + destruct (typ_eq_dec ty tyr); try discriminate.
         subst. simpl in EVAL; inv EVAL.
@@ -2566,7 +2566,7 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
     exists e0 ; reflexivity.
     destruct (ge fid); try discriminate.
     unfold bind in H.
-    unfold Errors.bind in H.
+    unfold Res.bind in H.
     destruct d; try discriminate.
     destruct (typ_eq_dec (TFun args tret0) (TFun targs tret));
       try discriminate.
@@ -2654,7 +2654,7 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
       unfold decomp_ptr,decomp_val in LF.
       rewrite EQ in LF.
       unfold bind in LF.
-      unfold Errors.bind in LF.
+      unfold Res.bind in LF.
       destruct (typ_eq_dec (TFun l0 tyr) (TFun l0 tyr));
         try discriminate.
       inv LF.

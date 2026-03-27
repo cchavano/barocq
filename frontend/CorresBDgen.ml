@@ -565,9 +565,8 @@ let prelude_imports () : string =
   sprintf
     "From Coq Require Import String List.\n\
      From compcert Require Import Integers.\n\
-     From BarocqComp Require Import Ident OptionMonad Maps2 Barray Benum \
-     Brecord Types Typing Denot ExtEqual BarocqBNF BarocqBNFVC \
-     CorresBD_Tactics Syntax.\n\
+     From BarocqComp Require Import Ident Option Maps2 Barray Benum Brecord \
+     Types Typing Denot ExtEqual BarocqBNF BarocqBNFVC CorresBD_Tactics Syntax.\n\
      From %s Require Import %s_Types %s %s.\n\n\
      Import ListNotations.\n\n\
      Open Scope string_scope.\n"
@@ -580,7 +579,7 @@ let imports () : string =
   sprintf
     "From Coq Require Import String.\n\
      From compcert Require Import Integers.\n\
-     From BarocqComp Require Import Target Monads OptionMonad Barray Brecord \
+     From BarocqComp Require Import Target StateMonads Option Barray Brecord \
      Types Barocq.\n\
      From BarocqComp Require Import CorresBD_Tactics.\n\
      From %s Require Import %s_Types %s %s %s_CorresBD_Prelude \

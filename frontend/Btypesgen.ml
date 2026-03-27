@@ -30,15 +30,15 @@ let rec mtyp_to_rocq (shver : BarocqShallowgen.shallow_version) (ty : mtyp) :
   | MEnum te -> ident_to_shallow shver te
   | MRecord tr -> ident_to_shallow shver tr
   | MAbs t -> ident_to_string t
-  | MFun (tparams, tret) -> begin
-      match tparams with
+  | MFun (tparams, tret) ->
+      begin match tparams with
       | [] -> sprintf "unit -> %s" (opt_parens shver tret)
       | _ ->
           List.fold_right
             (fun t acc -> sprintf "%s -> %s" (opt_parens shver t) acc)
             tparams
             (opt_parens shver tret)
-    end
+      end
   | MRes ty' -> sprintf "res %s" (opt_parens shver ty')
 
 and opt_parens (shver : BarocqShallowgen.shallow_version) (ty : mtyp) : string =
@@ -853,13 +853,12 @@ let imports () : string =
     "From Coq Require Import List String BinIntDef.\n\
      From compcert Require Import Integers.\n\
      From RecordUpdate Require Import RecordUpdate.\n\
-     From BarocqComp Require Import Ident OptionMonad Barray Benum Brecord \
-     Utils.\n\
+     From BarocqComp Require Import Ident Option Barray Benum Brecord Utils.\n\
      From %s Require Import %s.\n\
      Import ListNotations.\n\n\
      Open Scope Z_scope.\n\
      Open Scope string_scope.\n\
-     Open Scope option_monad_scope.\n"
+     Local Open Scope option_monad_scope.\n"
     !coqlib
     !shallowR_file
 

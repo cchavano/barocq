@@ -1,10 +1,13 @@
 Set Universe Polymorphism.
 From Coq Require Import List String ListDec PArith Bool.
 From compcert Require Import Coqlib Integers Maps Ctypes.
-From BarocqComp Require Import  Maps2 Utils Error Intop Barray Brecord Benum Types Typing Syntax Pp Printer.
-From BarocqComp Require Import OptionMonad Denot.
-From BarocqComp Require  DList.
+From BarocqComp Require Import Maps2 Utils Res Intop Barray Brecord Benum Types Typing Syntax Pp Printer.
+From BarocqComp Require Import Option Denot.
+From BarocqComp Require DList.
 Import ListNotations.
+
+Local Open Scope option_monad_scope.
+Local Open Scope error_monad_scope.
 
 (** * Abstract syntax *)
 
@@ -271,83 +274,83 @@ Module Typing.
 
   Variable arch : Target.archi.
 
-  Import Error.
+  Import Res.
 
   Fixpoint typecheck_expr (be: benv) (gx: gcontext) (lx: lcontext) (e: Barocq.expr) : res BarocqTyped.expr :=
     match e with
-    | Barocq.ETrue => ret ETrue
-    | Barocq.EFalse => ret EFalse
-    | Barocq.EInt32 i s => ret (EInt32 i s)
-    | Barocq.EInt64 i s => ret (EInt64 i s)
+    | Barocq.ETrue => eret ETrue
+    | Barocq.EFalse => eret EFalse
+    | Barocq.EInt32 i s => eret (EInt32 i s)
+    | Barocq.EInt64 i s => eret (EInt64 i s)
     | Barocq.EConstr x =>
-        let* t := typof_constr be x in
-        let* z := zval_of_constr be t x in
-        ret (EConstr x (Int.repr z) t)
+        do t <- typof_constr be x;
+        do z <- zval_of_constr be t x;
+        eret (EConstr x (Int.repr z) t)
     | Barocq.EVar x =>
-        let* t := typof_var gx lx x in
-        ret (EVar x t)
+        do t <- typof_var gx lx x;
+        eret (EVar x t)
     | Barocq.ECast e1 ty =>
-        let* e1' := typecheck_expr be gx lx e1 in
-        let* t := err_of_opt (typecheck_cast (typof_expr e1') ty) in
-        ret (ECast e1' t)
+        do e1' <- typecheck_expr be gx lx e1;
+        do t <- Res.of_opt (typecheck_cast (typof_expr e1') ty);
+        eret (ECast e1' t)
     | Barocq.EUnaryOp op e1 =>
-        let* e1' := typecheck_expr be gx lx e1 in
-        let* t := typecheck_unary_op op (typof_expr e1') in
-        ret (EUnaryOp op e1' t)
+        do e1' <- typecheck_expr be gx lx e1;
+        do t <- typecheck_unary_op op (typof_expr e1');
+        eret (EUnaryOp op e1' t)
     | Barocq.EBinaryOp op e1 e2 =>
-        let* e1' := typecheck_expr be gx lx e1 in
-        let* e2' := typecheck_expr be gx lx e2 in
-        let* t := typecheck_binary_op op (typof_expr e1') (typof_expr e2') in
-        ret (EBinaryOp op e1' e2' t)
+        do e1' <- typecheck_expr be gx lx e1;
+        do e2' <- typecheck_expr be gx lx e2;
+        do t <- typecheck_binary_op op (typof_expr e1') (typof_expr e2');
+        eret (EBinaryOp op e1' e2' t)
     | Barocq.EArrayGet e1 e2 =>
-        let* e1' := typecheck_expr be gx lx e1 in
-        let* e2' := typecheck_expr be gx lx e2 in
-        let* (t, ly) := typecheck_array_get2 arch (typof_expr e1') (typof_expr e2') in
-        ret (EArrayGet e1' e2' ly t)
+        do e1' <- typecheck_expr be gx lx e1;
+        do e2' <- typecheck_expr be gx lx e2;
+        do (t, ly) <- typecheck_array_get2 arch (typof_expr e1') (typof_expr e2');
+        eret (EArrayGet e1' e2' ly t)
     | Barocq.EArraySet e1 e2 e3 =>
-        let* e1' := typecheck_expr be gx lx e1 in
-        let* e2' := typecheck_expr be gx lx e2 in
-        let* e3' := typecheck_expr be gx lx e3 in
-        let* t := typecheck_array_set arch (typof_expr e1') (typof_expr e2') (typof_expr e3') in
-        ret (EArraySet e1' e2' e3' t)
+        do e1' <- typecheck_expr be gx lx e1;
+        do e2' <- typecheck_expr be gx lx e2;
+        do e3' <- typecheck_expr be gx lx e3;
+        do t <- typecheck_array_set arch (typof_expr e1') (typof_expr e2') (typof_expr e3');
+        eret (EArraySet e1' e2' e3' t)
     | Barocq.ERecordProj e1 x =>
-        let* e1' := typecheck_expr be gx lx e1 in
-        let* (t, ly) := typecheck_record_proj2 be (typof_expr e1') x in
-        ret (ERecordProj e1' x ly t)
+        do e1' <- typecheck_expr be gx lx e1;
+        do (t, ly) <- typecheck_record_proj2 be (typof_expr e1') x;
+        eret (ERecordProj e1' x ly t)
     | Barocq.ERecordUpdate e1 x e2 =>
-        let* e1' := typecheck_expr be gx lx e1 in
-        let* e2' := typecheck_expr be gx lx e2 in
-        let* t := typecheck_record_update be (typof_expr e1') (typof_expr e2') x in
-        ret (ERecordUpdate e1' x e2' t)
+        do e1' <- typecheck_expr be gx lx e1;
+        do e2' <- typecheck_expr be gx lx e2;
+        do t <- typecheck_record_update be (typof_expr e1') (typof_expr e2') x;
+        eret (ERecordUpdate e1' x e2' t)
     | Barocq.EApp e1 args =>
-        let* e1' := typecheck_expr be gx lx e1 in
-        let* args' := mmap (typecheck_expr be gx lx) args in
+        do e1' <- typecheck_expr be gx lx e1;
+        do args' <- mmap (typecheck_expr be gx lx) args;
         let targs := List.map typof_expr args' in 
-        let* t := typecheck_call (typof_expr e1') targs in
-        ret (EApp e1' args' t)
+        do t <- typecheck_call (typof_expr e1') targs;
+        eret (EApp e1' args' t)
     | Barocq.EIfThenElse e1 e2 e3 =>
-        let* e1' := typecheck_expr be gx lx e1 in
-        let* e2' := typecheck_expr be gx lx e2 in
-        let* e3' := typecheck_expr be gx lx e3 in
+        do e1' <- typecheck_expr be gx lx e1;
+        do e2' <- typecheck_expr be gx lx e2;
+        do e3' <- typecheck_expr be gx lx e3;
         let '(ty1, ty2, ty3) := (typof_expr e1', typof_expr e2', typof_expr e3') in
         match ty1 with
         | BBool =>
             if btyp_eq_dec ty2 ty3 then
-              ret (EIfThenElse e1' e2' e3' ty2)
-            else fail
-        | _ => fail
+              eret (EIfThenElse e1' e2' e3' ty2)
+            else efail
+        | _ => efail
         end
     | Barocq.EMatch e1 cases =>
-        let* e1' := typecheck_expr be gx lx e1 in
-        let* cases' := MapList.map_err (typecheck_expr be gx lx) cases in
+        do e1' <- typecheck_expr be gx lx e1;
+        do cases' <- MapList.map_err (typecheck_expr be gx lx) cases;
         let tcases' := MapList.map typof_expr cases' in
-        let* t := typecheck_match be (typof_expr e1') tcases' in
-        ret (EMatch e1' cases' t)
+        do t <- typecheck_match be (typof_expr e1') tcases';
+        eret (EMatch e1' cases' t)
     | Barocq.ELetIn x e1 e2 =>
-        let* e1' := typecheck_expr be gx lx e1 in
+        do e1' <- typecheck_expr be gx lx e1;
         let lx' := lcontext_update lx x (typof_expr e1') in
-        let* e2' := typecheck_expr be gx lx' e2 in
-        ret (ELetIn x e1' e2' (typof_expr e2'))
+        do e2' <- typecheck_expr be gx lx' e2;
+        eret (ELetIn x e1' e2' (typof_expr e2'))
     | Barocq.EAttr _ e => typecheck_expr be gx lx e
     end.
 
@@ -358,51 +361,51 @@ Module Typing.
         (fn_params f)
         (STree.empty)
     in
-    let* body := typecheck_expr be gx lx (fn_body f) in
+    do body <- typecheck_expr be gx lx (fn_body f);
     if btyp_eq_dec (typof_expr body) (fn_return f) then
-      ret {|
+      eret {|
         fn_return := fn_return f;
         fn_params := fn_params f;
         fn_body := body
       |}
-    else failwith "Barocq.Typing.typecheck_function: return type mismatch".
+    else efailwith "Barocq.Typing.typecheck_function: return type mismatch".
 
   Definition typecheck_globdef (be:benv) (gx:gcontext) (d: Barocq.globdef) : res (benv * gcontext * BarocqTyped.globdef) :=
     match d with
     | Barocq.DefType x td =>
-        let* be' := err_of_opt (TEnv.update_defs be x td) in
-        ret (be', gx, (DefType x td))
+        do be' <- Res.of_opt (TEnv.update_defs be x td);
+        eret (be', gx, (DefType x td))
     | Barocq.DefConst x l ty =>
-        let* l' := typecheck_literal be l in
+        do l' <- typecheck_literal be l;
         if btyp_eq_dec ty (btypof_literal l') then
-          let* gx' := gcontext_update gx x ty in
-          ret (be,gx',DefConst x l ty)
+          do gx' <- gcontext_update gx x ty;
+          eret (be,gx',DefConst x l ty)
         else
-          failwith "Barocq.Typing.typecheck_globdef: type mismatch in constant definition"
+          efailwith "Barocq.Typing.typecheck_globdef: type mismatch in constant definition"
       | Barocq.DefFun x f =>
-          let* f' := typecheck_function arch be gx f in
+          do f' <- typecheck_function arch be gx f;
           let tf := mk_fun_btyp (fn_params f') (fn_return f') in
-          let* gx' := gcontext_update gx x tf in
-          ret (be,gx',DefFun x f')
+          do gx' <- gcontext_update gx x tf;
+          eret (be,gx',DefFun x f')
       | Barocq.DeclType t tk =>
-          ret (be,gx,DeclType t tk)
+          eret (be,gx,DeclType t tk)
       | Barocq.DeclConst x ty =>
-          let* gx' := gcontext_update gx x ty in
-          ret (be,gx',DeclConst x ty)
+          do gx' <- gcontext_update gx x ty;
+          eret (be,gx',DeclConst x ty)
       | Barocq.DeclFun x tparams tret =>
           let tf := mk_fun_btyp tparams tret in
-          let* gx' := gcontext_update gx x tf in
-          ret (be,gx',DeclFun x tparams tret)
+          do gx' <- gcontext_update gx x tf;
+          eret (be,gx',DeclFun x tparams tret)
     end.
 
   Fixpoint typecheck_globdefs (be: benv) (gx: gcontext) (defs: list Barocq.globdef) : res (list BarocqTyped.globdef) :=
     match defs with
-    | nil => ret nil
+    | nil => eret nil
     | d :: defs' =>
-        let* gd := typecheck_globdef be gx d in
+        do gd <- typecheck_globdef be gx d;
         let '(be',gx',d') := gd in
-        let* rd :=typecheck_globdefs be' gx' defs' in
-        ret (d':: rd)
+        do rd <- typecheck_globdefs be' gx' defs';
+        eret (d':: rd)
     end.
 
   Definition typecheck_program (prog: Barocq.program) : res BarocqTyped.program :=
@@ -410,23 +413,23 @@ Module Typing.
 
   Definition typecheck_command (be:benv) (gx: gcontext) (cmd : Barocq.command) : res (benv * gcontext * BarocqTyped.command) :=
     match  cmd with
-    | Barocq.CmdDef gd => let* gd := typecheck_globdef be gx gd in
+    | Barocq.CmdDef gd => do gd <- typecheck_globdef be gx gd;
                    let '(be',gx',d') := gd in
                    OK (be',gx',CmdDef d')
     | Barocq.CmdExpr e =>
-        let* e := typecheck_expr be gx STree.empty e in
+        do e <- typecheck_expr be gx STree.empty e;
         let bt := typof_expr e in
         OK(be,gx,CmdExpr bt e)
     end.
 
   Fixpoint typecheck_commands (be:benv) (gx:gcontext) (prog: Barocq.iprogram) : res BarocqTyped.iprogram :=
     match prog with
-    | nil => ret nil
+    | nil => eret nil
     | d :: defs' =>
-        let* gd := typecheck_command be gx d in
+        do gd <- typecheck_command be gx d;
         let '(be',gx',d') := gd in
-        let* rd :=typecheck_commands be' gx' defs' in
-        ret (d':: rd)
+        do rd <- typecheck_commands be' gx' defs';
+        eret (d':: rd)
     end.
 
   Definition typecheck_iprogram (prog: Barocq.iprogram) : res BarocqTyped.iprogram :=
@@ -826,37 +829,34 @@ Section DENOT.
     let* (_, ge) := eval_prog impl prog in
     genv_get tabs ge x.
 
-
   (** Interpreter *)
-  Import Error.
+
   Fixpoint interpret_rec (te: tenv) (ge: genv) (cmds: list command) : res (list (value tabs)) :=
     match cmds with
     | nil => Error nil
     | c :: xprog' =>
         match c with
         | CmdDef (DefType x td) =>
-            let* te' := err_of_opt (eval_def_type te x td) in
+            do te' <- Res.of_opt (eval_def_type te x td);
             interpret_rec te' ge xprog'
         | CmdDef (DefConst x l ty) =>
-            let* ge' := err_of_opt (eval_def_const te ge x l ty) in
+            do ge' <- Res.of_opt (eval_def_const te ge x l ty);
             interpret_rec te ge' xprog'
         | CmdDef (DefFun x f) =>
-            let* ge' := err_of_opt (eval_def_fun te ge x f) in
+            do ge' <- Res.of_opt (eval_def_fun te ge x f);
             interpret_rec te ge' xprog'
-        | CmdDef (DeclType _ _) => failwith "the program contains abstract types"
+        | CmdDef (DeclType _ _) => efailwith "the program contains abstract types"
         | CmdDef (DeclConst _ _)
-        | CmdDef (DeclFun _ _ _) => failwith "the program contains abstract definitions"
+        | CmdDef (DeclFun _ _ _) => efailwith "the program contains abstract definitions"
         | CmdExpr bt e =>
-            let* ty := err_of_opt (typof_expr te e) in
-            let* v := err_of_opt (eval_expr te ge STree.empty ty e) in
-            let* l := interpret_rec te ge xprog' in
-            ret (Val tabs ty v :: l)
+            do ty <- Res.of_opt (typof_expr te e);
+            do v <- Res.of_opt (eval_expr te ge STree.empty ty e);
+            do l <- interpret_rec te ge xprog';
+            eret (Val tabs ty v :: l)
         end
     end.
 
   Definition interpret (iprog: list command) : res (list (value tabs)) :=
     interpret_rec TEnv.empty STree.empty iprog.
-
-
 
 End DENOT.

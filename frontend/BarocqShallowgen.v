@@ -1,9 +1,11 @@
 From Coq Require Import List String ZArith.
 From compcert Require Import Maps.
 From BarocqComp  Require Import Pp Printer.
-From BarocqComp Require Import Target Monads Error Maps2 Types Utils Syntax Barray Benum Barocq BarocqShallow.
+From BarocqComp Require Import Target StateMonads Res Maps2 Types Utils Syntax Barray Benum Barocq BarocqShallow.
 Import ListNotations.
 Import MonCounterErr.
+
+Local Open Scope error_monad_scope.
 
 Inductive shallow_version : Type :=
   | ShallowR  (* shallow embedding with native Rocq records and enums. *)
@@ -16,109 +18,108 @@ Module Normalization.
   Definition bnfexpr_of_atomlist (e: Barocq.expr) (la: list atom) : res BNF.expr :=
     match e with
     | Barocq.ECast _ ty =>
-        let* a := list_nth_err la 0 in
+        do a <- list_nth_err la 0;
         eret (EAtom (ACast a ty))
     | Barocq.EUnaryOp op _ =>
-        let* a := list_nth_err la 0 in
+        do a <- list_nth_err la 0;
         eret (EAtom (AUnaryOp op a))
     | Barocq.EBinaryOp op _ _ =>
-        let* a1 := list_nth_err la 0 in
-        let* a2 := list_nth_err la 1 in
+        do a1 <- list_nth_err la 0;
+        do a2 <- list_nth_err la 1;
         eret (EAtom (ABinaryOp op a1 a2))
     | Barocq.EArrayGet _ _ =>
-        let* a1 := list_nth_err la 0 in
-        let* a2 := list_nth_err la 1 in
+        do a1 <- list_nth_err la 0;
+        do a2 <- list_nth_err la 1;
         eret (EArrayGet a1 a2)
     | Barocq.EArraySet _ _ _ =>
-        let* a1 := list_nth_err la 0 in
-        let* a2 := list_nth_err la 1 in
-        let* a3 := list_nth_err la 2 in
+        do a1 <- list_nth_err la 0;
+        do a2 <- list_nth_err la 1;
+        do a3 <- list_nth_err la 2;
         eret (EArraySet a1 a2 a3)
     | Barocq.ERecordProj _ x =>
-        let* a := list_nth_err la 0 in
+        do a <- list_nth_err la 0;
         eret (EAtom (ARecordProj a x))
     | Barocq.ERecordUpdate _ x _ =>
-        let* a1 := list_nth_err la 0 in
-        let* a2 := list_nth_err la 1 in
+        do a1 <- list_nth_err la 0;
+        do a2 <- list_nth_err la 1;
         eret (EAtom (ARecordUpdate a1 x a2))
     | Barocq.EApp _ _ =>
-        let* a := list_nth_err la 0 in
+        do a <- list_nth_err la 0;
         let args := tail la in
         eret (EApp a args)
     | _ => efail
     end.
 
-  Open Scope state_err_monad_scope.
+  Local Open Scope state_err_monad_scope.
 
   Definition fresh_var : crmon ident := Utils.fresh_var_err "b".
 
   Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BNF.expr :=
     let fix norm_expr_aux (e: Barocq.expr) : crmon (smaplist BNF.expr * atom) :=
       match e with
-      | Barocq.ETrue => ret (nil, ATrue)
-      | Barocq.EFalse => ret (nil, AFalse)
-      | Barocq.EInt32 i s => ret (nil, AInt32 i s)
-      | Barocq.EInt64 i s => ret (nil, AInt64 i s)
-      | Barocq.EConstr x => ret (nil, AConstr x)
-      | Barocq.EVar x => ret (nil, AVar x)
+      | Barocq.ETrue => sret (nil, ATrue)
+      | Barocq.EFalse => sret (nil, AFalse)
+      | Barocq.EInt32 i s => sret (nil, AInt32 i s)
+      | Barocq.EInt64 i s => sret (nil, AInt64 i s)
+      | Barocq.EConstr x => sret (nil, AConstr x)
+      | Barocq.EVar x => sret (nil, AVar x)
       | Barocq.ECast e1 ty =>
           match ty with
           | BEnum _ =>
-              let* (li1, a1) := norm_expr_aux e1 in
-              let* x := fresh_var in
-              ret (li1 ++ [(x, (EAtom (ACast a1 ty)))], AVar x)
+              do (li1, a1) <- norm_expr_aux e1;
+              do x <- fresh_var;
+              sret (li1 ++ [(x, (EAtom (ACast a1 ty)))], AVar x)
           | _ =>
-              let* (li1, a1) := norm_expr_aux e1 in
-              ret (li1, ACast a1 ty)
+              do (li1, a1) <- norm_expr_aux e1;
+              sret (li1, ACast a1 ty)
           end
       | Barocq.EUnaryOp op e1 =>
-          let* (li, a1) := norm_expr_aux e1 in
-          ret (li, AUnaryOp op a1)
+          do (li, a1) <- norm_expr_aux e1;
+          sret (li, AUnaryOp op a1)
       | Barocq.EBinaryOp op e1 e2 =>
-          let* (li1, a1) := norm_expr_aux e1 in
-          let* (li2, a2) := norm_expr_aux e2 in
+          do (li1, a1) <- norm_expr_aux e1;
+          do (li2, a2) <- norm_expr_aux e2;
           match op with
           | BopDiv | BopMod =>
-              let* x := fresh_var in
-              ret (li1 ++ li2 ++ [(x, (EAtom (ABinaryOp op a1 a2)))], AVar x)
+              do x <- fresh_var;
+              sret (li1 ++ li2 ++ [(x, (EAtom (ABinaryOp op a1 a2)))], AVar x)
           | _ =>
-            ret (li1 ++ li2, ABinaryOp op a1 a2)
+            sret (li1 ++ li2, ABinaryOp op a1 a2)
           end
       | Barocq.EArrayGet e1 e2 =>
-          let* (li1, a1) := norm_expr_aux e1 in
-          let* (li2, a2) := norm_expr_aux e2 in
-          let* x := fresh_var in
-          ret (li1 ++ li2 ++ [(x, EArrayGet a1 a2)], AVar x)
+          do (li1, a1) <- norm_expr_aux e1;
+          do (li2, a2) <- norm_expr_aux e2;
+          do x <- fresh_var;
+          sret (li1 ++ li2 ++ [(x, EArrayGet a1 a2)], AVar x)
       | Barocq.EArraySet e1 e2 e3 =>
-          let* (li1, a1) := norm_expr_aux e1 in
-          let* (li2, a2) := norm_expr_aux e2 in
-          let* (li3, a3) := norm_expr_aux e3 in
-          let* x := fresh_var in
-          ret (li1 ++ li2 ++ li3 ++ [(x, EArraySet a1 a2 a3)], AVar x)
+          do (li1, a1) <- norm_expr_aux e1;
+          do (li2, a2) <- norm_expr_aux e2;
+          do (li3, a3) <- norm_expr_aux e3;
+          do x <- fresh_var;
+          sret (li1 ++ li2 ++ li3 ++ [(x, EArraySet a1 a2 a3)], AVar x)
       | Barocq.ERecordProj e1 f =>
-          let* (li1, a1) := norm_expr_aux e1 in
-          ret (li1, ARecordProj a1 f)
+          do (li1, a1) <- norm_expr_aux e1;
+          sret (li1, ARecordProj a1 f)
       | Barocq.ERecordUpdate e1 f e2 =>
-          let* (li1, a1) := norm_expr_aux e1 in
-          let* (li2, a2) := norm_expr_aux e2 in
-          ret (li1 ++ li2, ARecordUpdate a1 f a2)
+          do (li1, a1) <- norm_expr_aux e1;
+          do (li2, a2) <- norm_expr_aux e2;
+          sret (li1 ++ li2, ARecordUpdate a1 f a2)
       | Barocq.EApp e1 args =>
-          let* (li1, a1) := norm_expr_aux e1 in
-          let* (l_args, a_args) :=
+          do (li1, a1) <- norm_expr_aux e1;
+          do (l_args, a_args) <-
             List.fold_left
               (fun acc arg =>
-                let* (acc_l, acc_args) := acc in
-                let* (lia, a) := norm_expr_aux arg in
-                ret (acc_l ++ lia, acc_args ++ [a]))
+                do (acc_l, acc_args) <- acc;
+                do (lia, a) <- norm_expr_aux arg;
+                sret (acc_l ++ lia, acc_args ++ [a]))
               args
-              (ret ([], []))
-          in
-          let* x := fresh_var in
-          ret (li1 ++ l_args ++ [(x, EApp a1 a_args)], AVar x)
+              (sret ([], []));
+          do x <- fresh_var;
+          sret (li1 ++ l_args ++ [(x, EApp a1 a_args)], AVar x)
       | _ =>
-        let* x := fresh_var in
-        let* be := norm_expr_rec e in
-        ret ((x, be) :: nil, AVar x)
+        do x <- fresh_var;
+        do be <- norm_expr_rec e;
+        sret ((x, be) :: nil, AVar x)
       end
     in
     let fix mk_norm (le: smaplist BNF.expr) (e: expr) : BNF.expr :=
@@ -131,40 +132,40 @@ Module Normalization.
     let fix norm_exprlist_rec (e: Barocq.expr) (la: list atom) (le: list Barocq.expr) : crmon (smaplist BNF.expr * BNF.expr) :=
       match le with
       | nil =>
-          let* er := lift_err (bnfexpr_of_atomlist e (rev' la)) in
-          ret (nil, er)
+          do er <- lift_err (bnfexpr_of_atomlist e (rev' la));
+          sret (nil, er)
       | e1 :: le' =>
-          let* (lx, a1) := norm_expr_aux e1 in
-          let* (lr, er) := norm_exprlist_rec e (a1 :: la) le' in
-          ret (lx ++ lr, er)
+          do (lx, a1) <- norm_expr_aux e1;
+          do (lr, er) <- norm_exprlist_rec e (a1 :: la) le';
+          sret (lx ++ lr, er)
       end
     in
     let norm_exprlist (e: Barocq.expr) (le: list Barocq.expr) : crmon BNF.expr :=
-      let* (lx, er) := norm_exprlist_rec e [] le in
-      ret (mk_norm lx er)
+      do (lx, er) <- norm_exprlist_rec e [] le;
+      sret (mk_norm lx er)
     in
     let fix norm_match_cases (cases: list (pattern * Barocq.expr)) : crmon (list (pattern * BNF.expr)) :=
       match cases with
-      | nil => ret nil
+      | nil => sret nil
       | (c, e) :: cases' =>
-          let* ne := norm_expr_rec e in
-          let* ncases' := norm_match_cases cases' in
-          ret ((c, ne) :: ncases')
+          do ne <- norm_expr_rec e;
+          do ncases' <- norm_match_cases cases';
+          sret ((c, ne) :: ncases')
       end
     in
     match e with
     | Barocq.ETrue =>
-        ret (EAtom ATrue)
+        sret (EAtom ATrue)
     | Barocq.EFalse =>
-        ret (EAtom AFalse)
+        sret (EAtom AFalse)
     | Barocq.EInt32 i s =>
-        ret (EAtom (AInt32 i s))
+        sret (EAtom (AInt32 i s))
     | Barocq.EInt64 i s =>
-        ret (EAtom (AInt64 i s))
+        sret (EAtom (AInt64 i s))
     | Barocq.EConstr x =>
-        ret (EAtom (AConstr x))
+        sret (EAtom (AConstr x))
     | Barocq.EVar x =>
-        ret (EAtom (AVar x))
+        sret (EAtom (AVar x))
     | Barocq.ECast e1 ty =>
         norm_exprlist e [e1]
     | Barocq.EUnaryOp op e1 =>
@@ -182,31 +183,31 @@ Module Normalization.
     | Barocq.EApp e1 args =>
         norm_exprlist e (e1 :: args)
     | Barocq.EIfThenElse e1 e2 e3 =>
-        let* (le, c) := norm_expr_aux e1 in
-        let* ne2 := norm_expr_rec e2 in
-        let* ne3 := norm_expr_rec e3 in
-        ret (mk_norm le (EIfThenElse c ne2 ne3))
+        do (le, c) <- norm_expr_aux e1;
+        do ne2 <- norm_expr_rec e2;
+        do ne3 <- norm_expr_rec e3;
+        sret (mk_norm le (EIfThenElse c ne2 ne3))
     | Barocq.EMatch e1 cases =>
-        let* (le, a) := norm_expr_aux e1 in
-        let* ncases := norm_match_cases cases in
-        ret (mk_norm le (EMatch a ncases))
+        do (le, a) <- norm_expr_aux e1;
+        do ncases <- norm_match_cases cases;
+        sret (mk_norm le (EMatch a ncases))
     | Barocq.ELetIn x e1 e2 =>
-        let* ne1 := norm_expr_rec e1 in
-        let* ne2 := norm_expr_rec e2 in
-        ret (ELetIn x ne1 ne2)
+        do ne1 <- norm_expr_rec e1;
+        do ne2 <- norm_expr_rec e2;
+        sret (ELetIn x ne1 ne2)
     | Barocq.EAttr s e =>
-        let* ne := norm_expr_rec e in
-        ret (EAttr s ne)
+        do ne <- norm_expr_rec e;
+        sret (EAttr s ne)
     end.
 
   Close Scope state_err_monad_scope.
 
   Definition norm_expr (e: Barocq.expr) : res BNF.expr :=
-    let* ne := norm_expr_rec e 1%positive in
+    do ne <- norm_expr_rec e 1%positive;
     eret (fst ne).
 
   Definition norm_function (f: Barocq.function) : res BNF.function :=
-    let* body_norm := norm_expr (fn_body f) in
+    do body_norm <- norm_expr (fn_body f);
     eret {|
       fn_return := fn_return f;
       fn_params := fn_params f;
@@ -217,7 +218,7 @@ Module Normalization.
     match prog with
     | nil => eret (mk_program nil nil nil)
     | d :: prog' =>
-        let* b_prog := norm_program prog' in
+        do b_prog <- norm_program prog';
         let '(mk_program b_defs b_types b_tabs) := b_prog in
         match d with
         | Barocq.DefType x td =>
@@ -226,7 +227,7 @@ Module Normalization.
             let b_defs' := Syntax.DefConst x l ty :: b_defs in
             eret (mk_program b_defs' b_types b_tabs)
         | Barocq.DefFun x f =>
-            let* f' := norm_function f in
+            do f' <- norm_function f;
             let b_defs' := Syntax.DefFun x f' :: b_defs in
             eret (mk_program b_defs' b_types b_tabs)
         | Barocq.DeclType t tk =>
@@ -258,26 +259,26 @@ Module Normalization2.
         match ty with
         | BEnum _ => Error (msg "cast of enum is not supported")
         | _ =>
-            let* a1 := atom_of_expr e1 in
+            do a1 <- atom_of_expr e1;
             eret (ACast a1 ty)
         end
     | Barocq.EUnaryOp op e1 =>
-        let* a1 := atom_of_expr e1 in
+        do a1 <- atom_of_expr e1;
         eret (AUnaryOp op a1)
     | Barocq.EBinaryOp op e1 e2 =>
         match op with
         | BopDiv | BopMod => Error (msg "div/mod are not supported")
         | _ =>
-            let* a1 := atom_of_expr e1 in
-            let* a2 := atom_of_expr e2 in
+            do a1 <- atom_of_expr e1;
+            do a2 <- atom_of_expr e2;
             eret (ABinaryOp op a1 a2)
         end
     | Barocq.ERecordProj e1 x =>
-        let* a1 := atom_of_expr e1 in
+        do a1 <- atom_of_expr e1;
         eret (ARecordProj a1 x)
     | Barocq.ERecordUpdate e1 x e2 =>
-        let* a1 := atom_of_expr e1 in
-        let* a2 := atom_of_expr e2 in
+        do a1 <- atom_of_expr e1;
+        do a2 <- atom_of_expr e2;
         eret (ARecordUpdate a1 x a2)
     | _ => Error (msg (Pp.pp (Pp.pp_expr e)))
     end.
@@ -294,10 +295,10 @@ Module Normalization2.
           match atom_of_expr e1 with
           | OK a1 => norm_exprlist_rec e (a1 :: la) le'
           | Error _ =>
-              let* x := fresh_var in
-              let* ne1 := norm_expr_rec e1 in
-              let* ner := norm_exprlist_rec e (AVar x :: la) le' in
-              ret (ELetIn x ne1 ner)
+              do x <- fresh_var;
+              do ne1 <- norm_expr_rec e1;
+              do ner <- norm_exprlist_rec e (AVar x :: la) le';
+              sret (ELetIn x ne1 ner)
           end
       end
     in
@@ -306,26 +307,26 @@ Module Normalization2.
     in
     let fix norm_match_cases (cases: list (pattern * Barocq.expr)) : crmon (list (pattern * BNF.expr)) :=
       match cases with
-      | nil => ret nil
+      | nil => sret nil
       | (c, e) :: cases' =>
-          let* ne := norm_expr_rec e in
-          let* ncases' := norm_match_cases cases' in
-          ret ((c, ne) :: ncases')
+          do ne <- norm_expr_rec e;
+          do ncases' <- norm_match_cases cases';
+          sret ((c, ne) :: ncases')
       end
     in
     match e with
     | Barocq.ETrue =>
-        ret (EAtom ATrue)
+        sret (EAtom ATrue)
     | Barocq.EFalse =>
-        ret (EAtom AFalse)
+        sret (EAtom AFalse)
     | Barocq.EInt32 i s =>
-        ret (EAtom (AInt32 i s))
+        sret (EAtom (AInt32 i s))
     | Barocq.EInt64 i s =>
-        ret (EAtom (AInt64 i s))
+        sret (EAtom (AInt64 i s))
     | Barocq.EConstr x =>
-        ret (EAtom (AConstr x))
+        sret (EAtom (AConstr x))
     | Barocq.EVar x =>
-        ret (EAtom (AVar x))
+        sret (EAtom (AVar x))
     | Barocq.ECast e1 ty =>
         norm_exprlist e [e1]
     | Barocq.EUnaryOp op e1 =>
@@ -343,41 +344,41 @@ Module Normalization2.
     | Barocq.EApp e1 args =>
         norm_exprlist e (e1 :: args)
     | Barocq.EIfThenElse e1 e2 e3 =>
-        let* ne2 := norm_expr_rec e2 in
-        let* ne3 := norm_expr_rec e3 in
+        do ne2 <- norm_expr_rec e2;
+        do ne3 <- norm_expr_rec e3;
         match atom_of_expr e1 with
-        | OK a1 => ret (EIfThenElse a1 ne2 ne3)
+        | OK a1 => sret (EIfThenElse a1 ne2 ne3)
         | Error _ =>
-            let* x1 := fresh_var in
-            let* ne1 := norm_expr_rec e1 in
-            ret (ELetIn x1 ne1 (EIfThenElse (AVar x1) ne2 ne3))
+            do x1 <- fresh_var;
+            do ne1 <- norm_expr_rec e1;
+            sret (ELetIn x1 ne1 (EIfThenElse (AVar x1) ne2 ne3))
         end
     | Barocq.EMatch e1 cases =>
-        let* ncases := norm_match_cases cases in
+        do ncases <- norm_match_cases cases;
         match atom_of_expr e1 with
-        | OK a1 => ret (EMatch a1 ncases)
+        | OK a1 => sret (EMatch a1 ncases)
         | Error _ =>
-            let* x1 := fresh_var in
-            let* ne1 := norm_expr_rec e1 in
-            ret (ELetIn x1 ne1 (EMatch (AVar x1) ncases))
+            do x1 <- fresh_var;
+            do ne1 <- norm_expr_rec e1;
+            sret (ELetIn x1 ne1 (EMatch (AVar x1) ncases))
         end
     | Barocq.ELetIn x e1 e2 =>
-        let* ne1 := norm_expr_rec e1 in
-        let* ne2 := norm_expr_rec e2 in
-        ret (ELetIn x ne1 ne2)
+        do ne1 <- norm_expr_rec e1;
+        do ne2 <- norm_expr_rec e2;
+        sret (ELetIn x ne1 ne2)
     | Barocq.EAttr s e =>
-        let* ne := norm_expr_rec e in
-        ret (EAttr s ne)
+        do ne <- norm_expr_rec e;
+        sret (EAttr s ne)
     end.
 
   Close Scope state_err_monad_scope.
 
   Definition norm_expr (e: Barocq.expr) : res BNF.expr :=
-    let* ne := norm_expr_rec e 1%positive in
+    do ne <- norm_expr_rec e 1%positive;
     eret (fst ne).
 
   Definition norm_function (f: Barocq.function) : res BNF.function :=
-    let* body_norm := norm_expr (fn_body f) in
+    do body_norm <- norm_expr (fn_body f);
     eret {|
       fn_return := fn_return f;
       fn_params := fn_params f;
@@ -388,7 +389,7 @@ Module Normalization2.
     match prog with
     | nil => eret (mk_program nil nil nil)
     | d :: prog' =>
-        let* b_prog := norm_program prog' in
+        do b_prog <- norm_program prog';
         let '(mk_program b_defs b_types b_tabs) := b_prog in
         match d with
         | Barocq.DefType x td =>
@@ -397,7 +398,7 @@ Module Normalization2.
             let b_defs' := Syntax.DefConst x l ty :: b_defs in
             eret (mk_program b_defs' b_types b_tabs)
         | Barocq.DefFun x f =>
-            let* f' := norm_function f in
+            do f' <- norm_function f;
             let b_defs' := Syntax.DefFun x f' :: b_defs in
             eret (mk_program b_defs' b_types b_tabs)
         | Barocq.DeclType t tk =>
@@ -534,11 +535,11 @@ Module Monadification.
 
   Fixpoint make_lambda_args (n: nat) : crmon (list ident) :=
     match n with
-    | 0 => ret nil
+    | 0 => sret nil
     | S n' =>
-        let* x := fresh_var in
-        let* r := make_lambda_args n' in
-        ret (x :: r)
+        do x <- fresh_var;
+        do r <- make_lambda_args n';
+        sret (x :: r)
     end.
   
   Definition mtyp_list_eq_dec :
@@ -551,36 +552,36 @@ Module Monadification.
     match ty1, ty2 with
     | MBool, MBool
     | MInt32 _, MInt32 _
-    | MInt64 _, MInt64 _ => ret (AApp f l ty2)
+    | MInt64 _, MInt64 _ => sret (AApp f l ty2)
     | MArray ta1, MArray ta2 =>
-        if mtyp_eq_dec ta1 ta2 then ret (AApp f l ty2)
-        else fail
+        if mtyp_eq_dec ta1 ta2 then sret (AApp f l ty2)
+        else sfail
     | MEnum e1, MEnum e2 =>
-        if Ident.eq_dec e1 e2 then ret (AApp f l ty2)
-        else fail
+        if Ident.eq_dec e1 e2 then sret (AApp f l ty2)
+        else sfail
     | MRecord r1, MRecord r2 =>
-        if Ident.eq_dec r1 r2 then ret (AApp f l ty2)
-        else fail
+        if Ident.eq_dec r1 r2 then sret (AApp f l ty2)
+        else sfail
     | MAbs t1, MAbs t2 =>
-        if Ident.eq_dec t1 t2 then ret (AApp f l ty1)
-        else fail
+        if Ident.eq_dec t1 t2 then sret (AApp f l ty1)
+        else sfail
     | MFun t1 tr1, MFun t2 tr2 =>
         if mtyp_list_eq_dec t1 t2 then
           if mtyp_eq_dec tr1 tr2 then
-            ret (AApp f l ty2)
+            sret (AApp f l ty2)
           else
             match tr2 with
             | MRes tr2' =>
-                let* args := make_lambda_args (List.length t1) in
-                let* a := eta_expand_rec f tr1 tr2' (l ++ args) in
-                ret (ALambdaRet args a ty2)
+                do args <- make_lambda_args (List.length t1);
+                do a <- eta_expand_rec f tr1 tr2' (l ++ args);
+                sret (ALambdaRet args a ty2)
             | _ =>
-              let* args := make_lambda_args (List.length t1) in
-              let* a := eta_expand_rec f tr1 tr2 (l ++ args) in
-              ret (ALambda args a ty2)
+              do args <- make_lambda_args (List.length t1);
+              do a <- eta_expand_rec f tr1 tr2 (l ++ args);
+              sret (ALambda args a ty2)
             end
-        else fail
-    | _, _ => fail
+        else sfail
+    | _, _ => sfail
     end.
   
   Close Scope state_err_monad_scope.
@@ -706,7 +707,7 @@ Module Monadification.
     match ty1 with
     | MArray ta =>
         if mtyp_eq_dec ty2 arr_index_mtyp then
-          let* a3' := typecheck_atom_against a3 ta in
+          do a3' <- typecheck_atom_against a3 ta;
           eret (a3', tr)
         else Error (msg "typecheck_array_set")
     | _ => Error (msg "typecheck_array_set")
@@ -718,7 +719,7 @@ Module Monadification.
   Definition typecheck_record_proj (me: menv) (ty: mtyp) (x: ident) : res mtyp :=
     match ty with
     | MRecord t =>
-        let* fields := err_of_opt (Typing.TEnv.get_rdef me t) in
+        do fields <- Res.of_opt (Typing.TEnv.get_rdef me t);
         mtypof_field x fields
     | _ => Error (msg "typecheck_record_proj")
     end.
@@ -726,9 +727,9 @@ Module Monadification.
   Definition typecheck_record_update (me: menv) (ty1: mtyp) (a2: atom) (x: ident) : res (atom * mtyp) :=
     match ty1 with
     | MRecord t =>
-        let* fields := err_of_opt (Typing.TEnv.get_rdef me t) in
-        let* tx := mtypof_field x fields in
-        let* a2' := typecheck_atom_against a2 tx in
+        do fields <- Res.of_opt (Typing.TEnv.get_rdef me t);
+        do tx <- mtypof_field x fields;
+        do a2' <- typecheck_atom_against a2 tx;
         eret (a2', ty1)
     | _ => Error (msg "typecheck_record_update")
     end.
@@ -736,7 +737,7 @@ Module Monadification.
   Definition zval_of_constr (me: menv) (tc: mtyp) (constr: ident) : res Z :=
     match tc with
     | MEnum eid =>
-        let* elems := err_of_opt (Typing.TEnv.get_edef me eid) in
+        do elems <- Res.of_opt (Typing.TEnv.get_edef me eid);
         Typing.zval_of_constr_rec elems Z0 constr
     | _ => efail
     end.
@@ -747,11 +748,11 @@ Module Monadification.
       match p with
       | PWildcard => eret nil
       | PIdent i z =>
-          let* tp := typof_constr me i in
+          do tp <- typof_constr me i;
           if mtyp_eq_dec te tp then
             if List.in_dec Ident.eq_dec i elems then
               if List.in_dec Ident.eq_dec i unmatched then
-                let* z2 := zval_of_constr me te i in
+                do z2 <- zval_of_constr me te i;
                 if Z.eq_dec z z2 then eret (List.remove Ident.eq_dec i unmatched)
                 else efail
               else efail
@@ -763,12 +764,12 @@ Module Monadification.
     match cases with
     | nil => efail
     | (x, tx) :: nil =>
-        let* unmatched' := typecheck_pattern me te elems x unmatched in
+        do unmatched' <- typecheck_pattern me te elems x unmatched;
         if list_is_empty unmatched' then eret tx
         else efail
     | (x, tx) :: ((_ :: _) as cases') =>
-        let* unmatched' := typecheck_pattern me te elems x unmatched in
-        let* tr := typecheck_match_rec me te elems unmatched' cases' in
+        do unmatched' <- typecheck_pattern me te elems x unmatched;
+        do tr <- typecheck_match_rec me te elems unmatched' cases';
         if mtyp_eq_dec tx tr then eret tr
         else
           match tx, tr with
@@ -785,7 +786,7 @@ Module Monadification.
   Definition typecheck_match (me: menv) (ty: mtyp) (cases: list (pattern * mtyp)) : res mtyp :=
     match ty with
     | MEnum te =>
-        let* elems := err_of_opt (Typing.TEnv.get_edef me te) in
+        do elems <- Res.of_opt (Typing.TEnv.get_edef me te);
         typecheck_match_rec me ty elems elems cases
     | _ => efail
     end.
@@ -816,38 +817,38 @@ Module Monadification.
     | BNF.AInt32 i s => eret (AInt32 i s)
     | BNF.AInt64 i s => eret (AInt64 i s)
     | BNF.AConstr x =>
-        let* t := typof_constr me x in
+        do t <- typof_constr me x;
         eret (AConstr x t)
     | BNF.AVar x =>
-        let* t := typof_var gx lx x in
+        do t <- typof_var gx lx x;
         eret (AVar x t)
     | BNF.ACast a1 ty =>
-        let* a1' := typecheck_atom me gx lx a1 in
+        do a1' <- typecheck_atom me gx lx a1;
         let ty := monadify_btyp ty in
-        let* t := typecheck_cast (typof_atom a1') ty in
+        do t <- typecheck_cast (typof_atom a1') ty;
         eret (ACast a1' ty t)
     | BNF.AUnaryOp op a1 =>
-        let* a1' := typecheck_atom me gx lx a1 in
+        do a1' <- typecheck_atom me gx lx a1;
         let ty1 := typof_atom a1' in
-        let* t := typecheck_unary_op op ty1 in
+        do t <- typecheck_unary_op op ty1;
         eret (AUnaryOp op a1' t)
     | BNF.ABinaryOp op a1 a2 =>
-        let* a1' := typecheck_atom me gx lx a1 in
-        let* a2' := typecheck_atom me gx lx a2 in
+        do a1' <- typecheck_atom me gx lx a1;
+        do a2' <- typecheck_atom me gx lx a2;
         let ty1 := typof_atom a1' in
         let ty2 := typof_atom a2' in
-        let* t := typecheck_binary_op op ty1 ty2 in
+        do t <- typecheck_binary_op op ty1 ty2;
         eret (ABinaryOp op a1' a2' t)
     | BNF.ARecordProj a1 x =>
-        let* a1' := typecheck_atom me gx lx a1 in
+        do a1' <- typecheck_atom me gx lx a1;
         let ty1 := typof_atom a1' in
-        let* t := typecheck_record_proj me ty1 x in
+        do t <- typecheck_record_proj me ty1 x;
         eret (ARecordProj a1' x t)
     | BNF.ARecordUpdate a1 x a2 =>
-        let* a1' := typecheck_atom me gx lx a1 in
-        let* a2' := typecheck_atom me gx lx a2 in
+        do a1' <- typecheck_atom me gx lx a1;
+        do a2' <- typecheck_atom me gx lx a2;
         let ty1 := typof_atom a1' in
-        let* (a2', t) := typecheck_record_update me ty1 a2' x in
+        do (a2', t) <- typecheck_record_update me ty1 a2' x;
         eret (ARecordUpdate a1' x a2' t)
     end.
 
@@ -862,8 +863,8 @@ Module Monadification.
     | nil, nil => eret (nil, tret)
     | tp1 :: tparams', a1 :: args' =>
         let ta1 := typof_atom a1 in
-        let* (args1, t) := typecheck_call_rec tparams' args' tret in
-        let* a1' := typecheck_atom_against a1 tp1 in
+        do (args1, t) <- typecheck_call_rec tparams' args' tret;
+        do a1' <- typecheck_atom_against a1 tp1;
         eret (a1' :: args1, t)
     | _, _ => Error (msg "typecheck_call_rec")
     end.
@@ -897,7 +898,7 @@ Module Monadification.
   Definition wrap_atom (a: atom) : res expr :=
     let ty := typof_atom a in
     let ty' := wrap_mtyp ty in
-    let* a' :=
+    do a' <-
       match a with
       | ATrue
       | AFalse
@@ -915,14 +916,14 @@ Module Monadification.
           | _ => eret a
           end
       | _ => Error (MSG "wrap_atom:" :: MSG (Pp.pp (Monadic.pp_atom a)) :: nil)
-      end
-    in eret (ERet (EAtom a' (typof_atom a')) ty').
+      end;
+    eret (ERet (EAtom a' (typof_atom a')) ty').
 
 
   Fixpoint monadify_expr_rec (me: menv) (gx: gcontext) (lx: lcontext) (e: BNF.expr) (mflag: bool) : res expr :=
     match e with
     | BNF.EAtom a =>
-        let* a' := typecheck_atom_err me gx lx a in
+        do a' <- typecheck_atom_err me gx lx a;
         let ta' := typof_atom a' in
         if mflag then
           match ta' with
@@ -931,26 +932,26 @@ Module Monadification.
           end
         else eret (EAtom a' (typof_atom a'))
     | BNF.EArrayGet a1 a2 =>
-        let* a1' := typecheck_atom_err me gx lx a1 in
-        let* a2' := typecheck_atom_err me gx lx a2 in
+        do a1' <- typecheck_atom_err me gx lx a1;
+        do a2' <- typecheck_atom_err me gx lx a2;
         let ty1 := typof_atom a1' in
         let ty2 := typof_atom a2' in
-        let* t := typecheck_array_get ty1 ty2 in
+        do t <- typecheck_array_get ty1 ty2;
         eret (EArrayGet a1' a2' t)
     | BNF.EArraySet a1 a2 a3 =>
-        let* a1' := typecheck_atom_err me gx lx a1 in
-        let* a2' := typecheck_atom_err me gx lx a2 in
-        let* a3' := typecheck_atom_err me gx lx a3 in
+        do a1' <- typecheck_atom_err me gx lx a1;
+        do a2' <- typecheck_atom_err me gx lx a2;
+        do a3' <- typecheck_atom_err me gx lx a3;
         let ty1 := typof_atom a1' in
         let ty2 := typof_atom a2' in
         let ty3 := typof_atom a3' in
-        let* (a3', t) := typecheck_array_set ty1 ty2 a3' in
+        do (a3', t) <- typecheck_array_set ty1 ty2 a3';
         eret (EArraySet a1' a2' a3' t)
     | BNF.EApp a1 args =>
-        let* a1' := typecheck_atom_err me gx lx a1 in
+        do a1' <- typecheck_atom_err me gx lx a1;
         let ty1 := typof_atom a1' in
-        let* args' := mmap (typecheck_atom_err me gx lx) args in
-        let* (args1, t) := typecheck_call ty1 args' in
+        do args' <- mmap (typecheck_atom_err me gx lx) args;
+        do (args1, t) <- typecheck_call ty1 args';
         let e' := EApp a1' args1 t in
         if mflag then
           match t with
@@ -959,7 +960,7 @@ Module Monadification.
           end
         else eret e'
     | BNF.EIfThenElse a e1 e2 =>
-        let* a' := typecheck_atom_err me gx lx a in
+        do a' <- typecheck_atom_err me gx lx a;
         (* For ShallowB, we want to be as close as possible to the Barocq semantics, so we monadify the two branches. *)
         let mflag :=
           match shver with
@@ -969,8 +970,8 @@ Module Monadification.
         in
         match (typof_atom a') with
         | MBool =>
-            let* e1' := monadify_expr_rec me gx lx e1 mflag in
-            let* e2' := monadify_expr_rec me gx lx e2 mflag in
+            do e1' <- monadify_expr_rec me gx lx e1 mflag;
+            do e2' <- monadify_expr_rec me gx lx e2 mflag;
             let ty1 := typof_expr e1' in
             let ty2 := typof_expr e2' in
             if mtyp_eq_dec ty1 ty2 then
@@ -982,12 +983,12 @@ Module Monadification.
               match ty1, ty2 with
               | MRes ty1', _ =>
                   if mtyp_eq_dec ty1' ty2 then
-                    let* e2' := monadify_expr_rec me gx lx e2 true in
+                    do e2' <- monadify_expr_rec me gx lx e2 true;
                     eret (EIfThenElse a' e1' e2' ty1)
                   else Error (msg "ifthenelse")
               | _, MRes ty2' =>
                   if mtyp_eq_dec ty1 ty2' then
-                    let* e1' := monadify_expr_rec me gx lx e1 true in
+                    do e1' <- monadify_expr_rec me gx lx e1 true;
                     eret (EIfThenElse a' e1' e2' ty2)
                   else Error (msg "ifthenelse")
               | _, _ => Error (msg "ifthenelse")
@@ -996,7 +997,7 @@ Module Monadification.
         | _ => Error (msg "Typing error: bool is expected")
         end
     | BNF.EMatch a cases =>
-        let* a' := typecheck_atom_err me gx lx a in
+        do a' <- typecheck_atom_err me gx lx a;
         (* For ShallowB, we want to be as close as possible to the Barocq semantics, so we monadify all branches. *)
         let mflag :=
           match shver with
@@ -1004,18 +1005,17 @@ Module Monadification.
           | ShallowB => true
           end
         in
-        let* ncases :=
+        do ncases <-
           MapList.map_err
             (fun ec =>
-              let* nep := monadify_expr_rec me gx lx ec mflag in
+              do nep <- monadify_expr_rec me gx lx ec mflag;
               eret ((nep, typof_expr nep)))
-            cases
-        in
+            cases;
         let cases_mtyp := MapList.map (fun '(_, tp) => tp) ncases in
-        let* t := typecheck_match me (typof_atom a') cases_mtyp in
+        do t <- typecheck_match me (typof_atom a') cases_mtyp;
         (* If the result type is MRes, we re-monadify all pure branches,
            like for if-then-else expressions *)
-        let* ncases :=
+        do ncases <-
           match mflag with
           | false =>
               match t with
@@ -1028,24 +1028,23 @@ Module Monadification.
               end
           | true =>
               eret (MapList.map fst ncases)
-          end
-        in
+          end;
         eret (EMatch a' ncases t)
     | BNF.ELetIn x e1 e2 =>
-        let* e1' := monadify_expr_rec me gx lx e1 false in
+        do e1' <- monadify_expr_rec me gx lx e1 false;
         let t := typof_expr e1' in
         match t with
         | MRes tr =>
             let lx' := lcontext_update lx x tr in
-            let* e2' := monadify_expr_rec me gx lx' e2 true in
+            do e2' <- monadify_expr_rec me gx lx' e2 true;
             eret (ELetMon x e1' e2' (typof_expr e2'))
         | _ =>
             let lx' := lcontext_update lx x t in
-            let* e2' := monadify_expr_rec me gx lx' e2 (mflag || false) in
+            do e2' <- monadify_expr_rec me gx lx' e2 (mflag || false);
             eret (ELetIn x e1' e2' (typof_expr e2'))
         end
     | BNF.EAttr s e =>
-        let* e' := monadify_expr_rec me gx lx e false in
+        do e' <- monadify_expr_rec me gx lx e false;
         let  t:= typof_expr e' in
         eret (EAttr s e' t)
     end.
@@ -1067,7 +1066,7 @@ Module Monadification.
         params
         (STree.empty)
     in
-    let* body := monadify_expr me gx lx (Syntax.fn_body f) in
+    do body <- monadify_expr me gx lx (Syntax.fn_body f);
     let tret := typof_expr body in
     let f := {|
       fn_return := typof_expr body;
@@ -1087,7 +1086,7 @@ Module Monadification.
     match tparams1, tparams2 with
     | nil, nil => eret nil
     | (attr1, t1) :: tparams1', t2 :: tparams2' =>
-        let* r := make_absfun_tparams tparams1' tparams2' in
+        do r <- make_absfun_tparams tparams1' tparams2';
         eret ((attr1, t2) :: r)
     | _, _ => Error (msg "make_absfun_tparams")
     end.
@@ -1097,7 +1096,7 @@ Module Monadification.
     | nil => efail
     | l :: nil => eret (typof_literal l)
     | l :: a' =>
-        let* t := typecheck_array_lit a' in
+        do t <- typecheck_array_lit a';
         if mtyp_eq_dec (typof_literal l) t then eret t
         else Error (msg "typecheck_array_lit")
     end.
@@ -1119,19 +1118,18 @@ Module Monadification.
     | Syntax.LInt32 i s => eret (LInt32 i s)
     | Syntax.LInt64 i s => eret (LInt64 i s)
     | Syntax.LArray a ta _ =>
-        let* a' := mmap (typecheck_literal me) a in
-        let* t := typecheck_array_lit a' in
+        do a' <- mmap (typecheck_literal me) a;
+        do t <- typecheck_array_lit a';
         let ta := monadify_btyp ta in
         if mtyp_eq_dec t ta then eret (LArray a' t)
         else efail
     | Syntax.LRecord rc _ rid =>
-        let* rc' := MapList.map_err (typecheck_literal me) rc in
-        let* t := err_of_opt (Typing.TEnv.get_rdef me rid) in
+        do rc' <- MapList.map_err (typecheck_literal me) rc;
+        do t <- Res.of_opt (Typing.TEnv.get_rdef me rid);
         if typecheck_struct_lit rc' t then
           eret (LRecord rc' rid)
         else efail
     end. 
-
 
   Fixpoint monadify_globdefs_rec (me: menv) (gx: gcontext) (defs: list BNF.globdef) : res (list globdef) :=
     match defs with
@@ -1140,10 +1138,10 @@ Module Monadification.
         match d with
         | Syntax.DefConst x l ty =>
             let ty' := monadify_btyp ty in
-            let* l' := typecheck_literal me l in
+            do l' <- typecheck_literal me l;
             if mtyp_eq_dec (typof_literal l') ty' then
-              let* gx' := gcontext_update me gx x ty' in
-              let* r := monadify_globdefs_rec me gx' defs' in
+              do gx' <- gcontext_update me gx x ty';
+              do r <- monadify_globdefs_rec me gx' defs';
               eret (Syntax.DefConst x l' ty' :: r)
             else efail
         | Syntax.DefFun x f =>
@@ -1151,22 +1149,22 @@ Module Monadification.
             | Error e => Error (MSG "Cannot monadify " :: MSG x :: e)
             | OK f'   =>
                 let tf := MFun (map snd (fn_params f')) (fn_return f') in
-                let* gx' := gcontext_update me gx x tf in
-                let* r := monadify_globdefs_rec me gx' defs' in
+                do gx' <- gcontext_update me gx x tf;
+                do r <- monadify_globdefs_rec me gx' defs';
                 eret (Syntax.DefFun x f' :: r)
             end
         | Syntax.DeclConst x ty =>
             let ty' := monadify_btyp ty in
-            let* gx' := gcontext_update me gx x ty' in
-            let* r := monadify_globdefs_rec me gx' defs' in
+            do gx' <- gcontext_update me gx x ty';
+            do r <- monadify_globdefs_rec me gx' defs';
             eret (Syntax.DeclConst x ty' :: r)
         | Syntax.DeclFun f tparams tret =>
             let ty'  := monadify_btyp (mk_fun_btyp tparams tret) in
-            let* gx' := gcontext_update me gx f ty' in
-            let* r := monadify_globdefs_rec me gx' defs' in
+            do gx' <- gcontext_update me gx f ty';
+            do r <- monadify_globdefs_rec me gx' defs';
             match ty' with
             | MFun tparams' tret' =>
-                let* tparams' := make_absfun_tparams tparams tparams' in
+                do tparams' <- make_absfun_tparams tparams tparams';
                 eret (Syntax.DeclFun f tparams' tret' :: r)
             | _ => Error (MSG "DeclFun " :: MSG "wrong typing"::nil)
             end
@@ -1189,7 +1187,7 @@ Module Monadification.
 
   Definition monadify_program (prog: BNF.program) : res program :=
     let types := monadify_type_defs (prog_types prog) in
-    let* me :=
+    do me <-
       let types :=
         MapList.map
           (fun td =>
@@ -1199,9 +1197,8 @@ Module Monadification.
             end)
           types
       in
-      err_of_opt (Typing.TEnv.build types)
-    in
-    let* defs := monadify_globdefs me (prog_defs prog) in
+      Res.of_opt (Typing.TEnv.build types);
+    do defs <- monadify_globdefs me (prog_defs prog);
     eret {|
       prog_defs := defs;
       prog_types := types;
@@ -1212,15 +1209,15 @@ Module Monadification.
 
 End Monadification.
 
-Open Scope error_monad_scope.
+Local Open Scope error_monad_scope.
 
 Definition monadify_norm_program (arch: Target.archi) (shver: shallow_version) (prog: Barocq.program) : res Monadic.program :=
-  let/c bnf := Normalization.norm_program prog /> "unable to normalize the program" in
-  let/c mon := Monadification.monadify_program arch shver bnf /> "unable to monadify the program" in
+  do/c bnf <- Normalization.norm_program prog /> efailwith "unable to normalize the program";
+  do/c mon <- Monadification.monadify_program arch shver bnf /> efailwith "unable to monadify the program";
   eret mon.
 
 Definition monadify_norm2_program (arch: Target.archi) (shver: shallow_version) (prog: Barocq.program) : res Monadic.program :=
-  match Normalization2.norm_program prog   with
+  match Normalization2.norm_program prog with
   | Error e => Error (MSG "Unable to normalize the program (v2):" ::MSG "Error " :: e)
   | OK bnf  => match Monadification.monadify_program arch shver bnf with
                | Error e => Error (MSG "unable to monadify the program (v2):" :: MSG "Error " :: e)

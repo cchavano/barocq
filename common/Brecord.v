@@ -1,6 +1,6 @@
 From Coq Require Import PArith List String Bool RelationClasses.
-From BarocqComp Require Import DList OptionMonad Ident Utils.
-Open Scope option_monad_scope.
+From BarocqComp Require Import DList Option Ident Utils.
+Local Open Scope option_monad_scope.
 
 Definition key : Type := ident.
 

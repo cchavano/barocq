@@ -1,8 +1,8 @@
 (** Dependent list indexed by [typ] *)
-From BarocqComp Require Import OptionMonad Utils.
+From BarocqComp Require Import Option Utils.
 From compcert Require Import Coqlib.
 Import List Notations.
-Open Scope option_monad_scope.
+Local Open Scope option_monad_scope.
 
 Section S.
 

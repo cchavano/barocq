@@ -1,9 +1,11 @@
 From Coq Require Import String List.
-From BarocqComp Require Import Error Utils Ident Pp Barocq Imp1.
+From BarocqComp Require Import Res Utils Ident Pp Barocq Imp1.
 From BarocqComp Require Import Renaming BarocqBNFgen ImpBNFgen Imp1gen Imp2gen GlobRewrite Csyntaxgen.
 From BarocqComp Require Import Imp1ElimAlias InvAnalysis.
 From BarocqComp Require Import Imp2Copy.
 From BarocqComp Require Import BarocqBNFUndo. (* force dependency *)
+
+Local Open Scope error_monad_scope.
 
 Inductive ir_name :=
 | Ir_Barocq
@@ -26,9 +28,6 @@ Definition opt_flag_eqb (o1 o2:opt_flag) :=
   | _ , _ => false
   end.
 
-
-
-
 Definition pp_ir (i:ir_name) :=
   match i with
   | Ir_Barocq     => Bstr "barocq"
@@ -44,7 +43,6 @@ Definition ir_name_eq_dec (p1 p2:ir_name) : {p1 = p2} + {p1 <> p2}.
 Proof.
   decide equality.
 Defined.
-
 
 Record compiler_opt :=
   {
@@ -77,18 +75,18 @@ Definition insert_log (opt:compiler_opt) (ir:ir_name) {A : Type} (F: A -> box) (
 Definition compile (opt : compiler_opt) (arch: Target.archi) (globinfo: option (ident * ident)) (prog: Barocq.program) : res (list ir_prog * Log.t) :=
   let (log,progs) := insert_log opt Ir_Barocq Barocq.Pp.pp_program Barocq prog Log.empty nil in
   let prog := Renaming.rename_program prog in
-  let* btyped := Barocq.Typing.typecheck_program arch prog in
-  let* bbnf := BarocqBNFgen.norm_program arch btyped in
+  do btyped <- Barocq.Typing.typecheck_program arch prog;
+  do bbnf <- BarocqBNFgen.norm_program arch btyped;
   let (log,progs)   := insert_log opt Ir_BBNF BarocqBNF.Pp.pp_program BarocqBNF bbnf log progs in
-  let* ibnf := ImpBNFgen.transl_program bbnf in
-  let* imp1 := Imp1gen.norm_program ibnf in
-  let* imp1_typed := Imp1Typing.typecheck_program arch imp1 in
+  do ibnf <- ImpBNFgen.transl_program bbnf;
+  do imp1 <- Imp1gen.norm_program ibnf;
+  do imp1_typed <- Imp1Typing.typecheck_program arch imp1;
   let (log,progs) := insert_log  opt Ir_Imp1 Imp1.Pp.pp_program Imp1 imp1_typed log progs in
-  let* (te,age) := InvAnalysis.check_program imp1_typed in (* Maybe, we could reuse the analysis result *)
+  do (te,age) <- InvAnalysis.check_program imp1_typed; (* Maybe, we could reuse the analysis result *)
   if (dbg_analysis opt)
   then Error (msg (Pp.pp (InvAnalysis.pp_inv (snd age))))
   else
-    let* imp1_typed := Imp1ElimAlias.transl_program te imp1_typed in
+    do imp1_typed <- Imp1ElimAlias.transl_program te imp1_typed;
       let imp2 := Imp2gen.transl_program imp1_typed in
       let (log,progs) := insert_log opt Ir_Imp2 Imp2.Pp.pp_program Imp2 imp2 log progs in
       let imp2 := if has_opt Opt_Copy opt then Imp2Copy.transl_program imp2 else imp2 in
@@ -99,21 +97,21 @@ Definition compile (opt : compiler_opt) (arch: Target.archi) (globinfo: option (
         | None => imp2
         end
       in 
-      let* clight := Csyntaxgen.transl_program imp2_grw in
+      do clight <- Csyntaxgen.transl_program imp2_grw;
       eret (Csyntax clight::progs,log).
 
 Definition compile_to_imp1 (arch: Target.archi) (prog: Barocq.program) : res Imp1.program :=
   let prog := Renaming.rename_program prog in
-  let* btyped := Barocq.Typing.typecheck_program arch prog in
-  let* bbnf := BarocqBNFgen.norm_program arch btyped in
-  let* ibnf := ImpBNFgen.transl_program bbnf in
-  let* imp1 := Imp1gen.norm_program ibnf in
+  do btyped <- Barocq.Typing.typecheck_program arch prog;
+  do bbnf <- BarocqBNFgen.norm_program arch btyped;
+  do ibnf <- ImpBNFgen.transl_program bbnf;
+  do imp1 <- Imp1gen.norm_program ibnf;
   eret imp1.
 
 Definition aliascheck_program (opt : compiler_opt) (arch: Target.archi) (prog: Barocq.program) : res Imp1.program :=
-  let* imp1 := compile_to_imp1 arch prog in
-  let* imp1_typed := Imp1Typing.typecheck_program arch imp1 in
-  let* (te,age) := InvAnalysis.check_program imp1_typed in
+  do imp1 <- compile_to_imp1 arch prog;
+  do imp1_typed <- Imp1Typing.typecheck_program arch imp1;
+  do (te,age) <- InvAnalysis.check_program imp1_typed;
   if (dbg_analysis opt) then
     Error (msg (Pp.pp (InvAnalysis.pp_inv (snd age))))
-  else ret imp1_typed.
+  else eret imp1_typed.

@@ -1,8 +1,8 @@
 From Coq Require Import PArith ZArith String DecimalString List Bool MSetPositive.
 From compcert Require Import Coqlib Ctypesdefs Maps Integers.
-From BarocqComp Require Import  Monads Error Ident ZlistPlus.
-From BarocqComp Require Import OptionMonad.
-Open Scope option_monad_scope.
+From BarocqComp Require Import StateMonads Res Option Ident ZlistPlus.
+Local Open Scope error_monad_scope.
+Local Open Scope option_monad_scope.
 Import MonCounter.
 Import MonCounterErr.
 Import ListNotations.
@@ -25,7 +25,6 @@ Lemma cast_ok_imp_eq:
 Proof.
   tauto.
 Qed.
-
 
 (** Given a goal of the form [Forall P l], instead of doing [repeat Forall_cons] (slow),
     do [apply Forall_app_sound]  (fast) *)
@@ -56,19 +55,18 @@ Qed.
 Open Scope state_monad_scope.
 
 Definition fresh_var (pre: string) : cmon ident :=
-  let* n := MonCounter.incr in
-  MonCounter.ret (Ident.concat pre (Ident.of_str_pos n)).
+  do n <- MonCounter.incr;
+  MonCounter.sret (Ident.concat pre (Ident.of_str_pos n)).
 
 Close Scope state_monad_scope.
 
 Open Scope state_err_monad_scope.
 
 Definition fresh_var_err (pre: string) : crmon ident :=
-  let* n := MonCounterErr.incr in
-  MonCounterErr.ret (Ident.concat pre (Ident.of_str_pos n)).
+  do n <- MonCounterErr.incr;
+  MonCounterErr.sret (Ident.concat pre (Ident.of_str_pos n)).
 
 Close Scope state_err_monad_scope.
-
 
 Definition cast_enum {A: Type} (l:list A) (i:int) : option A :=
   list_nth_z l (Int.signed i).
@@ -86,7 +84,6 @@ Qed.
 
 (** * Lists *)
 
-
 Lemma nth_error_map_same :
   forall (A B: Type) (f: A -> B) (l: list A) (n: nat),
   nth_error (map f l) n =
@@ -101,7 +98,7 @@ Proof.
 Qed.
 
 Definition list_nth_err {A: Type} (l:list A) (n:nat) : res A :=
-  err_of_opt (List.nth_error l n).
+  Res.of_opt (List.nth_error l n).
 
 Fixpoint list_fold_left_err_compat {A B: Type} (f: A -> B -> option A) (l: list B) (a0: option A) : option A :=
   match l with
@@ -112,13 +109,12 @@ Fixpoint list_fold_left_err_compat {A B: Type} (f: A -> B -> option A) (l: list 
   end.
 
 Fixpoint list_fold_left_err {A B: Type} (f: A -> B -> res A) (l: list B) (a0: A) : res A :=
-  (match l with
+  match l with
   | nil => eret a0
   | x :: l' =>
-      let* acc := f a0 x in
+      do acc <- f a0 x;
       list_fold_left_err f l' acc
-  end)%error_monad.
-
+  end.
 
 Lemma list_fold_left_err_ext:
   forall {A B: Type} (f g: A -> B -> res A),
@@ -134,12 +130,12 @@ Proof.
 Qed.
 
 Fixpoint list_fold_right_err {A B: Type} (f: B -> A -> res A) (a0: A) (l: list B) : res A :=
-  (match l with
+  match l with
   | nil => OK a0
   | x :: l' =>
-      let* r := list_fold_right_err f a0 l' in
+      do r <- list_fold_right_err f a0 l';
       f x r
-  end)%error_monad.
+  end.
 
 Lemma list_fold_right_err_ext:
   forall {A B: Type} (f g: B -> A -> res A),
@@ -307,41 +303,38 @@ Proof.
 Qed.
 
 Fixpoint forall_err {A: Type} (P : A -> res bool) (l:list A) : res bool :=
-  (match l with
+  match l with
   | nil => OK true
-  | e::l => let* b := P e in
-            let* b1 := forall_err P l in
+  | e::l => do b <- P e;
+            do b1 <- forall_err P l;
             OK (b && b1)
-  end)%error_monad.
-
+  end.
 
 Fixpoint forall_check {A: Type} (P : A -> res unit) (l:list A) : res unit :=
-  (match l with
+  match l with
   | nil => OK tt
-  | e::l => let* _ := P e in
+  | e::l => do _ <- P e;
             forall_check P l
-  end)%error_monad.
-
-
+  end.
 
 Section MERGE.
   Context {A : Type}.
   Variable merge : A -> A -> res A.
 
   Fixpoint merge_list_rec (acc : A) (l:list (res A)) : res A :=
-    (match l with
+    match l with
      | nil => OK acc
-     | e::l => let* e := e in
-               let* m := merge e acc in
+     | e::l => do e <- e;
+               do m <- merge e acc;
                merge_list_rec m l
-     end)%error_monad.
+     end.
 
   Definition merge_list (l: list (res A)) : res A :=
-    (match l with
+    match l with
     | nil => Error (msg "")
-    | acc :: l => let* acc := acc in
+    | acc :: l => do acc <- acc;
                   merge_list_rec acc l
-    end)%error_monad.
+    end.
 
 End MERGE.
 

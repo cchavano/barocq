@@ -1,5 +1,5 @@
 From Coq Require Import String List.
-From BarocqComp Require Import Monads Syntax Barocq Benum Ident Maps2.
+From BarocqComp Require Import StateMonads Syntax Barocq Benum Ident Maps2.
 
 Open Scope string_scope.
 
@@ -11,7 +11,7 @@ Module MonRename := MonState(STATE).
 
 Import MonRename.
 
-Open Scope state_monad_scope.
+Local Open Scope state_monad_scope.
 
 Definition mk_local_id (n: nat) (x: ident) : ident :=
   let ui := Ident.concat "u" (Ident.of_str_nat n) in
@@ -22,14 +22,6 @@ Definition rename_var (se: STree.t ident) (x: ident) : ident :=
   | Some x' => x'
   | None => x
   end.
-  (* match STree.get x se with
-  (* parameter *)
-  | Some 0 => Ident.concat "p_" x
-  (* local variable *)
-  | Some n => mk_local_id n x
-  (* global variable *)
-  | None => x
-  end. *)
 
 Definition fresh_var (se: STree.t ident) (x: ident) : MonRename.M (ident * STree.t ident) :=
   fun s =>
@@ -46,73 +38,71 @@ Fixpoint rename_expr (se: STree.t ident) (e: expr) : MonRename.M expr :=
   match e with
   | ETrue | EFalse
   | EInt32 _ _ | EInt64 _ _
-  | EConstr _ => ret e
+  | EConstr _ => sret e
   | EVar x =>
       let x' := rename_var se x in
-      ret (EVar x')
+      sret (EVar x')
   | ECast e1 ty =>
-      let* e1' := rename_expr se e1 in
-      ret (ECast e1' ty)
+      do e1' <- rename_expr se e1;
+      sret (ECast e1' ty)
   | EUnaryOp op e1 =>
-      let* e1' := rename_expr se e1 in
-      ret (EUnaryOp op e1')
+      do e1' <- rename_expr se e1;
+      sret (EUnaryOp op e1')
   | EBinaryOp op e1 e2 =>
-      let* e1' := rename_expr se e1 in
-      let* e2' := rename_expr se e2 in
-      ret (EBinaryOp op e1' e2')
+      do e1' <- rename_expr se e1;
+      do e2' <- rename_expr se e2;
+      sret (EBinaryOp op e1' e2')
   | EArrayGet e1 e2 =>
-      let* e1' := rename_expr se e1 in
-      let* e2' := rename_expr se e2 in
-      ret (EArrayGet e1' e2')
+      do e1' <- rename_expr se e1;
+      do e2' <- rename_expr se e2;
+      sret (EArrayGet e1' e2')
   | EArraySet e1 e2 e3 =>
-      let* e1' := rename_expr se e1 in
-      let* e2' := rename_expr se e2 in
-      let* e3' := rename_expr se e3 in
-      ret (EArraySet e1' e2' e3')
+      do e1' <- rename_expr se e1;
+      do e2' <- rename_expr se e2;
+      do e3' <- rename_expr se e3;
+      sret (EArraySet e1' e2' e3')
   | ERecordProj e1 f =>
-      let* e1' := rename_expr se e1 in
-      ret (ERecordProj e1' f)
+      do e1' <- rename_expr se e1;
+      sret (ERecordProj e1' f)
   | ERecordUpdate e1 f e2 =>
-      let* e1' := rename_expr se e1 in
-      let* e2' := rename_expr se e2 in
-      ret (ERecordUpdate e1' f e2')
+      do e1' <- rename_expr se e1;
+      do e2' <- rename_expr se e2;
+      sret (ERecordUpdate e1' f e2')
   | EApp e1 args =>
-      let* e1' := rename_expr se e1 in
-      let* args' :=
+      do e1' <- rename_expr se e1;
+      do args' <-
         List.fold_right
           (fun e acc =>
-            let* acc := acc in
-            let* e' := rename_expr se e in
-            ret (e' :: acc))
-          (ret nil)
-          args 
-      in
-      ret (EApp e1' args')
+            do acc <- acc;
+            do e' <- rename_expr se e;
+            sret (e' :: acc))
+          (sret nil)
+          args;
+      sret (EApp e1' args')
   | EIfThenElse e1 e2 e3 =>
-      let* e1' := rename_expr se e1 in
-      let* e2' := rename_expr se e2 in
-      let* e3' := rename_expr se e3 in
-      ret (EIfThenElse e1' e2' e3')
+      do e1' <- rename_expr se e1;
+      do e2' <- rename_expr se e2;
+      do e3' <- rename_expr se e3;
+      sret (EIfThenElse e1' e2' e3')
   | EMatch e1 cases =>
-      let* e1' := rename_expr se e1 in
-      let* cases' :=
+      do e1' <- rename_expr se e1;
+      do cases' <-
         List.fold_right
           (fun '(pi, ei) acc =>
-            let* acc := acc in
-            let* ei' := rename_expr se ei in
-            ret ((pi, ei') :: acc))
-          (ret nil)
-          cases 
-      in
-      ret (EMatch e1' cases')
+            do acc <- acc;
+            do ei' <- rename_expr se ei;
+            sret ((pi, ei') :: acc))
+          (sret nil)
+          cases;
+      sret (EMatch e1' cases')
   | ELetIn x e1 e2 =>
-      let* e1' := rename_expr se e1 in
-      let* (x', se') := fresh_var se x in
-      let* e2' := rename_expr se' e2 in
-      ret (ELetIn x' e1' e2')
+      do e1' <- rename_expr se e1;
+      do (x', se') <- fresh_var se x;
+      do e2' <- rename_expr se' e2;
+      sret (ELetIn x' e1' e2')
   | EAttr a e1 =>
-      let* e1' := rename_expr se e1 in
-      ret (EAttr a e1')
+      do e1' <- rename_expr se e1;
+      sret (EAttr a e1')
   end.
 
 Definition rename_function (f: function) : function :=

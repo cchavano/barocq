@@ -1,10 +1,12 @@
 From Coq Require Import PArith List String.
 From compcert Require Import Maps.
-From BarocqComp Require Import Monads Maps2 Utils Barray Syntax Types Typing Imp1.
+From BarocqComp Require Import StateMonads Maps2 Utils Barray Syntax Types Typing Imp1.
 Import ListNotations.
 Import Imp1Typing.
 From BarocqComp Require Import Imp2.
 Import MonCounter.
+
+Local Open Scope state_monad_scope.
 
 Fixpoint transl_btyp (ty: btyp) : typ2 :=
   match ty with
@@ -90,21 +92,21 @@ Section LITTRANSL.
 
   Fixpoint transl_array_lit (ly: bool) (a: array Syntax.literal) (defs: smaplist Imp2.literal) : cmon (array Imp2.literal * smaplist Imp2.literal) :=
     match a with
-    | nil => ret (nil, defs)
+    | nil => sret (nil, defs)
     | lx :: a' =>
-        let* (lx', defs1) := transl_literal ly lx defs in
-        let* (r, defs2) := transl_array_lit ly a' defs1 in
-        ret (lx' :: r, defs2)
+        do (lx', defs1) <- transl_literal ly lx defs;
+        do (r, defs2) <- transl_array_lit ly a' defs1;
+        sret (lx' :: r, defs2)
     end.
 
   Fixpoint transl_record_lit (rc: smaplist Syntax.literal) (ub: list ident) (defs: smaplist Imp2.literal) : cmon ((smaplist Imp2.literal) * smaplist Imp2.literal) :=
     match rc with
-    | nil => ret (nil, defs)
+    | nil => sret (nil, defs)
     | (i, lx) :: rc' =>
         let ly := negb (list_mem Ident.eq_dec i ub) in
-        let* (lx', defs1) := transl_literal ly lx defs in
-        let* (r, defs2) := transl_record_lit rc' ub defs1 in
-        ret ((i, lx') :: r, defs2)
+        do (lx', defs1) <- transl_literal ly lx defs;
+        do (r, defs2) <- transl_record_lit rc' ub defs1;
+        sret ((i, lx') :: r, defs2)
     end.
 
 End LITTRANSL.
@@ -113,55 +115,55 @@ Definition fresh_var : cmon ident := Utils.fresh_var "g".
 
 Fixpoint transl_literal_rec (ly: bool) (l: Syntax.literal) (defs: smaplist Imp2.literal) : cmon (Imp2.literal * smaplist Imp2.literal) :=
   match l with
-  | Syntax.LTrue => ret (LTrue, defs)
-  | Syntax.LFalse => ret (LFalse, defs)
-  | Syntax.LInt32 i s => ret (LInt32 i s, defs)
-  | Syntax.LInt64 i s => ret (LInt64 i s, defs)
+  | Syntax.LTrue => sret (LTrue, defs)
+  | Syntax.LFalse => sret (LFalse, defs)
+  | Syntax.LInt32 i s => sret (LInt32 i s, defs)
+  | Syntax.LInt64 i s => sret (LInt64 i s, defs)
   | Syntax.LArray a ta ba =>
       let bba := if layout_eq_dec ba LyBoxed then true else false in
-      let* (a', defs) := transl_array_lit transl_literal_rec bba a defs in
+      do (a', defs) <- transl_array_lit transl_literal_rec bba a defs;
       let ta' := transl_btyp ta in
       if ly then
-        let* x := fresh_var in
-        ret (LVar x (TArray ta' ba), (x, LArray a' ta' ba) :: defs)
+        do x <- fresh_var;
+        sret (LVar x (TArray ta' ba), (x, LArray a' ta' ba) :: defs)
       else
-        ret (LArray a' ta' ba, defs)
+        sret (LArray a' ta' ba, defs)
   | Syntax.LRecord rc ub rid =>
-      let* (rc', defs) := transl_record_lit transl_literal_rec rc ub defs in
+      do (rc', defs) <- transl_record_lit transl_literal_rec rc ub defs;
       if ly then
-        let* x := fresh_var in
-        ret (LVar x (TRecord rid ub), (x, LRecord rc' ub rid) :: defs)
+        do x <- fresh_var;
+        sret (LVar x (TRecord rid ub), (x, LRecord rc' ub rid) :: defs)
       else
-        ret (LRecord rc' ub rid, defs)
+        sret (LRecord rc' ub rid, defs)
   end.
 
 Definition transl_literal (l: Syntax.literal) : cmon (Imp2.literal * smaplist Imp2.literal) :=
-  let* (l', defs) :=
+  do (l', defs) <-
     match l with
     | Syntax.LArray _ _ _ => transl_literal_rec false l nil
     | _ => transl_literal_rec true l nil
-    end
-  in ret (l', rev' defs).
+    end;
+  sret (l', rev' defs).
 
 Fixpoint transl_globdefs_rec (defs: list Imp1.globdef) : cmon (list Imp2.globdef) :=
   match defs with
-  | nil => ret nil
+  | nil => sret nil
   | d :: defs' =>
       match d with
       | DefFun x f =>
-          let* dr := transl_globdefs_rec defs' in
-          ret (DefFun x (transl_function f) :: dr)
+          do dr <- transl_globdefs_rec defs';
+          sret (DefFun x (transl_function f) :: dr)
       | DefConst x l ty =>
-          let* (l', d1) := transl_literal l in
+          do (l', d1) <- transl_literal l;
           let defs1 := List.map (fun '(x, lx) => DefConst x lx (typof_literal lx)) d1 in
-          let* dr := transl_globdefs_rec defs' in
-          ret (defs1 ++ ((DefConst x l' (transl_btyp ty)) :: dr))
+          do dr <- transl_globdefs_rec defs';
+          sret (defs1 ++ ((DefConst x l' (transl_btyp ty)) :: dr))
       | DeclConst x ty =>
-          let* dr := transl_globdefs_rec defs' in
-          ret (DeclConst x (transl_btyp ty) :: dr)
+          do dr <- transl_globdefs_rec defs';
+          sret (DeclConst x (transl_btyp ty) :: dr)
       | DeclFun f tparams tret =>
-          let* dr := transl_globdefs_rec defs' in
-          ret (DeclFun f (MapList.map transl_btyp tparams) (transl_btyp tret) :: dr)
+          do dr <- transl_globdefs_rec defs';
+          sret (DeclFun f (MapList.map transl_btyp tparams) (transl_btyp tret) :: dr)
       end
   end.
 

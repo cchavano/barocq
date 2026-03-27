@@ -16,12 +16,9 @@
 
 (** Error reporting and the error monad. *)
 
-From Coq Require Import String.
+From Coq Require Import String RelationClasses.
 From compcert Require Import Coqlib.
-(*From BarocqComp Require Import Plist.
-Import PListNotations. *)
-Import ListNotations.
-(*Set Universe Polymorphism.*)
+
 Close Scope string_scope.
 
 Set Implicit Arguments.
@@ -39,7 +36,7 @@ Inductive errcode: Type :=
 
 Definition errmsg: Type := list errcode.
 
-Definition msg (s: string) : errmsg := List.cons (MSG s) List.nil.
+Definition msg (s: string) : errmsg := MSG s :: nil.
 
 (** * The error monad *)
 
@@ -52,6 +49,25 @@ Inductive res (A: Type) : Type :=
 | Error: errmsg -> res A.
 
 Arguments Error [A].
+
+Definition isOK {A: Type} (v: res A) : Prop :=
+  exists x, v = OK x.
+
+Definition isError {A: Type} (v: res A) : Prop :=
+  exists e, v = Error e.
+
+Lemma isOK_Error : forall {A: Type} (v : res A),
+    isOK v -> forall e, v = Error e -> False.
+Proof.
+  unfold isOK.
+  intros. destruct H. congruence.
+Qed.
+
+Definition eret {A: Type} (a: A) : res A := OK a.
+
+Definition efail {A: Type} : res A := Error nil.
+
+Definition efailwith {A: Type} (m: string) : res A := Error (msg m).
 
 (** To automate the propagation of errors, we use a monadic style
   with the following [bind] operation. *)
@@ -68,18 +84,52 @@ Definition bind2 (A B C: Type) (f: res (A * B)) (g: A -> B -> res C) : res C :=
   | Error msg => Error msg
   end.
 
+Definition bind_catch {A B: Type} (f: res A) (g: A -> res B) (h: res B) : res B :=
+  match f with
+  | OK a => g a
+  | Error _ => h
+  end. 
+
+Definition of_opt {A: Type} (o: option A) : res A :=
+  match o with
+  | Some v => OK v
+  | None => efail
+  end.
+
+Remark ok_imp_some:
+  forall (A: Type) (o: option A) (v: A),
+  of_opt o = OK v ->
+  o = Some v.
+Proof.
+  unfold of_opt; intros.
+  destruct o; try discriminate.
+  congruence.
+Qed.
+
 (** The [do] notation, inspired by Haskell's, keeps the code readable. *)
 
 Declare Scope error_monad_scope.
 Delimit Scope error_monad_scope with error_monad.
 
 Notation "'do' X <- A ; B" := (bind A (fun X => B))
- (at level 200, X name, A at level 100, B at level 200)
- : error_monad_scope.
+  (at level 200, X name, A at level 100, B at level 200)
+  : error_monad_scope.
 
 Notation "'do' ( X , Y ) <- A ; B" := (bind2 A (fun X Y => B))
- (at level 200, X name, Y name, A at level 100, B at level 200)
- : error_monad_scope.
+  (at level 200, X name, Y name, A at level 100, B at level 200)
+  : error_monad_scope.
+
+Notation "'do' ( X , Y , Z ) <- A ; B" := (bind2 A (fun '(X, Y) Z => B))
+  (at level 200, X name, Y name, Z name, A at level 100, B at level 200)
+  : error_monad_scope.
+
+Notation "'do' ( X , Y , Z , W ) <- A ; B" := (bind2 A (fun '(X, Y, Z) W => B))
+  (at level 200, X name, Y name, Z name, W name, A at level 100, B at level 200)
+  : error_monad_scope.
+
+Notation "do/c X <- A '/>' M ; B" := (bind_catch A (fun X => B) M)
+  (at level 200, X name, A at level 100, M at level 100, B at level 200)
+  : error_monad_scope.
 
 Remark bind_inversion:
   forall (A B: Type) (f: res A) (g: A -> res B) (y: B),
@@ -136,6 +186,60 @@ Section mmap.
     constructor. auto. auto.
   Qed.
 End mmap.
+
+Definition res_pred {A : Type} (P : A -> Prop) (r:res A) :=
+  match r with
+  | OK a => P a
+  | Error _ => True
+  end.
+
+(** * Relation on errors *)
+
+Inductive res_rel {A B : Type} (R : A -> B -> Prop) : res A -> res B -> Prop :=
+  res_rel_error : forall m, res_rel R (Error m) (Error m)
+| res_rel_ok : forall (x : A) (y : B), R x y -> res_rel R (OK x) (OK y).
+
+Lemma res_rel_trans : forall {A : Type} (R: A -> A -> Prop),
+    Transitive R -> Transitive (res_rel R).
+Proof.
+  repeat intro.
+  inv H0;inv H1; try constructor.
+  eapply H; eauto.
+Qed.
+
+Lemma res_rel_sym : forall {A : Type} (R: A -> A -> Prop),
+    Symmetric R -> Symmetric (res_rel R).
+Proof.
+  repeat intro.
+  inv H0; try constructor.
+  apply H; eauto.
+Qed.
+
+Lemma res_rel_refl : forall {A : Type} (R: A -> A -> Prop),
+    Reflexive R -> Reflexive (res_rel R).
+Proof.
+  repeat intro.
+  destruct x. constructor; auto.
+  constructor.
+Qed.
+
+Lemma res_eq_dec (T: Type) (eq_dec : forall (x y: T), {x = y} + { x <> y})
+                  (x y: res T) : {x = y} + {x <> y}.
+Proof.
+  decide equality.
+  apply list_eq_dec.
+  decide equality.
+  apply string_dec.
+  apply Pos.eq_dec.
+  apply Pos.eq_dec.
+Qed.
+
+Lemma option_rel_res_rel : forall {A: Type} (R : A -> A -> Prop) v1 v2,
+  option_rel R v1 v2 ->
+  res_rel R (of_opt v1) (of_opt v2).
+Proof.
+  intros. inv H; simpl; constructor;auto.
+Qed.
 
 (** * Reasoning over monadic computations *)
 

@@ -1,9 +1,10 @@
 From Coq Require Import ZArith String List FMapPositive MSetPositive.
 From compcert Require Import AST Ctypes Ctyping Csyntax Csyntaxdefs Values Cop Maps Integers.
-From BarocqComp Require Import Ident Types Benum Error Maps2 Utils Syntax Imp2.
+From BarocqComp Require Import Ident Types Benum Res Maps2 Utils Syntax Imp2.
 Import ListNotations.
 Import CsyntaxNotations.
 
+Local Open Scope error_monad_scope.
 Local Open Scope csyntax_scope.
 Local Open Scope string_scope.
 
@@ -92,189 +93,189 @@ Section TRANSL.
     | UopNotbool => eret Onotbool
     | UopNotint => eret Onotint
     | UopNeg => eret Oneg
-    | UopPlus => fail
+    | UopPlus => efail
     end.
 
   Definition transl_binary_op (op: Syntax.binary_op) : res Cop.binary_operation :=
     match op with
-    | BopAndint => ret Oand
-    | BopOrint => ret Oor
-    | BopXorbool => ret One
-    | BopXorint => ret Oxor
-    | BopAdd => ret Oadd
-    | BopSub => ret Osub
-    | BopMul => ret Omul
-    | BopDiv => ret Odiv
-    | BopMod => ret Omod
-    | BopShl => ret Oshl
-    | BopShr => ret Oshr
-    | BopEq => ret Oeq
-    | BopNeq => ret One
-    | BopLt => ret Olt
-    | BopGt => ret Ogt
-    | BopLe => ret Ole
-    | BopGe => ret Oge
+    | BopAndint => eret Oand
+    | BopOrint => eret Oor
+    | BopXorbool => eret One
+    | BopXorint => eret Oxor
+    | BopAdd => eret Oadd
+    | BopSub => eret Osub
+    | BopMul => eret Omul
+    | BopDiv => eret Odiv
+    | BopMod => eret Omod
+    | BopShl => eret Oshl
+    | BopShr => eret Oshr
+    | BopEq => eret Oeq
+    | BopNeq => eret One
+    | BopLt => eret Olt
+    | BopGt => eret Ogt
+    | BopLe => eret Ole
+    | BopGe => eret Oge
     | BopAndbool
-    | BopOrbool => fail
+    | BopOrbool => efail
     end.
 
   Fixpoint transl_atom (a: Imp2.atom) : res Csyntax.expr :=
     let fix transl_atom_rec (a: Imp2.atom) : res Csyntax.expr :=
       match a with
-      | ATrue => ret (Eval Vtrue tbool)
-      | AFalse => ret (Eval Vfalse tbool)
-      | AInt32 i Signed => ret (Eval (Vint i) tint)
-      | AInt32 i Unsigned => ret (Eval (Vint i) tuint)
-      | AInt64 i Signed => ret (Eval (Vlong i) tlong)
-      | AInt64 i Unsigned => ret (Eval (Vlong i) tulong)
-      | AConstr x i ty => ret (Eval (Vint i) (transl_typ2 ty))
-      | AVar x ty => ret (Evar (Ident.to_pos x) (transl_typ2 ty))
+      | ATrue => eret (Eval Vtrue tbool)
+      | AFalse => eret (Eval Vfalse tbool)
+      | AInt32 i Signed => eret (Eval (Vint i) tint)
+      | AInt32 i Unsigned => eret (Eval (Vint i) tuint)
+      | AInt64 i Signed => eret (Eval (Vlong i) tlong)
+      | AInt64 i Unsigned => eret (Eval (Vlong i) tulong)
+      | AConstr x i ty => eret (Eval (Vint i) (transl_typ2 ty))
+      | AVar x ty => eret (Evar (Ident.to_pos x) (transl_typ2 ty))
       | ACast a ty =>
-          let* e := transl_atom a in
-          ret (Ecast e (transl_typ2 ty))
+          do e <- transl_atom a;
+          eret (Ecast e (transl_typ2 ty))
       | AUnaryOp op a1 ty =>
-          let* e := transl_atom a1 in
+          do e <- transl_atom a1;
           let t := transl_typ2 ty in
           match transl_unary_op op with
-          | OK op' => ret (Eunop op' e t)
-          | Error _ => ret e
+          | OK op' => eret (Eunop op' e t)
+          | Error _ => eret e
           end
       | ABinaryOp op a1 a2 ty =>
-          let* e1 := transl_atom a1 in
-          let* e2 := transl_atom a2 in
+          do e1 <- transl_atom a1;
+          do e2 <- transl_atom a2;
           let t := transl_typ2 ty in
           match op with
-          | BopAndbool => ret (Eseqand e1 e2 tbool)
-          | BopOrbool => ret (Eseqor e1 e2 tbool)
+          | BopAndbool => eret (Eseqand e1 e2 tbool)
+          | BopOrbool => eret (Eseqor e1 e2 tbool)
           | _ =>
-              let* op' := transl_binary_op op in
-              ret (Ebinop op' e1 e2 t)
+              do op' <- transl_binary_op op;
+              eret (Ebinop op' e1 e2 t)
           end
       | AArrayGet a1 a2 ly ty =>
-          let* e1 := transl_atom a1 in
-          let* e2 := transl_atom a2 in
+          do e1 <- transl_atom a1;
+          do e2 <- transl_atom a2;
           let ty' := transl_typ2_rec ly ty in
           let eindex := Eindex e1 e2 ty' in
           match ly with
           | LyBoxed
           | LyUnboxed (Some _)
-          | LyPrim => ret eindex
-          | LyUnboxed None => ret (Ebinop Oadd e1 e2 ty')
+          | LyPrim => eret eindex
+          | LyUnboxed None => eret (Ebinop Oadd e1 e2 ty')
           end
       | ARecordProj a f ly ty =>
-          let* e := transl_atom a in
+          do e <- transl_atom a;
           let tderef := deref_pointer (typeof e) in
           let tfield := transl_typ2_rec ly ty in
           let efield := Efield (Evalof (Ederef e tderef) tderef) (Ident.to_pos f) tfield in
           match ly, ty with
-          | (LyBoxed | LyPrim), _ => ret efield
+          | (LyBoxed | LyPrim), _ => eret efield
           | LyUnboxed _, TArray _ _ =>
               let tfield := transl_typ2 ty in
-              ret (Efield (Evalof (Ederef e tderef) tderef) (Ident.to_pos f) tfield)
-          | LyUnboxed _, TRecord _ _ => ret (Eaddrof efield (tptr tfield))
-          | _, _ => fail
+              eret (Efield (Evalof (Ederef e tderef) tderef) (Ident.to_pos f) tfield)
+          | LyUnboxed _, TRecord _ _ => eret (Eaddrof efield (tptr tfield))
+          | _, _ => efail
           end
       | APureCall f tf args tr =>
-          let* args' := mmap transl_atom args in
+          do args' <- mmap transl_atom args;
           let args' := List.fold_right (fun ei acc => Econs ei acc) Enil args' in
           let tr' := transl_typ2 tr in
           let tf' := transl_typ2_fun tf in
-          ret (Ecall (Evalof (Evar (Ident.to_pos f) tf') tf') args' tr')
+          eret (Ecall (Evalof (Evar (Ident.to_pos f) tf') tf') args' tr')
       end
     in
-    let* e := transl_atom_rec a in
+    do e <- transl_atom_rec a;
     match Ctyping.expr_kind e with
-    | Csem.LV => ret (Evalof e (typeof e))
-    | _ => ret e
+    | Csem.LV => eret (Evalof e (typeof e))
+    | _ => eret e
     end.
 
   Definition transl_ecomp (ec: Imp2.ecomp) : res Csyntax.statement :=
     match ec with
     | EcArraySet a1 a2 a3 =>
         match Imp2.typof_atom a1 with
-        | TArray ((TRecord _ _| TArray _ _)) (LyUnboxed _) => fail
+        | TArray ((TRecord _ _| TArray _ _)) (LyUnboxed _) => efail
         | _ =>
-            let* e1 := transl_atom a1 in
-            let* e2 := transl_atom a2 in
-            let* e3 := transl_atom a3 in
-            ret (Sdo (Eassign (Eindex e1 e2 (typeof e3)) e3 (typeof e3)))
+            do e1 <- transl_atom a1;
+            do e2 <- transl_atom a2;
+            do e3 <- transl_atom a3;
+            eret (Sdo (Eassign (Eindex e1 e2 (typeof e3)) e3 (typeof e3)))
         end
     | EcRecordUpdate a1 f a2 =>
         match Imp2.typof_atom a1 with
         | TRecord rid ub =>
-            if list_mem Ident.eq_dec f ub then fail
+            if list_mem Ident.eq_dec f ub then efail
             else
-              let* e1 := transl_atom a1 in
-              let* e2 := transl_atom a2 in
+              do e1 <- transl_atom a1;
+              do e2 <- transl_atom a2;
               let tderef := deref_pointer (typeof e1) in
               let tfield := typeof e2 in
-              ret (Sdo (Eassign (Efield (Evalof (Ederef e1 tderef) tderef) (Ident.to_pos f) tfield) e2 (typeof e2)))
-        | _ => fail
+              eret (Sdo (Eassign (Efield (Evalof (Ederef e1 tderef) tderef) (Ident.to_pos f) tfield) e2 (typeof e2)))
+        | _ => efail
         end
     end.
 
   Fixpoint transl_statement (s: Imp2.statement): res Csyntax.statement :=
     let fix transl_switch_cases (cases: list (pattern * Imp2.statement)) : res Csyntax.labeled_statements :=
       match cases with
-      | nil => fail
+      | nil => efail
       | (p, sp) :: nil =>
-          let* sp' := transl_statement sp in
+          do sp' <- transl_statement sp;
           match p with
           | PIdent i z =>
-              ret (LScons (Some z) (Ssequence sp' Sbreak) LSnil)
+              eret (LScons (Some z) (Ssequence sp' Sbreak) LSnil)
           | PWildcard =>
-              ret (LScons None sp' LSnil)
+              eret (LScons None sp' LSnil)
           end
       | (p, sp) :: ((_ :: _) as cases') =>
           match p with
           | PIdent i z =>
-              let* sc' := transl_statement sp in
-              let* ccases := transl_switch_cases cases' in
-              ret (LScons (Some z) (Ssequence sc' Sbreak) ccases)
-          | PWildcard => fail (* Ill-typed program *)
+              do sc' <- transl_statement sp;
+              do ccases <- transl_switch_cases cases';
+              eret (LScons (Some z) (Ssequence sc' Sbreak) ccases)
+          | PWildcard => efail (* Ill-typed program *)
           end
       end
     in
     match s with
-    | StSkip => ret Sskip
+    | StSkip => eret Sskip
     | StSet x a =>
-        let* e := transl_atom a in
+        do e <- transl_atom a;
         let te := typeof e in
-        ret (Sdo (Eassign (Evar (Ident.to_pos x) te) e te))
+        eret (Sdo (Eassign (Evar (Ident.to_pos x) te) e te))
     | StEcomp ec => transl_ecomp ec
     | StCall x f tf args tr =>
-        let* args' := mmap transl_atom args in
+        do args' <- mmap transl_atom args;
         let args' := List.fold_right (fun ei acc => Econs ei acc) Enil args' in
         let tr' := transl_typ2 tr in
         let tf' := transl_typ2_fun tf in
         let ecall := Ecall (Evalof (Evar (Ident.to_pos f) tf') tf') args' tr' in
         match x with
-        | Some x => ret (Sdo (Eassign (Evar (Ident.to_pos x) tr') ecall tr'))
-        | None => ret (Sdo ecall)
+        | Some x => eret (Sdo (Eassign (Evar (Ident.to_pos x) tr') ecall tr'))
+        | None => eret (Sdo ecall)
         end
     | StIfThenElse a s1 s2 =>
-        let* e := transl_atom a in
-        let* s1' := transl_statement s1 in
-        let* s2' := transl_statement s2 in
-        ret (Sifthenelse e s1' s2')
+        do e <- transl_atom a;
+        do s1' <- transl_statement s1;
+        do s2' <- transl_statement s2;
+        eret (Sifthenelse e s1' s2')
     | StSwitch a cases =>
-        let* e := transl_atom a in
+        do e <- transl_atom a;
         match typeof e with
         | Tenum ei _ =>
-            let* cases' := transl_switch_cases cases in
-            ret (Sswitch e cases')
-        | _ => fail
+            do cases' <- transl_switch_cases cases;
+            eret (Sswitch e cases')
+        | _ => efail
         end
     | StSequence s1 s2 =>
-        let* s1' := transl_statement s1 in
-        let* s2' := transl_statement s2 in
-        ret (Ssequence s1' s2')
+        do s1' <- transl_statement s1;
+        do s2' <- transl_statement s2;
+        eret (Ssequence s1' s2')
     | StReturn a =>
         match a with
         | Some a =>
-            let* e := transl_atom a in
-            ret (Sreturn (Some e))
-        | None => ret (Sreturn None)
+            do e <- transl_atom a;
+            eret (Sreturn (Some e))
+        | None => eret (Sreturn None)
         end
     end.
 
@@ -300,8 +301,8 @@ Section TRANSL.
     let ty := transl_typ2 (fn_return f) in
     let params := List.map (fun '(pid, pty) => (Ident.to_pos pid, transl_typ2 pty)) (fn_params f) in
     let vars := List.map (fun '(pid, pty) => (Ident.to_pos pid, transl_typ2 pty)) (all_locals (fn_body f)) in
-    let* body := transl_statement (fn_body f) in
-    ret {|
+    do body <- transl_statement (fn_body f);
+    eret {|
       Csyntax.fn_return := ty;
       Csyntax.fn_callconv := cc_default;
       Csyntax.fn_params := params;
@@ -334,7 +335,7 @@ Section TRANSL.
 
   Fixpoint transl_globdefs_rec (defs: list Imp2.globdef) : res (list cglobdef) :=
     match defs with
-    | nil => ret nil
+    | nil => eret nil
     | d :: defs' =>
         match d with
         | DefConst x l ty =>
@@ -353,16 +354,16 @@ Section TRANSL.
               gvar_readonly := readonly;
               gvar_volatile := false
             |}) in
-            let* r := transl_globdefs_rec defs' in
-            ret (d :: r)
+            do r <- transl_globdefs_rec defs';
+            eret (d :: r)
         | DefFun x f =>
-            let* f' := transl_function f in
+            do f' <- transl_function f;
             let d := ((Ident.to_pos x), (Gfun (Internal f'))) in
-            let* r := transl_globdefs_rec defs' in
-            ret (d :: r)
+            do r <- transl_globdefs_rec defs';
+            eret (d :: r)
         | DeclConst x ty =>
             let t := transl_typ2 ty in
-            let* r := transl_globdefs_rec defs' in
+            do r <- transl_globdefs_rec defs';
             let d := ((Ident.to_pos x), Gvar {|
               gvar_info := t;
               gvar_init := nil;
@@ -370,11 +371,11 @@ Section TRANSL.
               gvar_volatile := false
             |})
             in
-            ret (d :: r)
+            eret (d :: r)
         | DeclFun x tparams tret =>
-            let* r := transl_globdefs_rec defs' in
+            do r <- transl_globdefs_rec defs';
             let d := ((Ident.to_pos x), Gfun (transl_abs_function x tparams tret)) in
-            ret (d :: r)
+            eret (d :: r)
       end
     end.
 
@@ -444,20 +445,20 @@ Definition transl_program (prog: Imp2.program) : res Csyntax.program :=
   let defs := prog_defs prog in
   let abs_types_impl := mk_abs_types_impl (prog_tabs prog) in
   let ts := transl_prog_types abs_types_impl types in
-  let* cdefs := transl_globdefs abs_types_impl defs in
+  do cdefs <- transl_globdefs abs_types_impl defs;
   let public := List.map Ident.to_pos (public_idents defs) in
   let main := _main in
   match Ctypes.make_program ts cdefs public main with
   | Errors.OK prog =>
       match Ctyping.typecheck_program prog with
-      | _ => ret prog
+      | _ => eret prog
       (* | OK prog => OK prog
       | _ => OK prog
-      | Error (MSG msg :: CTX id :: _) => failwith (String.append (String.append "CSyntaxgen.transl_program: typing failed: " msg) (string_of_ident id))
-      | _ => failwith "CSyntaxgen.transl_program: typing failed" *)
+      | Error (MSG msg :: CTX id :: _) => efailwith (String.append (String.append "CSyntaxgen.transl_program: typing efailed: " msg) (string_of_ident id))
+      | _ => efailwith "CSyntaxgen.transl_program: typing efailed" *)
       end
-  | Errors.Error (Errors.MSG msg :: Errors.CTX id :: _) => failwith (String.append msg (string_of_ident id))
-  | Errors.Error _ => failwith "Csyntaxgen.transl_program: error when calling Ctypes.make_program"
+  | Errors.Error (Errors.MSG msg :: Errors.CTX id :: _) => efailwith (String.append msg (string_of_ident id))
+  | Errors.Error _ => efailwith "Csyntaxgen.transl_program: error when calling Ctypes.make_program"
   end.
 
 Section IDENTS.

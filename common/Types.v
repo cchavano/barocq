@@ -1,10 +1,10 @@
 From Coq Require Import ZArith List MSetPositive Bool.
 From compcert Require Import Coqlib Integers Maps.
-From BarocqComp Require Import Target Error Barray Brecord Benum Ident Maps2 Utils.
+From BarocqComp Require Import Target Res Barray Brecord Benum Ident Maps2 Utils.
 From Coq Require Import Datatypes List MSetPositive Lia.
 From BarocqComp Require Import ExtOrdered.
-From BarocqComp Require Import OptionMonad.
-Open Scope option_monad_scope.
+From BarocqComp Require Import Option.
+Local Open Scope option_monad_scope.
 
 (** * Syntax of types *)
 

@@ -9,7 +9,9 @@ Require Import List String.
 Import ListNotations.
 Require Import Unsigned63.
 
-From BarocqComp Require Import Error Maps2 Utils Pp.
+From BarocqComp Require Import Res Maps2 Utils Pp.
+
+Local Open Scope error_monad_scope.
 
 Inductive kalias :=
 | MUST
@@ -1609,15 +1611,14 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
 
   Definition get_label (E:Edge) (n:int) :=
     match IntMap.find n E with
-    | None => fail
+    | None => efail
     | Some(n,_) => OK n
     end.
 
   Definition get_node_label (g:t) (n:int) := get_label (edges g) n.
 
-
   Definition depth (g:t) :=
-    let* lb := get_label (edges g) (root g)  in
+    do lb <- get_label (edges g) (root g);
     OK (NodeLabel.depth lb).
 
   Definition get_successors (g:t) (n:int) :=
@@ -2685,9 +2686,9 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
                             | Some n' => create_path  n' l g (* following path *)
                             | None    =>
                                 (* the edge does not exists *)
-                                let* lb :=  next_label nl e in
-                                let* (g',nn) := create_node lb nil g in
-                                let* g2      := add_edge n e nn g' in
+                                do lb <-  next_label nl e;
+                                do (g',nn) <- create_node lb nil g;
+                                do g2      <- add_edge n e nn g';
                                 create_path  nn l g2
                             end
                         end
@@ -2699,13 +2700,13 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     | Some(nl,succs) =>
         match find_edgelabel e succs with
         | Some n' =>
-            let* lb := get_label (edges g) n' in
+            do lb <- get_label (edges g) n';
                          OK (g,(n',lb))
         | None    =>
             (* the edge does not exists *)
-            let* lb :=  next_label nl e in
-            let* (g',nn) := create_node lb nil g in
-            let* g2      := add_edge n e nn g' in
+            do lb <-  next_label nl e;
+            do (g',nn) <- create_node lb nil g;
+            do g2      <- add_edge n e nn g';
             OK(g2,(nn,lb))
         end
     end.
@@ -2752,8 +2753,8 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
 
     Definition remove_trees_rec (l : list (EdgeLabel.t * int)) (g:t) :=
       List.fold_right (fun e acc =>
-                         let* (g,l) := acc in
-                         let* (g,l1) := remove_tree_rec (snd e) g in
+                         do (g,l) <- acc;
+                         do (g,l1) <- remove_tree_rec (snd e) g;
                          OK (g, app l l1)) (OK (g,nil)) l.
   End REMOVETREE.
 
@@ -2763,7 +2764,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     | S fuel =>
         match IntMap.find n (edges g) with
         | None => Error (cons (MSG "remove_tree: unbound node") nil)
-        | Some(nl,l) => let* (t,lr) := remove_trees_rec (remove_tree_aux fuel) l g in
+        | Some(nl,l) => do (t,lr) <- remove_trees_rec (remove_tree_aux fuel) l g;
 
                         OK(remove_node n t,n::lr)
         end
@@ -2783,8 +2784,8 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     match l with
     | nil => OK (g,nil)
     | cons (e,n1) l =>
-        let* (g1,l1) := remove_successors n l g in
-        let* (g2,l2) := remove_successor n e n1 g1 in
+        do (g1,l1) <- remove_successors n l g;
+        do (g2,l2) <- remove_successor n e n1 g1;
         OK (g2, List.app l1 l2)
     end.
 
@@ -2834,8 +2835,8 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
           match find_edgelabel e l2 with
           | None => inter_list l1' g1 l2 g2 acc
           | Some n' =>
-              let* ga := inter n g1 n' g2 acc in
-              let* (l,g) := inter_list l1' g1 l2 g2 ga in
+              do ga <- inter n g1 n' g2 acc;
+              do (l,g) <- inter_list l1' g1 l2 g2 ga;
               OK ((e, rootI ga) :: l,g)
           end
       end.
@@ -2847,21 +2848,21 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
 
   Definition create_root (n1:int) (n2:int) (lb:NodeLabel.t) (l:list (EdgeLabel.t * int)) (g:interT) :=
     let '(g,(m1,m2)) := g in
-    let* (g,n') := create_node lb l g in
+    do (g,n') <- create_node lb l g;
     OK (set_root n' g, (IntMap.add n1 n' m1, IntMap.add n2 n' m2)).
 
 
   Fixpoint inter (fuel:nat) (o1:int) (g1:t) (o2:int) (g2:t) (acc:interT) : res interT :=
     match fuel with
-    | O => fail
+    | O => efail
     | S fuel => match IntMap.find o1 (edges g1), IntMap.find o2 (edges g2) with
-                | None , _ | _ , None => fail
+                | None , _ | _ , None => efail
                 | Some(lb1,l1) , Some(lb2,l2) =>
                     if NodeLabel.eq_dec lb1 lb2
                     then
-                      let* (l,g) := inter_list (inter fuel) l1 g1 l2 g2 acc in
+                      do (l,g) <- inter_list (inter fuel) l1 g1 l2 g2 acc;
                       create_root o1 o2 lb1 l g
-                    else fail
+                    else efail
                 end
     end.
 
@@ -2898,13 +2899,13 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
 
   Fixpoint nodes (fuel:nat) (o:int) (g:t) : res IntSet.t :=
     match fuel with
-    | O => fail
+    | O => efail
     | S fuel =>
         match IntMap.find o (edges g) with
         | None => OK IntSet.empty
         | Some (_,l) => List.fold_right (fun en s =>
-                                           let* s   := s in
-                                           let* s1 := (nodes fuel (snd en) g) in
+                                           do s   <- s;
+                                           do s1 <- (nodes fuel (snd en) g);
                                                      OK (IntSet.union s1  s)) (OK (IntSet.singleton o)) l
         end
     end.
@@ -2924,7 +2925,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     if eqb p n then OK true
     else
     match fuel with
-    | O => fail
+    | O => efail
     | S fuel' =>
         match IntMap.find n (parent g) with
         | None => OK false
@@ -2933,29 +2934,29 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     end.
 
   Definition is_parent (g:t) (p:int) (n:int) :=
-    let* d:= depth g in
+    do d <- depth g;
     is_parent_rec g d p n.
 
 
   Fixpoint get_upward_path_rec (fuel:nat) (g:t) (n:int) :=
     if Int.eq_dec n (root g) then OK nil
     else match fuel with
-         | O => fail
+         | O => efail
          | S fuel =>
              match IntMap.find n (parent g) with
-             | None => fail (* Should not happen *)
-             | Some(e,p) => let* path := get_upward_path_rec fuel g p in
+             | None => efail (* Should not happen *)
+             | Some(e,p) => do path <- get_upward_path_rec fuel g p;
                             OK (e::path)
              end
          end.
 
   Definition get_path_from_top (g:t) (n:int) :=
-    let* lb := get_label (edges g) (root g) in
+    do lb <- get_label (edges g) (root g);
     get_upward_path_rec (NodeLabel.depth lb) g n.
 
   Definition get_path (g:t) (n:int) :=
-    let* lb := get_label (edges g) (root g) in
-    let* path := get_upward_path_rec (NodeLabel.depth lb) g n in
+    do lb <- get_label (edges g) (root g);
+    do path <- get_upward_path_rec (NodeLabel.depth lb) g n;
     OK (List.rev path).
 
 
@@ -2971,8 +2972,8 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     end.
 
   Definition may_alias (g:t) (n1:int) (n2:int) : res bool :=
-    let* p1 := get_path_from_top g n1 in
-    let* p2 := get_path_from_top g n2 in
+    do p1 <- get_path_from_top g n1;
+    do p2 <- get_path_from_top g n2;
     OK (path_may_alias p1 p2).
 
 
@@ -3333,9 +3334,9 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
         simpl.
         intros.
         intuition subst; try congruence;
-          try (eapply wf_nxt with (g:=g) ; eauto;fail);
-          try (exfalso ; eapply  FRD; eauto;fail);
-          try (exfalso ; eapply  FRO; eauto;fail).
+          try (eapply wf_nxt with (g:=g) ; eauto; fail);
+          try (exfalso ; eapply  FRD; eauto; fail);
+          try (exfalso ; eapply  FRO; eauto; fail).
         * inv H3.
           apply has_node_label_has_node in H7.
           apply wf_fresh in H7; auto.
