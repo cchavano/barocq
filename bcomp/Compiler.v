@@ -1,11 +1,9 @@
 From Coq Require Import String List.
-From BarocqComp Require Import Res Utils Ident Pp Barocq Imp1.
+From BarocqComp Require Import Res StateMonads Utils Ident Pp Barocq Imp1.
 From BarocqComp Require Import Renaming BarocqBNFgen ImpBNFgen Imp1gen Imp2gen GlobRewrite Csyntaxgen.
 From BarocqComp Require Import Imp1ElimAlias InvAnalysis.
 From BarocqComp Require Import Imp2Copy.
 From BarocqComp Require Import BarocqBNFUndo. (* force dependency *)
-
-Local Open Scope error_monad_scope.
 
 Inductive ir_name :=
 | Ir_Barocq
@@ -72,33 +70,57 @@ Definition insert_log (opt:compiler_opt) (ir:ir_name) {A : Type} (F: A -> box) (
                then (G a) :: progs else progs in
   (l,progs).
 
-Definition compile (opt : compiler_opt) (arch: Target.archi) (globinfo: option (ident * ident)) (prog: Barocq.program) : res (list ir_prog * Log.t) :=
-  let (log,progs) := insert_log opt Ir_Barocq Barocq.Pp.pp_program Barocq prog Log.empty nil in
+Module StateLog <: STATE_TYPE.
+  Definition t : Type := (list ir_prog * Log.t).
+End StateLog.
+
+Module MonComp. 
+  Include MonStateErr2(StateLog).
+
+  Definition insert_log (opt:compiler_opt) (ir:ir_name) {A : Type} (F: A -> box) (G: A -> ir_prog) (a:A) : M unit :=
+    fun '(progs, l) =>
+      let l := if List.In_dec ir_name_eq_dec ir (opt.(ir_log))
+              then Log.add_entry (pp_ir ir) (F a) l else l in
+      let progs := if List.In_dec ir_name_eq_dec ir (opt.(ir_gen))
+                  then (G a) :: progs else progs in
+      (OK tt, (progs, l)).
+End MonComp.
+
+Import MonComp.
+Local Open Scope state_err2_monad_scope.
+
+Definition compile_aux (opt : compiler_opt) (arch: Target.archi) (globinfo: option (ident * ident)) (prog: Barocq.program) : MonComp.M unit :=
+  (* do _ <- insert_log opt Ir_Barocq Barocq.Pp.pp_program Barocq prog Log.empty nil; *)
   let prog := Renaming.rename_program prog in
-  do btyped <- Barocq.Typing.typecheck_program arch prog;
-  do bbnf <- BarocqBNFgen.norm_program arch btyped;
-  let (log,progs)   := insert_log opt Ir_BBNF BarocqBNF.Pp.pp_program BarocqBNF bbnf log progs in
-  do ibnf <- ImpBNFgen.transl_program bbnf;
-  do imp1 <- Imp1gen.norm_program ibnf;
-  do imp1_typed <- Imp1Typing.typecheck_program arch imp1;
-  let (log,progs) := insert_log  opt Ir_Imp1 Imp1.Pp.pp_program Imp1 imp1_typed log progs in
-  do (te,age) <- InvAnalysis.check_program imp1_typed; (* Maybe, we could reuse the analysis result *)
+  do/l btyped <- Barocq.Typing.typecheck_program arch prog;
+  do/l bbnf <- BarocqBNFgen.norm_program arch btyped;
+  do _ <- insert_log opt Ir_BBNF BarocqBNF.Pp.pp_program BarocqBNF bbnf;
+  do/l ibnf <- ImpBNFgen.transl_program bbnf;
+  do/l imp1 <- Imp1gen.norm_program ibnf;
+  do/l imp1_typed <- Imp1Typing.typecheck_program arch imp1;
+  do _ <- insert_log  opt Ir_Imp1 Imp1.Pp.pp_program Imp1 imp1_typed;
+  do/l (te,age) <- InvAnalysis.check_program imp1_typed; (* Maybe, we could reuse the analysis result *)
   if (dbg_analysis opt)
-  then Error (msg (Pp.pp (InvAnalysis.pp_inv (snd age))))
+  then sfailwith (Pp.pp (InvAnalysis.pp_inv (snd age)))
   else
-    do imp1_typed <- Imp1ElimAlias.transl_program te imp1_typed;
+    do/l imp1_typed <- Imp1ElimAlias.transl_program te imp1_typed;
       let imp2 := Imp2gen.transl_program imp1_typed in
-      let (log,progs) := insert_log opt Ir_Imp2 Imp2.Pp.pp_program Imp2 imp2 log progs in
+      do _ <- insert_log opt Ir_Imp2 Imp2.Pp.pp_program Imp2 imp2;
       let imp2 := if has_opt Opt_Copy opt then Imp2Copy.transl_program imp2 else imp2 in
-      let (log,progs) := insert_log opt Ir_Copy Imp2.Pp.pp_program Imp2 imp2 log progs in
+      do _ <- insert_log opt Ir_Copy Imp2.Pp.pp_program Imp2 imp2;
       let imp2_grw :=
         match globinfo with
         | Some ginfo => GlobRewrite.rewrite_program ginfo imp2
         | None => imp2
         end
       in 
-      do clight <- Csyntaxgen.transl_program imp2_grw;
-      eret (Csyntax clight::progs,log).
+      do/l clight <- Csyntaxgen.transl_program imp2_grw;
+      sret tt.
+
+Definition compile (opt : compiler_opt) (arch: Target.archi) (globinfo: option (ident * ident)) (prog: Barocq.program) : (res unit * (list ir_prog * Log.t)) :=
+  compile_aux opt arch globinfo prog (nil, Log.empty).
+
+Local Open Scope error_monad_scope.
 
 Definition compile_to_imp1 (arch: Target.archi) (prog: Barocq.program) : res Imp1.program :=
   let prog := Renaming.rename_program prog in

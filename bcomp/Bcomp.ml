@@ -463,12 +463,12 @@ let () =
       end;
 
       match Compiler.compile (gen_compile_opt ()) !target_arch ginfo prog with
-      | Res.OK (progs, log) -> begin
+      | (Res.OK _, (progs, log)) -> begin
           ignore (output_log stdout log);
           generate_c !opt_export_csyntax !opt_gen_header progs;
           generate_corres prog tprog progs
         end
-      | Res.Error msg ->
+      | (Res.Error msg, _)->
           raise @@ CompilerError (PrintUtils.string_of_errmsg msg)
     with
     | Sys_error msg -> eprintf "System error: %s\n" msg
