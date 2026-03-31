@@ -276,6 +276,7 @@ Module Typing.
 
   Import Res.
 
+
   Fixpoint typecheck_expr (be: benv) (gx: gcontext) (lx: lcontext) (e: Barocq.expr) : res BarocqTyped.expr :=
     match e with
     | Barocq.ETrue => eret ETrue
@@ -351,7 +352,8 @@ Module Typing.
         let lx' := lcontext_update lx x (typof_expr e1') in
         do e2' <- typecheck_expr be gx lx' e2;
         eret (ELetIn x e1' e2' (typof_expr e2'))
-    | Barocq.EAttr _ e => typecheck_expr be gx lx e
+    | Barocq.EAttr a e => do e <- typecheck_expr be gx lx e ;
+                          eret (EAttr a e)
     end.
 
   Definition typecheck_function (arch: Target.archi) (be: benv) (gx: gcontext) (f: Barocq.function) : res BarocqTyped.function :=
