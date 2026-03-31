@@ -90,8 +90,8 @@ Import MonComp.
 Local Open Scope state_err2_monad_scope.
 
 Definition compile_aux (opt : compiler_opt) (arch: Target.archi) (globinfo: option (ident * ident)) (prog: Barocq.program) : MonComp.M unit :=
-  (* do _ <- insert_log opt Ir_Barocq Barocq.Pp.pp_program Barocq prog Log.empty nil; *)
   let prog := Renaming.rename_program prog in
+  do _ <- insert_log opt Ir_Barocq Barocq.Pp.pp_program Barocq prog ;
   do/l btyped <- Barocq.Typing.typecheck_program arch prog;
   do/l bbnf <- BarocqBNFgen.norm_program arch btyped;
   do _ <- insert_log opt Ir_BBNF BarocqBNF.Pp.pp_program BarocqBNF bbnf;
@@ -115,7 +115,7 @@ Definition compile_aux (opt : compiler_opt) (arch: Target.archi) (globinfo: opti
         end
       in 
       do/l clight <- Csyntaxgen.transl_program imp2_grw;
-      sret tt.
+      (fun '(p, log ) => (OK tt , (Csyntax clight :: p , log))).
 
 Definition compile (opt : compiler_opt) (arch: Target.archi) (globinfo: option (ident * ident)) (prog: Barocq.program) : (res unit * (list ir_prog * Log.t)) :=
   compile_aux opt arch globinfo prog (nil, Log.empty).
