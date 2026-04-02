@@ -11,7 +11,7 @@ dev-repo: "git+https://gitlab.inria.fr/cchavano/barocq.git#v0.5"
 depends: [
   "ocaml" {= "4.14.2"}
   "menhir" {= "20250912"}
-  "coq" {= "8.20.1"}
+  "coq" {>= "8.20.1" and <= "9.0.1"}
   "coq-record-update" {= "0.3.6"}
   "coq-vst-zlist" {= "2.13"}
   "compcert-ce" {= "3.16-20260122ce"}
