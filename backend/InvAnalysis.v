@@ -56,6 +56,10 @@ Module InvMap.
 
   Definition join (e1 e2:t) := STree.combine merge e1 e2.
 
+  Definition join_list (l:list t) :=
+    List.fold_left join l STree.empty.
+
+
   Definition of_path (x:string) (l :list EdgeLabel.t) :=
     STree.set x (G.PathTree.create l) STree.empty.
 
@@ -67,6 +71,10 @@ Module InvMap.
     | None => STree.remove x m
     | Some v => STree.set x v m
     end.
+
+  Definition init (l:list string) (v:G.PathTree.t) :=
+    List.fold_right (fun e acc => STree.set  e v acc) STree.empty l.
+
 
   Definition empty : t := STree.empty.
 
@@ -166,18 +174,89 @@ Definition show_path_above_alias (te:tenv) (ge:aenv) (d:domain) (env:InvMap.t) (
                             (Bstack (Bstr "===>")
                                (InvMap.pp env') Left) Left))).
 
+(** [inv_tree d fuel n] invalidates all the variables in the tree rooted at n *)
+Fixpoint inv_tree  (d:domain) (fuel:nat) (n:int)  : res InvMap.t :=
+  let I1 := InvMap.init (Vars.vars_of_node (Vars d) n) G.PathTree.top in
+  let l := List.map snd (G.get_successors (Pto d) n) in
+  match fuel with
+  | O => Error (msg "Not enough fuel")
+  | S fuel => do l <- mmap (inv_tree d fuel) l;
+              OK (InvMap.join I1 (InvMap.join_list l))
+  end.
+
+Fixpoint combine_path_tree (lp : list (EdgeLabel.t * G.PathTree.t)) (ed: list (EdgeLabel.t * int)) :
+  list (int * G.PathTree.t) :=
+  match lp with
+  | nil => nil
+  | (e,p)::lp => match find  (fun '(e1,_) => Coqlib.proj_sumbool (EdgeLabel.eq_dec e e1)) ed with
+                 | None => combine_path_tree lp ed
+                 | Some en => (snd en,p) :: combine_path_tree lp ed
+                 end
+  end.
+
+
+(** [inv_down d n i] takes the intersection between the tree rooted at n
+    and the invalid paths i. It then invalidates the variables in the tree *)
+Fixpoint inv_down  (d:domain) (fuel:nat) (n:int) (i : G.PathTree.t) : res InvMap.t :=
+  match i with
+  | Node nil =>
+      inv_tree d fuel n (* all the path are invalid *)
+  | Node lp  =>
+      match fuel with
+      | O => Error (msg "Not enough fuel")
+      | S fuel =>
+          let I1 := InvMap.init (Vars.vars_of_node (Vars d) n) i in
+          let succ := G.get_successors (Pto d) n in
+          let l := combine_path_tree lp succ in
+          do l <- mmap (fun x => inv_down d fuel (fst x) (snd x)) l ;
+          OK (InvMap.join I1 (InvMap.join_list l))
+      end
+  end.
+
+(** [inv_alias te ge d n i] recursively invalidates the path i for the tree rooted at n.
+    This involves invalidating the nodes up in the tree but also the siblings in may alias. *)
+Fixpoint xinv_alias  (d:domain) (fuel:nat) (n:int) (i : G.PathTree.t) : res InvMap.t :=
+  let I1 := InvMap.init (Vars.vars_of_node (Vars d) n) i in
+  match G.get_parent n (Pto d) with
+  | None => OK I1
+  | Some (e,n') =>
+      match fuel with
+      | O => Error (msg "Not enough fuel")
+      | S fuel =>
+          (* We recursively invalidate up *)
+          do I2 <- xinv_alias d fuel n' (G.PathTree.create_with (e::nil) i) ;
+          (* We also get the siblings in may alias *)
+          let l := G.get_successors (Pto d) n' in
+          let l := List.filter (fun x => may_edge e (fst x) && negb (Coqlib.proj_sumbool (EdgeLabel.eq_dec e (fst x)))) l in
+          do I3 <- mmap (fun en => inv_down d fuel (snd en) i) l ;
+          OK (InvMap.join (InvMap.join I1 I2) (InvMap.join_list I3))
+      end
+  end.
+
+Definition inv_alias (te:tenv) (env:aenv) (d:domain) (a:atom) (e:EdgeLabel.t) : res InvMap.t :=
+  do (d,v) <- aeval_atom te env d a;
+  match v with
+  | KNode n =>
+      do f <- G.depth (Pto d);
+      xinv_alias d f n (create (e::nil))
+  | KPrim    => Error (msg "atom should be a reference")
+  | KFun _   => Error (msg "atom should be a reference")
+  | KDead    => Error  (msg "atom should be a reference")
+  end.
+
 Definition set_field (te:tenv) (ge: aenv) (d:domain) (env:InvMap.t) (a1:atom) (i:EdgeLabel.t) (v:atom) :=
   let pa1  := eval_atom env a1 in
   let pv    := eval_atom env v in
-  do may  <- path_above_alias te ge d a1;
-  let env' := inv_may_alias env may  i in
-  do _   <- check "set_field" env env';
+(*  do may  <- path_above_alias te ge d a1;
+  let env' := inv_may_alias env may  i in *)
+  do env' <- inv_alias te ge d a1 i ;
+(*  do _   <- check "set_field" env env';*)
 (*  do _   <- show_path_above_alias ge d env a1 env';*)
   do (_,_,b) <- write te ge d a1 (i::nil) v;
   if b  (* no-op - nothinh happens *)
   then OK (set_path pa1 i pv , env)  (* could mandate pv to have no invalid path? *)
   else
-    OK (set_path pa1 i pv,env').
+    OK (set_path pa1 i pv, InvMap.join env env').
 
 Fixpoint get_fields (p:option G.PathTree.t) (l :list EdgeLabel.t) : option G.PathTree.t :=
   match l with
@@ -350,4 +429,3 @@ Definition check_program (p:program) : res (tenv *(aenv * genv)) :=
   (* Analyse the invalid path - could be done on the fly*)
   do inv <- inv_globdefs te age STree.empty (prog_defs p);
   OK (te,(age,inv)).
-  

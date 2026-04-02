@@ -630,6 +630,9 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     Inductive t :=
     | Node : list (EdgeLabel.t * t) -> t.
 
+    (** [top] is the set of all paths *)
+    Definition top := Node nil.
+
 
     Fixpoint pp (tr:t) : box :=
       match tr with

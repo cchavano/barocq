@@ -1097,8 +1097,8 @@ Fixpoint xpath_above_alias (d:domain) (fuel:nat) (n:int) :=
       | S fuel => do a <- xpath_above_alias d fuel n';
                   let l := G.get_successors (Pto d) n' in
                   let l := List.filter (fun x => may_edge e (fst x)) l in
-                  let e := join_edges e l in
-                  OK (STree.combine union_path p (STree.map (fun x p => e::p) a))
+                  (* let e := join_edges e l in*)
+                  OK (STree.combine union_path p (STree.map (fun x p => List.flat_map (fun '(e,_) => e::p) l) a))
       end
   end.
 

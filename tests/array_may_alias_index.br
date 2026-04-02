@@ -1,0 +1,15 @@
+module Test
+
+  record data { val:u64, }
+
+ record rec { fd : data, }
+	 
+  defn test(table: [ rec],i: u64, j:u64, v1:u64, v2:u64) : [ rec] = 
+  let cap_j = table[j] in
+  let d = { table[i].fd with   val <- v1, } in
+  let cap_i = { table[i] with fd <- d,} in
+  let table2 = table[i] <- cap_i in
+  let table3 = table2[j] <- cap_j in
+  table3
+
+
