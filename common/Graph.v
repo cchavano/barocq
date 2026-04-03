@@ -1,13 +1,13 @@
 (** minimal theory of directed, labelled graphs.
     The representation is using maps from nodes to successors. *)
 From compcert Require Import Coqlib.
-From Stdlib Require Import Lia ZifyBool ZifyUint63.
+From Stdlib Require Import Lia ZifyBool.
 From Stdlib Require Import FMapInterface ZArith Int.
 From Stdlib Require Import FMapAVL.
 From Stdlib Require FSetAVL.
 From Stdlib Require Import List String.
 Import ListNotations.
-From BarocqComp Require Import Unsigned63.
+From BarocqComp Require Import Unsigned63 ZifyUint63.
 From BarocqComp Require Import Res Maps2 Utils Pp.
 
 Local Open Scope error_monad_scope.
@@ -2638,7 +2638,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
         destruct H as [_ H].
         apply has_node_label_has_node in H.
         apply wf_fresh in H;auto.
-        (* lia. lia.
+        lia. lia.
     -  simpl.
        repeat apply conj; auto.
        + intros.
@@ -2658,8 +2658,8 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
          tauto.
          tauto.
        + lia.
-  Qed. *)
-  Admitted.
+  Qed.
+
 
   (* [add_edge n1 el n2 g] add a new edge beteeen 2 existing nodes n1 and n2 *)
   Definition add_edge (n1:int) (el:EdgeLabel.t) (n2:int) (g:t) : res t :=
@@ -3091,9 +3091,9 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
         apply wf_fresh in H; auto. lia.
       }
       tauto.
-    (* - lia.
-  Qed. *)
-  Admitted.
+    - lia.
+  Qed.
+
 
   Lemma clos_refl_trans_morph : forall (A:Type) (E1 E2: A -> A -> Prop),
       inclusion _ E1 E2 ->
@@ -3501,9 +3501,9 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
         destruct H0 ; subst.
         apply has_node_label_has_node in NLB.
         apply wf_fresh in NLB;auto.
-        (* lia.
-  Qed. *)
-  Admitted.
+        lia.
+  Qed.
+
 
   Lemma create_edge_spec : forall n e g g' n' lb',
       wf g ->
@@ -3633,10 +3633,10 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
            apply wf_fresh in NLB; auto.
            lia.
            left;split; auto.
-      (* + lia.
+      + lia.
       + congruence.
-  Qed. *)
-  Admitted.
+  Qed.
+
 
   Lemma create_edge_le :
     forall  n e g g' n' lb'
