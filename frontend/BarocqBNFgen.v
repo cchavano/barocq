@@ -1,4 +1,4 @@
-From Coq Require Import PArith String List.
+From Stdlib Require Import PArith String List.
 From compcert Require Import Clightdefs Integers.
 From BarocqComp Require Import Ident Res StateMonads Maps2 Utils Syntax Types Benum Typing Barocq BarocqBNF.
 Import ListNotations.

@@ -1,4 +1,4 @@
-From Coq Require Import List String.
+From Stdlib Require Import List String.
 From BarocqComp Require Import Res Utils Types  Maps2 Syntax Barocq.
 
 (** * Barocq to Barocq transformations *)

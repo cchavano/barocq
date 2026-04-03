@@ -224,7 +224,7 @@ let gen_compile_opt () =
 
 let output_log o l =
   let output_string o s =
-    Stdlib.output_string o (Camlcoq.camlstring_of_coqstring s);
+    Stdlib.output_string o s;
     o
   in
   Pp.Log.pp output_string o l
@@ -250,11 +250,7 @@ let generate_c (gen_csyntax : bool) (gen_header : bool)
   | Some prog ->
       Camlcoq.use_canonical_atoms := true;
       let ids = Csyntaxgen.program_idents prog in
-      record_idents
-        (List.map
-           (fun id ->
-             Camlcoq.camlstring_of_coqstring (Ctypesdefs.string_of_ident id))
-           ids);
+      record_idents (List.map (fun id -> Ctypesdefs.string_of_ident id) ids);
       begin
         let cfile = get_full_filename !c_output ".c" in
         PrintCprog.destination := Some cfile;
@@ -463,12 +459,12 @@ let () =
       end;
 
       match Compiler.compile (gen_compile_opt ()) !target_arch ginfo prog with
-      | (Res.OK _, (progs, log)) -> begin
+      | Res.OK _, (progs, log) -> begin
           ignore (output_log stdout log);
           generate_c !opt_export_csyntax !opt_gen_header progs;
           generate_corres prog tprog progs
         end
-      | (Res.Error msg, _)->
+      | Res.Error msg, _ ->
           raise @@ CompilerError (PrintUtils.string_of_errmsg msg)
     with
     | Sys_error msg -> eprintf "System error: %s\n" msg

@@ -1,4 +1,4 @@
-From Coq Require Import List.
+From Stdlib Require Import List.
 From compcert Require Import Maps.
 From BarocqComp Require Import Maps2 Types Syntax Benum Option Typing Denot.
 From BarocqComp Require Pp Printer.

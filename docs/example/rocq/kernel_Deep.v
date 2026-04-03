@@ -1,4 +1,4 @@
-From Coq Require Import String List BinIntDef.
+From Stdlib Require Import String List BinIntDef.
 From compcert Require Import Integers.
 From BarocqComp Require Import Ident Types Syntax Benum BarocqBNF.
 Import ListNotations.

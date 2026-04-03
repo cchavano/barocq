@@ -1,4 +1,4 @@
-From Coq Require Import PArith List String Bool RelationClasses.
+From Stdlib Require Import PArith List String Bool RelationClasses.
 From BarocqComp Require Import DList Option Ident Utils.
 Local Open Scope option_monad_scope.
 

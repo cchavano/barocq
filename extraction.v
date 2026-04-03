@@ -1,8 +1,8 @@
-From Coq Require Import ExtrOcamlBasic.
-From Coq Require Import ExtrOcamlString.
-From Coq Require Import ExtrOCamlInt63.
+From Stdlib Require Import ExtrOcamlBasic.
+From Stdlib Require Import ExtrOcamlNativeString.
+From Stdlib Require Import ExtrOCamlInt63.
 
-From Coq Require BinInt BinPos.
+From Stdlib Require BinInt BinPos.
 From compcert Require Integers Floats Machregs Archi AST Memdata Csyntax Initializers.
 From compcert Require Import Ctyping Ctypes Clight Ctypesdefs Values Cabs Parser.
 From BarocqComp Require Imp1 Imp1gen Barocq BarocqBNFUndo Compiler BarocqShallowgen BarocqVC.

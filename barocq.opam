@@ -10,12 +10,12 @@ bug-reports: "https://gitlab.inria.fr/cchavano/barocq/-/issues"
 dev-repo: "git+https://gitlab.inria.fr/cchavano/barocq.git#v0.5"
 depends: [
   "ocaml" {= "4.14.2"}
-  "menhir" {= "20250912"}
-  "coq" {>= "8.20.1" and <= "9.0.1"}
+  "menhir" {>= "20200624" & != "20260122" & != "dev"}
+  "coq" {>= "8.20.1" and < "9.2~"}
   "coq-record-update" {= "0.3.6"}
   "coq-vst-zlist" {= "2.13"}
-  "compcert-ce" {= "3.16-20260122ce"}
+  "compcert-ce" {= "3.17-20260403ce"}
 ]
-pin-depends: ["compcert-ce.3.16-20260122ce" "git+https://gitlab.inria.fr/cchavano/compcert-ce.git"]
+pin-depends: ["compcert-ce.3.17-20260403ce" "git+https://gitlab.inria.fr/cchavano/compcert-ce.git"]
 build: [[make]]
 install: [make "install" "install-dev"]

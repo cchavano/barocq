@@ -1,7 +1,7 @@
 (** Some usual primitives to build OrderedType.
     In particular, we provide a [list_compare] which uses less hypotheses than Stdlib
  *)
-Require Import List Lia.
+From Stdlib Require Import List Lia.
 
 Definition pair_compare {A B:Type} (cmp1 : A -> A -> comparison)
   (cmp2 : B -> B -> comparison) (e1 e2:A * B) : comparison :=
@@ -12,7 +12,7 @@ Definition pair_compare {A B:Type} (cmp1 : A -> A -> comparison)
   end.
 
 
-Require String.
+From Stdlib Require String.
 Lemma ascii_compare_refl : forall (a:Ascii.ascii),
     Ascii.compare a a = Eq.
 Proof.

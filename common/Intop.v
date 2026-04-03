@@ -1,4 +1,4 @@
-From Coq Require Import BinIntDef.
+From Stdlib Require Import BinIntDef.
 From compcert Require Import Integers.
 From BarocqComp Require Import Option.
 

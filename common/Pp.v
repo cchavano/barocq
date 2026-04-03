@@ -1,8 +1,8 @@
 (** Drawing trees *)
-Require Import String.
-Require Import ZArith Lia.
-Require Import List.
-Require  Numbers.DecimalString.
+From Stdlib Require Import String.
+From Stdlib Require Import ZArith Lia.
+From Stdlib Require Import List.
+From Stdlib Require  Numbers.DecimalString.
 From BarocqComp Require Import Unsigned63.
 From compcert Require Import Coqlib.
 

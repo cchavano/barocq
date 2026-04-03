@@ -1,4 +1,4 @@
-From Coq Require Import String.
+From Stdlib Require Import String.
 From compcert Require Import Ctypes Integers.
 From BarocqComp Require Import Barray Benum Maps2 Utils Types Syntax Pp Printer.
 

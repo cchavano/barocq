@@ -1,7 +1,7 @@
 $MODULES
 From compcert Require Import Integers Coqlib.
 From BarocqComp Require Import Target Utils StateMonads ExtEqual Option Denot Barray Brecord Types BarocqBNF BarocqBNFVC Maps2.
-From Coq Require Import String List Lia.
+From Stdlib Require Import String List Lia.
 Open Scope list_scope.
 
 Ltac gen_list L :=

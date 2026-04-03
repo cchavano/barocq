@@ -656,7 +656,7 @@ module HelperTactics = struct
 
   let imports () : string =
     sprintf
-      "From Coq Require Import String.\n\
+      "From Stdlib Require Import String.\n\
        From compcert Require Import Integers.\n\
        From BarocqComp Require Import Utils Option.\n\
        From %s Require Import %s_Types %s_ShallowR %s_ShallowB.\n\
@@ -693,7 +693,7 @@ end
 
 let imports () : string =
   sprintf
-    "From Coq Require Import String.\n\
+    "From Stdlib Require Import String.\n\
      From compcert Require Import Integers.\n\
      From BarocqComp Require Import Option.\n\
      From %s Require Import %s_Types %s_ShallowR %s_ShallowB \

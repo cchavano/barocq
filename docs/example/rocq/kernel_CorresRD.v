@@ -1,4 +1,4 @@
-From Coq Require Import String.
+From Stdlib Require Import String.
 From compcert Require Import Integers.
 From BarocqComp Require Import Target StateMonads Option Barray Brecord Types Barocq.
 From kernel Require Import kernel_Types kernel_ShallowR kernel_Deep kernel_CorresBD_Prelude.

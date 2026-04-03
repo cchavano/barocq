@@ -1,4 +1,4 @@
-From Coq Require Import Bool List String PArith Lia.
+From Stdlib Require Import Bool List String PArith Lia.
 From compcert Require Import Integers Maps.
 From BarocqComp Require Import  Barocq Benum Barray Brecord Option Res Maps2 Utils Syntax Types Typing Pp Denot.
 From BarocqComp Require Printer.

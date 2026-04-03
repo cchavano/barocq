@@ -1,9 +1,9 @@
 (** Invalid Path for imp1 *)
-Require Import Uint63.
-Require Import String FMapInterface FMapList ZArith Int ListSet.
+From Stdlib Require Import Uint63.
+From Stdlib Require Import String FMapInterface FMapList ZArith Int ListSet.
 From BarocqComp Require Import Res Maps2 Types Syntax Imp1 Graph Typing Utils Pp Printer.
 From BarocqComp Require Import Imp1ElimAlias.
-From Coq Require Import FMapPositive.
+From Stdlib Require Import FMapPositive.
 
 Local Open Scope error_monad_scope.
 

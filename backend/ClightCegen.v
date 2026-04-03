@@ -1,4 +1,4 @@
-From Coq Require Import ZArith String List FMapPositive MSetPositive.
+From Stdlib Require Import ZArith String List FMapPositive MSetPositive.
 From compcert Require Import AST Ctypes Clight ClightCe Clightdefs Cop Maps Integers.
 From BarocqComp Require Import Ident Types Benum Res Maps2 Utils Syntax Imp2.
 Import ListNotations.

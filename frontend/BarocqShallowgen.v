@@ -1,4 +1,4 @@
-From Coq Require Import List String ZArith.
+From Stdlib Require Import List String ZArith.
 From compcert Require Import Maps.
 From BarocqComp  Require Import Pp Printer.
 From BarocqComp Require Import Target StateMonads Res Maps2 Types Utils Syntax Barray Benum Barocq BarocqShallow.

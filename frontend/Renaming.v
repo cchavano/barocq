@@ -1,4 +1,4 @@
-From Coq Require Import String List.
+From Stdlib Require Import String List.
 From BarocqComp Require Import StateMonads Syntax Barocq Benum Ident Maps2.
 
 Open Scope string_scope.

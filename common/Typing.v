@@ -1,4 +1,4 @@
-From Coq Require Import List String ZArith Bool.
+From Stdlib Require Import List String ZArith Bool.
 From BarocqComp Require Import Res Option Maps2 Utils Types Syntax Barray Benum.
 Import ListNotations.
 Local Open Scope option_monad_scope.

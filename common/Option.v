@@ -16,7 +16,7 @@
 
 (** Option monad. *)
 
-From Coq Require Import String RelationClasses.
+From Stdlib Require Import String RelationClasses.
 From compcert Require Import Coqlib.
 Import ListNotations.
 Close Scope string_scope.

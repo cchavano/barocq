@@ -1,4 +1,4 @@
-From Coq Require Import List String BinaryString.
+From Stdlib Require Import List String BinaryString.
 From compcert Require Import Maps Ctypesdefs.
 From BarocqComp Require Import Ident Res.
 From BarocqComp Require Import Pp.

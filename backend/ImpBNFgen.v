@@ -1,4 +1,4 @@
-From Coq Require Import String List Eqdep.
+From Stdlib Require Import String List Eqdep.
 From compcert Require Import Coqlib.
 From compcert Require Axioms.
 From BarocqComp Require Import Res Syntax Utils Types BarocqBNF ImpBNF Maps2 Denot.

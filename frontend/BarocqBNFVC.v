@@ -4,12 +4,12 @@
 This is adapted from the [BarocqVC] version.
  *)
 
-From Coq Require Import String List.
+From Stdlib Require Import String List.
 From compcert Require Import Integers Maps.
 From BarocqComp Require Import Denot Syntax Target Ident Option Barray Brecord Types BarocqBNF Maps2 MergeSort Utils.
 From BarocqComp Require Import ExtEqual.
 From compcert Require Import Coqlib.
-From Coq Require Import ZifyBool.
+From Stdlib Require Import ZifyBool.
 
 Open Scope string_scope.
 Local Open Scope option_monad_scope.

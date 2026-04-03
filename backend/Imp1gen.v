@@ -1,4 +1,4 @@
-From Coq Require Import List String Lia Eqdep RelationClasses.
+From Stdlib Require Import List String Lia Eqdep RelationClasses.
 From BarocqComp Require Import Res Utils Brecord Types Syntax ImpBNF Imp1 Maps2 Denot Imp1Pure.
 Import ListNotations.
 

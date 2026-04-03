@@ -1,5 +1,5 @@
-From Coq Require Import ZArith.
-From Coq Require Import ZifyBool.
+From Stdlib Require Import ZArith.
+From Stdlib Require Import ZifyBool.
 From BarocqComp Require Import Unsigned63.
 
 Import ZifyClasses.

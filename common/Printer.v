@@ -1,6 +1,6 @@
 (** Printing for programs *)
 From BarocqComp Require Import Pp.
-From Coq Require Import String List ZArith.
+From Stdlib Require Import String List ZArith.
 From BarocqComp Require Import Syntax.
 From BarocqComp Require Import Unsigned63 Types.
 Open Scope string.

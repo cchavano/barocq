@@ -1,4 +1,4 @@
-From Coq Require Import PeanoNat Lia.
+From Stdlib Require Import PeanoNat Lia.
 From compcert Require Import Integers Ctypes.
 From BarocqComp Require Import Utils Ident Types Maps2 ExtOrdered.
 
@@ -305,9 +305,9 @@ Arguments prog_defs {BODY TYP LIT}.
 Arguments prog_types {BODY TYP LIT}.
 Arguments prog_tabs {BODY TYP LIT}.
 
-Require Import OrderedType.
-Require Import Datatypes.
-Require Import ZArith.
+From Stdlib Require Import OrderedType.
+From Stdlib Require Import Datatypes.
+From Stdlib Require Import ZArith.
 
 Definition comparison_dec (x y : comparison): {x = y} + {x <> y}.
 Proof.

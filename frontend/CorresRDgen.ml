@@ -274,7 +274,7 @@ let print_defs_corres (out : out_channel) (defs : globdef list) : unit =
 
 let imports () : string =
   sprintf
-    "From Coq Require Import String.\n\
+    "From Stdlib Require Import String.\n\
      From compcert Require Import Integers.\n\
      From BarocqComp Require Import Target StateMonads Option Barray Brecord \
      Types Barocq.\n\

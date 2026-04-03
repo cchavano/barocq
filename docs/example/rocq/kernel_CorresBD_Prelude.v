@@ -1,4 +1,4 @@
-From Coq Require Import String List.
+From Stdlib Require Import String List.
 From compcert Require Import Integers.
 From BarocqComp Require Import Ident Option Maps2 Barray Benum Brecord Types Typing Denot ExtEqual BarocqBNF BarocqBNFVC CorresBD_Tactics Syntax.
 From kernel Require Import kernel_Types kernel_ShallowB kernel_Deep.

@@ -13,11 +13,9 @@ let indent3 : string = make_indent 3
 
 let indent4 : string = make_indent 4
 
-let ident_to_string (x : Syntax.ident) : string =
-  camlstring_of_coqstring (Ident.to_string x)
+let ident_to_string (x : Syntax.ident) : string = Ident.to_string x
 
-let ident_of_string (s : string) : Syntax.ident =
-  Ident.of_string (coqstring_of_camlstring s)
+let ident_of_string (s : string) : Syntax.ident = Ident.of_string s
 
 let i32_to_string (i : Integers.Int.int) : string =
   sprintf "%ld" (camlint_of_coqint i)
@@ -82,7 +80,7 @@ let opt_parens (is_simpl : 'a -> bool) (to_string : 'a -> string) (x : 'a) :
 
 let string_of_errmsg msg =
   let string_of_err = function
-    | Res.MSG s -> camlstring_of_coqstring s
+    | Res.MSG s -> s
     | Res.CTX i -> extern_atom i
     | Res.POS i -> Z.to_string (Z.Zpos i)
   in

@@ -1,7 +1,7 @@
-From Coq Require Import ZArith List MSetPositive Bool.
+From Stdlib Require Import ZArith List MSetPositive Bool.
 From compcert Require Import Coqlib Integers Maps.
 From BarocqComp Require Import Target Res Barray Brecord Benum Ident Maps2 Utils.
-From Coq Require Import Datatypes List MSetPositive Lia.
+From Stdlib Require Import Datatypes List MSetPositive Lia.
 From BarocqComp Require Import ExtOrdered.
 From BarocqComp Require Import Option.
 Local Open Scope option_monad_scope.
@@ -336,7 +336,7 @@ Proof.
     apply Z.compare_antisym.
 Qed.
 
-Require Import Lia.
+From Stdlib Require Import Lia.
 
 Lemma layout_compare_trans:
   forall (ly1 ly2 ly3: layout) (c: comparison),
@@ -548,7 +548,7 @@ Polymorphic Fixpoint eval_typ (am: PMap.t Type) (t: typ) {struct t}: Type :=
   | TAbs ta => SMap.get ta am
   end.
 
-(* From Coq Require Import List String.
+(* From Stdlib Require Import List String.
 
 Import ListNotations.
 
@@ -569,7 +569,7 @@ Proof.
 Qed.
 
 (** Ordered Type *)
-Require Import OrderedType.
+From Stdlib Require Import OrderedType.
 
 Module TypOrdered <: OrderedType.
   Definition t := typ.

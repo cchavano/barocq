@@ -1,5 +1,5 @@
 Set Universe Polymorphism.
-From Coq Require Import String Bool List Eqdep.
+From Stdlib Require Import String Bool List Eqdep.
 From compcert Require Import Coqlib Maps Integers.
 From BarocqComp Require Import DList Res Option Utils Types Syntax Barray Benum Brecord Maps2 Typing Intop.
 From BarocqComp Require DList.

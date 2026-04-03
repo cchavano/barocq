@@ -1,10 +1,10 @@
 (** Must alias for imp1 *)
 From compcert Require Import Coqlib Maps.
-Require Import Uint63.
-Require Import String FMapInterface FMapList ZArith Int ListSet.
+From Stdlib Require Import Uint63.
+From Stdlib Require Import String FMapInterface FMapList ZArith Int ListSet.
 From BarocqComp Require Import Res DList Maps2 Types Imp1 Graph Typing Utils Pp.
-From Coq Require Import FMapPositive.
-Require Import Syntax.
+From Stdlib Require Import FMapPositive.
+From Stdlib Require Import Syntax.
 From BarocqComp Require Import Imp1Imp Imp1ElimAlias.
 Import Typed.
 Import Imp1.Typed.

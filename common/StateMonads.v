@@ -1,7 +1,7 @@
 (** * A collection of useful state monads *)
 
-From Coq Require Import PArith String.
-From Coq Require Import RelationClasses.
+From Stdlib Require Import PArith String.
+From Stdlib Require Import RelationClasses.
 From compcert Require Import AST Maps Coqlib.
 From BarocqComp Require Import Res.
 

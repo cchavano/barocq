@@ -1,9 +1,9 @@
   (** Must alias for imp1 *)
 From compcert Require Import Maps.
-Require Import Uint63.
-Require Import String FMapInterface FMapList ZArith Int ListSet.
+From Stdlib Require Import Uint63.
+From Stdlib Require Import String FMapInterface FMapList ZArith Int ListSet.
 From BarocqComp Require Import Option Res Maps2 Types Syntax Imp1 Graph Typing Utils Pp.
-From Coq Require Import FMapPositive.
+From Stdlib Require Import FMapPositive.
 Local Open Scope error_monad_scope.
 
 (** WARNING: Known limitations.

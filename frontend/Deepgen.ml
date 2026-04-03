@@ -452,7 +452,7 @@ module Barocq = struct
      Definition tuint64 := BInt64 Unsigned.\n"
 
   let imports : string =
-    "From Coq Require Import String List BinIntDef.\n\
+    "From Stdlib Require Import String List BinIntDef.\n\
      From compcert Require Import Integers.\n\
      From BarocqComp Require Import Ident Types Syntax Benum Barocq.\n\
      Import Typed.\n\
@@ -917,7 +917,7 @@ module BarocqBNFDeep = struct
      Definition tuint64 := BInt64 Unsigned.\n"
 
   let imports : string =
-    "From Coq Require Import String List BinIntDef.\n\
+    "From Stdlib Require Import String List BinIntDef.\n\
      From compcert Require Import Integers.\n\
      From BarocqComp Require Import Ident Types Syntax Benum BarocqBNF.\n\
      Import ListNotations.\n\n\

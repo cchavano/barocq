@@ -1,4 +1,4 @@
-From Coq Require Import List Lia.
+From Stdlib Require Import List Lia.
 From compcert Require Import Maps.
 From BarocqComp Require Import Option Utils Maps2 Types Benum Syntax Typing Denot.
 

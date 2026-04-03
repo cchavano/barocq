@@ -850,7 +850,7 @@ end
 
 let imports () : string =
   sprintf
-    "From Coq Require Import List String BinIntDef.\n\
+    "From Stdlib Require Import List String BinIntDef.\n\
      From compcert Require Import Integers.\n\
      From RecordUpdate Require Import RecordUpdate.\n\
      From BarocqComp Require Import Ident Option Barray Benum Brecord Utils.\n\

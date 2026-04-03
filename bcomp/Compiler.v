@@ -1,4 +1,4 @@
-From Coq Require Import String List.
+From Stdlib Require Import String List.
 From BarocqComp Require Import Res StateMonads Utils Ident Pp Barocq Imp1.
 From BarocqComp Require Import Renaming BarocqBNFgen ImpBNFgen Imp1gen Imp2gen GlobRewrite Csyntaxgen.
 From BarocqComp Require Import Imp1ElimAlias InvAnalysis.

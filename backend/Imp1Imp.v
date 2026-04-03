@@ -1,5 +1,5 @@
 (* Imperative Imp1 *)
-From Coq Require Import Bool List String PArith Lia Eqdep.
+From Stdlib Require Import Bool List String PArith Lia Eqdep.
 From compcert Require Import Integers Coqlib.
 From BarocqComp Require Import Denot Benum Barray Brecord Option Maps2 Utils Syntax Types Typing.
 From BarocqComp Require Import Imp1.

@@ -1,10 +1,9 @@
 (** Decompile BarocqBNF into Barocq.
     This is useful to reuse the generation of the shallow embedding. *)
 
-
-Require Import Syntax Barocq.
-Require Import BarocqBNF.
-Require Import List.
+From BarocqComp Require Import Syntax Barocq.
+From BarocqComp Require Import BarocqBNF.
+From Stdlib Require Import List.
 
 Fixpoint decompile_atom (e:Syntax.atom) : Barocq.expr:=
   match e with

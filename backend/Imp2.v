@@ -1,4 +1,4 @@
-From Coq Require Import List.
+From Stdlib Require Import List.
 From compcert Require Import Integers Maps.
 From BarocqComp Require Import Types Syntax Benum Pp Printer.
 

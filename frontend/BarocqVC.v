@@ -1,11 +1,11 @@
 (**  Generation of verification conditions to prove equivalence between
      Shallow and Deep embedding. *)
 Set Universe Polymorphism.
-From Coq Require Import String List.
+From Stdlib Require Import String List.
 From compcert Require Import Integers Maps.
 From BarocqComp Require Import Target Denot ExtEqual Ident StateMonads Option Barray Brecord Types Barocq Maps2 MergeSort Utils.
 From compcert Require Import Coqlib.
-From Coq Require Import ZifyBool.
+From Stdlib Require Import ZifyBool.
 
 Open Scope string_scope.
 Import Typed.

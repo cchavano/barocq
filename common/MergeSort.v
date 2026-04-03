@@ -14,7 +14,7 @@
 (* Initial author: Hugo Herbelin, Oct 2009 *)
 (* Adapted to use a section instead of a functor by F. Besson. *)
 
-Require Import List Setoid Permutation Sorted Orders.
+From Stdlib Require Import List Setoid Permutation Sorted Orders.
 
 (** Notations and conventions *)
 

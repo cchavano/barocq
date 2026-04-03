@@ -16,7 +16,7 @@
 
 (** Error reporting and the error monad. *)
 
-From Coq Require Import String RelationClasses.
+From Stdlib Require Import String RelationClasses.
 From compcert Require Import Coqlib.
 
 Close Scope string_scope.

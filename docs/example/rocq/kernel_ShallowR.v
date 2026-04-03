@@ -1,4 +1,4 @@
-From Coq Require Import Bool List BinIntDef.
+From Stdlib Require Import Bool List BinIntDef.
 From compcert Require Import Integers.
 From RecordUpdate Require Import RecordUpdate.
 From BarocqComp Require Import Option Barray Intop Utils.

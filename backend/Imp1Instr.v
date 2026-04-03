@@ -1,4 +1,4 @@
-From Coq Require Import Bool List PArith Lia.
+From Stdlib Require Import Bool List PArith Lia.
 From BarocqComp Require Import Maps2 Utils DList Types Syntax Benum Typing Imp1 Imp1Imp  Option.
 Local Open Scope option_monad_scope.
 

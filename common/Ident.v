@@ -1,5 +1,5 @@
 From BarocqComp Require Import ExtOrdered.
-From Coq Require Import PArith String DecimalString.
+From Stdlib Require Import PArith String DecimalString.
 From compcert Require Import Ctypesdefs.
 
 Definition ident : Type := string.

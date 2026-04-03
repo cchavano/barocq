@@ -1,4 +1,4 @@
-From Coq Require Import PArith List String.
+From Stdlib Require Import PArith List String.
 From compcert Require Import Maps.
 From BarocqComp Require Import StateMonads Maps2 Utils Barray Syntax Types Typing Imp1.
 Import ListNotations.

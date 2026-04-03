@@ -563,7 +563,7 @@ end
 
 let prelude_imports () : string =
   sprintf
-    "From Coq Require Import String List.\n\
+    "From Stdlib Require Import String List.\n\
      From compcert Require Import Integers.\n\
      From BarocqComp Require Import Ident Option Maps2 Barray Benum Brecord \
      Types Typing Denot ExtEqual BarocqBNF BarocqBNFVC CorresBD_Tactics Syntax.\n\
@@ -577,7 +577,7 @@ let prelude_imports () : string =
 
 let imports () : string =
   sprintf
-    "From Coq Require Import String.\n\
+    "From Stdlib Require Import String.\n\
      From compcert Require Import Integers.\n\
      From BarocqComp Require Import Target StateMonads Option Barray Brecord \
      Types Barocq.\n\

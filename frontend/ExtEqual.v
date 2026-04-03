@@ -1,9 +1,9 @@
 (* Extentional equality and compatibility *)
-From Coq Require Import ZArith List MSetPositive Bool ZifyBool.
+From Stdlib Require Import ZArith List MSetPositive Bool ZifyBool.
 From compcert Require Import Coqlib Integers Maps.
 From BarocqComp Require Import Barocq ExtOrdered.
 From BarocqComp Require Import Denot Types Target Option Barray Brecord Benum Ident Maps2 Utils ZlistPlus.
-From Coq Require Import Datatypes List MSetPositive Lia.
+From Stdlib Require Import Datatypes List MSetPositive Lia.
 From BarocqComp Require Import Typing.
 
 Local Open Scope option_monad_scope.

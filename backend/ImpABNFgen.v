@@ -1,4 +1,4 @@
-From Coq Require Import List.
+From Stdlib Require Import List.
 From BarocqComp Require Import Error Syntax ImpBNF ImpABNF Maps2.
 Import ListNotations.
 

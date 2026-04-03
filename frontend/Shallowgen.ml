@@ -694,7 +694,7 @@ module SR = struct
       cast_body
 
   let imports : string =
-    "From Coq Require Import Bool List BinIntDef.\n\
+    "From Stdlib Require Import Bool List BinIntDef.\n\
      From compcert Require Import Integers.\n\
      From RecordUpdate Require Import RecordUpdate.\n\
      From BarocqComp Require Import Option Barray Intop Utils.\n\
@@ -891,7 +891,7 @@ module SB = struct
 
   let imports () : string =
     sprintf
-      "From Coq Require Import Bool List BinIntDef String.\n\
+      "From Stdlib Require Import Bool List BinIntDef String.\n\
        From compcert Require Import Integers.\n\
        From RecordUpdate Require Import RecordUpdate.\n\
        From BarocqComp Require Import Ident Option Barray Benum Brecord Intop.\n\

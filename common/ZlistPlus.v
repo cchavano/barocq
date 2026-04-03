@@ -1,4 +1,4 @@
-From Coq Require Import List ZifyBool Lia.
+From Stdlib Require Import List ZifyBool Lia.
 From compcert Require Import Coqlib.
 From VST Require Import Zlist.
 
