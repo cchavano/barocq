@@ -112,6 +112,8 @@ For any type `t`, an array of type `t` is written `[t]`.
 
 NOTE: Although arrays can be of any type, Barocq does not support parametric polymorphism.
 
+Arrays can be accessed via unsigned integers (32- or 64-bit).
+
 ==== Type aliases
 
 The following code creates a type named `int` to be an alias for `i32`, and a type named `buffer` to be an alias of `[u32]`.
@@ -190,7 +192,7 @@ struct draw {
 }
 ----
 
-In this last example, we also unboxed the array of points inside the record definition `draw`. Note that the size of an unboxed array must be specified to be compilable to C. The syntax is `#[t; size]` where `t` is any type. As for array indexes, the type of `size` depends on the target architecture. Barocq supports both unlayout arrays and records in arrays and records.
+In this last example, we also unboxed the array of points inside the record definition `draw`. Note that the size of an unboxed array must be specified to be compilable to C. The syntax is `#[t; size]` where `t` is any type. Barocq supports both unboxing arrays and records in arrays and records.
 
 IMPORTANT:
 Unboxing is a *memory layout* property. You can not directly pass unboxed values to functions, nor return them. For example, signature `(\#point) -> i32` does not have a meaning in Barocq, but `([#[point, 2ul]]) -> i32` does: the calling interface always expects pointers for non-primitive types. Thus, the access semantics for unboxed values is pointer-based. Expressions `x.f` and `y[i]` return a boxed value of type `t` if field `f` of `x` or elements of array `y` have layout `#t`. In this case, update operations `x.f <- v1` and `y[i] <- v2` are authorized only if `v1` (resp. `v2`) is a must-alias for the address of `x.f` (resp. `y[i]`): those updates actually become no-ops in the generated C code.
@@ -374,10 +376,6 @@ To update multiple fields of the same record "at the same time", the following s
 In this example, `p` should be a record variable, and `x` and `y` fields of the corresponding record type.
 
 IMPORTANT: This syntax is desugarged into a sequence of single-field record updates that preserves the order in which the programmer updated the fields. For example, the code snippet above is desugared as `(p.x \<- 2).y \<- 3`. Using a different order may lead to different errors raised by the compiler if side effects do occur in the update (compiled) expressions.
-
-==== Type of array indexes
-
-The type of array indexes depends on the target architecture for which you want to compile the generated C code. If the target has a 32-bit architecture, you should use `u32` indices, otherwise you should use `u64` for a 64-bit arch. By default, the compiler uses the CompCert `Archi.ptr64` constant to get the target architecture. To set a different value, you can use the `-target-arch` option (cf. `barocq -help`.)
 
 === Definitions
 
@@ -665,10 +663,10 @@ The correspondence proofs are generated for ShallowR / ShallowB (`kernel_CorresR
 
 As mentionned in the preamble, all array and record modifications are compiled into in-place updates. The static analyzer of Barocq performs a points-to based analysis to check wether the source program can be compiled with in-place updates without breaking its semantics. We explain here the restrictions it induces and the good practices to follow to avoid getting errors from the static analyzer.
 
-NOTE: The points-to analysis is performed on an intermediate representation called `Imp1`. The error messages are thus related to the `Imp1` syntax. Precisely pinpointing the origin of the problem in the source code is a tedious task that has not yet been done. To make the debugging of Barocq code easier, you can display the `Imp1` representation with the `-print-imp1` option of the compiler.
+NOTE: The points-to analysis is performed on an intermediate representation called `Imp1`. The error messages are thus related to the `Imp1` syntax. Precisely pinpointing the origin of the problem in the source code is a tedious task that has not yet been done. To make the debugging of Barocq code easier, you can display the `Imp1` representation with the `-print imp1` option of the compiler.
 
 The first thing to have in mind when you write Barocq code is that you are kind of writing an imperative program with a functional syntax. Thus, in the compiled code, assignments to non-primitive values actually create aliases, and modifying an array or a record updates the memory in-place. To make a functional program compatible with those behaviors, it is strongly recommended to adopt an _affine_ programming style (a bit like Rust for those familiar with the language). This means that you should only use a non-primitive value at most once. More precisely, we adopt the following guideline: "everytime you make a modification to an object, never try to use the old version of it". This is what we do in the example above. To help following this good practice, we use variable shadowing every time we modify a variable, so that we are sure that we will only use the last reference to it.
 
-The second thing to know concerns arrays. Usually, arrays are accessed with indices whose values are not statically known. Barocq enforces a very strict policy to make sure the programmer doesn't access an array of non-primitive elements with different indices at the same time. The restrictions on arrays of non-primitive elements are the following: (1) you can only access one element at a time, (2) a function cannot return array element.
+The second thing to know concerns arrays. Usually, arrays are accessed with indices whose values are not statically known. Barocq enforces a very strict policy to make sure the programmer doesn't access an array of non-primitive elements with different indices at the same time. The restrictions on arrays of non-primitive elements are the following: (1) you can only write into one element at a time, (2) a function cannot return array element if the provided index does not have a meaning outside the function scope (e.g., you can return t[i + 1] if `i` is a function parameter, but not if it's a local variable).
 
-Finally, you will not be able to move pointers with the actual implementation of Barocq. The modifications you can make in the memory can only correspond to updating primitive values in objects.
+Finally, you will not be able to move pointers with the actual implementation of Barocq. The modifications you can make in the memory can only correspond to updating primitive values in objects. This means that source-level record and array udpates of non-primitive values become no-ops in C as they just re-assign the same pointer.
