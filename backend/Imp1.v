@@ -95,10 +95,6 @@ Module Typing.
 
   Import ListNotations.
 
-  Section ARCHI.
-
-  Variable arch : Target.archi.
-
   Fixpoint typecheck_atom (be: benv) (gx: gcontext) (lx: lcontext) (a: atom) : res atom :=
     match a with
     | Syntax.ATrue => eret ATrue
@@ -133,7 +129,7 @@ Module Typing.
         do i' <- typecheck_atom be gx lx i;
         let ta := btypof_atom a' in
         let ti := btypof_atom i' in
-        do (ty, ly) <- typecheck_array_get2 arch ta ti;
+        do (ty, ly) <- typecheck_array_get2 ta ti;
         eret (AArrayGet a' i' ly ty)
     | Syntax.ARecordProj a f _ _ =>
         do a' <- typecheck_atom be gx lx a;
@@ -160,7 +156,7 @@ Module Typing.
         let ty1 := btypof_atom a1' in
         let ty2 := btypof_atom a2' in
         let ty3 := btypof_atom a3' in
-        do ty <- typecheck_array_set arch ty1 ty2 ty3;
+        do ty <- typecheck_array_set ty1 ty2 ty3;
         eret (CpArraySet a1' a2' a3' ty)
     | Syntax.CpRecordUpdate a1 x a2 _ =>
         do a1' <- typecheck_atom be gx lx a1;
@@ -304,8 +300,6 @@ Module Typing.
       prog_types := prog_types prog;
       prog_tabs := prog_tabs prog;
     |}.
-
-  End ARCHI.
 
 End Typing.
 

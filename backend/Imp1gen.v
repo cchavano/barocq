@@ -129,7 +129,6 @@ Section CORRECTNESS.
         rewrite IHfuel with (s1 := x); auto.
   Qed.
 
-  Variable arch : Target.archi.
   Variable tabs : Maps.PMap.t Type.
 
   Import Option.
@@ -139,12 +138,12 @@ Section CORRECTNESS.
     (NORM_STATEMENT_CORRECT:
       forall sb s1 le le',
         norm_statement fuel sb = OK s1 ->
-        ImpBNF.eval_statement arch tabs te ge le sb = Some le' ->
-        Imp1Pure.eval_statement_rec arch tabs te ge le None s1 = Some le')
+        ImpBNF.eval_statement tabs te ge le sb = Some le' ->
+        Imp1Pure.eval_statement_rec tabs te ge le None s1 = Some le')
     i tc s1 le le' ty v,
       norm_statement fuel (StSetTailcomp i tc) = OK s1 ->
-      ImpBNF.eval_tailcomp_rec arch tabs te ge le ty tc = Some (v, le') ->
-      Imp1Pure.eval_statement_rec arch tabs te ge le None s1 =
+      ImpBNF.eval_tailcomp_rec tabs te ge le ty tc = Some (v, le') ->
+      Imp1Pure.eval_statement_rec tabs te ge le None s1 =
       Some (Denot.lenv_update tabs le' i (Denot.Val tabs ty v)).
   Proof.
     induction fuel; intros.
@@ -203,15 +202,15 @@ Section CORRECTNESS.
       forall sb s1 le le'
         (WF_STMT: wf_statement te sb = true),
         norm_statement fuel sb = OK s1 ->
-        Imp1Pure.eval_statement_rec arch tabs te ge le None s1 = Some le' ->
-        ImpBNF.eval_statement arch tabs te ge le sb = Some le')
+        Imp1Pure.eval_statement_rec tabs te ge le None s1 = Some le' ->
+        ImpBNF.eval_statement tabs te ge le sb = Some le')
       i tc s1 le le' ty
       (TYPOF_TAIL: typof_tailcomp te tc = Some ty)
       (WF_TAIL: wf_tailcomp te tc = true),
       norm_statement fuel (StSetTailcomp i tc) = OK s1 ->
-      Imp1Pure.eval_statement_rec arch tabs te ge le None s1 = Some le' ->
+      Imp1Pure.eval_statement_rec tabs te ge le None s1 = Some le' ->
       (exists v le1,
-        ImpBNF.eval_tailcomp_rec arch tabs te ge le ty tc = Some (v, le1) /\
+        ImpBNF.eval_tailcomp_rec tabs te ge le ty tc = Some (v, le1) /\
         (lenv_update tabs le1 i (Val tabs ty v) = le')).
   Proof.
     induction fuel; intros.
@@ -292,14 +291,14 @@ Section CORRECTNESS.
   Local Notation norm_tailcomp_correct_fw_def tc :=
     (forall s te ge le le' ty (v: eval_typ tabs ty),
       norm_tailcomp tc = OK s ->
-      ImpBNF.eval_tailcomp_rec arch tabs te ge le ty tc = Some (v, le') ->
-      Imp1Pure.eval_statement_rec arch tabs te ge le (Some ty) s = Some v).
+      ImpBNF.eval_tailcomp_rec tabs te ge le ty tc = Some (v, le') ->
+      Imp1Pure.eval_statement_rec tabs te ge le (Some ty) s = Some v).
 
   Local Notation norm_statement_correct_fw_def sb :=
     (forall fuel s1 te ge le le',
       norm_statement fuel sb = OK s1 ->
-      ImpBNF.eval_statement arch tabs te ge le sb = Some le' ->
-      Imp1Pure.eval_statement_rec arch tabs te ge le None s1 = Some le').
+      ImpBNF.eval_statement tabs te ge le sb = Some le' ->
+      Imp1Pure.eval_statement_rec tabs te ge le None s1 = Some le').
 
   Lemma norm_tailcomp_correct_mut:
     (forall tc, norm_tailcomp_correct_fw_def tc) /\
@@ -428,15 +427,15 @@ Section CORRECTNESS.
     (forall s te ge le ty (v: eval_typ tabs ty)
     (WF_TAIL: wf_tailcomp te tc = true),
       norm_tailcomp tc = OK s ->
-      Imp1Pure.eval_statement_rec arch tabs te ge le (Some ty) s = Some v ->
-      (exists le', ImpBNF.eval_tailcomp_rec arch tabs te ge le ty tc = Some (v, le'))).
+      Imp1Pure.eval_statement_rec tabs te ge le (Some ty) s = Some v ->
+      (exists le', ImpBNF.eval_tailcomp_rec tabs te ge le ty tc = Some (v, le'))).
 
   Local Notation norm_statement_correct_bw_def sb :=
     (forall fuel s1 te ge le le'
     (WF_STMT: wf_statement te sb = true),
       norm_statement fuel sb = OK s1 ->
-      Imp1Pure.eval_statement_rec arch tabs te ge le None s1 = Some le' ->
-      ImpBNF.eval_statement arch tabs te ge le sb = Some le').
+      Imp1Pure.eval_statement_rec tabs te ge le None s1 = Some le' ->
+      ImpBNF.eval_statement tabs te ge le sb = Some le').
 
   Theorem norm_tailcomp_bw_correct:
     forall tc, norm_tailcomp_correct_bw_def tc.
@@ -586,14 +585,14 @@ Section CORRECTNESS.
     forall te ge le tc s ty,
       wf_tailcomp te tc = true ->
       norm_tailcomp tc = OK s ->
-      Imp1Pure.eval_statement arch tabs te ge le ty s =
-      ImpBNF.eval_tailcomp arch tabs te ge le ty tc.
+      Imp1Pure.eval_statement tabs te ge le ty s =
+      ImpBNF.eval_tailcomp tabs te ge le ty tc.
   Proof.
     unfold ImpBNF.eval_tailcomp, Imp1Pure.eval_statement; intros.
-    destruct (eval_tailcomp_rec arch tabs te ge le ty tc) as [[v le']|] eqn:Eeval_tc;
+    destruct (eval_tailcomp_rec tabs te ge le ty tc) as [[v le']|] eqn:Eeval_tc;
     simpl.
     - erewrite norm_tailcomp_correct_fw; eauto.
-    - destruct (eval_statement_rec arch tabs te ge le (Some ty) s) eqn:Eeval_s; simpl.
+    - destruct (eval_statement_rec tabs te ge le (Some ty) s) eqn:Eeval_s; simpl.
       + eapply norm_tailcomp_bw_correct in Eeval_s; eauto.
         destruct Eeval_s. rewrite H1 in Eeval_tc. discriminate.
       + reflexivity.
@@ -603,8 +602,8 @@ Section CORRECTNESS.
     forall params tc s te ge le tret,
       wf_tailcomp te tc = true ->
       norm_tailcomp tc = OK s ->
-      eval_fun_rec tabs (Imp1Pure.eval_statement arch tabs) te ge le params tret s =
-      eval_fun_rec tabs (ImpBNF.eval_tailcomp arch tabs) te ge le params tret tc.
+      eval_fun_rec tabs (Imp1Pure.eval_statement tabs) te ge le params tret s =
+      eval_fun_rec tabs (ImpBNF.eval_tailcomp tabs) te ge le params tret tc.
     Proof.
       induction params; intros.
       - simpl. apply Axioms.functional_extensionality; intros.
@@ -619,8 +618,8 @@ Section CORRECTNESS.
   Lemma norm_function_correct:
     forall f f' te ge x,
     norm_function te f = OK f' ->
-    eval_def_fun tabs (Imp1Pure.eval_statement arch tabs) te ge x f' =
-    eval_def_fun tabs (ImpBNF.eval_tailcomp arch tabs) te ge x f.
+    eval_def_fun tabs (Imp1Pure.eval_statement tabs) te ge x f' =
+    eval_def_fun tabs (ImpBNF.eval_tailcomp tabs) te ge x f.
   Proof.
     unfold norm_function; intros.
     destruct (wf_tailcomp te (fn_body f)) eqn:Ewf_body.
@@ -638,8 +637,8 @@ Section CORRECTNESS.
   Lemma norm_globdef_correct:
     forall te impl ge d d',
       norm_globdef te d = OK d' ->
-      eval_globdef tabs (Imp1Pure.eval_statement arch tabs) te impl ge d' =
-      eval_globdef tabs (ImpBNF.eval_tailcomp arch tabs) te impl ge d.
+      eval_globdef tabs (Imp1Pure.eval_statement tabs) te impl ge d' =
+      eval_globdef tabs (ImpBNF.eval_tailcomp tabs) te impl ge d.
   Proof.
     destruct d; simpl; intros.
     - inv H. simpl. reflexivity.
@@ -654,17 +653,17 @@ Section CORRECTNESS.
       Res.mmap (norm_globdef te) defs = OK defs' ->
       Option.fold_left_err
         (fun acc d =>
-          eval_globdef tabs  (eval_statement arch tabs) te impl acc d) defs' a0 =
+          eval_globdef tabs  (eval_statement tabs) te impl acc d) defs' a0 =
       Option.fold_left_err
         (fun acc d =>
-          eval_globdef tabs  (eval_tailcomp arch tabs) te impl acc d) defs a0.
+          eval_globdef tabs  (eval_tailcomp tabs) te impl acc d) defs a0.
   Proof.
     induction defs; intros.
     - simpl in H. inv H. simpl. reflexivity.
     - simpl in H. Res.monadInv H. simpl.
       erewrite norm_globdef_correct; eauto.
       destruct
-        (eval_globdef tabs (eval_tailcomp arch tabs) te impl a0 a);
+        (eval_globdef tabs (eval_tailcomp tabs) te impl a0 a);
         try reflexivity.
       simpl; auto.
   Qed.
@@ -672,8 +671,8 @@ Section CORRECTNESS.
   Theorem norm_program_correct:
     forall impl p p',
       norm_program p = OK p' ->
-      Imp1Pure.eval_prog arch tabs impl p' =
-      ImpBNF.eval_prog arch tabs impl p.
+      Imp1Pure.eval_prog tabs impl p' =
+      ImpBNF.eval_prog tabs impl p.
   Proof.
     intros. unfold norm_program in H.
     Res.monadInv H. inv EQ2.

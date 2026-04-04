@@ -4,126 +4,144 @@ From BarocqComp Require Import Option.
 
 Local Open Scope bool_scope.
 
-Module I32.
+Module Wordsize_Int16.
+  Definition wordsize := 16%nat.
+  Remark wordsize_not_zero: wordsize <> 0%nat.
+  Proof. unfold wordsize. congruence. Qed.
+End Wordsize_Int16.
 
-  Definition div (x y: int) : option int :=
-    if Int.eq y Int.zero
-       || Int.eq x (Int.repr Int.min_signed) && Int.eq y Int.mone
+Strategy opaque [Wordsize_Ptrofs.wordsize].
+
+Module Intsize := Ptrofs.
+Module Int16.
+  Include Integers.Make(Wordsize_Int16).
+End Int16.
+
+Notation i8 := Byte.int.
+
+Notation u8 := Byte.int.
+
+Notation i16 := Int16.int.
+
+Notation u16 := Int16.int.
+
+Notation i32 := Int.int.
+
+Notation u32 := Int.int.
+
+Notation i64 := Int64.int.
+
+Notation u64 := Int64.int.
+
+Notation isize := Intsize.int.
+
+Notation usize := Intsize.int.
+
+Module Type INTTYPE.
+  Parameter modulus : Z.
+  Record int: Type := mkint { intval: Z; intrange: (Z.lt (-1)%Z intval) /\ (Z.lt intval modulus)}.
+  Parameter zero : int.
+  Parameter one : int.
+  Parameter mone : int.
+  Parameter repr : Z -> int.
+  Parameter signed : int -> Z.
+  Parameter unsigned : int -> Z.
+  Parameter eq : int -> int -> bool.
+  Parameter divs : int -> int -> int.
+  Parameter divu : int -> int -> int.
+  Parameter mods : int -> int -> int.
+  Parameter modu : int -> int -> int.
+  Parameter min_signed : Z.
+End INTTYPE.
+
+Module Make(INT: INTTYPE).
+
+  Definition of_bool (b: bool) : INT.int :=
+    if b then INT.one else INT.zero.
+
+  Definition to_bool (x: INT.int) : bool :=
+    if INT.eq x INT.zero then false else true.
+
+  Definition of_i8 (x: i8) : INT.int :=
+    INT.repr (Byte.signed x).
+
+  Definition of_u8 (x: u8) : INT.int :=
+    INT.repr (Byte.unsigned x).
+
+  Definition of_i16 (x: i16) : INT.int :=
+    INT.repr (Int16.signed x).
+
+  Definition of_u16 (x: u16) : INT.int :=
+    INT.repr (Int16.unsigned x).
+
+  Definition of_i32 (x: i32) : INT.int :=
+    INT.repr (Int.signed x).
+
+  Definition of_u32 (x: u32) : INT.int :=
+    INT.repr (Int.unsigned x).
+
+  Definition of_i64 (x: i64) : INT.int :=
+    INT.repr (Int64.signed x).
+
+  Definition of_u64 (x: u64) : INT.int :=
+    INT.repr (Int64.unsigned x).
+
+  Definition of_isize (x: isize) : INT.int :=
+    INT.repr (Intsize.signed x).
+
+  Definition of_usize (x: usize) : INT.int :=
+    INT.repr (Intsize.unsigned x).
+
+End Make.
+
+Module MakeS(INT: INTTYPE).
+  Include Make(INT).
+
+  Definition to_Z (x: INT.int) := INT.signed x.
+
+  Definition div (x y: INT.int) : option INT.int :=
+    if INT.eq y INT.zero
+        || INT.eq x (INT.repr INT.min_signed) && INT.eq y INT.mone
     then fail
-    else ret (Int.divs x y).
+    else ret (INT.divs x y).
 
-  Definition mod (x y: int) : option int :=
-    if Int.eq y Int.zero
-       || Int.eq x (Int.repr Int.min_signed) && Int.eq y Int.mone
+  Definition mod (x y: INT.int) : option INT.int :=
+    if INT.eq y INT.zero
+        || INT.eq x (INT.repr INT.min_signed) && INT.eq y INT.mone
     then fail
-    else ret (Int.mods x y).
+    else ret (INT.mods x y).
 
-  Definition of_bool (b: bool) : int :=
-    if b then Int.one else Int.zero.
+End MakeS.
 
-  Definition to_bool (x: int) : bool :=
-    if Int.eq x Int.zero then false else true.
+Module MakeU(INT: INTTYPE).
+  Include Make(INT).
 
-  Definition of_u32 (x: int) : int := x.
+  Definition to_Z (x: INT.int) := INT.unsigned x.
 
-  Definition of_i64 (x: int64) : int :=
-    Int.repr (Int64.signed x).
+  Definition div (x y: INT.int) : option INT.int :=
+    if INT.eq y INT.zero then fail
+    else ret (INT.divu x y).
 
-  Definition of_u64 (x: int64) : int :=
-    Int.repr (Int64.unsigned x).
+  Definition mod (x y: INT.int) : option INT.int :=
+    if INT.eq y INT.zero then fail
+    else ret (INT.modu x y).
 
-  Definition to_nat (x: int) : nat :=
-    Z.to_nat (Int.signed x).
+End MakeU.
 
-End I32.
-
-Module U32.
-
-  Definition div (x y: int) : option int :=
-    if Int.eq y Int.zero then fail
-    else ret (Int.divu x y).
-   
-  Definition mod (x y: int) : option int :=
-    if Int.eq y Int.zero then fail
-    else ret (Int.modu x y).
-
-  Definition of_bool (b: bool) : int :=
-    if b then Int.one else Int.zero.
-
-  Definition to_bool (x: int) : bool :=
-    if Int.eq x Int.zero then false else true.
-
-  Definition of_i32 (x: int) : int := x.
-
-  Definition of_i64 (x: int64) : int :=
-    Int.repr (Int64.signed x).
-
- Definition of_u64 (x: int64) : int :=
-    Int.repr (Int64.unsigned x).
-
-End U32.
-
-Module I64.
-
-  Definition div (x y: int64) : option int64 :=
-    if Int64.eq y Int64.zero
-       || Int64.eq x (Int64.repr Int64.min_signed) && Int64.eq y Int64.mone
-    then fail
-    else ret (Int64.divs x y).
-
-  Definition mod (x y: int64) : option int64 :=
-    if Int64.eq y Int64.zero
-       || Int64.eq y (Int64.repr Int64.min_signed) && Int64.eq y Int64.mone
-    then fail
-    else ret (Int64.mods x y).
-
-  Definition of_bool (b: bool) : int64 :=
-    if b then Int64.one else Int64.zero.
-
-  Definition to_bool (x: int64) : bool :=
-    if Int64.eq x Int64.zero then false else true.
-
-  Definition of_u64 (x: int64) : int64 := x.
-
-  Definition of_i32 (x: int) : int64 :=
-    Int64.repr (Int.signed x).
- 
-  Definition of_u32 (x: int) : int64 :=
-    Int64.repr (Int.unsigned x).
-
-End I64.
-
-Module U64.
-
-  Definition div (x y: int64) : option int64 :=
-    if Int64.eq y Int64.zero then fail
-    else ret (Int64.divu x y).
-
-  Definition mod (x y: int64) : option int64 :=
-    if Int64.eq y Int64.zero then fail
-    else ret (Int64.modu x y).
-
-  Definition of_bool (b: bool) : int64 :=
-    if b then Int64.one else Int64.zero.
-
-  Definition to_bool (x: int64) : bool :=
-    if Int64.eq x Int64.zero then false else true.
-
-  Definition of_i64 (x: int64) : int64 := x.
-
-  Definition of_i32 (x: int) : int64 :=
-    Int64.repr (Int.signed x).
-
-  Definition of_u32 (x: int) : int64 :=
-    Int64.repr (Int.unsigned x).
-
-  Definition to_nat (x: int64) : nat :=
-    Z.to_nat (Int64.unsigned x).
-
-End U64.
+Module I8 := MakeS(Byte).
+Module U8 := MakeS(Byte).
+Module I16 := MakeS(Int16).
+Module U16 := MakeU(Int16).
+Module I32 := MakeS(Int).
+Module U32 := MakeU(Int).
+Module I64 := MakeS(Int64).
+Module U64 := MakeU(Int64).
+Module ISIZE := MakeS(Intsize).
+Module USIZE := MakeU(Intsize).
 
 (* Notations *)
-Module BarocqNotations.
+Module IntopNotations.
+  
 Infix "+₆₄" := Int64.add (at level 50,left associativity).
 Infix "+₃₂" := Int.add (at level 50,left associativity).
 Infix "-₆₄" := Int64.sub (at level 50,left associativity).
@@ -150,10 +168,9 @@ Infix "^₆₄"    := Int64.xor (at level 45,left associativity).
 Infix "|₃₂"    := Int.or (at level 50,left associativity).
 Infix "|₆₄"    := Int64.or (at level 50,left associativity).
 
-
 Notation "X 'UL'" := (Int64.repr X).
 Notation "X 'L'" := (Int64.repr X).
 Notation "X 'U'" := (Int.repr X).
 Coercion Int.repr : Z >-> Int.int.
 
-End BarocqNotations.
+End IntopNotations.

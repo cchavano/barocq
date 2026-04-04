@@ -2,7 +2,7 @@
 From Stdlib Require Import ZArith List MSetPositive Bool ZifyBool.
 From compcert Require Import Coqlib Integers Maps.
 From BarocqComp Require Import Barocq ExtOrdered.
-From BarocqComp Require Import Denot Types Target Option Barray Brecord Benum Ident Maps2 Utils ZlistPlus.
+From BarocqComp Require Import Denot Types Option Barray Brecord Benum Ident Maps2 Utils ZlistPlus Intop.
 From Stdlib Require Import Datatypes List MSetPositive Lia.
 From BarocqComp Require Import Typing.
 
@@ -743,25 +743,30 @@ Section S.
     simpl. intros.
     unfold get.
     rewrite! list_nth_z_eq.
-    destruct (Z_lt_dec (Int64.unsigned i) 0). constructor.
+    destruct (Z_lt_dec (Intsize.unsigned i) 0). constructor.
     apply H.
   Qed.
 
 
 
 
-  Lemma ext_equal_array_get : forall arch ta a1 a2  ti i1 i2 ty,
+  Lemma ext_equal_array_get : forall ta a1 a2  ti i1 i2 ty,
       ext_equal ta a1 a2 ->
       ext_equal ti i1 i2 ->
       option_rel (ext_equal ty)
-        (eval_array_get arch tabs ta a1 ti i1 ty)
-        (eval_array_get arch tabs ta a2 ti i2 ty).
+        (eval_array_get tabs ta a1 ti i1 ty)
+        (eval_array_get tabs ta a2 ti i2 ty).
   Proof.
     intros.
     unfold eval_array_get.
     destruct ta; try constructor.
-    destruct arch.
-    - destruct (typ_eq_dec ti (TInt32 Unsigned)); subst; try constructor.
+    destruct ti; try constructor;
+    simpl in H0; rewrite H0;
+    destruct (cast_index tabs i2); simpl; try constructor;
+    apply ext_equal_ecast_typ; apply ext_equal_get; auto.
+  Qed.
+
+    (* - destruct (typ_eq_dec ti (TInt32 Unsigned)); subst; try constructor.
       simpl in *; subst.
       eapply ext_equal_ecast_typ.
       apply ext_equal_get; auto.
@@ -769,8 +774,7 @@ Section S.
       simpl in *.
       subst.
       eapply ext_equal_ecast_typ.
-      apply ext_equal_get; auto.
-  Qed.
+      apply ext_equal_get; auto. *)
 
   Lemma ext_equal_app : forall te a1 a2 a3 a4,
       ext_eq_array te a1 a2 ->
@@ -858,8 +862,6 @@ Section S.
     auto. constructor.
   Qed.
 
-
-
   Lemma ext_equal_sublist : forall te i j a1 a2,
       ext_eq_array te a1 a2 ->
       ext_eq_array te (sublist.sublist i j a1) (sublist.sublist i j a2).
@@ -887,17 +889,28 @@ Section S.
     apply ext_equal_sublist; auto.
   Qed.
 
-
-  Lemma ext_equal_array_set : forall arch ta a1 a2 ti i1 i2 tv v1 v2 ty,
+  Lemma ext_equal_array_set : forall ta a1 a2 ti i1 i2 tv v1 v2 ty,
       ext_equal ta a1 a2 ->
       ext_equal ti i1 i2 ->
       ext_equal tv v1 v2 ->
-      option_rel (ext_equal ty) (eval_array_set arch tabs ta a1 ti i1 tv v1 ty)
-        (eval_array_set arch tabs ta a2 ti i2 tv v2 ty).
+      option_rel (ext_equal ty) (eval_array_set tabs ta a1 ti i1 tv v1 ty)
+        (eval_array_set tabs ta a2 ti i2 tv v2 ty).
   Proof.
     intros.
     unfold eval_array_set.
     destruct ta; try constructor.
+    destruct ti; try constructor;
+    simpl in H0; rewrite H0;
+    eapply ext_equal_cast_typ with (tf := ta) in H1;
+    destruct (cast_index tabs i2); try constructor; simpl;
+    destruct (cast_typ tabs v1 ta), (cast_typ tabs v2 ta); simpl;
+    try (constructor || inversion H1);
+    apply ext_equal_ecast_typ; apply ext_eq_array_set; auto.
+    
+
+
+
+(* 
     destruct arch.
     - destruct (typ_eq_dec ti (TInt32 Unsigned));
         try constructor.
@@ -918,7 +931,7 @@ Section S.
       simpl in H.
       change (ext_eq_array tv a1 a2) in H.
       apply ext_equal_ecast_typ.
-      apply ext_eq_array_set with (v1:=v1) (v2:=v2) (i:= i2) in H; auto.
+      apply ext_eq_array_set with (v1:=v1) (v2:=v2) (i:= i2) in H; auto. *)
   Qed.
 
 

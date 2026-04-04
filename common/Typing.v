@@ -260,26 +260,26 @@ Definition typecheck_binary_op (op: binary_op) (ty1 ty2: btyp) : res btyp :=
       end
   end.
 
-Definition typecheck_array_get (arch: Target.archi) (ty1 ty2: btyp) : res btyp :=    
+Definition typecheck_array_get (ty1 ty2: btyp) : res btyp :=    
   match ty1 with
   | BArray ta _ =>
-      if btyp_eq_dec ty2 (arr_index_btyp arch) then eret ta
+      if is_index_btyp ty2 then eret ta
       else efailwith "Typing.typecheck_array_get: array index type mismatch"
   | _ => efailwith "Typing.typecheck_array_get: array typed expected"
   end.
 
-Definition typecheck_array_get2 (arch: Target.archi) (ty1 ty2: btyp) : res field_descr :=    
+Definition typecheck_array_get2 (ty1 ty2: btyp) : res field_descr :=    
   match ty1 with
   | BArray ta ly =>
-      if btyp_eq_dec ty2 (arr_index_btyp arch) then OK (ta, ly)
+      if is_index_btyp ty2 then OK (ta, ly)
       else efailwith "Typing.typecheck_array_get2: array index type mismatch"
   | _ => efailwith "Typing.typecheck_array_get2: array type expected"
   end.
 
-Definition typecheck_array_set (arch: Target.archi) (ty1 ty2 ty3: btyp) : res btyp :=
+Definition typecheck_array_set (ty1 ty2 ty3: btyp) : res btyp :=
   match ty1 with
   | BArray ta _ =>
-      if btyp_eq_dec ty2 (arr_index_btyp arch) then
+      if is_index_btyp ty2 then
         if btyp_eq_dec ta ty3 then OK ty1
         else efailwith "Typing.typecheck_array_set: type mismatch"
       else efailwith "Typing.typecheck_array_set: array index type mismatch"

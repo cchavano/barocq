@@ -17,8 +17,10 @@ let rec is_simpl_mtyp (ty : mtyp) : bool =
 let rec mtyp_to_rocq (ty : mtyp) : string =
   match ty with
   | MBool -> "bool"
-  | MInt32 _ -> "int"
-  | MInt64 _ -> "int64"
+  | MInt32 Signed -> "i32"
+  | MInt32 Unsigned -> "u32"
+  | MInt64 Signed -> "i64"
+  | MInt64 Unsigned -> "u64"
   | MArray ta -> sprintf "list %s" (opt_parens ta)
   | MEnum te -> ident_to_string te
   | MRecord tr -> ident_to_string tr
@@ -698,9 +700,7 @@ module SR = struct
      From compcert Require Import Integers.\n\
      From RecordUpdate Require Import RecordUpdate.\n\
      From BarocqComp Require Import Option Barray Intop Utils.\n\
-     Import BoolNotations ListNotations BarocqNotations.\n\n\
-     Open Scope Z_scope.\n\
-     Local Open Scope option_monad_scope.\n"
+     From BarocqComp Require Import ShallowNotations.\n"
 
   let print_program (out : out_channel) (prog : program) : unit =
     shver := BarocqShallowgen.ShallowR;
@@ -896,10 +896,7 @@ module SB = struct
        From RecordUpdate Require Import RecordUpdate.\n\
        From BarocqComp Require Import Ident Option Barray Benum Brecord Intop.\n\
        From %s Require Import %s_Types.\n\
-       Import BoolNotations ListNotations BarocqNotations.\n\n\
-       Open Scope Z_scope.\n\
-       Open Scope string_scope.\n\
-       Local Open Scope option_monad_scope.\n"
+       From BarocqComp Require Import ShallowNotations.\n"
       !coqlib
       !coqlib
 

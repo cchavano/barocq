@@ -2,13 +2,14 @@
 
 COMMON=\
 	Unsigned63.v ZifyUint63.v StateMonads.v Res.v Utils.v Barray.v Brecord.v Benum.v Maps2.v Option.v \
-	ZlistPlus.v Types.v Syntax.v Typing.v Intop.v Ident.v Target.v MergeSort.v DList.v \
+	ZlistPlus.v Types.v Syntax.v Typing.v Intop.v Ident.v MergeSort.v DList.v \
 	Graph.v ExtOrdered.v Pp.v Printer.v \
 	Denot.v
 
 FRONTEND=\
 	Barocq.v Renaming.v BarocqBNF.v BarocqBNFgen.v BarocqBNFUndo.v \
-	BarocqShallow.v BarocqShallowgen.v ExtEqual.v BarocqVC.v BarocqBNFVC.v CorresBD_Tactics.v
+	BarocqShallow.v BarocqShallowgen.v ExtEqual.v BarocqVC.v BarocqBNFVC.v CorresBD_Tactics.v \
+	ShallowNotations.v
 
 BACKEND=\
 	ImpBNF.v ImpBNFgen.v Imp1.v Imp1gen.v Imp1Pure.v Imp1Imp.v Imp1Instr.v\

@@ -206,8 +206,6 @@ Qed.
 
 Section DENOT.
 
-  Variable arch : Target.archi.
-
   Variable tabs : PMap.t Type.
 
   Notation genv := (@Denot.genv tabs).
@@ -218,9 +216,9 @@ Section DENOT.
 
   Notation eval_typ := (@Types.eval_typ tabs).
 
-  Notation eval_atom := (@Denot.eval_atom arch tabs).
+  Notation eval_atom := (@Denot.eval_atom tabs).
 
-  Notation eval_comp := (@Denot.eval_comp arch tabs).
+  Notation eval_comp := (@Denot.eval_comp tabs).
 
   Definition typof_tailcomp (te: tenv) (tc: tailcomp) : option typ :=
     btyp_to_typ te (btypof_tailcomp tc).

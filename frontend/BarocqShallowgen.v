@@ -1,7 +1,7 @@
 From Stdlib Require Import List String ZArith.
 From compcert Require Import Maps.
 From BarocqComp  Require Import Pp Printer.
-From BarocqComp Require Import Target StateMonads Res Maps2 Types Utils Syntax Barray Benum Barocq BarocqShallow.
+From BarocqComp Require Import StateMonads Res Maps2 Types Utils Syntax Barray Benum Barocq BarocqShallow.
 Import ListNotations.
 Import MonCounterErr.
 
@@ -420,15 +420,7 @@ Module Monadification.
 
   Section MON.
 
-  Variable arch : Target.archi.
-
   Variable shver : shallow_version.
-
-  Definition arr_index_mtyp : mtyp :=
-    match arch with
-    | Ptr32 => MInt32 Unsigned
-    | Ptr64 => MInt64 Unsigned
-    end.
 
   Definition typof_literal (l: literal) : mtyp :=
     match l with
@@ -688,7 +680,7 @@ Module Monadification.
   Definition typecheck_array_get (ty1 ty2: mtyp) : res mtyp :=
     match ty1 with
     | MArray ta => 
-        if mtyp_eq_dec ty2 arr_index_mtyp then
+        if is_index_mtyp ty2 then
           eret (MRes ta)
         else Error (msg "typecheck_array_get")
     | _ => Error (msg "typecheck_array_get")
@@ -706,7 +698,7 @@ Module Monadification.
     let tr := MRes ty1 in
     match ty1 with
     | MArray ta =>
-        if mtyp_eq_dec ty2 arr_index_mtyp then
+        if is_index_mtyp ty2 then
           do a3' <- typecheck_atom_against a3 ta;
           eret (a3', tr)
         else Error (msg "typecheck_array_set")
@@ -1211,15 +1203,15 @@ End Monadification.
 
 Local Open Scope error_monad_scope.
 
-Definition monadify_norm_program (arch: Target.archi) (shver: shallow_version) (prog: Barocq.program) : res Monadic.program :=
+Definition monadify_norm_program (shver: shallow_version) (prog: Barocq.program) : res Monadic.program :=
   do/c bnf <- Normalization.norm_program prog /> efailwith "unable to normalize the program";
-  do/c mon <- Monadification.monadify_program arch shver bnf /> efailwith "unable to monadify the program";
+  do/c mon <- Monadification.monadify_program shver bnf /> efailwith "unable to monadify the program";
   eret mon.
 
-Definition monadify_norm2_program (arch: Target.archi) (shver: shallow_version) (prog: Barocq.program) : res Monadic.program :=
+Definition monadify_norm2_program (shver: shallow_version) (prog: Barocq.program) : res Monadic.program :=
   match Normalization2.norm_program prog with
   | Error e => Error (MSG "Unable to normalize the program (v2):" ::MSG "Error " :: e)
-  | OK bnf  => match Monadification.monadify_program arch shver bnf with
+  | OK bnf  => match Monadification.monadify_program shver bnf with
                | Error e => Error (MSG "unable to monadify the program (v2):" :: MSG "Error " :: e)
                | OK mon  => OK mon
                end

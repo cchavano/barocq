@@ -13,8 +13,6 @@ Definition map_err  {V A : Type} (f : V -> option A) (l : list (ident* V))  :=
 
 Section DENOT.
 
-  Variable arch : Target.archi.
-
   (* Abstract type implementation environment *)
   Variable tabs : PMap.t Type.
 
@@ -22,12 +20,6 @@ Section DENOT.
 
   Inductive value : Type :=
     | Val (t: typ) (v: eval_typ t) : value.
-
-  Definition typof_index : typ :=
-    match arch with
-    | Target.Ptr32 => TInt32 Unsigned
-    | Target.Ptr64 => TInt64 Unsigned
-    end.
 
   Definition genv := STree.t value.
 
@@ -435,47 +427,32 @@ Section DENOT.
       * apply fail.
   Defined.
 
+  Definition cast_index {ti: typ} (i: eval_typ ti) : option usize :=
+    match ti as t return (eval_typ t -> option usize) with
+    | TInt32 Unsigned => (fun i => ret (USIZE.of_u32 i))
+    | TInt64 Unsigned => (fun i => ret (USIZE.of_u64 i))
+    | _ => (fun _ => fail)
+    end i.
+
   Definition eval_array_get (ta:typ) (a: eval_typ ta) (t2:typ) (i: eval_typ t2) (tyr:typ): option (eval_typ tyr) :=
-    match ta as t return (eval_typ t -> option(eval_typ tyr)) with
+    match ta as t return (eval_typ t -> option (eval_typ tyr)) with
     | TArray t =>
-    (fun  (a0 : array (eval_typ t)) =>
-     match arch with
-     | Target.Ptr32 =>
-         match typ_eq_dec t2 (TInt32 Unsigned) with
-         | left EQ => ecast_typ (get a0 (U64.of_u32 (cast (f_equal eval_typ EQ) i))) tyr
-         | right _ => fail
-         end
-     | Target.Ptr64 =>
-         match typ_eq_dec t2 (TInt64 Unsigned) with
-         | left EQ => ecast_typ (get a0 (cast (f_equal eval_typ EQ) i)) tyr
-         | right _ => fail
-         end
-     end)
+      (fun  (a0 : array (eval_typ t)) =>
+        let* i := cast_index i in
+        ecast_typ (Barray.get a0 i) tyr)
     | _ => fun _ => fail
     end a.
 
   Definition eval_array_set (ta: typ) (a : eval_typ ta) (t2:typ)
-    (i : eval_typ t2) (t:typ) (v: eval_typ t) (tyr : typ): option (eval_typ tyr).
-  Proof.
-    destruct ta.
-    4 :
-    {
-      destruct arch.
-      - destruct (typ_eq_dec t2 (TInt32 Unsigned)).
-        + destruct (typ_eq_dec ta t).
-          * subst. simpl in i. simpl in a.
-            apply (@ecast_typ (TArray t) (Barray.set a (U64.of_u32 i) v)).
-          * apply fail.
-        + apply fail.
-      - destruct (typ_eq_dec t2 (TInt64 Unsigned)).
-        + destruct (typ_eq_dec ta t).
-          * subst. simpl in i. simpl in a.
-            apply (@ecast_typ (TArray t) (Barray.set a  i v)).
-          * apply fail.
-        + apply fail.
-    }
-    all: apply fail.
-  Defined.
+      (i : eval_typ t2) (tv:typ) (v: eval_typ tv) (tyr : typ): option (eval_typ tyr) :=
+    (match ta as t return (eval_typ t -> option (eval_typ tyr)) with
+    | TArray t =>
+        (fun (t0: typ) (a0: eval_typ (TArray t0)) =>
+          let* i := cast_index i in
+          let* v := cast_typ v t0 in
+          @ecast_typ (TArray t0) (Barray.set a0 i v) tyr) t
+    | _ => (fun _ => fail)
+    end) a.
 
   Fixpoint exists_typeof_field (F: typ -> Type) (k:key) (fields : smaplist typ) :
     forall (GP : good_proj k  fields = true),

@@ -270,12 +270,7 @@ Module Typing.
 
   Import BarocqTyped.
 
-  Section ARCHI.
-
-  Variable arch : Target.archi.
-
   Import Res.
-
 
   Fixpoint typecheck_expr (be: benv) (gx: gcontext) (lx: lcontext) (e: Barocq.expr) : res BarocqTyped.expr :=
     match e with
@@ -306,13 +301,13 @@ Module Typing.
     | Barocq.EArrayGet e1 e2 =>
         do e1' <- typecheck_expr be gx lx e1;
         do e2' <- typecheck_expr be gx lx e2;
-        do (t, ly) <- typecheck_array_get2 arch (typof_expr e1') (typof_expr e2');
+        do (t, ly) <- typecheck_array_get2 (typof_expr e1') (typof_expr e2');
         eret (EArrayGet e1' e2' ly t)
     | Barocq.EArraySet e1 e2 e3 =>
         do e1' <- typecheck_expr be gx lx e1;
         do e2' <- typecheck_expr be gx lx e2;
         do e3' <- typecheck_expr be gx lx e3;
-        do t <- typecheck_array_set arch (typof_expr e1') (typof_expr e2') (typof_expr e3');
+        do t <- typecheck_array_set (typof_expr e1') (typof_expr e2') (typof_expr e3');
         eret (EArraySet e1' e2' e3' t)
     | Barocq.ERecordProj e1 x =>
         do e1' <- typecheck_expr be gx lx e1;
@@ -356,7 +351,7 @@ Module Typing.
                           eret (EAttr a e)
     end.
 
-  Definition typecheck_function (arch: Target.archi) (be: benv) (gx: gcontext) (f: Barocq.function) : res BarocqTyped.function :=
+  Definition typecheck_function (be: benv) (gx: gcontext) (f: Barocq.function) : res BarocqTyped.function :=
     let lx :=
       List.fold_left
         (fun acc '(x, tx) => lcontext_update acc x tx)
@@ -385,7 +380,7 @@ Module Typing.
         else
           efailwith "Barocq.Typing.typecheck_globdef: type mismatch in constant definition"
       | Barocq.DefFun x f =>
-          do f' <- typecheck_function arch be gx f;
+          do f' <- typecheck_function be gx f;
           let tf := mk_fun_btyp (fn_params f') (fn_return f') in
           do gx' <- gcontext_update gx x tf;
           eret (be,gx',DefFun x f')
@@ -443,9 +438,7 @@ Module Typing.
     | CmdDef d::l => d :: program_of_iprogram l
     | CmdExpr e _ ::l => program_of_iprogram l
     end.
-
-  End ARCHI.
-
+    
 End Typing.
 
 (** * Denotational semantics *)
@@ -453,8 +446,6 @@ End Typing.
 Section DENOT.
   Import Typed.
   (** The denotational semantics lifts programs to evaluable Rocq terms. *)
-
-  Variable arch : Target.archi.
 
   Variable tabs : PMap.t Type.
 
@@ -495,7 +486,7 @@ Section DENOT.
         let* tye2 := typof_expr te e2 in
         let* v1 := eval_expr te ge le tye1 e1  in
         let* v2 := eval_expr te ge le tye2 e2  in
-        eval_array_get  arch tabs tye1 v1 tye2 v2 ty
+        eval_array_get tabs tye1 v1 tye2 v2 ty
     | EArraySet e1 e2 e3 _ =>
         let* tye1 := typof_expr te e1 in
         let* tye2 := typof_expr te e2 in
@@ -503,7 +494,7 @@ Section DENOT.
         let* v1 := eval_expr te ge le tye1 e1 in
         let* v2 := eval_expr te ge le tye2 e2 in
         let* v3 := eval_expr te ge le tye3 e3 in
-        eval_array_set arch tabs tye1 v1 tye2 v2 tye3 v3 ty
+        eval_array_set tabs tye1 v1 tye2 v2 tye3 v3 ty
     | ERecordProj e k _ _ =>
         let* tye := typof_expr te e in
         let* v := eval_expr te ge le tye e in
@@ -572,7 +563,7 @@ Section DENOT.
         let* tye2 := typof_expr te e2 in
         let* v1 := eval_expr te ge le tye1 e1  in
         let* v2 := eval_expr te ge le tye2 e2  in
-        eval_array_get  arch tabs tye1 v1 tye2 v2 ty
+        eval_array_get tabs tye1 v1 tye2 v2 ty
     | EArraySet e1 e2 e3 _ =>
         let* tye1 := typof_expr te e1 in
         let* tye2 := typof_expr te e2 in
@@ -580,7 +571,7 @@ Section DENOT.
         let* v1 := eval_expr te ge le tye1 e1 in
         let* v2 := eval_expr te ge le tye2 e2 in
         let* v3 := eval_expr te ge le tye3 e3 in
-        eval_array_set arch tabs tye1 v1 tye2 v2 tye3 v3 ty
+        eval_array_set tabs tye1 v1 tye2 v2 tye3 v3 ty
     | ERecordProj e k _ _ =>
         let* tye := typof_expr te e in
         let* v := eval_expr te ge le tye e in

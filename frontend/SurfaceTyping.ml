@@ -40,6 +40,7 @@ type expected_typ =
   | Expect_int
   | Expect_int_or_bool
   | Expect_int_or_bool_or_enum
+  | Expect_index_typ
   | Expect_array
   | Expect_enum
   | Expect_record
@@ -86,15 +87,6 @@ type error_cause =
   | Forbidden_unlayout
 
 exception Error of error_cause * unit Location.t option
-
-let arr_index_btyp : btyp ref =
-  ref (if Archi.ptr64 then BInt64 Types.Unsigned else BInt32 Types.Unsigned)
-
-let set_arr_index_btyp (arch : Target.archi) : unit =
-  arr_index_btyp :=
-    match arch with
-    | Target.Ptr32 -> BInt32 Types.Unsigned
-    | Target.Ptr64 -> BInt64 Types.Unsigned
 
 let btyp_is_prim (ty : btyp) : bool =
   match ty with
@@ -145,6 +137,7 @@ let msg_from_failure (cause : error_cause) : string =
             sprintf "but a boolean or integer expression was expected"
         | Expect_int_or_bool_or_enum ->
             sprintf "but a boolean, integer or enum expression was expected"
+        | Expect_index_typ -> sprintf "but an unsigned integer was expected"
         | Expect_array -> sprintf "but an array was expected"
         | Expect_enum -> sprintf "but an enum was expected"
         | Expect_record -> sprintf "but a record was expected"
@@ -248,9 +241,7 @@ let msg_from_failure (cause : error_cause) : string =
         (PrintUtils.i32_to_string exp)
   | Unboxed_array_missing_size -> "missing unboxed array size"
   | Unboxed_array_wrong_size_type ->
-      sprintf
-        "the size of an unboxed array must be of type %s"
-        (btyp_to_string !arr_index_btyp)
+      sprintf "the size of an unboxed array must be an unsigned integer"
   | Forbidden_unlayout -> "functions cannot be unboxed"
 
 let error ?(loc : 'a Location.t option = None) (c : error_cause) =
@@ -547,137 +538,100 @@ let eval_cunop (op : unary_op) (v : cvalue) : cvalue =
   | UopPlus, VInt64 (i, s) -> v
   | _ -> assert false
 
+let bool_binop (op : bool -> bool -> bool) (v1 : cvalue) (v2 : cvalue) =
+  match (v1, v2) with
+  | VBool b1, VBool b2 -> VBool (op b1 b2)
+  | _ -> assert false
+
+let int_binop (f32 : Int.int -> Int.int -> Int.int)
+    (f64 : Int64.int -> Int64.int -> Int64.int) (v1 : cvalue) (v2 : cvalue) :
+    cvalue =
+  match (v1, v2) with
+  | VInt32 (i1, s1), VInt32 (i2, s2) ->
+      if s1 = s2 then VInt32 (f32 i1 i2, s1) else assert false
+  | VInt64 (i1, s1), VInt64 (i2, s2) ->
+      if s1 = s2 then VInt64 (f64 i1 i2, s1) else assert false
+  | _ -> assert false
+
+let int_div_mod (f32s : Int.int -> Int.int -> Int.int option)
+    (f32u : Int.int -> Int.int -> Int.int option)
+    (f64s : Int64.int -> Int64.int -> Int64.int option)
+    (f64u : Int64.int -> Int64.int -> Int64.int option) (v1 : cvalue)
+    (v2 : cvalue) (op : string) : cvalue =
+  match (v1, v2) with
+  | VInt32 (i1, s1), VInt32 (i2, s2) ->
+      if s1 = s2 then
+        let f32, ty =
+          if s1 = Types.Signed then (f32s, "i32") else (f32u, "u32")
+        in
+        let r =
+          match f32 i1 i2 with
+          | Some r -> r
+          | None -> error (Invalid_operand (ty, op))
+        in
+        VInt32 (r, s1)
+      else assert false
+  | VInt64 (i1, s1), VInt64 (i2, s2) ->
+      if s1 = s2 then
+        let f64, ty =
+          if s1 = Types.Signed then (f64s, "i64") else (f64u, "u64")
+        in
+        let r =
+          match f64 i1 i2 with
+          | Some r -> r
+          | None -> error (Invalid_operand (ty, op))
+        in
+        VInt64 (r, s1)
+      else assert false
+  | _ -> assert false
+
+let int_eq_neq (f32 : Int.int -> Int.int -> bool)
+    (f64 : Int64.int -> Int64.int -> bool) (v1 : cvalue) (v2 : cvalue) : cvalue
+    =
+  match (v1, v2) with
+  | VInt32 (i1, s1), VInt32 (i2, s2) ->
+      if s1 = s2 then VBool (f32 i1 i2) else assert false
+  | VInt64 (i1, s1), VInt64 (i2, s2) ->
+      if s1 = s2 then VBool (f64 i1 i2) else assert false
+  | _ -> assert false
+
+let int_cmp (op : binary_op) (v1 : cvalue) (v2 : cvalue) =
+  let cop =
+    match op with
+    | BopLt -> Clt
+    | BopGt -> Cgt
+    | BopLe -> Cle
+    | BopGe -> Cge
+    | _ -> assert false
+  in
+  match (v1, v2) with
+  | VInt32 (i1, s1), VInt32 (i2, s2) ->
+      if s1 = s2 then
+        let cmp = if s1 = Types.Signed then Int.cmp else Int.cmpu in
+        VBool (cmp cop i1 i2)
+      else assert false
+  | VInt64 (i1, s1), VInt64 (i2, s2) ->
+      if s1 = s2 then
+        let cmp = if s1 = Types.Signed then Int64.cmp else Int64.cmpu in
+        VBool (cmp cop i1 i2)
+      else assert false
+  | _ -> assert false
+
 let eval_cbinop (op : binary_op) (v1 : cvalue) (v2 : cvalue) : cvalue =
   match op with
-  | BopAndbool ->
-      begin match (v1, v2) with
-      | VBool b1, VBool b2 -> VBool (b1 && b2)
-      | _ -> assert false
-      end
-  | BopOrbool ->
-      begin match (v1, v2) with
-      | VBool b1, VBool b2 -> VBool (b1 || b2)
-      | _ -> assert false
-      end
-  | BopXorbool ->
-      begin match (v1, v2) with
-      | VBool b1, VBool b2 -> VBool (Datatypes.xorb b1 b2)
-      | _ -> assert false
-      end
-  | BopAdd ->
-      begin match (v1, v2) with
-      | VInt32 (i1, s1), VInt32 (i2, s2) ->
-          if s1 = s2 then VInt32 (Int.add i1 i2, s1) else assert false
-      | VInt64 (i1, s1), VInt64 (i2, s2) ->
-          if s1 = s2 then VInt64 (Int64.add i1 i2, s1) else assert false
-      | _ -> assert false
-      end
-  | BopSub ->
-      begin match (v1, v2) with
-      | VInt32 (i1, s1), VInt32 (i2, s2) ->
-          if s1 = s2 then VInt32 (Int.sub i1 i2, s1) else assert false
-      | VInt64 (i1, s1), VInt64 (i2, s2) ->
-          if s1 = s2 then VInt64 (Int64.sub i1 i2, s1) else assert false
-      | _ -> assert false
-      end
-  | BopMul ->
-      begin match (v1, v2) with
-      | VInt32 (i1, s1), VInt32 (i2, s2) ->
-          if s1 = s2 then VInt32 (Int.mul i1 i2, s1) else assert false
-      | VInt64 (i1, s1), VInt64 (i2, s2) ->
-          if s1 = s2 then VInt64 (Int64.mul i1 i2, s1) else assert false
-      | _ -> assert false
-      end
-  | BopDiv ->
-      begin match (v1, v2) with
-      | VInt32 (i1, s1), VInt32 (i2, s2) ->
-          if s1 = s2 then
-            let div, ty =
-              if s1 = Types.Signed then (I32.div, "i32") else (U32.div, "u32")
-            in
-            let r =
-              match div i1 i2 with
-              | Some r -> r
-              | None -> error (Invalid_operand (ty, "division"))
-            in
-            VInt32 (r, s1)
-          else assert false
-      | VInt64 (i1, s1), VInt64 (i2, s2) ->
-          if s1 = s2 then
-            let div, ty =
-              if s1 = Types.Signed then (I64.div, "i64") else (U64.div, "u64")
-            in
-            let r =
-              match div i1 i2 with
-              | Some r -> r
-              | None -> error (Invalid_operand (ty, "division"))
-            in
-            VInt64 (r, s1)
-          else assert false
-      | _ -> assert false
-      end
+  | BopAndbool -> bool_binop ( && ) v1 v2
+  | BopOrbool -> bool_binop ( || ) v1 v2
+  | BopXorbool -> bool_binop Datatypes.xorb v1 v2
+  | BopAdd -> int_binop Int.add Int64.add v1 v2
+  | BopSub -> int_binop Int.sub Int64.sub v1 v2
+  | BopMul -> int_binop Int.mul Int64.mul v1 v2
+  | BopDiv -> int_div_mod I32.div U32.div I64.div U64.div v1 v2 "division"
   | BopMod ->
-      begin match (v1, v2) with
-      | VInt32 (i1, s1), VInt32 (i2, s2) ->
-          if s1 = s2 then
-            let coq_mod, ty =
-              if s1 = Types.Signed then (I32.coq_mod, "i32")
-              else (U32.coq_mod, "u32")
-            in
-            let r =
-              match coq_mod i1 i2 with
-              | Some r -> r
-              | None -> error (Invalid_operand (ty, "modulo"))
-            in
-            VInt32 (r, s1)
-          else assert false
-      | VInt64 (i1, s1), VInt64 (i2, s2) ->
-          if s1 = s2 then
-            let coq_mod, ty =
-              if s1 = Types.Signed then (I64.coq_mod, "i64")
-              else (U64.coq_mod, "u64")
-            in
-            let r =
-              match coq_mod i1 i2 with
-              | Some r -> r
-              | None -> error (Invalid_operand (ty, "modulo"))
-            in
-            VInt64 (r, s1)
-          else assert false
-      | _ -> assert false
-      end
-  | BopAndint ->
-      begin match (v1, v2) with
-      | VInt32 (i1, s1), VInt32 (i2, s2) ->
-          if s1 = s2 then VInt32 (Int.coq_and i1 i2, s1) else assert false
-      | VInt64 (i1, s1), VInt64 (i2, s2) ->
-          if s1 = s2 then VInt64 (Int64.coq_and i1 i2, s1) else assert false
-      | _ -> assert false
-      end
-  | BopOrint ->
-      begin match (v1, v2) with
-      | VInt32 (i1, s1), VInt32 (i2, s2) ->
-          if s1 = s2 then VInt32 (Int.coq_or i1 i2, s1) else assert false
-      | VInt64 (i1, s1), VInt64 (i2, s2) ->
-          if s1 = s2 then VInt64 (Int64.coq_or i1 i2, s1) else assert false
-      | _ -> assert false
-      end
-  | BopXorint ->
-      begin match (v1, v2) with
-      | VInt32 (i1, s1), VInt32 (i2, s2) ->
-          if s1 = s2 then VInt32 (Int.xor i1 i2, s1) else assert false
-      | VInt64 (i1, s1), VInt64 (i2, s2) ->
-          if s1 = s2 then VInt64 (Int64.xor i1 i2, s1) else assert false
-      | _ -> assert false
-      end
-  | BopShl ->
-      begin match (v1, v2) with
-      | VInt32 (i1, s1), VInt32 (i2, s2) ->
-          if s1 = s2 then VInt32 (Int.shl i1 i2, s1) else assert false
-      | VInt64 (i1, s1), VInt64 (i2, s2) ->
-          if s1 = s2 then VInt64 (Int64.shl i1 i2, s1) else assert false
-      | _ -> assert false
-      end
+      int_div_mod I32.coq_mod U32.coq_mod I64.coq_mod U64.coq_mod v1 v2 "modulo"
+  | BopAndint -> int_binop Int.coq_and Int64.coq_and v1 v2
+  | BopOrint -> int_binop Int.coq_or Int64.coq_or v1 v2
+  | BopXorint -> int_binop Int.xor Int64.xor v1 v2
+  | BopShl -> int_binop Int.shl Int64.shl v1 v2
   | BopShr ->
       begin match (v1, v2) with
       | VInt32 (i1, s1), VInt32 (i2, s2) ->
@@ -695,49 +649,14 @@ let eval_cbinop (op : binary_op) (v1 : cvalue) (v2 : cvalue) : cvalue =
   | BopEq ->
       begin match (v1, v2) with
       | VBool b1, VBool b2 -> VBool (b1 = b2)
-      | VInt32 (i1, s1), VInt32 (i2, s2) ->
-          if s1 = s2 then VBool (Int.eq i1 i2) else assert false
-      | VInt64 (i1, s1), VInt64 (i2, s2) ->
-          if s1 = s2 then VBool (Int64.eq i1 i2) else assert false
-      | _ -> assert false
+      | _, _ -> int_eq_neq Int.eq Int64.eq v1 v2
       end
   | BopNeq ->
       begin match (v1, v2) with
       | VBool b1, VBool b2 -> VBool (b1 <> b2)
-      | VInt32 (i1, s1), VInt32 (i2, s2) ->
-          if s1 = s2 then
-            let cmp = if s1 = Types.Signed then Int.cmp else Int.cmp in
-            VBool (cmp Cne i1 i2)
-          else assert false
-      | VInt64 (i1, s1), VInt64 (i2, s2) ->
-          if s1 = s2 then
-            let cmp = if s1 = Types.Signed then Int64.cmp else Int64.cmp in
-            VBool (cmp Cne i1 i2)
-          else assert false
-      | _ -> assert false
+      | _, _ -> int_eq_neq (Int.cmp Cne) (Int64.cmp Cne) v1 v2
       end
-  | _ ->
-      let cop =
-        match op with
-        | BopLt -> Clt
-        | BopGt -> Cgt
-        | BopLe -> Cle
-        | BopGe -> Cge
-        | _ -> assert false
-      in
-      begin match (v1, v2) with
-      | VInt32 (i1, s1), VInt32 (i2, s2) ->
-          if s1 = s2 then
-            let cmp = if s1 = Types.Signed then Int.cmp else Int.cmp in
-            VBool (cmp cop i1 i2)
-          else assert false
-      | VInt64 (i1, s1), VInt64 (i2, s2) ->
-          if s1 = s2 then
-            let cmp = if s1 = Types.Signed then Int64.cmp else Int64.cmp in
-            VBool (cmp cop i1 i2)
-          else assert false
-      | _ -> assert false
-      end
+  | _ -> int_cmp op v1 v2
 
 let eval_ccast (v : cvalue) (dst_ty : btyp) : cvalue =
   match v with
@@ -846,10 +765,10 @@ and styp_layout_to_btyp (imports : ident list) (gte : gtenv) (ce : cenv)
             begin match sz with
             | Some sz ->
                 let sz_val = eval_const imports gte ce sz in
-                begin match (sz_val, !arr_index_btyp) with
-                | VInt32 (i, Types.Unsigned), BInt32 Types.Unsigned ->
+                begin match sz_val with
+                | VInt32 (i, Types.Unsigned) ->
                     (tu, Types.LyUnboxed (Some (Int.unsigned i)))
-                | VInt64 (i, Types.Unsigned), BInt64 Types.Unsigned ->
+                | VInt64 (i, Types.Unsigned) ->
                     (tu, Types.LyUnboxed (Some (Int64.unsigned i)))
                 | _ -> error Unboxed_array_wrong_size_type
                 end
@@ -1124,6 +1043,11 @@ let check_expected_typ (texp : expected_typ) (ty : btyp) (r : 'a) : 'a =
       | BBool | BInt32 _ | BInt64 _ | BEnum _ -> r
       | _ -> error (Type_mismatch (texp, Current_typ ty))
       end
+  | Expect_index_typ ->
+      begin match ty with
+      | BInt32 Types.Unsigned | BInt64 Types.Unsigned -> r
+      | _ -> error (Type_mismatch (texp, Current_typ ty))
+      end
   | Expect_array ->
       begin match ty with
       | BArray _ -> r
@@ -1230,14 +1154,7 @@ let rec typecheck_raw_expr (imports : ident list) (gte : gtenv) (ce : cenv)
         typecheck_expr_expecting imports gte ce gx lx e1 Expect_array
       in
       let e2', _ =
-        typecheck_expr_expecting
-          imports
-          gte
-          ce
-          gx
-          lx
-          e2
-          (Expect_typ !arr_index_btyp)
+        typecheck_expr_expecting imports gte ce gx lx e2 Expect_index_typ
       in
       begin match t1 with
       | BArray (ta, _) -> (Barocq.EArrayGet (e1', e2'), ta)
@@ -1248,14 +1165,7 @@ let rec typecheck_raw_expr (imports : ident list) (gte : gtenv) (ce : cenv)
         typecheck_expr_expecting imports gte ce gx lx e1 Expect_array
       in
       let e2', _ =
-        typecheck_expr_expecting
-          imports
-          gte
-          ce
-          gx
-          lx
-          e2
-          (Expect_typ !arr_index_btyp)
+        typecheck_expr_expecting imports gte ce gx lx e2 Expect_index_typ
       in
       begin match t1 with
       | BArray (ta, ly) ->

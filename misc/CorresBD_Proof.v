@@ -1,6 +1,6 @@
 $MODULES
 From compcert Require Import Integers Coqlib.
-From BarocqComp Require Import Target Utils StateMonads ExtEqual Option Denot Barray Brecord Types BarocqBNF BarocqBNFVC Maps2.
+From BarocqComp Require Import Utils StateMonads ExtEqual Option Denot Barray Brecord Types BarocqBNF BarocqBNFVC Maps2.
 From Stdlib Require Import String List Lia.
 Open Scope list_scope.
 
@@ -53,16 +53,16 @@ Opaque Int.cmp Int.cmpu Int64.cmp Int64.cmpu.
 Opaque Intop.I32.of_u64.
 Opaque Intop.U64.of_i32.
 
-Theorem eval_prog_spec : exists te ge, eval_prog $ARCH abs_types_impl abs_defs_impl $PROG = Some (te, ge) /\
+Theorem eval_prog_spec : exists te ge, eval_prog abs_types_impl abs_defs_impl $PROG = Some (te, ge) /\
                                       Forall (has_property abs_types_impl ge) prop_list.
 Proof.
   (* Prove that we can prove all the properties of the definitions
      assuming the properties of the declarations in the typing environment*)
   assert (EX : exists  (ge : genv abs_types_impl),
-    eval_prog_rec $ARCH abs_types_impl typing_env abs_defs_impl STree.empty prog_defs = Some ge /\
+    eval_prog_rec abs_types_impl typing_env abs_defs_impl STree.empty prog_defs = Some ge /\
       Forall (has_property abs_types_impl ge) prop_list).
   {
-    assert (GO :generate_obligations abs_types_impl $ARCH typing_env abs_defs_impl nil nil prog_defs
+    assert (GO :generate_obligations abs_types_impl typing_env abs_defs_impl nil nil prog_defs
                   prop_list = Some vc).
     {
       reflexivity.

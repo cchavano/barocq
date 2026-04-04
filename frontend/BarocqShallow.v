@@ -68,6 +68,12 @@ Module Monadic.
     | MAbs : ident -> mtyp
     | MRes : mtyp -> mtyp.
 
+  Definition is_index_mtyp (ty: mtyp) : bool :=
+    match ty with
+    | MInt32 Unsigned | MInt64 Unsigned => true
+    | _ => false
+    end.
+
   (** Literals *)
 
   Inductive literal :=

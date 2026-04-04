@@ -89,15 +89,15 @@ End MonComp.
 Import MonComp.
 Local Open Scope state_err2_monad_scope.
 
-Definition compile_aux (opt : compiler_opt) (arch: Target.archi) (globinfo: option (ident * ident)) (prog: Barocq.program) : MonComp.M unit :=
+Definition compile_aux (opt : compiler_opt) (globinfo: option (ident * ident)) (prog: Barocq.program) : MonComp.M unit :=
   let prog := Renaming.rename_program prog in
   do _ <- insert_log opt Ir_Barocq Barocq.Pp.pp_program Barocq prog ;
-  do/l btyped <- Barocq.Typing.typecheck_program arch prog;
-  do/l bbnf <- BarocqBNFgen.norm_program arch btyped;
+  do/l btyped <- Barocq.Typing.typecheck_program prog;
+  do/l bbnf <- BarocqBNFgen.norm_program btyped;
   do _ <- insert_log opt Ir_BBNF BarocqBNF.Pp.pp_program BarocqBNF bbnf;
   do/l ibnf <- ImpBNFgen.transl_program bbnf;
   do/l imp1 <- Imp1gen.norm_program ibnf;
-  do/l imp1_typed <- Imp1Typing.typecheck_program arch imp1;
+  do/l imp1_typed <- Imp1Typing.typecheck_program imp1;
   do _ <- insert_log  opt Ir_Imp1 Imp1.Pp.pp_program Imp1 imp1_typed;
   do/l (te,age) <- InvAnalysis.check_program imp1_typed; (* Maybe, we could reuse the analysis result *)
   if (dbg_analysis opt)
@@ -117,22 +117,22 @@ Definition compile_aux (opt : compiler_opt) (arch: Target.archi) (globinfo: opti
       do/l clight <- Csyntaxgen.transl_program imp2_grw;
       (fun '(p, log ) => (OK tt , (Csyntax clight :: p , log))).
 
-Definition compile (opt : compiler_opt) (arch: Target.archi) (globinfo: option (ident * ident)) (prog: Barocq.program) : (res unit * (list ir_prog * Log.t)) :=
-  compile_aux opt arch globinfo prog (nil, Log.empty).
+Definition compile (opt : compiler_opt) (globinfo: option (ident * ident)) (prog: Barocq.program) : (res unit * (list ir_prog * Log.t)) :=
+  compile_aux opt globinfo prog (nil, Log.empty).
 
 Local Open Scope error_monad_scope.
 
-Definition compile_to_imp1 (arch: Target.archi) (prog: Barocq.program) : res Imp1.program :=
+Definition compile_to_imp1 (prog: Barocq.program) : res Imp1.program :=
   let prog := Renaming.rename_program prog in
-  do btyped <- Barocq.Typing.typecheck_program arch prog;
-  do bbnf <- BarocqBNFgen.norm_program arch btyped;
+  do btyped <- Barocq.Typing.typecheck_program prog;
+  do bbnf <- BarocqBNFgen.norm_program btyped;
   do ibnf <- ImpBNFgen.transl_program bbnf;
   do imp1 <- Imp1gen.norm_program ibnf;
   eret imp1.
 
-Definition aliascheck_program (opt : compiler_opt) (arch: Target.archi) (prog: Barocq.program) : res Imp1.program :=
-  do imp1 <- compile_to_imp1 arch prog;
-  do imp1_typed <- Imp1Typing.typecheck_program arch imp1;
+Definition aliascheck_program (opt : compiler_opt) (prog: Barocq.program) : res Imp1.program :=
+  do imp1 <- compile_to_imp1 prog;
+  do imp1_typed <- Imp1Typing.typecheck_program imp1;
   do (te,age) <- InvAnalysis.check_program imp1_typed;
   if (dbg_analysis opt) then
     Error (msg (Pp.pp (InvAnalysis.pp_inv (snd age))))

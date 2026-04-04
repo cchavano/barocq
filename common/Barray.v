@@ -16,14 +16,14 @@ Section ARRAYS.
 
   Definition Zlength (a: array A) : Z := Zlength a.
 
-  Definition valid_index (a: array A) (i: int64) : bool :=
-    (Int64.unsigned i <? Zlength a)%Z.
+  Definition valid_index (a: array A) (i: usize) : bool :=
+    (Intsize.unsigned i <? Zlength a)%Z.
 
-  Definition get (a: array A) (i: int64) : option A :=
-    Coqlib.list_nth_z a (Int64.unsigned i).
+  Definition get (a: array A) (i: usize) : option A :=
+    Coqlib.list_nth_z a (Intsize.unsigned i).
 
-  Definition set (a: array A) (i: int64) (x: A) : option ((array A):Type) :=
-    if valid_index a i then ret (sublist 0 (Int64.unsigned i) a ++ x :: sublist ((Int64.unsigned i)+1) (Zlength a) a)
+  Definition set (a: array A) (i: usize) (x: A) : option ((array A):Type) :=
+    if valid_index a i then ret (sublist 0 (Intsize.unsigned i) a ++ x :: sublist ((Intsize.unsigned i)+1) (Zlength a) a)
     else fail.
 
   Definition map (B: Type) (f: A -> B) (a: array A) : array B :=
@@ -41,7 +41,7 @@ Section Specs.
   Qed.
 
   Lemma map_preserve_valid_index :
-    forall (A B: Type) (f: A -> B) (a: array A) (i: int64),
+    forall (A B: Type) (f: A -> B) (a: array A) (i: usize),
     valid_index (map f a) i = valid_index a i.
   Proof.
     intros. unfold valid_index. f_equal.
@@ -49,18 +49,18 @@ Section Specs.
   Qed.
 
   Lemma get_map_same :
-    forall (A B: Type) (f: A -> B) (a: array A) (i: int64),
+    forall (A B: Type) (f: A -> B) (a: array A) (i: usize),
     get (map f a) i =
     let* x := get a i in
     ret (f x).
   Proof.
     intros. unfold get.
     rewrite Coqlib.list_nth_z_map.
-    destruct ((Coqlib.list_nth_z a (Int64.unsigned i))); reflexivity.
+    destruct ((Coqlib.list_nth_z a (Intsize.unsigned i))); reflexivity.
   Qed.
 
   Lemma set_map_same :
-    forall (A B: Type) (f: A -> B) (v: A) (a: array A) (i: int64),
+    forall (A B: Type) (f: A -> B) (v: A) (a: array A) (i: usize),
     set (map f a) i (f v) =
     let* a' := set a i v in
     ret (map f a').
@@ -86,18 +86,18 @@ Section Specs.
     unfold Barray.get.
     intros.
     unfold valid_index in H.
-    assert (0 <= Int64.unsigned id < Zlength a) %Z.
+    assert (0 <= Intsize.unsigned id < Zlength a) %Z.
     {
-      generalize (Int64.unsigned_range id).
+      generalize (Intsize.unsigned_range id).
+      unfold Intsize.unsigned in *.
       lia.
     }
     rewrite <- list_nth_z_Some in H0.
-    destruct (Coqlib.list_nth_z a (Int64.unsigned id)); try congruence.
+    destruct (Coqlib.list_nth_z a (Intsize.unsigned id)); try congruence.
     eexists ; split; eauto.
   Qed.
 
-
-  Record setSPEC {T: Type} (a:array T) (id:int64) (v:T) (a':array T) :=
+  Record setSPEC {T: Type} (a:array T) (id:usize) (v:T) (a':array T) :=
     {
       set_len : Zlength a = Zlength a';
       set_gss : Barray.get a' id = Some v;
@@ -105,7 +105,6 @@ Section Specs.
                             Barray.get a id' = Barray.get a' id'}.
 
   Import Zcomplements.
-
 
   Lemma sublist_app_2 : forall {A: Type} lo hi (l1 l2:list A),
       lo = Zlength l1 ->
@@ -134,28 +133,26 @@ Section Specs.
     intros.
     rewrite H.
     unfold valid_index in H.
-    unfold Zlength in *.
-    assert (BOUND := Int64.unsigned_range id).
+    unfold Barray.Zlength in *.
+    assert (BOUND := Intsize.unsigned_range id).
     eexists ; split; eauto.
     constructor.
     - unfold Barray.Zlength in *.
       Zlength_solve.
     - unfold Barray.get.
-      unfold Barray.Zlength in *.
       rewrite list_nth_z_app2.
       simpl.
-      destruct (zeq (Int64.unsigned id - Zlength (sublist 0 (Int64.unsigned id) a)) 0).
+      destruct (zeq (Intsize.unsigned id - Zlength (sublist 0 (Intsize.unsigned id) a)) 0).
       reflexivity.
       rewrite Zlength_sublist2 in n.
       lia.
       Zlength_solve.
     - intros. unfold Barray.get.
-      unfold Barray.Zlength in *.
-      assert (BOUND2 := Int64.unsigned_range id').
-      assert (INBOUND : 0 <= (Int64.unsigned id) < Zlength a).
+      assert (BOUND2 := Intsize.unsigned_range id').
+      assert (INBOUND : 0 <= (Intsize.unsigned id) < Zlength a).
       { lia. }
       rewrite <- list_nth_z_Some in INBOUND.
-      destruct (list_nth_z a (Int64.unsigned id)) eqn:GET; try congruence.
+      destruct (list_nth_z a (Intsize.unsigned id)) eqn:GET; try congruence.
       apply list_nth_z_split in GET.
       destruct GET as (l1 & l2 & EQ & LEN).
       subst.
@@ -167,15 +164,15 @@ Section Specs.
       replace (l1 ++ t :: l2) with ((l1 ++ t :: nil) ++ l2) at 3.
       rewrite sublist_app_2.
       rewrite! list_nth_z_app.
-      destruct (Z_lt_dec (Int64.unsigned id') (Zlength l1)); auto.
+      destruct (Z_lt_dec (Intsize.unsigned id') (Zlength l1)); auto.
       rewrite! list_nth_z_cons.
-      destruct (Z.eq_dec (Int64.unsigned id' - Zlength l1) 0).
-      assert (Int64.unsigned id <> Int64.unsigned id').
+      destruct (Z.eq_dec (Intsize.unsigned id' - Zlength l1) 0).
+      assert (Intsize.unsigned id <> Intsize.unsigned id').
       { intro.
         apply H0.
-        apply Int64.same_if_eq.
-        unfold Int64.eq.
-        destruct (zeq (Int64.unsigned id) (Int64.unsigned id')); congruence.
+        apply Intsize.same_if_eq.
+        unfold Intsize.eq.
+        destruct (zeq (Intsize.unsigned id) (Intsize.unsigned id')); congruence.
       }
       lia.
       reflexivity.
@@ -186,11 +183,16 @@ Section Specs.
       Zlength_solve.
   Qed.
 
-  
 End Specs.
 
+Module BarrayNotations.
 
 Notation "t .[ i ]" := (get t i)
   (at level 2, left associativity, format "t .[ i ]").
 Notation "t .[ i <- a ]" := (set t i a)
   (at level 2, left associativity, format "t .[ i <- a ]").
+
+Coercion USIZE.of_u32 : u32 >-> usize.
+Coercion USIZE.of_u64 : u64 >-> usize.
+
+End BarrayNotations.

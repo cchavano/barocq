@@ -6,7 +6,7 @@ This is adapted from the [BarocqVC] version.
 
 From Stdlib Require Import String List.
 From compcert Require Import Integers Maps.
-From BarocqComp Require Import Denot Syntax Target Ident Option Barray Brecord Types BarocqBNF Maps2 MergeSort Utils.
+From BarocqComp Require Import Denot Syntax Ident Option Barray Brecord Types BarocqBNF Maps2 MergeSort Utils.
 From BarocqComp Require Import ExtEqual.
 From compcert Require Import Coqlib.
 From Stdlib Require Import ZifyBool.
@@ -157,7 +157,7 @@ Section S.
       reflexivity.
   Qed.
 *)
-  Definition generate_def_fun_obligation (arch:archi) (te:Typing.tenv)  (params : smaplist btyp) (tret : btyp) (e : expr) (checked : list (propt tabs))
+  Definition generate_def_fun_obligation (te:Typing.tenv)  (params : smaplist btyp) (tret : btyp) (e : expr) (checked : list (propt tabs))
     (prop : value tabs) : option Prop :=
     if MergeSort.nodup String.leb String.eqb (List.map fst params)
     then
@@ -167,7 +167,7 @@ Section S.
       let needed_checked := List.filter (fun '(k,_) => has_var k vars) checked in
       let o := forall ge,
           Forall (has_property tabs ge) needed_checked ->
-          let v := (eval_fun arch tabs  te ge params' tret'
+          let v := (eval_fun tabs  te ge params' tret'
                       e) in
           eq_value _ prop _ v  in
       ret o
@@ -195,7 +195,7 @@ Section S.
 
 
 
-  Definition generate_def_fun_obligation' (arch:archi) (f:ident) (te:Typing.tenv)  (params : smaplist btyp) (tret : btyp) (e : expr) (checked : list (propt tabs))
+  Definition generate_def_fun_obligation' (f:ident) (te:Typing.tenv)  (params : smaplist btyp) (tret : btyp) (e : expr) (checked : list (propt tabs))
     (prop : value tabs) : option Prop :=
     if MergeSort.nodup String.leb String.eqb (List.map fst params)
     then
@@ -207,7 +207,7 @@ Section S.
       if stree_equal vars ge
       then
         let o :=
-          let v := (eval_fun arch tabs  te ge params' tret' e) in
+          let v := (eval_fun tabs  te ge params' tret' e) in
           eq_value _ prop _ v in
         ret o
       else None
@@ -716,13 +716,13 @@ Section S.
       apply same_value_cast_value; auto.
   Qed.
 
-  Fixpoint eq_genv_eval_atom (arch:archi) (te:Typing.tenv)  (ge ge':genv tabs) (ty:typ) (a:atom) : forall le le',
+  Fixpoint eq_genv_eval_atom  (te:Typing.tenv)  (ge ge':genv tabs) (ty:typ) (a:atom) : forall le le',
       eq_env (vars_of_atom (STree.empty) a) le le' ge ge' ->
       eq_env_all le le'  ->
-      option_rel (ext_equal tabs ty) (eval_atom arch tabs te ge le ty a)
-        (eval_atom arch tabs te ge' le' ty a).
+      option_rel (ext_equal tabs ty) (eval_atom tabs te ge le ty a)
+        (eval_atom tabs te ge' le' ty a).
   Proof.
-    specialize (eq_genv_eval_atom arch te ge ge').
+    specialize (eq_genv_eval_atom te ge ge').
     destruct a; intros; simpl; try (apply ExtEqual.option_rel_cast_typ_refl;reflexivity).
     - unfold eval_constr. destruct ty; simpl; try constructor.
       apply option_rel_refl; intro; reflexivity.
@@ -792,8 +792,8 @@ Section S.
       rewrite STree.gss. reflexivity.
       set (Ftyp := fun (ty:typ) => option (eval_typ tabs ty)).
       set (Pred := fun ty => option_rel (ext_equal tabs ty)).
-      assert (option_rel (DList.Forall2 Ftyp Pred  _) (DList.map2 (eval_typ tabs) (eval_atom arch tabs te ge le) l l0)
-                (DList.map2 (eval_typ tabs) (eval_atom arch tabs te ge' le') l l0)).
+      assert (option_rel (DList.Forall2 Ftyp Pred  _) (DList.map2 (eval_typ tabs) (eval_atom tabs te ge le) l l0)
+                (DList.map2 (eval_typ tabs) (eval_atom tabs te ge' le') l l0)).
       {
         revert l0.
         induction l; destruct l0.
@@ -818,13 +818,13 @@ Section S.
       apply ext_equal_eval_app_res; auto.
   Qed.
 
-  Fixpoint eq_genv_eval_expr_rec (arch:archi) (te:Typing.tenv)  (ge ge':genv tabs) (ty:typ) (e:expr) : forall le le',
+  Fixpoint eq_genv_eval_expr_rec (te:Typing.tenv)  (ge ge':genv tabs) (ty:typ) (e:expr) : forall le le',
       eq_env (vars_of_expr (STree.empty) e) le le' ge ge' ->
       eq_env_all le le'  ->
-      option_rel (ext_equal tabs ty) (eval_expr_rec arch tabs te ge le ty e)
-        (eval_expr_rec arch tabs te ge' le' ty e).
+      option_rel (ext_equal tabs ty) (eval_expr_rec tabs te ge le ty e)
+        (eval_expr_rec tabs te ge' le' ty e).
   Proof.
-    specialize (eq_genv_eval_expr_rec arch te ge ge').
+    specialize (eq_genv_eval_expr_rec te ge ge').
     destruct e; intros; simpl; try (apply option_rel_cast_typ_refl;reflexivity).
     - apply option_rel_bind_equal.
       intros.
@@ -899,8 +899,8 @@ Section S.
       set (Ftyp := fun (ty:typ) => option (eval_typ tabs ty)).
       set (Pred := fun ty => option_rel (ext_equal tabs ty)).
       clear EQ2.
-      assert (option_rel (DList.Forall2 Ftyp Pred  _) (DList.map2 (eval_typ tabs) (eval_atom arch tabs te ge le) l l0)
-                (DList.map2 (eval_typ tabs) (eval_atom arch tabs te ge' le') l l0)).
+      assert (option_rel (DList.Forall2 Ftyp Pred  _) (DList.map2 (eval_typ tabs) (eval_atom tabs te ge le) l l0)
+                (DList.map2 (eval_typ tabs) (eval_atom tabs te ge' le') l l0)).
       {
         clear x y H.
         revert l0.
@@ -913,7 +913,7 @@ Section S.
           simpl in EQ1.
           apply eq_env_atoms in EQ1 as (EQ1 & EQ1').
           simpl.
-          specialize (eq_genv_eval_atom arch te ge ge' t a0 le le' EQ1' H0).
+          specialize (eq_genv_eval_atom te ge ge' t a0 le le' EQ1' H0).
           specialize (IHl EQ1 l0).
           intros.
           inv IHl.
@@ -983,15 +983,15 @@ Section S.
     - apply eq_genv_eval_expr_rec; tauto.
   Qed.
 
-  Lemma eq_genv_eval_expr (arch:archi) (te:Typing.tenv)  (ge ge':genv tabs) (ty:typ) (e:expr) : forall le le',
+  Lemma eq_genv_eval_expr (te:Typing.tenv)  (ge ge':genv tabs) (ty:typ) (e:expr) : forall le le',
       eq_env (vars_of_expr (STree.empty) e) le le' ge ge' ->
       eq_env_all le le'  ->
-      option_rel (ext_equal tabs ty) (eval_expr arch tabs te ge le ty e)
-        (eval_expr arch tabs te ge' le' ty e).
+      option_rel (ext_equal tabs ty) (eval_expr tabs te ge le ty e)
+        (eval_expr tabs te ge' le' ty e).
   Proof.
     unfold eval_expr.
     intros.
-    generalize (eq_genv_eval_expr_rec arch te ge ge' ty e le le' H H0).
+    generalize (eq_genv_eval_expr_rec te ge ge' ty e le le' H H0).
     intro EQ. inv EQ.
     constructor. simpl. constructor ;auto.
   Qed.
@@ -1036,17 +1036,17 @@ Section S.
     apply H. rewrite remove_params_eq in H2. auto.
   Qed.
 
-  Lemma eval_fun_rec_eq : forall arch te ge ge' lt e le le' t,
+  Lemma eval_fun_rec_eq : forall te ge ge' lt e le le' t,
       eq_env (vars_of_fun lt e) le le' ge ge' ->
       eq_env_all le le' ->
-      ext_fun tabs (ext_equal tabs) t (map snd lt) (eval_fun_rec tabs (eval_expr arch tabs) te  ge le lt t e)
-        (eval_fun_rec tabs (eval_expr arch tabs) te ge' le' lt t e).
+      ext_fun tabs (ext_equal tabs) t (map snd lt) (eval_fun_rec tabs (eval_expr tabs) te  ge le lt t e)
+        (eval_fun_rec tabs (eval_expr tabs) te ge' le' lt t e).
   Proof.
     unfold vars_of_fun.
     induction lt.
     - simpl.
       intros.
-      specialize (eq_genv_eval_expr arch te ge ge' t e le le' H H0).
+      specialize (eq_genv_eval_expr te ge ge' t e le le' H H0).
       intro E1.
       inv E1.
       constructor.
@@ -1125,9 +1125,9 @@ Section S.
   Qed.
 
   
-  Lemma generate_def_fun_obligation_impl : forall arch f te params tret e checked prop o',
-      generate_def_fun_obligation' arch f te params tret e checked prop = Some o' ->
-      exists o, generate_def_fun_obligation arch te params tret e checked prop = Some o /\
+  Lemma generate_def_fun_obligation_impl : forall f te params tret e checked prop o',
+      generate_def_fun_obligation' f te params tret e checked prop = Some o' ->
+      exists o, generate_def_fun_obligation te params tret e checked prop = Some o /\
                   (o' -> o).
   Proof.
     unfold generate_def_fun_obligation', generate_def_fun_obligation.
@@ -1162,7 +1162,7 @@ Section S.
     destruct l.
     - simpl.
       apply map_err_nil in PARAM. subst.
-      generalize (eq_genv_eval_expr arch te ge ge0 t e STree.empty STree.empty EQENV eq_env_all_empty).
+      generalize (eq_genv_eval_expr te ge ge0 t e STree.empty STree.empty EQENV eq_env_all_empty).
       intro EEXPR.
       simpl. auto.
     - rewrite ext_equal_rew.
@@ -1205,7 +1205,7 @@ Section S.
     eval_def_type te x td. *)
 
 
-  Fixpoint generate_obligations (arch:archi)  (te:Typing.tenv) (ge0 : genv tabs)
+  Fixpoint generate_obligations (te:Typing.tenv) (ge0 : genv tabs)
     (checked : list (propt tabs)) (vc : list Prop) (p:list globdef) (props : list (propt tabs)) : option (list Prop) :=
     match p with
     | nil => match props with
@@ -1217,19 +1217,19 @@ Section S.
         | DefConst x l ty    =>
             let* (p,props') := get_prop tabs x props in
             let*  o  := generate_const_obligation tabs te x l ty p in
-            generate_obligations arch  te ge0 ((x,p)::checked) (o::vc) prog'  props'
+            generate_obligations te ge0 ((x,p)::checked) (o::vc) prog'  props'
         | DefFun y f =>
             let* (p,props') := get_prop tabs y props in
-            let*  o   := generate_def_fun_obligation' arch y te (Syntax.fn_params f) (Syntax.fn_return f) (Syntax.fn_body f) checked p in
-            generate_obligations arch  te ge0 ((y,p)::checked) (o::vc) prog'  props'
+            let*  o   := generate_def_fun_obligation' y te (Syntax.fn_params f) (Syntax.fn_return f) (Syntax.fn_body f) checked p in
+            generate_obligations te ge0 ((y,p)::checked) (o::vc) prog'  props'
         | DeclConst y bt =>
             let* (p,props') := get_prop tabs y props in
             let* o := generate_decl_const_obligation te ge0  y bt p in
-            generate_obligations arch  te ge0 ((y,p)::checked) (o::vc) prog' props'
+            generate_obligations te ge0 ((y,p)::checked) (o::vc) prog' props'
         | DeclFun y params tret =>
             let* (p,props') := get_prop tabs y props in
             let* o := generate_decl_fun_obligation te ge0 y params tret p in
-            generate_obligations arch  te ge0 ((y,p)::checked) (o::vc) prog' props'
+            generate_obligations te ge0 ((y,p)::checked) (o::vc) prog' props'
         end
     end.
 
@@ -1484,14 +1484,14 @@ Section S.
     the declaration has the property *)
 
   Lemma generate_def_fun_obligation_sound :
-    forall arch te x f checked ge p o
-           (GEN : generate_def_fun_obligation arch te (Syntax.fn_params f) (Syntax.fn_return f) (Syntax.fn_body f) checked p = Some o)
+    forall te x f checked ge p o
+           (GEN : generate_def_fun_obligation te (Syntax.fn_params f) (Syntax.fn_return f) (Syntax.fn_body f) checked p = Some o)
            (GET : genv_get tabs ge x = fail)
            (ALL : Forall (has_property tabs ge) checked)
            (HAS : o)
     ,
     exists ge',
-      eval_def_fun arch tabs te ge x f = Some ge' /\
+      eval_def_fun tabs te ge x f = Some ge' /\
         has_property tabs ge' (x,p).
   Proof.
     unfold generate_def_fun_obligation.
@@ -1543,12 +1543,12 @@ Section S.
 
   Lemma has_property_equal :
     forall te ge0 ge s t v prog
-           (EVAL: eval_prog Ptr64 tabs ge0 prog = Some (te,ge))
+           (EVAL: eval_prog tabs ge0 prog = Some (te,ge))
            (FO : fo_typ t = true)
            (HASP : has_property tabs  ge  (s,Val tabs t v)),
     exists
       v' : eval_typ tabs t,
-      (let* (_, ge0):= eval_prog Ptr64 tabs ge0 prog
+      (let* (_, ge0):= eval_prog tabs ge0 prog
        in genv_get tabs ge0 s) =
         Some (Val tabs t v') /\ ext_equal_fo tabs t v' v.
   Proof.
@@ -1787,10 +1787,10 @@ Section S.
 
 
   Lemma wf_env_DefFun :
-    forall arch te ge ge' x f prog
+    forall te ge ge' x f prog
            (DUP : NoDup (map ident_of_globdef (DefFun x f :: prog)))
            (WF : wf_env ge (DefFun x f :: prog))
-           (EVAL : eval_def_fun arch tabs te ge x f = Some ge'),
+           (EVAL : eval_def_fun tabs te ge x f = Some ge'),
       wf_env ge' prog.
   Proof.
     unfold eval_def_fun. unfold Denot.eval_def_fun.
@@ -1807,8 +1807,8 @@ Section S.
   Qed.
 
   Lemma generate_obligations_incl :
-    forall arch ge0 prog te checked props ol vc
-           (GEN : generate_obligations arch  te ge0 checked vc prog props = Some ol),
+    forall ge0 prog te checked props ol vc
+           (GEN : generate_obligations te ge0 checked vc prog props = Some ol),
     forall x, In x vc -> In x ol.
   Proof.
     induction prog.
@@ -1831,7 +1831,7 @@ Section S.
         simpl in GEN.
         apply get_prop_inv in GP.
         subst.
-        destruct (generate_def_fun_obligation' arch i te (Syntax.fn_params f) (Syntax.fn_return f) (Syntax.fn_body f) checked p);
+        destruct (generate_def_fun_obligation' i te (Syntax.fn_params f) (Syntax.fn_return f) (Syntax.fn_body f) checked p);
           try discriminate.
         simpl in GEN.
         eapply IHprog in GEN;eauto.
@@ -1889,15 +1889,15 @@ Section S.
 
 
   Lemma generate_obligations_sound :
-    forall arch prog te checked props ol vc ge0
+    forall prog te checked props ol vc ge0
            (ND : NoDup (map ident_of_globdef prog))
-           (GEN : generate_obligations arch te ge0 checked vc prog props = Some ol)
+           (GEN : generate_obligations te ge0 checked vc prog props = Some ol)
            (OBL : Forall (fun p => p) ol)
     ,
     forall ge,
       wf_env ge prog ->
       Forall (has_property tabs ge) checked ->
-      exists ge', eval_prog_rec arch tabs te ge0 ge prog = Some ge' /\
+      exists ge', eval_prog_rec tabs te ge0 ge prog = Some ge' /\
                         Forall (has_property tabs ge') props.
   Proof.
     unfold eval_prog_rec.
@@ -1948,11 +1948,11 @@ Section S.
         destruct p as (p,props').
         simpl in GEN.
         apply get_prop_inv in GP.
-        destruct (generate_def_fun_obligation'  arch i te (Syntax.fn_params f) (Syntax.fn_return f) (Syntax.fn_body f) checked p) eqn:CO; try discriminate.
+        destruct (generate_def_fun_obligation' i te (Syntax.fn_params f) (Syntax.fn_return f) (Syntax.fn_body f) checked p) eqn:CO; try discriminate.
         simpl in GEN.
         apply generate_def_fun_obligation_impl in CO.
         destruct CO as (o & CO & IMPL).
-        destruct  (generate_def_fun_obligation_sound arch te i f checked  ge p o CO) as (ge' & EF & HP ).
+        destruct  (generate_def_fun_obligation_sound te i f checked  ge p o CO) as (ge' & EF & HP ).
         { eapply H. simpl. tauto.
         }
         auto.
@@ -2045,14 +2045,14 @@ Section S.
         eapply env_preserve_defs_has_property; eauto.
   Qed.
 
-  Lemma eval_prog_has_property : forall arch te ge0 gds props prog
+  Lemma eval_prog_has_property : forall te ge0 gds props prog
       (TE : Typing.tenv_of_type_defs (prog_types prog) = Some te)
       (DEFS : prog_defs prog = gds),
       (exists ge ,
-      eval_prog_rec arch tabs te ge0 STree.empty gds = Some ge /\
+      eval_prog_rec tabs te ge0 STree.empty gds = Some ge /\
       Forall (has_property tabs ge) props) ->
   exists (te : Typing.tenv) (ge : genv tabs),
-    eval_prog arch tabs ge0 prog = Some (te, ge) /\
+    eval_prog tabs ge0 prog = Some (te, ge) /\
     Forall (has_property tabs ge) props.
   Proof.
     intros.

@@ -249,6 +249,6 @@ Section NORM.
 
 End NORM.
 
-Definition norm_program (arch: Target.archi) (prog: BarocqTyped.program) : res BarocqBNF.program :=
+Definition norm_program (prog: BarocqTyped.program) : res BarocqBNF.program :=
   norm_program_rec (BarocqTyped.pure_functions prog) prog.
   

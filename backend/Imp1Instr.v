@@ -1,5 +1,5 @@
 From Stdlib Require Import Bool List PArith Lia.
-From BarocqComp Require Import Maps2 Utils DList Types Syntax Benum Typing Imp1 Imp1Imp  Option.
+From BarocqComp Require Import Maps2 Utils DList Types Intop Syntax Benum Typing Imp1 Imp1Imp  Option.
 Local Open Scope option_monad_scope.
 
 (* Instrumented in-place semantics of Imp1 with invalid paths *)
@@ -111,7 +111,6 @@ End InvSet.
 
 Section SEM.
 
-  Variable arch : Target.archi.
   Variable abs : Maps.PMap.t Type.
 
   Variable abs_dec : forall x,
@@ -331,9 +330,9 @@ Section SEM.
     | AArrayGet a1 i _ _ =>
         let* t1 := typof_atom te a1 in
         let* (v1, pps1) := ieval_atom te ge e m inv t1 a1 in
-        let ti := Denot.typof_index arch in
+        let* ti := typof_atom te i in
         let* (vi, ppsi) := ieval_atom te ge e m inv ti i in
-        let* ci := index_of_val arch vi in
+        let* ci := index_of_val vi in
         let* vr := eval_mem_access abs m v1 (CIndex ci) ty in
         let ppsr :=
           match ppsi with
@@ -376,7 +375,7 @@ Section SEM.
     | _ => fail
     end.
 
-  Definition eval_array_set (m: mem) {ta: typ} (a: val ta) (i: Integers.int64) {tv: typ} (v: val tv) : option mem :=
+  Definition eval_array_set (m: mem) {ta: typ} (a: val ta) (i: usize) {tv: typ} (v: val tv) : option mem :=
     let* p := isptr a in
     let* a := load p m in
     match a with
@@ -391,6 +390,7 @@ Section SEM.
   (** [inv_set_field te ge e m inv a ce v ty] adds to [inv] the set of invalid paths resulting from
       updating the 'field' [ce] of [a] with [v], and returns the set of invalid partial paths
       that the variable assigned to this computation inherits from.*)
+  (* TODO: check for no-op assignment *)
   Definition ieval_set_field (te: tenv) (ge: genv) (e: env) (m: mem) (inv: InvSet.t)
       (a: atom) (ce: cedge) (v: atom) (ty: typ) : option (val ty * mem * option PPathSet.t * InvSet.t) :=
     let* ta := typof_atom te a in
@@ -434,7 +434,7 @@ Section SEM.
         match ppsi with
         | Some _ => fail
         | None =>
-            let* i := index_of_val arch vi in
+            let* i := index_of_val vi in
             ieval_set_field te ge e m inv a (CIndex i) v ty
         end
     | CpCall f btf args _ =>

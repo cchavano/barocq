@@ -1,6 +1,6 @@
 From Stdlib Require Import ZArith List MSetPositive Bool.
 From compcert Require Import Coqlib Integers Maps.
-From BarocqComp Require Import Target Res Barray Brecord Benum Ident Maps2 Utils.
+From BarocqComp Require Import Res Barray Brecord Benum Ident Maps2 Utils.
 From Stdlib Require Import Datatypes List MSetPositive Lia.
 From BarocqComp Require Import ExtOrdered.
 From BarocqComp Require Import Option.
@@ -488,18 +488,16 @@ Definition typof_field (k: ident) (fields: smaplist typ) : option typ :=
 Definition btypof_field (k: ident) (fields: smaplist btyp) : option btyp :=
   find_err Ident.eq_dec k fields.
 
-(* Type for array indexes *)
-
-Definition arr_index_btyp (arch: Target.archi): btyp :=
-  match arch with
-  | Ptr32 => BInt32 Unsigned
-  | Ptr64 => BInt64 Unsigned
+Definition is_index_btyp (ty: btyp) : bool :=
+  match ty with
+  | BInt32 Unsigned | BInt64 Unsigned => true
+  | _ => false
   end.
 
-Definition arr_index_typ (arch: Target.archi) : typ :=
-  match arch with
-  | Ptr32 => TInt32 Unsigned
-  | Ptr64 => TInt64 Unsigned
+Definition is_index_typ (ty: typ) : bool :=
+  match ty with
+  | TInt32 Unsigned | TInt64 Unsigned => true
+  | _ => false
   end.
 
 (** extraction of types *)

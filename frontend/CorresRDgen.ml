@@ -276,7 +276,7 @@ let imports () : string =
   sprintf
     "From Stdlib Require Import String.\n\
      From compcert Require Import Integers.\n\
-     From BarocqComp Require Import Target StateMonads Option Barray Brecord \
+     From BarocqComp Require Import StateMonads Option Intop Barray Brecord \
      Types Barocq.\n\
      From %s Require Import %s_Types %s %s %s_CorresBD_Prelude.\n\
      From %s Require %s_CorresRB %s_CorresBD.\n\n\
@@ -291,8 +291,7 @@ let imports () : string =
     !coqlib
     !coqlib
 
-let print_corres (out : out_channel) (arch : Target.archi) (prog : program) :
-    unit =
+let print_corres (out : out_channel) (prog : program) : unit =
   shallowfile := sprintf "%s_ShallowR" !coqlib;
   deepfile := sprintf "%s_Deep" !coqlib;
   let defs = prog.prog_defs in

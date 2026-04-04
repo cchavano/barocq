@@ -510,8 +510,8 @@ module VCgen = struct
       if is_abs then sprintf "%s.%s" !shallowfile fid_shallow
       else
         sprintf
-          "eval_fun arch abs_types_impl typing_env ge params_%s %s \
-           (Syntax.fn_body %s.fun_%s)"
+          "eval_fun abs_types_impl typing_env ge params_%s %s (Syntax.fn_body \
+           %s.fun_%s)"
           fid_shallow
           (Deeptypes.mtyp_to_typ_string "Deeptypes." tret)
           !deepfile
@@ -539,16 +539,9 @@ module VCgen = struct
     | DefConst (cid, _, ty) -> gen_const_vc false cid ty
     | DeclConst (cid, ty) -> gen_const_vc true cid ty
 
-  let archi_to_string (arch : Target.archi) : string =
-    match arch with
-    | Target.Ptr64 -> "Target.Ptr64"
-    | Target.Ptr32 -> "Target.Ptr32"
-
-  let print_vc (out : out_channel) (arch : Target.archi)
-      (bprog : Barocq.Typed.program) (sprog : BarocqShallow.Monadic.program) :
-      unit =
+  let print_vc (out : out_channel) (bprog : Barocq.Typed.program)
+      (sprog : BarocqShallow.Monadic.program) : unit =
     let sdefs = sprog.prog_defs in
-    fprintf out "Definition arch : Target.archi := %s.\n" (archi_to_string arch);
     fprintf out "\n";
     print_needed_checked_lists out bprog sprog.prog_defs;
     print_functions_params out sdefs;
@@ -579,7 +572,7 @@ let imports () : string =
   sprintf
     "From Stdlib Require Import String.\n\
      From compcert Require Import Integers.\n\
-     From BarocqComp Require Import Target StateMonads Option Barray Brecord \
+     From BarocqComp Require Import StateMonads Option Intop Barray Brecord \
      Types Barocq.\n\
      From BarocqComp Require Import CorresBD_Tactics.\n\
      From %s Require Import %s_Types %s %s %s_CorresBD_Prelude \
@@ -592,8 +585,8 @@ let imports () : string =
     !coqlib
     !coqlib
 
-let print_prelude (out : out_channel) (arch : Target.archi)
-    (bprog : Barocq.Typed.program) (sprog : program) : unit =
+let print_prelude (out : out_channel) (bprog : Barocq.Typed.program)
+    (sprog : program) : unit =
   shallowfile := sprintf "%s_ShallowB" !coqlib;
   deepfile := sprintf "%s_Deep" !coqlib;
   let types = sprog.prog_types in
@@ -623,7 +616,7 @@ let print_prelude (out : out_channel) (arch : Target.archi)
     fprintf out "\n";
     print_properties_envs out defs;
     fprintf out "\n";
-    VCgen.print_vc out arch bprog sprog
+    VCgen.print_vc out bprog sprog
   end
 
 let output_libs prefix modules =
@@ -634,23 +627,17 @@ let output_libs prefix modules =
   Printf.bprintf buf "From %s Require Import %a." prefix output_list modules;
   Buffer.contents buf
 
-let print_proof arch fname =
+let print_proof fname =
   let modules = ["Types"; "ShallowB"; "Deep"; "CorresBD_Prelude"] in
   let modules = output_libs !coqlib modules in
-  let arch =
-    match arch with
-    | Target.Ptr32 -> "Ptr32"
-    | Target.Ptr64 -> "Ptr64"
-  in
   let prog = Printf.sprintf "%s_Deep.prog" !coqlib in
   let skeleton =
     Filename.concat Config.install_dev_dir "misc/CorresBD_Proof.v"
   in
   let command =
     Printf.sprintf
-      "sed -e 's/$MODULES/%s/g' -e 's/$ARCH/%s/g' -e 's/$PROG/%s/g' %s > %s"
+      "sed -e 's/$MODULES/%s/g' -e 's/$PROG/%s/g' %s > %s"
       modules
-      arch
       prog
       skeleton
       fname
@@ -668,25 +655,18 @@ let tac =
    h|reflexivity]\n\
    ].\n"
 
-let print_corres (out : out_channel) (arch : Target.archi) (prog : program) :
-    unit =
+let print_corres (out : out_channel) (prog : program) : unit =
   shallowfile := sprintf "%s_ShallowB" !coqlib;
   deepfile := sprintf "%s_Deep" !coqlib;
-  let arch_str =
-    match arch with
-    | Target.Ptr32 -> "Ptr32"
-    | Target.Ptr64 -> "Ptr64"
-  in
   let defs = prog.prog_defs in
   fprintf out "%s" (imports ());
   fprintf out "\n";
   fprintf out "(** * Program correspondence theorems *)\n\n";
   fprintf
     out
-    "Definition eval_def := BarocqBNF.eval_def2 %s abs_types_impl \
-     abs_defs_impl %s.prog.\n\n\
+    "Definition eval_def := BarocqBNF.eval_def2 abs_types_impl abs_defs_impl \
+     %s.prog.\n\n\
      %s\n"
-    arch_str
     !deepfile
     tac;
   if defs <> [] then begin

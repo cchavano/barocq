@@ -131,8 +131,6 @@ End Pp.
 
 Section DENOT.
 
-  Variable arch : Target.archi.
-
   Variable tabs : PMap.t Type.
 
   Notation genv := (@Denot.genv tabs).
@@ -143,12 +141,10 @@ Section DENOT.
 
   Notation eval_typ := (eval_typ tabs).
 
-  Notation eval_atom := (@Denot.eval_atom arch tabs).
+  Notation eval_atom := (@Denot.eval_atom tabs).
 
   Definition typof_expr (te:tenv) (e:expr) : option typ :=
     btyp_to_typ te (btypof_expr e).
-
-
 
   Fixpoint eval_expr_rec (te: tenv) (ge: genv) (le: lenv) (ty:typ) (e: expr) : option (eval_typ ty) :=
     match e with
@@ -163,7 +159,7 @@ Section DENOT.
         let* v1 := eval_atom te ge le ta1 a1 in
         let* v2 := eval_atom te ge le ta2 a2 in
         let* v3 := eval_atom te ge le ta3 a3 in
-        ecast_typ tabs (eval_array_set arch tabs ta1 v1 ta2 v2 ta3 v3 t) ty
+        ecast_typ tabs (eval_array_set tabs ta1 v1 ta2 v2 ta3 v3 t) ty
     | ERecordUpdate a1 k a2 bt =>
         let* t := btyp_to_typ te bt in
         let* ta1 := typof_atom te a1 in

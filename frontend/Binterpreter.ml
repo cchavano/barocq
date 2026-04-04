@@ -41,7 +41,7 @@ let value_to_string (vv : value) : string =
   match vv with
   | Val (tv, v) -> sprintf "val %s : %s" (val_to_string tv v) (typ_to_string tv)
 
-let interpret (arch : Target.archi) (p : Typed.command list) : unit =
-  match interpret arch (Maps.PMap.init (Obj.magic ())) p with
+let interpret (p : Typed.command list) : unit =
+  match interpret (Maps.PMap.init (Obj.magic ())) p with
   | Res.OK lv -> List.iter (fun v -> printf "%s\n" (value_to_string v)) lv
   | Res.Error msg -> raise @@ Error (PrintUtils.string_of_errmsg msg)

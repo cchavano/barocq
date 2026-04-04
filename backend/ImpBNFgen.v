@@ -88,8 +88,6 @@ Definition transl_program (prog: BarocqBNF.program) : res ImpBNF.program :=
 
 Section CORRECTNESS.
 
-  Variable arch : Target.archi.
-
   Variable tabs : Maps.PMap.t Type.
 
   Notation genv := (@Denot.genv tabs).
@@ -217,8 +215,8 @@ Section CORRECTNESS.
     match_lenv le1 le2 ->
     (forall a ty,
       wf_atom (STree.keys ge) (STree.keys le1) a = true ->
-      eval_atom arch tabs te ge le2 ty a =
-      eval_atom arch tabs te ge le1 ty a).
+      eval_atom tabs te ge le2 ty a =
+      eval_atom tabs te ge le1 ty a).
   Proof.
     induction a using atom_depth_ind; simpl; intros; try tauto.
     - apply var_defined_env_get in H1; try tauto.
@@ -246,14 +244,14 @@ Section CORRECTNESS.
       destruct H2. destruct t; simpl; try reflexivity.
       erewrite eval_var_match_lenv_eq; eauto.
       destruct (eval_var tabs ge le1 i (TFun l t)); simpl; try reflexivity.
-      assert (DList.map2 (eval_typ tabs) (eval_atom arch tabs te ge le2) args l =
-                DList.map2 (eval_typ tabs) (eval_atom arch tabs te ge le1) args l).
+      assert (DList.map2 (eval_typ tabs) (eval_atom tabs te ge le2) args l =
+                DList.map2 (eval_typ tabs) (eval_atom tabs te ge le1) args l).
       {
         apply DList.map2_eq.
         assert (forall x ty,
                    In x args ->
-                       eval_atom arch tabs te ge le2 ty x =
-                         eval_atom arch tabs te ge le1 ty x).
+                       eval_atom tabs te ge le2 ty x =
+                         eval_atom tabs te ge le1 ty x).
         {
           intros.
           apply H1; auto.
@@ -294,8 +292,8 @@ Section CORRECTNESS.
       env_noshadow ge le2 ->
       match_lenv le1 le2 ->
       (forall c ty, wf_comp (STree.keys ge) (STree.keys le1) c = true ->
-        eval_comp arch tabs te ge le2 ty c =
-        eval_comp arch tabs te ge le1 ty c).
+        eval_comp tabs te ge le2 ty c =
+        eval_comp tabs te ge le1 ty c).
   Proof.
     induction c; simpl; intros.
     - apply eval_atom_match_lenv_eq; tauto.
@@ -304,15 +302,15 @@ Section CORRECTNESS.
       destruct (Typing.typof_atom te a0); simpl; try reflexivity.
       destruct (Typing.typof_atom te a1); simpl; try reflexivity.
       erewrite eval_atom_match_lenv_eq; eauto.
-      destruct (eval_atom arch tabs te ge le1 t a); simpl; try reflexivity.
+      destruct (eval_atom tabs te ge le1 t a); simpl; try reflexivity.
       erewrite eval_atom_match_lenv_eq; eauto.
-      destruct (eval_atom arch tabs te ge le1 t0 a0); simpl; try reflexivity.
+      destruct (eval_atom tabs te ge le1 t0 a0); simpl; try reflexivity.
       erewrite eval_atom_match_lenv_eq; eauto.
     - destruct_conj H1.
       destruct (Typing.typof_atom te a); simpl; try reflexivity.
       destruct (Typing.typof_atom te a0); simpl; try reflexivity.
       erewrite eval_atom_match_lenv_eq; eauto.
-      destruct (eval_atom arch tabs te ge le1 t a); simpl; try reflexivity.
+      destruct (eval_atom tabs te ge le1 t a); simpl; try reflexivity.
       erewrite eval_atom_match_lenv_eq; eauto.
     - destruct_conj H1.
       destruct (Typing.btyp_to_typ te b); simpl; try reflexivity.
@@ -320,8 +318,8 @@ Section CORRECTNESS.
       eapply var_defined_env_get in C; eauto. destruct C.
       erewrite eval_var_match_lenv_eq; eauto.
       destruct (eval_var tabs ge le1 i (TFun l0 t)); simpl; try reflexivity.
-      assert (EQ: DList.map2 (eval_typ tabs) (eval_atom arch tabs te ge le2) l l0 =
-                DList.map2 (eval_typ tabs) (eval_atom arch tabs te ge le1) l l0).
+      assert (EQ: DList.map2 (eval_typ tabs) (eval_atom tabs te ge le2) l l0 =
+                DList.map2 (eval_typ tabs) (eval_atom tabs te ge le1) l l0).
       {
         apply DList.map2_eq.
         rewrite Forall_forall.
@@ -346,8 +344,8 @@ Section CORRECTNESS.
       (NOSHADOW: env_noshadow ge le2)
       (MATCH_LENV: match_lenv le1 le2)
       (TRANSL: transl_expr e = OK tc)
-      (EVAL_EXPR: BarocqBNF.eval_expr_rec arch tabs te ge le1 ty e = Some v),
-      (exists le2', ImpBNF.eval_tailcomp_rec arch tabs te ge le2 ty tc = Some (v, le2')
+      (EVAL_EXPR: BarocqBNF.eval_expr_rec tabs te ge le1 ty e = Some v),
+      (exists le2', ImpBNF.eval_tailcomp_rec tabs te ge le2 ty tc = Some (v, le2')
         /\ env_noshadow ge le2'
         /\ match_lenv le1 le2').
   Proof.
@@ -396,8 +394,8 @@ Section CORRECTNESS.
       destruct x1; try discriminate.
       monadInv EQ2.
       erewrite eval_var_match_lenv_eq; eauto. rewrite EQ0; simpl.
-      assert (EQM: DList.map2 (eval_typ tabs) (eval_atom arch tabs te ge le2) l l0 =
-                DList.map2 (eval_typ tabs) (eval_atom arch tabs te ge le1) l l0).
+      assert (EQM: DList.map2 (eval_typ tabs) (eval_atom tabs te ge le2) l l0 =
+                DList.map2 (eval_typ tabs) (eval_atom tabs te ge le1) l l0).
       {
         apply DList.map2_eq.
         rewrite Forall_forall.
@@ -473,8 +471,8 @@ Section CORRECTNESS.
       (NOSHADOW: env_noshadow ge le2)
       (MATCH_LENV: match_lenv le1 le2)
       (TRANSL: transl_expr e = OK tc),
-      BarocqBNF.eval_expr_rec arch tabs te ge le1 ty e = None ->
-      (ImpBNF.eval_tailcomp_rec arch tabs te ge le2 ty tc = None).
+      BarocqBNF.eval_expr_rec tabs te ge le1 ty e = None ->
+      (ImpBNF.eval_tailcomp_rec tabs te ge le2 ty tc = None).
   Proof.
     destruct e; simpl; intros; simpl.
     - inv TRANSL. simpl. unfold Typing.typof_atom in H.
@@ -488,12 +486,12 @@ Section CORRECTNESS.
       destruct (Typing.typof_atom te a0); simpl in H; simpl; ecast_typ_err_resolve.
       destruct (Typing.typof_atom te a1); simpl in H; simpl; ecast_typ_err_resolve.
       erewrite eval_atom_match_lenv_eq; eauto.
-      destruct (eval_atom arch tabs te ge le1 t0 a); simpl in H; simpl; ecast_typ_err_resolve.
+      destruct (eval_atom tabs te ge le1 t0 a); simpl in H; simpl; ecast_typ_err_resolve.
       erewrite eval_atom_match_lenv_eq; eauto.
-      destruct (eval_atom arch tabs te ge le1 t a0); simpl in H; simpl; ecast_typ_err_resolve.
+      destruct (eval_atom tabs te ge le1 t a0); simpl in H; simpl; ecast_typ_err_resolve.
       erewrite eval_atom_match_lenv_eq; eauto.
-      destruct (eval_atom arch tabs te ge le1 t1 a1); simpl in H; simpl; ecast_typ_err_resolve.
-      destruct (eval_array_set arch tabs t0 e t e0 t1 e1 ty); simpl in H; simpl; eauto.
+      destruct (eval_atom tabs te ge le1 t1 a1); simpl in H; simpl; ecast_typ_err_resolve.
+      destruct (eval_array_set tabs t0 e t e0 t1 e1 ty); simpl in H; simpl; eauto.
       rewrite ecast_typ_id in H. discriminate.
     - inv TRANSL. simpl. destruct_conj WF_EXPR.
       unfold Typing.typof_comp; simpl.
@@ -501,9 +499,9 @@ Section CORRECTNESS.
       destruct (Typing.typof_atom te a); simpl in H; simpl; ecast_typ_err_resolve.
       destruct (Typing.typof_atom te a0); simpl in H; simpl; ecast_typ_err_resolve.
       erewrite eval_atom_match_lenv_eq; eauto.
-      destruct (eval_atom arch tabs te ge le1 t0 a); simpl in H; simpl; ecast_typ_err_resolve.
+      destruct (eval_atom tabs te ge le1 t0 a); simpl in H; simpl; ecast_typ_err_resolve.
       erewrite eval_atom_match_lenv_eq; eauto.
-      destruct (eval_atom arch tabs te ge le1 t a0); simpl in H; simpl; ecast_typ_err_resolve.
+      destruct (eval_atom tabs te ge le1 t a0); simpl in H; simpl; ecast_typ_err_resolve.
       destruct (eval_record_update tabs t0 e i t e0 ty); simpl in H; simpl; eauto.
       rewrite ecast_typ_id in H. discriminate. 
     - destruct a; simpl in H; try discriminate.
@@ -518,8 +516,8 @@ Section CORRECTNESS.
       erewrite eval_var_match_lenv_eq; eauto.
       destruct (eval_var tabs ge le1 i (TFun l0 t0)); simpl in H; simpl; try congruence.
         assert (
-            DList.map2 (eval_typ tabs) (eval_atom arch tabs te ge le2) l l0 =
-              DList.map2 (eval_typ tabs) (eval_atom arch tabs te ge le1) l l0).
+            DList.map2 (eval_typ tabs) (eval_atom tabs te ge le2) l l0 =
+              DList.map2 (eval_typ tabs) (eval_atom tabs te ge le1) l l0).
         {
           apply DList.map2_eq.
           apply Forall_forall.
@@ -529,7 +527,7 @@ Section CORRECTNESS.
           apply C0 ; auto.
         }
         destruct (DList.map2 (eval_typ tabs)
-                    (eval_atom arch tabs te ge le1) l l0) eqn:Hmap2.
+                    (eval_atom tabs te ge le1) l l0) eqn:Hmap2.
       + simpl in H.
         setoid_rewrite H1. simpl.
         rewrite ecast_typ_id in H.
@@ -539,14 +537,14 @@ Section CORRECTNESS.
     - Res.monadInv TRANSL. inv EQ2. simpl.
       destruct_conj WF_EXPR.
       erewrite eval_atom_match_lenv_eq; eauto.
-      destruct (eval_atom arch tabs te ge le1 TBool a); simpl in H; simpl; eauto.
+      destruct (eval_atom tabs te ge le1 TBool a); simpl in H; simpl; eauto.
       destruct e.
       + eapply transl_expr_correct_err with (e := e1); eauto.
       + eapply transl_expr_correct_err with (e := e2); eauto. 
     - Res.monadInv TRANSL. inv EQ0. simpl. destruct_conj WF_EXPR.
       destruct (Typing.typof_atom te a); simpl in H; simpl; eauto.
       erewrite eval_atom_match_lenv_eq; eauto.
-      destruct (eval_atom arch tabs te ge le1 t a); simpl in H; simpl; eauto.
+      destruct (eval_atom tabs te ge le1 t a); simpl in H; simpl; eauto.
       destruct t; simpl in H; inv H; simpl; try unfold efail; eauto.
       revert b le1 le2 ty C C0 NOSHADOW MATCH_LENV i l0 e x EQ H1.
       induction l; intros.
@@ -565,7 +563,7 @@ Section CORRECTNESS.
         rewrite Etypof_expr. simpl.
         simpl in WF_EXPR. apply andb_prop in WF_EXPR. destruct WF_EXPR.
         apply andb_prop in H0. destruct H0. apply andb_prop in H0. destruct H0.
-        destruct (eval_expr_rec arch tabs te ge le1 t e1) eqn:Eeval_e1; simpl in H.
+        destruct (eval_expr_rec tabs te ge le1 t e1) eqn:Eeval_e1; simpl in H.
         * eapply transl_expr_correct_ok in Eeval_e1; eauto.
           destruct Eeval_e1 as [le2' [EVAL_TC [NOSHADOW_LE2' MATCH_LENV_LE2']]].
           rewrite EVAL_TC. simpl. eapply transl_expr_correct_err with (e := e2); eauto.
@@ -590,11 +588,11 @@ Section CORRECTNESS.
     (NOSHADOW: env_noshadow ge le2)
     (MATCH_LENV: match_lenv le1 le2)
     (TRANSL: transl_expr e = OK tc),
-      ImpBNF.eval_tailcomp arch tabs te ge le2 ty tc =
-      BarocqBNF.eval_expr arch tabs te ge le1 ty e. 
+      ImpBNF.eval_tailcomp tabs te ge le2 ty tc =
+      BarocqBNF.eval_expr tabs te ge le1 ty e. 
   Proof.
     intros. unfold eval_expr, eval_tailcomp. 
-    destruct (eval_expr_rec arch tabs te ge le1 ty e) eqn:Eeval_e.
+    destruct (eval_expr_rec tabs te ge le1 ty e) eqn:Eeval_e.
     - eapply transl_expr_correct_ok in Eeval_e; eauto.
       destruct Eeval_e. destruct_conj H. rewrite C. reflexivity.
     - eapply transl_expr_correct_err in Eeval_e; eauto.
@@ -627,8 +625,8 @@ Section CORRECTNESS.
     (CHECK_PARAMS: check_params_noshadow (STree.keys ge) (STree.keys le) params = OK ls)
     (WF_EXPR: wf_expr (STree.keys ge) ls e = true)
     (TRANSL: transl_expr e = OK tc),
-      eval_fun_rec tabs  (eval_tailcomp arch tabs) te ge le params tret tc =
-      eval_fun_rec tabs  (eval_expr arch tabs) te ge le params tret e.
+      eval_fun_rec tabs  (eval_tailcomp tabs) te ge le params tret tc =
+      eval_fun_rec tabs  (eval_expr tabs) te ge le params tret e.
   Proof.
     induction params; intros.
     - simpl. apply Axioms.functional_extensionality; intro.
@@ -666,8 +664,8 @@ Section CORRECTNESS.
   Lemma transl_function_correct:
     forall f f' te ge x
     (TRANSL: transl_function (STree.keys ge) f = OK f'),
-    eval_def_fun tabs (eval_tailcomp arch tabs) te ge x f' =
-    eval_def_fun tabs (eval_expr arch tabs) te ge x f.
+    eval_def_fun tabs (eval_tailcomp tabs) te ge x f' =
+    eval_def_fun tabs (eval_expr tabs) te ge x f.
   Proof.
     unfold transl_function, eval_def_fun, eval_fun. intros.
     destruct f; simpl in TRANSL. Res.monadInv TRANSL. rename x0 into ls.
@@ -698,8 +696,8 @@ Section CORRECTNESS.
   Lemma transl_globdef_correct:
     forall def def' te impl ge
     (TRANSL: transl_globdef (STree.keys ge) def = OK def'),
-      eval_globdef tabs (eval_tailcomp arch tabs) te impl ge def' =
-      eval_globdef tabs (eval_expr arch tabs) te impl ge def.
+      eval_globdef tabs (eval_tailcomp tabs) te impl ge def' =
+      eval_globdef tabs (eval_expr tabs) te impl ge def.
   Proof.
     intros. destruct def;
     simpl in TRANSL; inv TRANSL; try reflexivity.
@@ -710,7 +708,7 @@ Section CORRECTNESS.
 
   Lemma eval_globdef_add_gid:
     forall (T: Type) eval_T te impl ge ge' def, 
-      eval_globdef tabs (EXPR:=T) (eval_T arch tabs) te impl ge def = Some ge' ->
+      eval_globdef tabs (EXPR:=T) (eval_T tabs) te impl ge def = Some ge' ->
       STree.keys ge' = SSet.add (globdef_id def) (STree.keys ge).
   Proof.
     intros; destruct def; simpl in H.
@@ -738,8 +736,8 @@ Section CORRECTNESS.
   Lemma transl_prog_defs_correct:
     forall defs defs' te impl ge
     (TRANSL: transl_prog_defs (STree.keys ge) defs = OK defs'),
-      eval_prog_rec tabs (eval_tailcomp arch tabs) te impl ge defs'=
-      eval_prog_rec tabs (eval_expr arch tabs) te impl ge defs.
+      eval_prog_rec tabs (eval_tailcomp tabs) te impl ge defs'=
+      eval_prog_rec tabs (eval_expr tabs) te impl ge defs.
   Proof.
     unfold eval_prog_rec.
     induction defs; intros.
@@ -747,7 +745,7 @@ Section CORRECTNESS.
     - simpl in TRANSL. Res.monadInv TRANSL. inv EQ2.
       rename a into d. rename x into d'. rename x0 into defs'.
       simpl. rewrite transl_globdef_correct with (def := d); try exact EQ.
-      destruct (eval_globdef tabs  (eval_expr arch tabs) te impl ge d) as [ge' |]eqn:Ege.
+      destruct (eval_globdef tabs  (eval_expr tabs) te impl ge d) as [ge' |]eqn:Ege.
       + apply IHdefs. apply eval_globdef_add_gid in Ege.
         rewrite Ege. exact EQ1.
       + destruct defs.
@@ -759,8 +757,8 @@ Section CORRECTNESS.
   Theorem transl_prog_correct:
     forall impl p p'
     (TRANSL: transl_program p = OK p'),
-      ImpBNF.eval_prog arch tabs impl p' = 
-      BarocqBNF.eval_prog arch tabs impl p.
+      ImpBNF.eval_prog tabs impl p' = 
+      BarocqBNF.eval_prog tabs impl p.
   Proof.
     intros. destruct p, p'.
     unfold transl_program in TRANSL. simpl in TRANSL.

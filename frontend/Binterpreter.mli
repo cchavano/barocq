@@ -1,3 +1,3 @@
 exception Error of string
 
-val interpret : Target.archi -> Barocq.Typed.command list -> unit
+val interpret : Barocq.Typed.command list -> unit

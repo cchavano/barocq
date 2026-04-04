@@ -1,7 +1,7 @@
 (* Imperative Imp1 *)
 From Stdlib Require Import Bool List String PArith Lia Eqdep.
 From compcert Require Import Integers Coqlib.
-From BarocqComp Require Import Denot Benum Barray Brecord Option Maps2 Utils Syntax Types Typing.
+From BarocqComp Require Import Denot Benum Barray Brecord Option Intop Maps2 Utils Syntax Types Typing.
 From BarocqComp Require Import Imp1.
 From BarocqComp Require Printer Pp.
 
@@ -51,13 +51,13 @@ End MAPACC.
 
 Inductive cedge :=
   | CField (id:ident)
-  | CIndex (i:Integers.Int64.int).
+  | CIndex (i: usize).
 
 Definition cedge_eqb (ce1 ce2: cedge) : bool :=
   match ce1, ce2 with
   | CField f1, CField f2 =>
       if Ident.eq_dec f1 f2 then true else false
-  | CIndex i1, CIndex i2 => Int64.eq i1 i2
+  | CIndex i1, CIndex i2 => Intsize.eq i1 i2
   | _, _ => false
   end.
 
@@ -110,7 +110,6 @@ Definition set_addr_of_ptr {ty:typ} (p:ptr ty) (i:positive) : ptr ty :=
 
 
 Section S.
-  Variable arch : Target.archi.
   Variable abs : Maps.PMap.t Type.
 
   Variable abs_dec : forall x,
@@ -1079,20 +1078,14 @@ Section S.
     | _    => fail
     end.
 
-  Definition index_of_pval {ty:typ} (v:pval ty) : option int64 :=
-    if arch
-    then
-      match v with
-      | PInt32 Unsigned i =>  Some (Intop.U64.of_u32 i)
-      | _          => fail
-      end
-    else
-      match v with
-      | PInt64 Unsigned i =>  Some i
-      | _          => fail
-      end.
+  Definition index_of_pval {ty:typ} (v:pval ty) : option usize :=
+    match v with
+    | PInt32 Unsigned i => Some (USIZE.of_u32 i)
+    | PInt64 Unsigned i => Some (USIZE.of_u64 i)
+    | _ => fail
+    end.
 
-  Definition index_of_val {ty :typ} (v:val ty) : option int64 :=
+  Definition index_of_val {ty :typ} (v:val ty) : option usize :=
     match v with
     | Vprim _ pv => index_of_pval pv
     | _       => fail
@@ -1104,7 +1097,7 @@ Section S.
     | _        => fail
     end.
 
-  Definition eval_array_get {ty: typ} (m:mval ty) (i:Integers.Int64.int) (tr:typ) : option (val tr) :=
+  Definition eval_array_get {ty: typ} (m:mval ty) (i: usize) (tr:typ) : option (val tr) :=
     match m with
     | MArray _ l =>  let* v := Barray.get l i in cast_val v tr
     | _ => fail
@@ -1282,8 +1275,9 @@ Section S.
         let* pv := pval_of_typ _ option in val_of_pval (cast_pval pv tyr)
     | AArrayGet a1 i _ bt =>
         let* tya1 := typof_atom te a1 in
+        let* ti := typof_atom te i in
         let* v1 := eval_atom te ge e m tya1 a1 in
-        let* v2 := eval_atom te ge e m (typof_index arch) i  in
+        let* v2 := eval_atom te ge e m ti i  in
         let* i  := index_of_val v2 in
         eval_mem_access m v1 (CIndex i) tyr
     | ARecordProj r id _ bt =>
@@ -1324,8 +1318,9 @@ Section S.
                      Some (va,m)
     | CpArraySet a i v bt =>
         let* tv := typof_atom te v in
+        let* ti := typof_atom te i in
         let* a := eval_atom te ge e m tr a in
-        let* i := eval_atom te ge e m (typof_index arch) i in
+        let* i := eval_atom te ge e m ti i in
         let* v := eval_atom te ge e m tv v in
         let* m := eval_array_set m a i v  in
         Some (a,m)

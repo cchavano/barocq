@@ -187,7 +187,6 @@ Inductive le_KVar : KVar -> KVar -> Prop :=
 
 Section S.
 
-  Variable arch: Target.archi.
   Variable abs : Maps.PMap.t Type.
   Variable abs_dec : forall x,
     forall (v1 v2: SMap.get x abs), {v1 = v2} + {v1 <> v2}.
@@ -199,7 +198,7 @@ Section S.
 
     Fixpoint eval_expr  (ge:genv abs) (ev:env) (m:mem abs) (tyr : typ) (e:GEXPR.t) : res (val tyr) :=
     match e with
-(*    | GEXPR.Atm a    => eval_atom arch abs te ge ev m tyr a*)
+(*    | GEXPR.Atm a    => eval_atom abs te ge ev m tyr a*)
     | GEXPR.Var id   => get_lvar ev id tyr
     | GEXPR.Get e lb => let* e := eval_expr ge ev m tyr e in
                         match lb with
@@ -207,8 +206,8 @@ Section S.
                         | EdgeLabel.Field fid =>
                             eval_mem_access abs m e (CField fid) tyr
                         | EdgeLabel.Index i  =>
-                            let* i := eval_atom arch abs abs_dec te ge ev m tyr i in
-                            let* i  := index_of_val arch i in
+                            let* i := eval_atom abs abs_dec te ge ev m tyr i in
+                            let* i  := index_of_val i in
                             eval_mem_access  abs m e (CIndex i) tyr
                         end
     end.
@@ -357,8 +356,8 @@ Section S.
     | EdgeLabel.Top      => False (* because it is used for must alias *)
     | EdgeLabel.Index i  =>
         exists pv i',
-        eval_atom arch abs abs_dec te ge e m (arr_index_typ arch) i = OK (Vprim (arr_index_typ arch) pv) /\
-          index_of_pval arch pv = OK i' /\ ce = CIndex i'
+        eval_atom abs abs_dec te ge e m (arr_index_typ) i = OK (Vprim (arr_index_typ) pv) /\
+          index_of_pval pv = OK i' /\ ce = CIndex i'
     end.
 
   Definition gamma_may_edge (e:env) (m:mem abs) (el:EdgeLabel.t) (ce:cedge) : Prop :=
@@ -367,8 +366,8 @@ Section S.
     | EdgeLabel.Top      => exists i, ce = CIndex i (* any index *)
     | EdgeLabel.Index i  =>
         exists pv i',
-        eval_atom arch abs abs_dec te ge e m (arr_index_typ arch) i = OK (Vprim (arr_index_typ arch) pv) /\
-          index_of_pval arch pv = OK i' /\ ce = CIndex i'
+        eval_atom abs abs_dec te ge e m (arr_index_typ) i = OK (Vprim (arr_index_typ) pv) /\
+          index_of_pval pv = OK i' /\ ce = CIndex i'
     end.
 
 
@@ -1286,7 +1285,7 @@ Proof.
       revert EA2.
       clear.
       revert pv1 pv2.
-      generalize (arr_index_typ arch) as ti.
+      generalize (arr_index_typ) as ti.
       intros.
       assert (Vprim ti pv1 = Vprim ti pv2) by congruence.
       clear EA2.
@@ -2424,8 +2423,8 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
   Qed.
 
 (*  Fixpoint eval_atom_same_mem (m m': mem abs) (EQ: same_mem m m') (a:atom) : forall ge e tyr,
-      eval_atom arch abs abs_dec te ge e m tyr a =
-        eval_atom arch abs abs_dec te ge e m' tyr a.
+      eval_atom abs abs_dec te ge e m tyr a =
+        eval_atom abs abs_dec te ge e m' tyr a.
   Proof.
     destruct a; simpl; auto.
     - intros.
@@ -2444,7 +2443,7 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
       destruct (typof_atom te a2); try discriminate.
       simpl.
       erewrite eval_atom_same_mem by eauto.
-      destruct (eval_atom arch abs abs_dec te ge e m' t a1); try reflexivity.
+      destruct (eval_atom abs abs_dec te ge e m' t a1); try reflexivity.
       simpl.
       erewrite eval_atom_same_mem by eauto.
       reflexivity.
@@ -2454,21 +2453,21 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
       destruct (typof_atom te a1); try reflexivity.
       simpl.
       erewrite eval_atom_same_mem by eauto.
-      destruct (eval_atom arch abs abs_dec te ge e m' t a1);
+      destruct (eval_atom abs abs_dec te ge e m' t a1);
         try reflexivity.
       simpl.
       erewrite eval_atom_same_mem by eauto.
-      destruct (eval_atom arch abs abs_dec te ge e m');
+      destruct (eval_atom abs abs_dec te ge e m');
         try reflexivity.
       simpl.
-      destruct (index_of_val arch v0); try reflexivity.
+      destruct (index_of_val v0); try reflexivity.
       simpl.
       apply eval_mem_access_same_mem; auto.
     - intros.
       destruct (typof_atom te a); try reflexivity.
       simpl.
       erewrite eval_atom_same_mem by eauto.
-      destruct (eval_atom arch abs abs_dec te ge e m' t a);
+      destruct (eval_atom abs abs_dec te ge e m' t a);
         try reflexivity.
       simpl.
       apply eval_mem_access_same_mem; auto.
@@ -2481,8 +2480,8 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
       simpl.
       destruct (load_fun abs ge v); try reflexivity.
       simpl.
-      assert (map2 val (eval_atom arch abs abs_dec te ge e m) l
-            l0 = map2 val (eval_atom arch abs abs_dec te ge e m') l
+      assert (map2 val (eval_atom abs abs_dec te ge e m) l
+            l0 = map2 val (eval_atom abs abs_dec te ge e m') l
             l0).
       {
         clear - eval_atom_same_mem EQ.
@@ -2490,12 +2489,12 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
         induction l; simpl; auto.
         - destruct l0; simpl; auto.
           rewrite IHl.
-          destruct (map2 val (eval_atom arch abs abs_dec te ge e m') l l0); try reflexivity.
+          destruct (map2 val (eval_atom abs abs_dec te ge e m') l l0); try reflexivity.
           simpl.
           erewrite eval_atom_same_mem; eauto.
       }
       rewrite H.
-      destruct (map2 val (eval_atom arch abs abs_dec te ge e m') l
+      destruct (map2 val (eval_atom abs abs_dec te ge e m') l
             l0); try reflexivity.
       simpl.
       destruct (eval_rapp abs l0 tyr d (t0 m)); try reflexivity.
@@ -2504,7 +2503,7 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
 
 
 
-      destruct (eval_call abs (eval_atom arch abs abs_dec) te ge e m i
+      destruct (eval_call abs (eval_atom abs abs_dec) te ge e m i
         b l tyr) eqn:ECALL.
       destruct p ; simpl.
 
@@ -2609,7 +2608,7 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
     (exists ptr_mem' : ptr_memT (Pto d'),
        is_augmented (Pto d) ptr_mem (Pto d') ptr_mem' /\
          gamma ae d' ptr_mem' ge e m /\
-         forall tyr v, eval_atom arch abs abs_dec te ge e m tyr a = OK v ->
+         forall tyr v, eval_atom abs abs_dec te ge e m tyr a = OK v ->
                          gamma_KVar (Pto d') ptr_mem' ae av tyr v).
 
 
@@ -2627,7 +2626,7 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
               (GAMMAE : gamma_genv ae ge)
               (GAMMA : gamma ae d ptr_mem ge e m)
               (ACALL : aeval_call aeval_atom te ae d f tf l = OK (d', av))
-              (CALL  : eval_call abs (eval_atom arch abs abs_dec) te ge e m f tf
+              (CALL  : eval_call abs (eval_atom abs abs_dec) te ge e m f tf
                          l tyr = OK (v, m')),
       exists ptr_mem' : ptr_memT (Pto d'),
         is_augmented (Pto d) ptr_mem (Pto d') ptr_mem' /\
@@ -2675,7 +2674,7 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
       unfold gamma_afunction in H1.
       destruct H1 as (PARAMS & RET & GAMMAFUN).
       subst.
-      destruct (map2 val (eval_atom arch abs abs_dec te ge e m) l (map snd (fn_params a))) eqn:MAP2; try discriminate.
+      destruct (map2 val (eval_atom abs abs_dec te ge e m) l (map snd (fn_params a))) eqn:MAP2; try discriminate.
       simpl in CALL.
       destruct (bind_args aeval_atom te ae d l (fn_params a)) eqn:BIND ; try discriminate.
       destruct p as (d1,params').
@@ -2715,7 +2714,7 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
           destruct (compat_typ d2 k2 ty) eqn:COMPAT;
             try discriminate.
           simpl in BIND.
-          destruct (map2 val (eval_atom arch abs abs_dec te ge e m) l
+          destruct (map2 val (eval_atom abs abs_dec te ge e m) l
           (map snd tparams)) eqn:MAP2'; try discriminate.
           simpl in MAP2. inv MAP2.
           destruct (bind_args aeval_atom te ae d2 l tparams) eqn: BIND2; try discriminate.
@@ -2725,14 +2724,14 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
           assert (le_domaing d d2 /\  exists ptr_mem' : ptr_memT (Pto d2),
                      is_augmented (Pto d) ptr_mem (Pto d2) ptr_mem' /\
                        gamma ae d2 ptr_mem' ge e m /\
-                       res_pred (gamma_KVar (Pto d2) ptr_mem' ae k2 ty) (eval_atom arch abs abs_dec te ge e m ty a)).
+                       res_pred (gamma_KVar (Pto d2) ptr_mem' ae k2 ty) (eval_atom abs abs_dec te ge e m ty a)).
           {
             exploit aeval_atom_correct;eauto.
             intros (LE & (ptr_mem' & AUG & GAMMAD & GAMMAV)).
             split; auto.
             exists ptr_mem'.
             repeat apply conj; eauto.
-            destruct (eval_atom arch abs abs_dec te ge e m ty a) eqn:EQ; simpl; auto.
+            destruct (eval_atom abs abs_dec te ge e m ty a) eqn:EQ; simpl; auto.
           }
           destruct H as (LE2 &(ptr_mem' & AUG & GAMMA2 & RP)).
           exploit IHl;eauto.
@@ -2745,7 +2744,7 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
           destruct LED3;eauto.
           auto.
           constructor; auto.
-          destruct (eval_atom arch abs abs_dec te ge e m ty a); simpl in *; auto.
+          destruct (eval_atom abs abs_dec te ge e m ty a); simpl in *; auto.
           eapply gamma_KVar_augment; eauto.
           destruct LED3;auto.
       }
@@ -2760,7 +2759,7 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
            (GAMMAE : gamma_genv ae ge)
            (GAMMA : gamma  ae d ptr_mem ge e m)
            (AEVAL : aeval_atom te ae d a = OK (d',av))
-           (EVAL  : eval_atom arch abs abs_dec te ge e m tyr a = OK v),
+           (EVAL  : eval_atom abs abs_dec te ge e m tyr a = OK v),
       le_domaing d d' /\
         exists ptr_mem', is_augmented (Pto d) ptr_mem (Pto d') ptr_mem' /\
                            gamma_with_var ae d' ptr_mem' ge e m av tyr v.
@@ -2831,7 +2830,7 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
       simpl in EVAL.
       destruct (typof_atom te a) eqn:TA; try discriminate.
       simpl in EVAL.
-      destruct (eval_atom arch abs abs_dec te ge e m t0 a) eqn:EA; try discriminate.
+      destruct (eval_atom abs abs_dec te ge e m t0 a) eqn:EA; try discriminate.
       simpl in EVAL.
       destruct v0 ; try discriminate.
       (* This is a primitive value *)
@@ -2857,7 +2856,7 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
       apply is_augmented_refl.
       destruct (btyp_to_typ te b) eqn: BT; try discriminate.
       simpl in EVAL.
-      destruct (eval_atom arch abs abs_dec te ge e m t a) eqn:EA;try discriminate.
+      destruct (eval_atom abs abs_dec te ge e m t a) eqn:EA;try discriminate.
       simpl in EVAL.
       destruct (eval_val abs v0) eqn:EV; try discriminate.
       simpl in EVAL.
@@ -2879,9 +2878,9 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
       simpl in EVAL.
       destruct (typof_atom te a2) eqn: A2; try discriminate.
       simpl in EVAL.
-      destruct (eval_atom arch abs abs_dec te ge e m t a1) eqn:EA1;try discriminate.
+      destruct (eval_atom abs abs_dec te ge e m t a1) eqn:EA1;try discriminate.
       simpl in EVAL.
-      destruct (eval_atom arch abs abs_dec te ge e m t0 a2) eqn:EA2;try discriminate.
+      destruct (eval_atom abs abs_dec te ge e m t0 a2) eqn:EA2;try discriminate.
       simpl in EVAL.
       destruct (eval_val abs v0) eqn:EV0; try discriminate.
       simpl in EVAL.
@@ -2894,11 +2893,11 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
       simpl in EVAL.
       destruct (typof_atom te a1) eqn:TA1; try discriminate.
       simpl in EVAL.
-      destruct (eval_atom arch abs abs_dec te ge e m t a1) eqn:EA1 ; try discriminate.
+      destruct (eval_atom abs abs_dec te ge e m t a1) eqn:EA1 ; try discriminate.
       simpl in EVAL.
-      destruct (eval_atom arch abs abs_dec te ge e m (Barocq.typof_index arch) a2) eqn:EA2 ; try discriminate.
+      destruct (eval_atom abs abs_dec te ge e m (Barocq.typof_index) a2) eqn:EA2 ; try discriminate.
       simpl in EVAL.
-      destruct (index_of_val arch v1) eqn:IDX; try discriminate.
+      destruct (index_of_val v1) eqn:IDX; try discriminate.
       simpl in EVAL.
       simpl in AEVAL.
       unfold array_get in AEVAL.
@@ -2935,9 +2934,9 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
           clear - IDX EA2.
           unfold index_of_val in IDX.
           destruct v1 ; try discriminate.
-          assert (ty = arr_index_typ arch).
+          assert (ty = arr_index_typ).
           { unfold index_of_pval in IDX.
-            destruct arch, p ; try discriminate.
+            destruct, p ; try discriminate.
             destruct s; try discriminate.
             reflexivity.
             destruct s; try discriminate.
@@ -2969,7 +2968,7 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
       simpl in EVAL.
       destruct (typof_atom te a) eqn:TA; try discriminate.
       simpl in EVAL.
-      destruct (eval_atom arch abs abs_dec te ge e m t a) eqn:EA1 ; try discriminate.
+      destruct (eval_atom abs abs_dec te ge e m t a) eqn:EA1 ; try discriminate.
       simpl in EVAL.
       simpl in AEVAL.
       unfold record_proj_get in AEVAL.
@@ -3015,7 +3014,7 @@ Lemma gamma_set_pto_atom_same : forall ae d a ptr_mem ge e m,
       destruct (IsPure d1) eqn:D1; try discriminate.
       inv AEVAL.
       simpl in EVAL.
-      destruct (eval_call abs (eval_atom arch abs abs_dec) te ge e m
+      destruct (eval_call abs (eval_atom abs abs_dec) te ge e m
           i b l tyr) eqn:ECALL ; try discriminate.
       simpl in EVAL.
       destruct p as (v',m').
