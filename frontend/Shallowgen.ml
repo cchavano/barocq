@@ -250,7 +250,12 @@ let binary_op_to_rocq (ty : mtyp) (op : binary_op) : string =
 
 let is_simpl_atom (a : atom) : bool =
   match a with
-  | ATrue | AFalse | AVar _ -> true
+  | ATrue | AFalse | AInt32 _ | AInt64 _ | AConstr _ | AVar _ -> true
+  | ARecordProj _ ->
+      begin match !shver with
+      | BarocqShallowgen.ShallowR -> true
+      | _ -> false
+      end
   | _ -> false
 
 let field_name_prefix (ty : mtyp) : string =

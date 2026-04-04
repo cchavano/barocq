@@ -30,10 +30,10 @@ Definition Kernel_update_proc_status (p_ks: Kernel_state) (p_pid: u64) (p_status
 Definition Kernel_schedule (p_ks: Kernel_state) (p_now: u64) : option Kernel_state :=
   if (Int64.cmpu Cgt p_now (Brecord.project p_ks "deadline" eq_refl)) then
     let u1_curr_pid := Brecord.project p_ks "curr_pid" eq_refl in
-    let* u1_next_pid := (u1_curr_pid +₆₄ (1UL)) modu₆₄ Kernel_nb_procs in
+    let* u1_next_pid := (u1_curr_pid +₆₄ 1UL) modu₆₄ Kernel_nb_procs in
     let u1_next_deadline := p_now +₆₄ Kernel_quantum in
-    let* u1_ks := Kernel_update_proc_status p_ks u1_curr_pid (kernel_Types.Kernel_READY) in
-    let* u2_ks := Kernel_update_proc_status u1_ks u1_next_pid (kernel_Types.Kernel_RUNNING) in
+    let* u1_ks := Kernel_update_proc_status p_ks u1_curr_pid kernel_Types.Kernel_READY in
+    let* u2_ks := Kernel_update_proc_status u1_ks u1_next_pid kernel_Types.Kernel_RUNNING in
     let u3_ks :=
       let b2 := u2_ks @ "curr_pid" <- u1_next_pid in
       b2 @ "deadline" <- u1_next_deadline
