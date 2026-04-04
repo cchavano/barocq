@@ -285,8 +285,8 @@ module HelperTactics = struct
       (fun (ed_name, _) ->
         let eid = ident_to_string ed_name in
         sprintf
-          "Hint Rewrite cast_i32_to_%s_corres : corresRB_types.\n\
-           Hint Rewrite cast_%s_to_i32_corres : corresRB_types.\n\
+          "Hint Rewrite %s_of_Z_corres : corresRB_types.\n\
+           Hint Rewrite %s_to_Z_corres : corresRB_types.\n\
            Hint Rewrite enum_eq_%s_corres : corresRB_types.\n\
            Hint Unfold Benum.enum_neq : corresRB_types.\n\
            Hint Unfold %s_neq : corresRB_types.\n"
@@ -513,14 +513,13 @@ module HelperTactics = struct
           | _ -> false)
         prog.prog_defs
     in
-    let cast_i32_to_enum_destruct (enums : ident list Maps2.smaplist) : string =
+    let enum_of_Z_destruct (enums : ident list Maps2.smaplist) : string =
       list_to_string
         ~sep:"\n"
         (fun (ed_name, _) ->
           let eid = ident_to_string ed_name in
           sprintf
-            "%s| cast_i32_to_%s ?X =>\n\
-             %sdestruct (cast_i32_to_%s X); simpl; try reflexivity"
+            "%s| %s_of_Z ?X =>\n%sdestruct (%s_of_Z X); simpl; try reflexivity"
             indent
             eid
             indent3
@@ -574,7 +573,7 @@ module HelperTactics = struct
       indent
       indent
       indent
-      (cast_i32_to_enum_destruct enums)
+      (enum_of_Z_destruct enums)
       indent
       indent
       indent

@@ -18,4 +18,4 @@ depends: [
 ]
 pin-depends: ["compcert-ce.3.17-20260403ce" "git+https://gitlab.inria.fr/cchavano/compcert-ce.git"]
 build: [[make]]
-install: [make "install" "install-dev"]
+install: [make "install-all"]

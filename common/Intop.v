@@ -56,6 +56,8 @@ End INTTYPE.
 
 Module Make(INT: INTTYPE).
 
+  Definition of_Z (x: Z) : INT.int := INT.repr x.
+
   Definition of_bool (b: bool) : INT.int :=
     if b then INT.one else INT.zero.
 

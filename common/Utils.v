@@ -68,16 +68,16 @@ Definition fresh_var_err (pre: string) : crmon ident :=
 
 Close Scope state_err_monad_scope.
 
-Definition cast_enum {A: Type} (l:list A) (i:int) : option A :=
-  list_nth_z l (Int.signed i).
+Definition cast_enum {A: Type} (l:list A) (z: Z) : option A :=
+  list_nth_z l z.
 
-Lemma cast_enum_Some : forall {A: Type} (l:list A) (i:int),
-    0 <= Int.signed i < Zlength l ->
-    exists v, cast_enum l i = Some v.
+Lemma cast_enum_Some : forall {A: Type} (l:list A) (z: Z),
+    0 <= z < Zlength l ->
+    exists v, cast_enum l z = Some v.
 Proof.
   intros.
   unfold cast_enum.
-  destruct (list_nth_z l (Int.signed i)) eqn:GET.
+  destruct (list_nth_z l z) eqn:GET.
   eexists ; split; eauto.
   rewrite <- list_nth_z_Some in H. congruence.
 Qed.

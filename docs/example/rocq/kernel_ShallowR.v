@@ -2,10 +2,7 @@ From Stdlib Require Import Bool List BinIntDef.
 From compcert Require Import Integers.
 From RecordUpdate Require Import RecordUpdate.
 From BarocqComp Require Import Option Barray Intop Utils.
-Import BoolNotations ListNotations BarocqNotations.
-
-Open Scope Z_scope.
-Local Open Scope option_monad_scope.
+From BarocqComp Require Import ShallowNotations.
 
 (** * Abstract types *)
 
@@ -18,15 +15,15 @@ Inductive Kernel_proc_status :=
   | Kernel_RUNNING.
 
 Record Kernel_proc := mk_Kernel_proc {
-  kernel_proc_pid: int64;
-  kernel_proc_regs: list int64;
+  kernel_proc_pid: u64;
+  kernel_proc_regs: list u64;
   kernel_proc_status: Kernel_proc_status
 }.
 
 Record Kernel_state := mk_Kernel_state {
-  kernel_state_curr_pid: int64;
+  kernel_state_curr_pid: u64;
   kernel_state_procs: list Kernel_proc;
-  kernel_state_deadline: int64;
+  kernel_state_deadline: u64;
   kernel_state_mc: Machine_state
 }.
 
@@ -52,37 +49,36 @@ Definition Kernel_proc_status_eq (x y: Kernel_proc_status) : bool :=
 Definition Kernel_proc_status_neq (x y: Kernel_proc_status) : bool :=
   negb (Kernel_proc_status_eq x y).
 
-Definition cast_Kernel_proc_status_to_i32 (e: Kernel_proc_status) : int :=
+Definition Kernel_proc_status_to_Z (e: Kernel_proc_status) : Z :=
   match e with
-  | Kernel_READY => Int.repr 0
-  | Kernel_RUNNING => Int.repr 1
+  | Kernel_READY => 0
+  | Kernel_RUNNING => 1
   end.
 
-Definition cast_i32_to_Kernel_proc_status (i: int) : option Kernel_proc_status :=
-  cast_enum  [
+Definition Kernel_proc_status_of_Z (z: Z) : option Kernel_proc_status :=
+  cast_enum [
     Kernel_READY;
     Kernel_RUNNING
-  ]
-  i.
+  ] z.
 
 Definition neqb (b1 b2: bool) := negb (eqb b1 b2).
 
 (** * Program *)
 
-Parameter Machine_write_timecmp : Machine_state -> int64 -> option Machine_state.
+Parameter Machine_write_timecmp : Machine_state -> u64 -> option Machine_state.
 
-Definition Kernel_nb_procs : int64 := 5UL.
+Definition Kernel_nb_procs : u64 := 5UL.
 
-Definition Kernel_quantum : int64 := 100UL.
+Definition Kernel_quantum : u64 := 100UL.
 
-Definition Kernel_update_proc_status (ks: Kernel_state) (pid: int64) (status: Kernel_proc_status) : option Kernel_state :=
+Definition Kernel_update_proc_status (ks: Kernel_state) (pid: u64) (status: Kernel_proc_status) : option Kernel_state :=
   let procs := ks.(kernel_state_procs) in
   let* proc := procs.[pid] in
   let proc := proc <| kernel_proc_status := status |> in
   let* procs := procs.[pid <- proc] in
   ret (ks <| kernel_state_procs := procs |>).
 
-Definition Kernel_schedule (ks: Kernel_state) (now: int64) : option Kernel_state :=
+Definition Kernel_schedule (ks: Kernel_state) (now: u64) : option Kernel_state :=
   if (Int64.cmpu Cgt now (ks.(kernel_state_deadline))) then
     let curr_pid := ks.(kernel_state_curr_pid) in
     let* next_pid := (curr_pid +₆₄ (1UL)) modu₆₄ Kernel_nb_procs in

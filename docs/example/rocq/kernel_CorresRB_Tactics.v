@@ -15,8 +15,8 @@ Hint Rewrite constr_Kernel_RUNNING_RtoB_corres : corresRB_consts.
 Hint Rewrite constr_Kernel_RUNNING_BtoR_corres : corresRB_pattern_matching.
 Hint Rewrite constr_Kernel_RUNNING_make_ok : corresRB_pattern_matching.
 
-Hint Rewrite cast_i32_to_Kernel_proc_status_corres : corresRB_types.
-Hint Rewrite cast_Kernel_proc_status_to_i32_corres : corresRB_types.
+Hint Rewrite Kernel_proc_status_of_Z_corres : corresRB_types.
+Hint Rewrite Kernel_proc_status_to_Z_corres : corresRB_types.
 Hint Rewrite enum_eq_Kernel_proc_status_corres : corresRB_types.
 Hint Unfold Benum.enum_neq : corresRB_types.
 Hint Unfold Kernel_proc_status_neq : corresRB_types.
@@ -93,8 +93,8 @@ Ltac corres_rb_match P :=
   | Intop.U32.mod ?X ?Y => destruct (Intop.U32.mod X Y); simpl; try reflexivity
   | Intop.I64.mod ?X ?Y => destruct (Intop.I64.mod X Y); simpl; try reflexivity
   | Intop.U64.mod ?X ?Y => destruct (Intop.U64.mod X Y); simpl; try reflexivity
-  | cast_i32_to_Kernel_proc_status ?X =>
-      destruct (cast_i32_to_Kernel_proc_status X); simpl; try reflexivity
+  | Kernel_proc_status_of_Z ?X =>
+      destruct (Kernel_proc_status_of_Z X); simpl; try reflexivity
   | Benum.enum_eq (_ ?E) _ => destruct E; try reflexivity
   | Benum.match_with_err (_ ?E) _ => pattern_match_err_corres E
   | Barray.get ?A ?I =>

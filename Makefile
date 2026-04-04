@@ -118,12 +118,6 @@ install:
 	@echo INSTALL barocq to $(INSTALL_DIR)/barocq
 	@install barocq $(INSTALL_DIR)/barocq
 
-uninstall:
-	rm -f $(INSTALL_DIR)/barocq
-
-uninstall-dev:
-	rm -rf $(INSTALL_DEV_DIR)
-
 install-dev:
 	@echo INSTALL Rocq files in $(INSTALL_DEV_DIR)
 	@for d in $(VDIRS); do \
@@ -133,6 +127,18 @@ install-dev:
 	done
 	@install -d $(INSTALL_DEV_DIR)/misc
 	@install misc/CorresBD_Proof.v $(INSTALL_DEV_DIR)/misc/CorresBD_Proof.v
+
+install-all:
+	$(MAKE) install install-dev
+
+uninstall:
+	rm -f $(INSTALL_DIR)/barocq
+
+uninstall-dev:
+	rm -rf $(INSTALL_DEV_DIR)
+
+uninstall-all:
+	$(MAKE) uninstall uninstall-dev
 
 # Formatting
 
@@ -161,11 +167,17 @@ clean:
 	rm -f .depend
 	rm -f barocq
 
+cleanall:
+	$(MAKE) clean
+	$(MAKE) uninstall-all
+
 FORCE:
 
 .PHONY:\
 	builddir extrdep vbuild depend depend1\
-    vofiles clean extraction format install FORCE\
-	theories install-dev uninstall uninstall-dev
+    vofiles extraction format theories FORCE\
+	install install-dev install-all\
+	uninstall uninstall-dev uninstall-all\
+	clean clean_theories cleanall
 
 -include .depend

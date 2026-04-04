@@ -36,7 +36,7 @@ Ltac has_property_FFI :=
 
 Opaque Benum.enum_eq_dec.
 Opaque Benum.match_with_err.
-Opaque Benum.of_i32.
+Opaque Benum.of_Z.
 Opaque Int.add Int64.add.
 Opaque Int.sub Int64.sub.
 Opaque Int.mul Int64.mul.

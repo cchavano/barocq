@@ -114,20 +114,20 @@ Proof.
   reflexivity.
 Qed.
 
-Lemma cast_i32_to_Kernel_proc_status_corres :
-  forall (i: int),
-  Benum.of_i32 elems_of_Kernel_proc_status i =
-  let* e := kernel_ShallowR.cast_i32_to_Kernel_proc_status i in
+Lemma Kernel_proc_status_of_Z_corres :
+  forall (z: Z),
+  Benum.of_Z elems_of_Kernel_proc_status z =
+  let* e := kernel_ShallowR.Kernel_proc_status_of_Z z in
   Some (econv_Kernel_proc_status_RtoB e).
 Proof.
-  intro. unfold Benum.of_i32. unfold cast_i32_to_Kernel_proc_status.
+  intro. unfold Benum.of_Z. unfold Kernel_proc_status_of_Z.
   apply castZ_eqb_sound. reflexivity.
 Qed.
 
-Lemma cast_Kernel_proc_status_to_i32_corres :
+Lemma Kernel_proc_status_to_Z_corres :
   forall (e: kernel_ShallowR.Kernel_proc_status),
-  Benum.to_i32 (econv_Kernel_proc_status_RtoB e) =
-  kernel_ShallowR.cast_Kernel_proc_status_to_i32 e.
+  Benum.to_Z (econv_Kernel_proc_status_RtoB e) =
+  kernel_ShallowR.Kernel_proc_status_to_Z e.
 Proof.
   intro; destruct e; reflexivity.
 Qed.

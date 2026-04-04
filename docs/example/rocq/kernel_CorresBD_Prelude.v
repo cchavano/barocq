@@ -92,7 +92,6 @@ Definition prop_list : list propt :=
     ("Kernel_schedule",VAL Deeptypes.typof_Kernel_schedule kernel_ShallowB.Kernel_schedule)
   ].
 
-Definition arch : Target.archi := Target.Ptr64.
 
 Definition needed_checked_Machine_write_timecmp : list propt := [].
 Definition needed_checked_Kernel_update_proc_status : list propt := []  .
@@ -109,12 +108,12 @@ Definition params_Kernel_schedule : list (ident * typ) := [("p_ks", Deeptypes.Ke
 Definition vc : list Prop :=
   [
     let ge := genv_has_property abs_types_impl STree.empty needed_checked_Kernel_schedule in
-      let v : #Deeptypes.typof_Kernel_schedule := eval_fun arch abs_types_impl typing_env ge params_Kernel_schedule Deeptypes.Kernel_state (Syntax.fn_body kernel_Deep.fun_Kernel_schedule) in
+      let v : #Deeptypes.typof_Kernel_schedule := eval_fun abs_types_impl typing_env ge params_Kernel_schedule Deeptypes.Kernel_state (Syntax.fn_body kernel_Deep.fun_Kernel_schedule) in
 eq_value abs_types_impl (VAL Deeptypes.typof_Kernel_schedule Kernel_schedule) _ v
 ;
     (* ========================== *)
     let ge := genv_has_property abs_types_impl STree.empty needed_checked_Kernel_update_proc_status in
-      let v : #Deeptypes.typof_Kernel_update_proc_status := eval_fun arch abs_types_impl typing_env ge params_Kernel_update_proc_status Deeptypes.Kernel_state (Syntax.fn_body kernel_Deep.fun_Kernel_update_proc_status) in
+      let v : #Deeptypes.typof_Kernel_update_proc_status := eval_fun abs_types_impl typing_env ge params_Kernel_update_proc_status Deeptypes.Kernel_state (Syntax.fn_body kernel_Deep.fun_Kernel_update_proc_status) in
 eq_value abs_types_impl (VAL Deeptypes.typof_Kernel_update_proc_status Kernel_update_proc_status) _ v
 ;
     (* ========================== *)

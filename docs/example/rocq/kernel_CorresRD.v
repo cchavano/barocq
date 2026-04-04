@@ -1,6 +1,6 @@
 From Stdlib Require Import String.
 From compcert Require Import Integers.
-From BarocqComp Require Import Target StateMonads Option Barray Brecord Types Barocq.
+From BarocqComp Require Import StateMonads Option Intop Barray Brecord Types Barocq.
 From kernel Require Import kernel_Types kernel_ShallowR kernel_Deep kernel_CorresBD_Prelude.
 From kernel Require kernel_CorresRB kernel_CorresBD.
 
@@ -14,7 +14,7 @@ Definition eval_def := kernel_CorresBD.eval_def.
 Theorem fun_Machine_write_timecmp_corres :
   exists Machine_write_timecmp_val,
   eval_def "Machine_write_timecmp" = Some (VAL Deeptypes.typof_Machine_write_timecmp Machine_write_timecmp_val) /\
-  (forall (a0: Machine_state) (a1: int64),
+  (forall (a0: Machine_state) (a1: u64),
    Machine_write_timecmp_val a0 a1 =
    kernel_ShallowR.Machine_write_timecmp a0 a1).
 Proof.
@@ -41,7 +41,7 @@ Qed.
 Theorem fun_Kernel_update_proc_status_corres :
   exists Kernel_update_proc_status_val,
   eval_def "Kernel_update_proc_status" = Some (VAL Deeptypes.typof_Kernel_update_proc_status Kernel_update_proc_status_val) /\
-  (forall (ks: Kernel_state) (pid: int64) (status: Kernel_proc_status),
+  (forall (ks: Kernel_state) (pid: u64) (status: Kernel_proc_status),
    Kernel_update_proc_status_val (rconv_Kernel_state_RtoB ks) pid (econv_Kernel_proc_status_RtoB status) =
    let* r := kernel_ShallowR.Kernel_update_proc_status ks pid status in
    Some (rconv_Kernel_state_RtoB r)).
@@ -57,7 +57,7 @@ Qed.
 Theorem fun_Kernel_schedule_corres :
   exists Kernel_schedule_val,
   eval_def "Kernel_schedule" = Some (VAL Deeptypes.typof_Kernel_schedule Kernel_schedule_val) /\
-  (forall (ks: Kernel_state) (now: int64),
+  (forall (ks: Kernel_state) (now: u64),
    Kernel_schedule_val (rconv_Kernel_state_RtoB ks) now =
    let* r := kernel_ShallowR.Kernel_schedule ks now in
    Some (rconv_Kernel_state_RtoB r)).

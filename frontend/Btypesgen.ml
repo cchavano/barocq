@@ -277,21 +277,21 @@ module EnumConv = struct
       indent
       indent
 
-  let gen_of_i32_corres ((ed_name, ed_elems) : ident * ident list) : string =
+  let gen_enum_of_Z_corres ((ed_name, ed_elems) : ident * ident list) : string =
     let eid = ident_to_string ed_name in
     let proof : string =
       sprintf
-        "%sintro. unfold Benum.of_i32. unfold cast_i32_to_%s.\n\
+        "%sintro. unfold Benum.of_Z. unfold %s_of_Z.\n\
          %sapply castZ_eqb_sound. reflexivity."
         indent
         eid
         indent
     in
     sprintf
-      "Lemma cast_i32_to_%s_corres :\n\
-       %sforall (i: int),\n\
-       %sBenum.of_i32 elems_of_%s i =\n\
-       %slet* e := %s.cast_i32_to_%s i in\n\
+      "Lemma %s_of_Z_corres :\n\
+       %sforall (z: Z),\n\
+       %sBenum.of_Z elems_of_%s z =\n\
+       %slet* e := %s.%s_of_Z z in\n\
        %sSome (econv_%s_RtoB e).\n\
        Proof.\n\
        %s\n\
@@ -307,13 +307,13 @@ module EnumConv = struct
       eid
       proof
 
-  let gen_to_32_corres ((ed_name, ed_elems) : ident * ident list) : string =
+  let gen_enum_to_Z_corres ((ed_name, ed_elems) : ident * ident list) : string =
     let eid = ident_to_string ed_name in
     sprintf
-      "Lemma cast_%s_to_i32_corres :\n\
+      "Lemma %s_to_Z_corres :\n\
        %sforall (e: %s.%s),\n\
-       %sBenum.to_i32 (econv_%s_RtoB e) =\n\
-       %s%s.cast_%s_to_i32 e.\n\
+       %sBenum.to_Z (econv_%s_RtoB e) =\n\
+       %s%s.%s_to_Z e.\n\
        Proof.\n\
        %sintro; destruct e; reflexivity.\n\
        Qed."
@@ -449,8 +449,8 @@ module EnumConv = struct
 
   let print_i32_casts_corres (out : out_channel)
       (enums : ident list Maps2.smaplist) : unit =
-    print_list out ~delim:("", "\n\n") ~sep:"\n\n" gen_of_i32_corres enums;
-    print_list out ~delim:("", "\n") ~sep:"\n\n" gen_to_32_corres enums
+    print_list out ~delim:("", "\n\n") ~sep:"\n\n" gen_enum_of_Z_corres enums;
+    print_list out ~delim:("", "\n") ~sep:"\n\n" gen_enum_to_Z_corres enums
 
   let print_eq_corres (out : out_channel) (enums : ident list Maps2.smaplist) :
       unit =

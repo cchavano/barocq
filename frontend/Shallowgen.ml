@@ -260,6 +260,14 @@ let field_name_prefix (ty : mtyp) : string =
 
 let typof_atom (a : atom) : mtyp = BarocqShallowgen.Monadification.typof_atom a
 
+let imod_of_mtyp (ty : mtyp) : string =
+  match ty with
+  | MInt32 Signed -> "I32"
+  | MInt32 Unsigned -> "U32"
+  | MInt64 Signed -> "I64"
+  | MInt64 Unsigned -> "U64"
+  | _ -> ""
+
 let rec atom_to_rocq (a : atom) : string =
   match a with
   | ATrue -> "true"
@@ -280,30 +288,29 @@ let rec atom_to_rocq (a : atom) : string =
           let cast_op =
             match !shver with
             | BarocqShallowgen.ShallowR ->
-                sprintf "cast_%s_to_i32" (ident_to_string tid)
-            | BarocqShallowgen.ShallowB -> "Benum.to_i32"
+                sprintf "%s_to_Z" (ident_to_string tid)
+            | BarocqShallowgen.ShallowB -> "Benum.to_Z"
           in
-          if dst_ty = MInt32 Signed then sprintf "%s %s" cast_op (opt_parens a1)
-          else
-            sprintf
-              "%s (%s %s)"
-              (cast_to_rocq (MInt32 Signed) dst_ty)
-              cast_op
-              (opt_parens a1)
+
+          sprintf
+            "%s.of_Z (%s %s)"
+            (imod_of_mtyp dst_ty)
+            cast_op
+            (opt_parens a1)
       | _ ->
           begin match dst_ty with
           | MEnum tid ->
               let cast_op =
                 match !shver with
                 | BarocqShallowgen.ShallowR ->
-                    sprintf "cast_i32_to_%s" (ident_to_string tid)
+                    sprintf "%s_of_Z" (ident_to_string tid)
                 | BarocqShallowgen.ShallowB ->
-                    sprintf "Benum.of_i32 elems_of_%s" (ident_to_string tid)
+                    sprintf "Benum.of_Z elems_of_%s" (ident_to_string tid)
               in
               sprintf
-                "%s (%s %s)"
+                "%s (%s.to_Z %s)"
                 cast_op
-                (cast_to_rocq t1 (MInt32 Signed))
+                (imod_of_mtyp t1)
                 (opt_parens a1)
           | _ ->
               if t1 = dst_ty then atom_to_rocq a1
@@ -652,48 +659,41 @@ module SR = struct
     in
     sprintf "%s\n\n%s\n\n%s" eq_dec eq neq
 
-  let gen_enum_i32_cast ((ed_name, ed_elems) : ident * ident list) : string =
+  let gen_enum_Z_cast ((ed_name, ed_elems) : ident * ident list) : string =
     let eid = ident_to_string ed_name in
     let rec gen_elems_cast (elems : ident list) (acc : int) : string =
       match elems with
       | [] -> assert false
-      | ex :: [] ->
-          sprintf "%s| %s => Int.repr %d" indent (ident_to_string ex) acc
+      | ex :: [] -> sprintf "%s| %s => %d" indent (ident_to_string ex) acc
       | ex :: elems' ->
           sprintf
-            "%s| %s => Int.repr %d\n%s"
+            "%s| %s => %d\n%s"
             indent
             (ident_to_string ex)
             acc
             (gen_elems_cast elems' (acc + 1))
     in
     sprintf
-      "Definition cast_%s_to_i32 (e: %s) : int :=\n%smatch e with\n%s\n%send."
+      "Definition %s_to_Z (e: %s) : Z :=\n%smatch e with\n%s\n%send."
       eid
       eid
       indent
       (gen_elems_cast ed_elems 0)
       indent
 
-  let gen_i32_enum_cast ((ed_name, ed_elems) : ident * ident list) : string =
+  let gen_Z_enum_cast ((ed_name, ed_elems) : ident * ident list) : string =
     let eid = ident_to_string ed_name in
     let cast_body =
       sprintf
-        "%scast_enum%s[\n%s\n%s]\n%si"
-        indent
+        "%scast_enum [\n%s\n%s] z"
         indent
         (list_to_string
            ~sep:";\n"
            (fun constr -> sprintf "%s%s" indent2 (ident_to_string constr))
            ed_elems)
         indent
-        indent
     in
-    sprintf
-      "Definition cast_i32_to_%s (i: int) : option %s :=\n%s."
-      eid
-      eid
-      cast_body
+    sprintf "Definition %s_of_Z (z: Z) : option %s :=\n%s." eid eid cast_body
 
   let imports : string =
     "From Stdlib Require Import Bool List BinIntDef.\n\
@@ -736,9 +736,9 @@ module SR = struct
       fprintf out "\n";
       print_list out ~delim:("", "\n") ~sep:"\n\n" gen_enum_eq_dec enums;
       fprintf out "\n";
-      print_list out ~delim:("", "\n") ~sep:"\n\n" gen_enum_i32_cast enums;
+      print_list out ~delim:("", "\n") ~sep:"\n\n" gen_enum_Z_cast enums;
       fprintf out "\n";
-      print_list out ~delim:("", "\n") ~sep:"\n\n" gen_i32_enum_cast enums
+      print_list out ~delim:("", "\n") ~sep:"\n\n" gen_Z_enum_cast enums
     end;
     fprintf out "\n";
     fprintf out "Definition neqb (b1 b2: bool) := negb (eqb b1 b2).\n";

@@ -159,7 +159,6 @@ Proof.
       reflexivity.
 Qed.
 
-
 Definition ident_of_constr {elems: list ident} (e: enum elems) : ident.
   induction elems as [| e0 elems0].
   - destruct e.
@@ -170,26 +169,31 @@ Definition ident_of_constr {elems: list ident} (e: enum elems) : ident.
       * apply (IHelems0 e).
 Defined.
 
-Definition to_i32 {elems: list ident} (e: enum elems) : int :=
-  let fix aux (elems0: list ident) (ctr: int) : int :=
+Definition to_Z {elems: list ident} (e: enum elems) : Z :=
+  let fix aux (elems0: list ident) (ctr: Z) : Z :=
     match elems0 with
-    | nil => Int.mone
+    | nil => 0%Z
     | ei :: elems0' =>
         if Ident.eq_dec ei (ident_of_constr e) then ctr
-        else aux elems0' (Int.add ctr Int.one)
+        else aux elems0' (Z.add ctr 1%Z)
     end
   in
-  aux elems Int.zero.
+  aux elems 0%Z.
 
-
-Definition of_i32 (elems: list ident) (i: int) : option (enum elems) :=
-    let* ei := list_nth_z elems (Int.signed i) in
+Definition of_Z (elems: list ident) (z: Z) : option (enum elems) :=
+    let* ei := list_nth_z elems z in
     make_enum elems ei.
+
+Definition to_bool {elems} (e: enum elems) : bool :=
+  negb (Z.eq_dec (to_Z e) 0%Z).
+
+Definition of_bool (elems: list ident) (b: bool) : option (enum elems) :=
+  let* eb := list_nth_z elems (if b then 1%Z else 0%Z) in
+  make_enum elems eb.
 
 Inductive pattern : Type :=
   | PIdent (i: ident) (z: Z) : pattern
   | PWildcard : pattern.
-
 
 Fixpoint match_with_err {elems: list ident} {A: Type} (e: enum elems) (cases: list (pattern * option A)) : option A :=
   match cases with
@@ -203,8 +207,6 @@ Fixpoint match_with_err {elems: list ident} {A: Type} (e: enum elems) (cases: li
       | PWildcard => ai
       end
   end.
-
-
 
 Fixpoint match_with_err2 {elems: list ident} {A E: Type} (e: enum elems) (cases: list (pattern * option A))
   (E_eq_dec: forall (x y: E), {x = y} + {x <> y}) (f: enum elems -> E) : option A :=
@@ -304,7 +306,6 @@ Proof.
   reflexivity.
 Qed.
 
-
 Lemma make_enum_inv : forall elems id id' (EQ: existsb (eqb id) elems = true) (EQ':existsb (eqb id') elems = true),
     make_enum elems id = make_enum elems id' ->
     id = id'.
@@ -352,8 +353,6 @@ Proof.
       congruence.
 Qed.
 
-
-
 Lemma mk_enum_inv : forall elems id id' EQ EQ',
     mk_enum elems id EQ = mk_enum elems id' EQ' ->
     id = id'.
@@ -395,7 +394,6 @@ Proof.
   revert e.
   apply forallb_enum_correct; auto.
 Qed.
-
 
 Definition cast_eqb {A: Type} (l:list ident) (F : A -> enum l) (l1:list ident)  (l2:list A) :=
   forall2b (fun x y => match make_enum l x with

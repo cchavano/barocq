@@ -117,14 +117,13 @@ Section DENOT.
   Definition partial2 {A B C: Type} (F : A -> B -> C) : A -> B -> option C :=
     fun x y => Some (F x y).
 
-
   Definition get_cast (ty:typ) (ty':typ) : option (eval_typ ty -> option (eval_typ ty')) :=
     match ty, ty' with
       (* TBool *)
     | TBool , TBool => Some (fun x => Some x)
     | TBool , TInt32 s => Some (partial (if s then I32.of_bool else U32.of_bool))
     | TBool , TInt64 s => Some (partial (if s then I64.of_bool else U64.of_bool))
-    | TBool , TEnum eid elems => Some (fun x => Benum.of_i32 elems (I32.of_bool x))
+    | TBool , TEnum eid elems => Some (fun x => Benum.of_bool elems x)
        (* TInt32 *)
     | TInt32 s , TBool =>  Some (partial (if s then I32.to_bool else U32.to_bool))
     | TInt32 s , TInt32 s' => Some (partial (match s , s' with
@@ -138,7 +137,7 @@ Section DENOT.
                                               | Unsigned, Signed => I64.of_u32
                                               | Unsigned, Unsigned => U64.of_u32
                                               end))
-    | TInt32 s ,  TEnum eid elems => Some (fun x => Benum.of_i32 elems (if s then x else I32.of_u32 x))
+    | TInt32 s ,  TEnum eid elems => Some (fun x => Benum.of_Z elems (if s then I32.to_Z x else U32.to_Z x))
                  (*  Tint64 *)
     | TInt64 s , TBool => Some (partial (if s then I64.to_bool else U64.to_bool))
     | TInt64 s , TInt32 s' => Some (partial (
@@ -154,16 +153,15 @@ Section DENOT.
                                        | Unsigned, Signed => I64.of_u64
                                        | _, _ => fun x => x
                                        end))
-    | TInt64 s , TEnum eid elems => Some (fun x => Benum.of_i32 elems (if s then I32.of_i64 x else I32.of_u64 x))
+    | TInt64 s , TEnum eid elems => Some (fun x => Benum.of_Z elems (if s then I64.to_Z x else U64.to_Z x))
             (* Tenum *)
-    | TEnum tid elems , TBool  => Some (partial (fun x => I32.to_bool (Benum.to_i32 x)))
-    | TEnum tid elems , TInt32 s => Some (partial (fun x => if s then Benum.to_i32 x else U32.of_i32 (Benum.to_i32 x)))
-    | TEnum tid elems , TInt64 s => Some (partial (fun x => if s then I64.of_i32 (Benum.to_i32 x)
-                                                          else  U64.of_i32 (Benum.to_i32 x)))
+    | TEnum tid elems , TBool  => Some (partial (fun x => Benum.to_bool x))
+    | TEnum tid elems , TInt32 s => Some (partial (fun x => (if s then I32.of_Z else U32.of_Z) (Benum.to_Z x)))
+    | TEnum tid elems , TInt64 s => Some (partial (fun x => (if s then I64.of_Z else U64.of_Z) (Benum.to_Z x)))
     | _ , _ => fail
     end.
 
-  Definition get_cast_operator (ty:typ) (ty':typ) : option cast_operator :=
+  (* Definition get_cast_operator (ty:typ) (ty':typ) : option cast_operator :=
     match ty, ty' with
       (* TBool *)
     | TBool , TBool => Some Cid
@@ -209,8 +207,7 @@ Section DENOT.
     | TEnum tid elems , TInt64 s => Some (if s then I64_of_i32_Benum_to_i32
                                         else  U64_of_i32_Benum_to_i32 )
     | _ , _ => fail
-    end.
-
+    end. *)
 
   Definition eval_cast (ty:typ) (v1:eval_typ ty) (tr:typ) : option(eval_typ tr) :=
     let* f := get_cast ty tr in f  v1.
