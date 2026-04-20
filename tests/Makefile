@@ -1,5 +1,5 @@
 # Tests that should not compile
-FAIL=invalid_return.br get_multiple_index.br redef_index3.br outscope_return.br array_may_alias_index.br
+FAIL=invalid_return.br get_multiple_index.br redef_index3.br outscope_return.br array_may_alias_index.br write_annot.br
 SUCCESS= update_array_in_record.br update_record_in_record.br suspend.br \
 	 suspend_in.br inscope_return.br non_pure.br update_array_struct.br array_alias.br
 

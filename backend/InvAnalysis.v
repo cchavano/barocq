@@ -317,13 +317,41 @@ Fixpoint invalid_arguments (te:tenv) (age: aenv) (d:domain) (inv: InvMap.t) (arg
                  end
   end.
 
+
+Definition pp_path (p: t) : box :=
+    match p with
+  | Node nil => Bstr " all the paths are invalid."
+  | Node (e::nil) => Bcat (Bstr " the field ") (Bcat (EdgeLabel.pp (fst e)) (Bstr " is invalid."))
+  | Node l      => Bcat (Bstr " the fields ") (Bcat (pp_list (Bstr ", ") EdgeLabel.pp (List.map fst l))
+                                                (Bstr " are invalid."))
+  end.
+
+Fixpoint xcheck_valid_args (env:InvMap.t) (args : list atom) : option (atom * t) :=
+  match args with
+  | nil => None
+  | a :: args' => match eval_atom env a with
+                  | None => xcheck_valid_args env args'
+                  | Some p => Some (a,p)
+                  end
+  end.
+
+Definition check_valid_args (env:InvMap.t) (f:ident) (args : list atom) : res unit :=
+  match xcheck_valid_args env args with
+  | None => OK tt
+  | Some(a,p) => Error (msg (Pp.pp (seq (Bstr "The argument " :: pp_atom a :: Bstr " of "
+                                                        :: pp_call f args :: Bstr " has invalid paths;" ::
+                                                        pp_path p :: nil))))
+  end.
+
+
 Definition call (te:tenv) (age: aenv) (d:domain) (ge:genv) (id:ident) (args:list atom) (env:InvMap.t) :=
   match Vars.get id (Vars d) with
   | Some _ => Error ((MSG "identifier ") :: MSG id :: MSG " should be a function." :: nil)
   | None   =>
       match STree.get id ge with
-          | None => Error ((MSG "function ") :: MSG id :: MSG " does not exist" :: nil)
+      | None => Error ((MSG "function ") :: MSG id :: MSG " does not exist" :: nil)
       | Some af =>
+          do _ <- check_valid_args env id args;
           let fargs := Afunction.fn_aparams af in
           let (_,p) := Afunction.fn_areturn af in
           (** Invalidate the aliases of the arguments *)
@@ -331,6 +359,9 @@ Definition call (te:tenv) (age: aenv) (d:domain) (ge:genv) (id:ident) (args:list
           OK (p,env')
           end
   end.
+
+
+
 
 Definition inv_comp  (te:tenv) (age: aenv) (d:domain) (ge:genv)  (env:InvMap.t) (c:comp) :=
   match c with
@@ -377,13 +408,7 @@ Definition get_inv_arguments (inv:InvMap.t) (l:list (string * btyp)) :=
 
 
 Definition error_of_path (p : G.PathTree.t) :=
-  Bcat (Bstr "the return expression has invalid paths;")
-  match p with
-  | Node nil => Bstr " all the paths are invalid."
-  | Node (e::nil) => Bcat (Bstr " the field ") (Bcat (EdgeLabel.pp (fst e)) (Bstr " is invalid."))
-  | Node l      => Bcat (Bstr " the fields ") (Bcat (pp_list (Bstr ", ") EdgeLabel.pp (List.map fst l))
-                                                (Bstr " are invalid."))
-  end.
+  Bcat (Bstr "the return expression has invalid paths;") (pp_path p).
 
 
 Definition inv_def_function (te:tenv)  (age:aenv) (ge:genv) (f:function) : res Afunction.t :=

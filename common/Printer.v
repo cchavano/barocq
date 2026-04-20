@@ -121,8 +121,17 @@ Fixpoint pp_btyp (bt: btyp) :=
 (* Module Typed.
   Import Typed. *)
 
+Section PPATOM.
+  Variables pp_atom : atom -> box.
 
-Fixpoint pp_atom (a:atom) :=
+  Definition xpp_call (f:ident) (l:list atom)  :=
+    Pp.seq (Bstr f :: Bstr "(" :: pp_list (Bstr ", ") pp_atom l
+              :: Bstr ")" :: nil)
+  .
+
+End PPATOM.
+
+Fixpoint pp_atom (a:atom) {struct a} :=
   match a with
   | ATrue => Bstr "true"%string
   | AFalse => Bstr "false"%string
@@ -138,9 +147,10 @@ Fixpoint pp_atom (a:atom) :=
                                 (array_index pp_atom i)
   | ARecordProj a i _ _ => Bcat (pp_atom a)
                             (Bcat (Bstr ".") (Bstr i))
-  | APureCall f _ l _ => Pp.seq (Bstr f :: Bstr "(" :: pp_list (Bstr ", ") pp_atom l
-                            :: Bstr ")" :: nil)
+  | APureCall f _ l _ => xpp_call pp_atom f l
   end.
+
+Definition pp_call (f:ident) (l:list atom) := xpp_call pp_atom f l.
 
 Definition pp_comp (c:comp) :=
   match c with

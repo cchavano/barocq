@@ -1,0 +1,16 @@
+module Bug
+
+record point {
+  x: i32,
+  y: i32,
+}
+
+decl update : (@write point) -> point 
+
+(*defn update (p :point) : point =
+     p.x <- p.y *)
+
+defn foo(p: point) : point =
+  let p1 = update(p) in
+  let p2 = update(p) in
+  p2
