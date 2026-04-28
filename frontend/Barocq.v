@@ -105,14 +105,14 @@ Module Pp.
                              (Bstack (Bcat (Bstr "then ") (pp_expr t))
                                 (Bcat (Bstr "else ") (pp_expr e)) Left) Left
     | EMatch e cases => Bstr "match ... "
-    | ELetIn id e1 e2 => Bcat (Bstr "let ") (Bstack (Pp.seq (Bstr id :: Bstr " := " :: pp_expr e1 :: Bstr " in " :: nil))                                               (pp_expr e2) Left)
+    | ELetIn id e1 e2 => Bcat (Bstr "let ") (Bstack (Pp.seq (Bstr id :: Bstr " = " :: pp_expr e1 :: Bstr " in " :: nil))                                               (pp_expr e2) Left)
     | EAttr id e => Pp.seq (Bstr "#[ " :: Bstr id :: Bstr " ]"  :: pp_expr e :: nil)
     end.
 
   Definition pp_globdef (gd:globdef) : box :=
     match gd with
     | DefType id td => Bcat (Bstr "type") (Bstr id)
-    | DefConst id lit _ => Pp.seq (Bstr "defn ":: Bstr id :: Bstr " := " :: Printer.pp_literal lit :: nil)
+    | DefConst id lit _ => Pp.seq (Bstr "defn ":: Bstr id :: Bstr " = " :: Printer.pp_literal lit :: nil)
     | DefFun id f       => Printer.pp_function pp_expr pp_btyp id f
     | _                 => Bstr "decl ..."
     end.

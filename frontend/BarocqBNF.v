@@ -112,13 +112,13 @@ Module Pp.
     | EArraySet a i v _ => Pp.seq (Printer.pp_atom a :: Bstr "[" :: Printer.pp_atom i :: Bstr "] <- " :: Printer.pp_atom v :: nil)
     | ERecordUpdate a fd v _ => Pp.seq (Printer.pp_atom a :: Bstr "." :: Bstr fd :: Bstr " <- " :: Printer.pp_atom v :: nil)
     | EApp a l _ => Pp.seq (Printer.pp_atom a :: Bstr "(" :: pp_list (Bstr ", ") Printer.pp_atom l :: Bstr ")" :: nil)
-    | EMatch a l _ => Bstr "match ... "
+    | EMatch a l _ => Bcat (Bcat (Bstr "match ") (Printer.pp_atom a)) (Bstr " with...")
     | EIfThenElse c t e _ => Bstack
                              (Bcat (Bstr "if ") (Printer.pp_atom c))
                              (Bstack (Bcat (Bstr "then ") (pp_expr t))
                                      (Bcat (Bstr "else ") (pp_expr e)) Left) Left
-    | ELetIn id e1 e2 _ => Bcat (Bstr "let ") (Bstack (Pp.seq (Bstr id :: Bstr " := " :: pp_expr e1 :: Bstr " in " :: nil))
-                                              (pp_expr e2) Left)
+    | ELetIn id e1 e2 _ => Bcat (Bstr "let ") (Bstack (Pp.seq (Bstr id :: Bstr " = " :: pp_expr e1 :: nil))
+                                              (Bcat (Bstr " in ") (pp_expr e2)) Left)
     | EAttr id e => Pp.seq (Bstr "#[ " :: Bstr id :: Bstr " ]"  :: pp_expr e :: nil)
     end.
 

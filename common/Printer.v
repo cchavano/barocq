@@ -31,25 +31,23 @@ Definition pp_sint64 (s:signedness) (i:Integers.Int64.int) : box :=
   then Bcat (pp_int64 i) (Bstr "L")
   else Bcat (pp_int64 i) (Bstr "UL").
 
-
 Definition pp_signedness (s:signedness) :=
   match s with
   | Signed => Bemp
   | Unsigned => Bstr "u"
   end.
 
-
 Definition array_index {A: Type} (f:A -> box) (v:A) :=
   Bcat (Bstr "[") (Bcat (f v) (Bstr "]")).
 
 Definition pp_arrow_typ {T:Type} (pp_typ : T -> box) (args : list (ident * T)) (ret :T) :=
-  let pp_arg x := Pp.seq (Bstr "(" :: pp_pair  (Bstr ":") Bstr pp_typ x :: Bstr ")" :: nil) in
+  let pp_arg x := Pp.seq (pp_pair  (Bstr ": ") Bstr pp_typ x :: nil) in
   Pp.seq
-    (pp_list (Bstr " -> ") pp_arg args  :: Bstr " -> " :: pp_typ ret :: nil).
+    (Bstr "(" :: pp_list (Bstr ", ") pp_arg args :: Bstr ") : " :: pp_typ ret :: nil).
 
 Definition pp_function {B T: Type}  (pp_body: B -> box) (pp_typ : T -> box) (id:ident) (f:function B T) : box :=
   Bstack
-    (Pp.seq  (Bstr "defn " :: Bstr id :: Bstr " : " :: pp_arrow_typ pp_typ f.(fn_params) f.(fn_return) :: Bstr " := " :: nil))
+    (Pp.seq  (Bstr "defn " :: Bstr id :: pp_arrow_typ pp_typ f.(fn_params) f.(fn_return) :: Bstr " = " :: nil))
     (Bcat (Bstr "     ") (pp_body f.(fn_body))) Left.
 
 Definition string_of_unary_op (o:unary_op) :=
@@ -64,18 +62,18 @@ Definition string_of_binary_op (o:binary_op) :=
   match o with
   | BopAndbool => "&&"
   | BopOrbool  => "||"
-  | BopXorbool => "xor"
+  | BopXorbool => "^^"
   | BopAdd     => "+"
   | BopSub     => "-"
   | BopMul     => "*"
   | BopDiv     => "/"
-  | BopMod     => "mod"
+  | BopMod     => "%"
   | BopAndint  => "&"
   | BopOrint   => "|"
   | BopXorint  => "^"
   | BopShl     => "<<"
   | BopShr     => ">>"
-  | BopEq      => "="
+  | BopEq      => "=="
   | BopNeq     => "!="
   | BopLt      => "<"
   | BopGt      => ">"
@@ -93,10 +91,10 @@ Fixpoint pp_btyp (bt: btyp) :=
   | BArray bt ly => Pp.seq (Bstr "[" :: pp_btyp bt :: Bstr "]" :: nil)
   | BEnum id => Bcat (Bstr "enum ") (Bstr id)
   | BRecord id _ => Bcat (Bstr "record ") (Bstr id)
-  | BFun args r  => Bcat (pp_list (Bstr " -> ") pp_btyp args) (pp_btyp r)
+  (* | BFun args r  => PP.seq Bcat (pp_list (Bstr "") pp_btyp args) (pp_btyp r) *)
+  | BFun args r => Pp.seq (Bstr "(" :: pp_list (Bstr ", ") pp_btyp args :: Bstr ") -> " :: pp_btyp r :: nil)
   | BAbs id      => Bcat (Bstr "abs ") (Bstr id)
   end.
-
 
 (* Fixpoint pp_atom (a:atom) :=
   match a with
@@ -178,7 +176,7 @@ Definition pp_attr (a:param_attr) :=
 
 Definition pp_globdef {B T L:Type} (pp_lit :  L -> box) (pp_fct : ident -> function B T -> box) (pp_typ : T -> box) (gd:globdef B T L) :=
   match gd with
-  | DefConst id l t => Pp.seq (Bstr "defn ":: Bstr id :: Bstr " : " :: pp_typ t :: Bstr " := " :: pp_lit l :: nil)
+  | DefConst id l t => Pp.seq (Bstr "defn ":: Bstr id :: Bstr " : " :: pp_typ t :: Bstr " = " :: pp_lit l :: nil)
   | DefFun   id  f  => (pp_fct id f)
   | DeclConst id t  => Pp.seq  (Bstr "defn "::Bstr id :: Bstr " : " :: pp_typ t :: nil)
   | DeclFun id l t  => Pp.seq  (Bstr "defn ":: Bstr id :: Bstr " : " ::
