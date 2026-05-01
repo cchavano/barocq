@@ -572,7 +572,6 @@ From Stdlib Require Import OrderedType.
 Module TypOrdered <: OrderedType.
   Definition t := typ.
 
-
   Definition depth := typ_depth.
   Definition eq : t -> t -> Prop := @eq t.
   Definition lt : t -> t -> Prop := fun x y => typ_compare x y = Lt.
@@ -629,15 +628,12 @@ Module TypOrdered <: OrderedType.
       auto.
   Qed.
 
-
   Lemma typ_compare_refl  : forall (x:t), typ_compare x x = Eq.
   Proof.
     intros.
     rewrite typ_compare_eq.
     reflexivity.
   Qed.
-
-
     
   Lemma typ_eq_trans  : forall (x y z:t), forall c, typ_compare x y = c -> typ_compare y z = c  -> typ_compare x z = c.
   Proof.
@@ -951,8 +947,6 @@ Module BtypOrdered <: OrderedType.
       apply IHx.
   Qed.
 
-
-
   Definition lt_trans  (x y z:t): lt x y -> lt y z -> lt x z.
   Proof.
     unfold lt.
@@ -988,7 +982,6 @@ Module BtypOrdered <: OrderedType.
     - right. intro.
       subst. rewrite btyp_compare_refl in EQB. discriminate.
   Qed.
-
 
 End BtypOrdered.
 

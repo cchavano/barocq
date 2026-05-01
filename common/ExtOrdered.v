@@ -76,8 +76,6 @@ Proof.
   rewrite (TR1 Gt);auto.
 Qed.
 
-
-
 Lemma pair_compare_eq : forall {A B: Type}
                                (cmp1 : A -> A -> comparison)
                                (cmp2 : B -> B -> comparison),
@@ -96,7 +94,6 @@ Proof.
   destruct (cmp1 y1 y1);
     destruct (cmp2 y2 y2); intuition try congruence.
 Defined.
-
 
 Section LISTCOMPARE.
   Context {A: Type}.
@@ -125,7 +122,6 @@ Section LISTCOMPARE.
   Defined.
 
 End LISTCOMPARE.
-
 
 Lemma string_compare_trans :
   forall (x y z : String.string) (c : comparison), String.compare x y = c -> String.compare y z = c -> String.compare x z = c.

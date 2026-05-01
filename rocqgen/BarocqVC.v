@@ -190,10 +190,7 @@ Section S.
     auto.
   Qed.
 
-
   (** Generation of proof obligations. *)
-
-
 
   Definition check_value (v: option (value tabs)) (ty:typ) (prop : value tabs) :=
     match v with
@@ -217,7 +214,6 @@ Section S.
                           ret (p,props')
                         else fail
     end.
-
 
   Fixpoint vars_of_expr (vars : STree.t unit) (e:expr)  : STree.t unit :=
     match e with
@@ -297,7 +293,6 @@ Section S.
     reflexivity.
   Qed.
 
-
   Lemma remove_params_eq : forall {A: Type} (params:smaplist A) vars,
     forall x, STree.get  x (remove_params params vars) =
                 STree.get  x (remove_params_r params vars).
@@ -314,7 +309,6 @@ Section S.
   Definition vars_of_fun {A:Type} (params : smaplist A) (e:expr) :=
     remove_params params (vars_of_expr STree.empty e).
 
-
   Definition generate_def_fun_obligation (te:Typing.tenv)  (params : smaplist btyp) (tret : btyp) (e : expr) (checked : list propt)
     (prop : value tabs) : option Prop :=
     if MergeSort.nodup String.leb String.eqb (List.map fst params)
@@ -329,8 +323,6 @@ Section S.
           eq_value tabs prop ((TFun (map (fun x : string * typ => snd x) params') tret')) v in
       ret o
     else fail.
-
-
 
   Fixpoint genv_has_property (ge: genv tabs)  (l:list propt) :=
     match l with
@@ -356,7 +348,6 @@ Section S.
       destruct (s2 ! (StringIndexed.index x)); try tauto.
     simpl in H. intuition congruence.
   Qed.
-
 
   Definition generate_def_fun_obligation' (f:ident) (te:Typing.tenv)  (params : smaplist btyp) (tret : btyp) (e : expr) (checked : list propt)
     (prop : value tabs) : option Prop :=
@@ -398,10 +389,6 @@ Section S.
     auto.
   Qed.
 
-
-
-
-
   Lemma res_rel_refl : forall {A : Type} (P : A -> A -> Prop),
       (forall x, P x x) ->
       forall x, option_rel P x x.
@@ -418,8 +405,6 @@ Section S.
     unfold get_cast.
     destruct ty,t; try discriminate; simpl; split; reflexivity.
   Qed.
-
-
 
   Lemma ext_equal_eval_cast : forall ty x y t,
       ext_equal tabs ty x y ->
@@ -448,7 +433,6 @@ Section S.
     constructor.
   Qed.
 
-
   Lemma ext_equal_eval_unary_op : forall op ti x y tf,
       ext_equal tabs ti x y ->
       option_rel (ext_equal tabs tf) (eval_unary_op tabs op ti x tf)
@@ -464,9 +448,6 @@ Section S.
     apply ext_equal_cast_typ; simpl in *; congruence.
     apply ext_equal_cast_typ; simpl in *; congruence.
   Qed.
-
-
-
 
 (*  Lemma equal_upd_record_aux :
     forall fields r1 r2 f ty v1 v2,
@@ -506,7 +487,6 @@ Section S.
   Qed.
 *)
 
-
   Fixpoint get_var_of_expr_acc (x:string) (e:expr): forall acc,
       STree.get x acc = Some tt ->
       STree.get x (vars_of_expr acc e) = Some tt.
@@ -542,7 +522,6 @@ Section S.
          destruct (STree.elt_eq x i);try congruence.
          apply get_var_of_expr_acc;auto.
   Qed.
-
 
   Fixpoint get_var_of_expr_case (x:string) (e:expr): forall acc,
       STree.get x (vars_of_expr acc e) = Some tt <->
@@ -776,8 +755,6 @@ Section S.
     apply ext_equal_sym. auto.
     apply H.
   Qed.
-
-
 
   Lemma eq_env_remove : forall x e le le' v1 v2 ge ge',
       eq_env (STree.remove x (vars_of_expr STree.empty e)) le le' ge ge' ->
@@ -1078,10 +1055,6 @@ Section S.
        apply eq_env_all_lenv_update; auto.
   Qed.
 
-
-
-
-
   Lemma genv_has_property_same : forall x ge' l acc v,
       STree.get x (genv_has_property acc l) = Some v ->
       Forall (has_property ge') l ->
@@ -1107,7 +1080,6 @@ Section S.
       inv GET. left; constructor ; auto.
       right;assumption.
   Qed.
-
 
   Lemma map_err_nil : forall {A B:Type} (F : A -> option B) (l:list (string * A)),
       map_err F l = Some nil -> l = nil.
@@ -1267,7 +1239,6 @@ Section S.
         end
     end.
 
-
   Lemma get_prop_inv : forall s p props props',
       get_prop s props = Some (p, props')  ->
       props = (s,p) :: props'.
@@ -1280,8 +1251,6 @@ Section S.
     inv H. reflexivity.
     discriminate.
   Qed.
-
-
 
   Definition wf_checked (props : list propt) (prog:program) :=
     forall s p, In (s,p) props -> In s (map ident_of_globdef (filter has_prop prog)) ->  False.
@@ -1304,8 +1273,6 @@ Section S.
     rewrite H0. reflexivity.
     simpl. tauto.
   Qed.
-
-
 
   Lemma generate_const_obligation_sound :
     forall te x l ty p (P:Prop) ge
@@ -1412,7 +1379,6 @@ Section S.
     lia.
   Qed.
 
-
   Lemma String_leb_trans : forall (x y z:string),
       x <=? y = true -> y <=? z = true  -> x <=? z = true.
   Proof.
@@ -1473,8 +1439,6 @@ Section S.
       intuition congruence.
   Qed.
 
-
-
   Lemma nodup_eq : forall (V: Type) (l: smaplist V) ,
       MergeSort.nodup String.leb String.eqb (map fst l) = true ->
       MapList.nodup string_dec l = true.
@@ -1501,8 +1465,6 @@ Section S.
     intros.
     eapply String_leb_trans; eauto.
   Qed.
-
-
 
   Lemma has_property_set : forall x v p ge,
       same_value tabs v p ->
@@ -1577,7 +1539,6 @@ Section S.
       + eapply IHALL;auto.
   Qed.
 
-
   Lemma has_property_equal :
     forall te ge0 ge s t v prog
            (EVAL: eval_prog tabs ge0 prog = Some (te,ge))
@@ -1600,8 +1561,6 @@ Section S.
     apply ext_equal_fo_equal in SV;auto.
     rewrite EVAL. simpl. exists v0; split;auto.
   Qed.
-
-
 
   Lemma generate_decl_const_obligation_sound :
     forall te x bt checked ge P
@@ -1667,7 +1626,6 @@ Section S.
     reflexivity.
     discriminate.
   Qed.
-
 
   Definition has_def (g:globdef) :=
     match g with
@@ -1766,7 +1724,6 @@ Section S.
     simpl. tauto.
   Qed.
 
-
   Lemma generate_obligations_incl :
     forall prog te checked props ol vc
            (GEN : generate_obligations  te checked vc prog props = Some ol),
@@ -1818,8 +1775,6 @@ Section S.
   Proof.
     reflexivity.
   Qed.
-
-
 
   Lemma generate_obligations_sound :
     forall prog te checked props ol vc

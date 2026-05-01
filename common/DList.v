@@ -80,14 +80,11 @@ Section S.
 
   Variable eq_dec : forall (t1 t2:A),{t1 = t2} + {t1 <> t2}.
 
-
   Definition equal {t1:A} (v1 : Ftyp t1) {t2:A} (v2:Ftyp t2) : Prop :=
     match eq_dec t1 t2 with
     | left EQ => cast EQ v1 = v2
     | _       => False
     end.
-
-
   
   Context {B: Type}.
 
@@ -337,8 +334,6 @@ Proof.
          tauto.
 Qed.
 
-
-
 Section IN.
   Context {A: Type}.
   Context {F1 : A -> Type}.
@@ -361,7 +356,6 @@ Section IN.
                | DCONS _ _ dl1 => nth_error dl1 n'
                end
     end.
-
   
 End IN.
 

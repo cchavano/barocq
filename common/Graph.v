@@ -20,7 +20,6 @@ Inductive kalias :=
 Definition eqb_of_dec {A: Type} (eq_dec:forall (x y:A), {x = y}+{x <> y}) : A -> A -> bool :=
   fun x y => if eq_dec x y then true else false.
 
-
 (*Fixpoint In_eq {A : Type} (eq : A -> A -> Prop) (e:A) (l:list A) :=
   match l with
   | nil => False
@@ -240,9 +239,6 @@ Section FORALL.
 
 End FORALL.
 
-
-
-
 Section ListREMOVE.
   Context {A: Type}.
   Variable eqb : A -> A -> bool.
@@ -270,8 +266,6 @@ Section ListREMOVE.
     simpl ; intros.
     tauto.
   Qed.
-
-
 
   Fixpoint List_in (e:A) (l:list A) :=
     match l with
@@ -311,8 +305,6 @@ Section ListREMOVE.
 
 
 End ListREMOVE.
-
-
 
 Module Int <: OrderedType.
   Definition t := int.
@@ -381,7 +373,6 @@ Module Map(O:OrderedType).
   Module Facts := FMapFacts.Facts(M).
   Include M.
 
-
   Definition merge {A: Type} (f : A -> A -> A) (e1 e2:option A) :=
     match e1 , e2 with
     | None , e | e , None => e
@@ -396,7 +387,6 @@ Module Map(O:OrderedType).
 
   Lemma findl_empty : forall {A: Type} k, findl k (empty (list A)) = nil.
   Proof. reflexivity. Qed.
-
 
   Definition union {A: Type} (f : A -> A -> A) (m1 m2 : t A) := map2 (merge f) m1 m2.
 
@@ -515,7 +505,6 @@ Module Map(O:OrderedType).
     auto.
   Qed.
 
-
 End Map.
 
 Module IntMap := Map(Int).
@@ -536,8 +525,6 @@ Module Type NodeLabelT.
   Axiom eq_dec : forall (x y:t),{eq x y} + {not (eq x y)}.
 
 End NodeLabelT.
-
-
 
 Module Type EdgeLabelT.
   Axiom t : Type.
@@ -640,7 +627,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
             (pp_list (Bstr " ") (fun x => Bstack (EdgeLabel.pp (fst x)) (pp (snd x)) Middle) l) Middle
       end.
 
-
     Section IND.
 
       Fixpoint depth (tr:t) :=
@@ -701,8 +687,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     Section S.
       Variable may_edge : EdgeLabel.t -> EdgeLabel.t -> bool.
 
-
-
     Section FLATTEN.
       Variable flatten : t -> list path.
 
@@ -721,7 +705,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
                   |  _  => flatten_list flatten l
                   end
       end.
-
 
     (*    Definition has_path (p:path) (tr:t) :=
       exists pre, In pre (flatten tr) /\ is_prefix pre p. *)
@@ -770,7 +753,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       | Node l => l = nil
       end.
 
-
     Lemma in_nil_flatten : forall tr,
         In [] (flatten tr) -> is_empty tr.
     Proof.
@@ -808,7 +790,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
         exists tr. tauto.
     Qed.
 
-
     Lemma find_edge_some : forall {A: Type} e l (v:A),
         find_edge e l = Some v ->
         exists l1 l2, l = l1++(e,v)::l2.
@@ -836,8 +817,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       subst.
       rewrite in_app_iff. simpl. tauto.
     Qed.
-
-
 
     Lemma in_exists : forall {A: Type} (x:A) l, In x l -> exists l1 l2, l = l1 ++ x::l2.
     Proof.
@@ -908,7 +887,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
         rewrite is_prefix_cons. split;auto.
     Qed.
 
-
     Definition get_subtree (tr:t) : list (EdgeLabel.t * t) :=
       match tr with
       | Node l => l
@@ -918,8 +896,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       match tr with
       | Node l => NoDup (List.map fst l) /\ Forall (fun x => wf (snd x)) l
       end.
-
-
 
     Lemma wf_tail : forall {a l},
         wf (Node (a :: l)) -> wf (Node l).
@@ -980,9 +956,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
          simpl in H2. lia.
     Qed.
 
-
-
-
     Lemma create_correct : forall c p, has_path p (create c) <-> is_prefix c p.
     Proof.
       induction c; simpl.
@@ -1018,7 +991,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
            constructor; auto.
            rewrite is_prefix_cons. tauto.
     Qed.
-
 
     Section UNION.
       Variable union : t -> t -> t.
@@ -1282,7 +1254,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       lia.
     Qed.
 
-
     Lemma union_left : forall t1 t2 p,
         has_path' p t1 -> has_path' p (union t1 t2).
     Proof.
@@ -1326,7 +1297,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
           econstructor. apply IHhas_path'.
           apply EQ.
     Qed.
-
 
     Lemma has_path_cons : forall p e l,
         l <> nil ->
@@ -1379,7 +1349,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
           exists tr1,tr2.
           tauto.
     Qed.
-
 
     Lemma union_correct : forall p t1 t2,
         has_path' p (union t1 t2) -> (has_path' p t1 \/ has_path' p t2).
@@ -1474,8 +1443,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
         intuition.
         congruence.
     Qed.
-
-
 
     Lemma is_completely_valid_path_correct :
       forall p q tr
@@ -1574,8 +1541,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       unfold EdgeLabel.eq in n. intuition congruence.
       eapply IHl; eauto.
     Qed.
-
-
 
     Lemma prefixed_by_None :
       forall p tr
@@ -1790,16 +1755,11 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       wf_fresh  : forall o, has_node (edges g) o -> (ltb o (fresh g) = true)%int63
     }.
 
-
-
-
-
   Fixpoint find_edgelabel (lb:EdgeLabel.t) (l:list (EdgeLabel.t * int)) :=
     match l with
     | nil => None
     | (el,n)::l => if EdgeLabel.eq_dec lb el then Some n else find_edgelabel lb l
     end.
-
 
 (*  Lemma find_label_eq : forall lb lb' (EQ: EdgeLabel.eq lb lb') l,
       find_edgelabel lb l = find_edgelabel lb' l.
@@ -1868,7 +1828,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     rewrite IntMap.find_empty.
     discriminate.
   Qed.
-
 
   Lemma has_node_label_empty : forall o nl, has_node_label (IntMap.empty _) o nl  <-> False.
   Proof.
@@ -1987,7 +1946,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
         destruct (Int.eq_dec (fresh g) (fresh g)); try congruence.
         do 2 eexists ; split ; eauto.
   Qed.
-
 
   Lemma has_edge_mkroot : forall o e d1 lb,
       has_edge (edges (mkroot lb)) o e d1  <-> False.
@@ -2133,10 +2091,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
          reflexivity.
   Qed.
 
-
-
-
-
   Lemma find_node_Some : forall n l e,
       find_node n l = Some e -> In (e,n) l.
   Proof.
@@ -2149,7 +2103,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       apply IHl in H. intuition congruence.
   Qed.
 
-
  Lemma find_node_None : forall n l e,
       find_node n l = None ->
       In (e, n) l -> False.
@@ -2160,8 +2113,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     destruct H0. congruence.
     eapply IHl;eauto.
   Qed.
-
-
 
   Lemma has_edge_rev_add :
     forall g l
@@ -2209,7 +2160,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     destruct (Int.eq_dec o o');
     intuition congruence.
   Qed.
-
 
 (*  Lemma has_node_label_add : forall o lb lb' l g
                                     (WF : wf g),
@@ -2363,7 +2313,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     destruct H1 ; subst.
     apply wf_fresh in H2; auto. lia.
   Qed.
-
 
   Lemma clos_trans_has_node : forall g,
       wf g ->
@@ -2660,7 +2609,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
        + lia.
   Qed.
 
-
   (* [add_edge n1 el n2 g] add a new edge beteeen 2 existing nodes n1 and n2 *)
   Definition add_edge (n1:int) (el:EdgeLabel.t) (n2:int) (g:t) : res t :=
     match IntMap.find n1 (edges g) with
@@ -2713,9 +2661,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
             OK(g2,(nn,lb))
         end
     end.
-
-
-
 
   Fixpoint remove_edges (n:int) (l:list (EdgeLabel.t * int)) (lb:ELMap.t (list int) ) : ELMap.t (list int) :=
     match l with
@@ -2781,8 +2726,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
         remove_tree_aux (NodeLabel.depth nl)  n' g
     end.
 
-
-
   Fixpoint remove_successors  (n:int) (l : list (EdgeLabel.t * int)) (g:t) :=
     match l with
     | nil => OK (g,nil)
@@ -2791,7 +2734,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
         do (g2,l2) <- remove_successor n e n1 g1;
         OK (g2, List.app l1 l2)
     end.
-
 
     Fixpoint check_must_alias (fuel:nat) (o:int) (l:list EdgeLabel.t) (n:int) (g:t) : res unit :=
       match l with
@@ -2854,7 +2796,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     do (g,n') <- create_node lb l g;
     OK (set_root n' g, (IntMap.add n1 n' m1, IntMap.add n2 n' m2)).
 
-
   Fixpoint inter (fuel:nat) (o1:int) (g1:t) (o2:int) (g2:t) (acc:interT) : res interT :=
     match fuel with
     | O => efail
@@ -2889,10 +2830,8 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
             (fresh g)
       end.
 
-
   Definition update_edges (l:list int) (e:EdgeLabel.t) (e': EdgeLabel.t) (g:t) :=
     List.fold_right (fun o g => update_edge o e e' g) g l.
-
 
   Definition update_edgelabel (e e':EdgeLabel.t) (g:t) : t :=
     match ELMap.find e (edgelabels g) with
@@ -2922,8 +2861,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Definition get_parent (n:int) (g:t) :=
     IntMap.find n (parent g).
 
-
-
   Fixpoint is_parent_rec (g:t) (fuel:nat) (p:int) (n:int)  :=
     if eqb p n then OK true
     else
@@ -2939,7 +2876,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Definition is_parent (g:t) (p:int) (n:int) :=
     do d <- depth g;
     is_parent_rec g d p n.
-
 
   Fixpoint get_upward_path_rec (fuel:nat) (g:t) (n:int) :=
     if Int.eq_dec n (root g) then OK nil
@@ -2979,7 +2915,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     do p2 <- get_path_from_top g n2;
     OK (path_may_alias p1 p2).
 
-
 (*  Inductive is_tree_node (g:t) : int -> Prop :=
   | Leaf : forall n,
     (forall e n', In (e,n') (get_successors g n) -> is_tree_node g n') -> is_tree_node g n.
@@ -2987,7 +2922,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Definition is_tree (g:t) :=
     forall n, is_tree_node g n.
  *)
-
 
   Lemma find_create_node : forall lb g g1 n n' nl succs,
       create_node lb [] g = OK (g1, n') ->
@@ -3504,7 +3438,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
         lia.
   Qed.
 
-
   Lemma create_edge_spec : forall n e g g' n' lb',
       wf g ->
       create_edge n e g = OK (g',(n',lb')) ->
@@ -3636,7 +3569,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       + lia.
       + congruence.
   Qed.
-
 
   Lemma create_edge_le :
     forall  n e g g' n' lb'

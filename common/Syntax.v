@@ -867,8 +867,6 @@ Module AtomOrdered <: OrderedType.
       apply BtypOrdered.btyp_antisym.
   Qed.
 
-
-
   Definition lt_trans  (x y z:t): lt x y -> lt y z -> lt x z.
   Proof.
     unfold lt.

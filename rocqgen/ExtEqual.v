@@ -131,7 +131,6 @@ Section S.
           end (ext_fun_fo tret l) f1 f2
       end.
 
-
   (** [ext_equal_fo v1 v2]  encodes functional extensionality of functions (it is more restricted than ext_equal) *)
   Definition ext_equal_fo (ty:typ)  : eval_typ tabs ty -> eval_typ tabs ty -> Prop:=
     match ty with
@@ -177,9 +176,6 @@ Section S.
         }
   Qed.
 
-
-
-
   Definition ext_eq_array (t:typ) (a1 a2 : array (# t)) :=
     forall x, option_rel (ext_equal t) (nth_error a1 x) (nth_error a2 x).
 
@@ -212,8 +208,6 @@ Section S.
     rewrite! Zlength_correct.
     congruence.
   Qed.
-
-
 
   Lemma ext_equal_valid_index : forall ty a1 a2,
       ext_eq_array ty a1 a2 ->
@@ -342,7 +336,6 @@ Section S.
     subst. constructor. apply ext_equal_refl. auto.
     constructor.
   Qed.
-
 
   Lemma ext_equal_fo_equal :forall (ty:typ),
     forall v1 v2
@@ -513,7 +506,6 @@ Section S.
     auto.
   Qed.
 
-
   Lemma same_value_trans : forall v1 v2 v3,
       same_value v1 v2 -> same_value v2 v3 ->
       same_value v1 v3.
@@ -540,7 +532,6 @@ Section S.
     apply H.
     constructor.
   Qed.
-
 
   Lemma ext_equal_int_ops : forall op32s op32u op64s op64u t1 t2 v1 v1' v2 v2' tf,
       ext_equal t1 v1 v1' ->
@@ -602,8 +593,6 @@ Section S.
     apply no_TFun_fo_typ; auto.
   Qed.
 
-
-
   Lemma ext_equal_int_eq_neq : forall (b:bool) t1 t2 v1 v1' v2 v2' tf,
       ext_equal t1 v1 v1' ->
       ext_equal t2 v2 v2' ->
@@ -637,7 +626,6 @@ Section S.
       simpl in *. subst.
       reflexivity.
   Qed.
-
 
   Lemma ext_equal_cmp_op : forall cmp32s cmp32u cmp64s cmp64u t1 t2 v1 v1' v2 v2' tf,
       ext_equal t1 v1 v1' ->
@@ -705,7 +693,6 @@ Section S.
     apply ext_equal_cast_typ; simpl in *; congruence.
   Qed.
 
-
   Lemma ext_equal_eval_binary_op : forall op t1 t2 v1 v1' v2 v2' tf,
       ext_equal t1 v1 v1' ->
       ext_equal t2 v2 v2' ->
@@ -734,7 +721,6 @@ Section S.
     - apply ext_equal_cmp_op;auto.
   Qed.
 
-
   Lemma ext_equal_get : forall ta a1 a2,
       ext_equal (TArray ta) a1 a2 ->
       forall i,
@@ -746,9 +732,6 @@ Section S.
     destruct (Z_lt_dec (Intsize.unsigned i) 0). constructor.
     apply H.
   Qed.
-
-
-
 
   Lemma ext_equal_array_get : forall ta a1 a2  ti i1 i2 ty,
       ext_equal ta a1 a2 ->
@@ -907,9 +890,6 @@ Section S.
     try (constructor || inversion H1);
     apply ext_equal_ecast_typ; apply ext_eq_array_set; auto.
     
-
-
-
 (* 
     destruct arch.
     - destruct (typ_eq_dec ti (TInt32 Unsigned));
@@ -1186,7 +1166,6 @@ Section S.
   Definition eq_value (vl: value tabs) (t:typ) (v: #t) :=
     same_value  vl (Val _ t v).
 
-
   Lemma eq_value_trans : forall v ty v1 v2,
       eq_value v ty v1  ->
       ext_equal ty v1 v2 ->
@@ -1226,7 +1205,6 @@ Section S.
     apply H.
   Qed.
 
-
   Lemma eq_value_same_value : forall p t v,
       eq_value p t v ->
       same_value p (Val tabs t v).
@@ -1248,7 +1226,6 @@ Section S.
     constructor. apply ext_equal_refl; auto.
     constructor.
   Qed.
-
 
   Section EXPR.
     Variable EXPR : Type.
@@ -1330,7 +1307,6 @@ Section S.
       monadInv H.
   Qed.
 
-
   Definition check_value (v: option (value tabs)) (ty:typ) (prop : value tabs) :=
     match v with
     | Some v' => match cast_value tabs v' ty with
@@ -1339,7 +1315,6 @@ Section S.
                end
     | _    => False
     end.
-
 
   Definition generate_const_obligation (te : Typing.tenv) (x:ident) (l:Syntax.literal) (ty:btyp)
     (prop : value tabs) : option Prop :=
@@ -1354,6 +1329,5 @@ Section S.
                           Some (p,props')
                         else fail
     end.
-
 
 End S.

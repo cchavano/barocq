@@ -203,27 +203,27 @@ Proof.
   eapply H; eauto.
 Qed.
 
-  Lemma option_rel_sym : forall {A : Type} (R: A -> A -> Prop),
-      Symmetric R -> Symmetric (option_rel R).
-  Proof.
-    repeat intro.
-    inv H0; try constructor.
-    apply H; eauto.
-  Qed.
+Lemma option_rel_sym : forall {A : Type} (R: A -> A -> Prop),
+  Symmetric R -> Symmetric (option_rel R).
+Proof.
+  repeat intro.
+  inv H0; try constructor.
+  apply H; eauto.
+Qed.
 
-  Lemma option_rel_refl : forall {A : Type} (R: A -> A -> Prop),
-      Reflexive R -> Reflexive (option_rel R).
-  Proof.
-    repeat intro.
-    destruct x. constructor; auto.
-    constructor.
-  Qed.
+Lemma option_rel_refl : forall {A : Type} (R: A -> A -> Prop),
+  Reflexive R -> Reflexive (option_rel R).
+Proof.
+  repeat intro.
+  destruct x. constructor; auto.
+  constructor.
+Qed.
 
-  Lemma option_eq_dec (T: Type) (eq_dec : forall (x y: T), {x = y} + { x <> y})
-                   (x y: option T) : {x = y} + {x <> y}.
-  Proof.
-    decide equality.
-  Qed.
+Lemma option_eq_dec (T: Type) (eq_dec : forall (x y: T), {x = y} + { x <> y})
+                  (x y: option T) : {x = y} + {x <> y}.
+Proof.
+  decide equality.
+Qed.
 
 (** * Reasoning over monadic computations *)
 

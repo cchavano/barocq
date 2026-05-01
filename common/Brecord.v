@@ -149,15 +149,13 @@ Fixpoint dlist_of_grecord {A: Type} {F: A-> Type} {fields : SMAPLIST.smaplist A}
        fun r  => DCONS F (proj_field (fst r)) (dlist_of_grecord  (snd r))
   end.
 
-
 Fixpoint Forall {A: Type} {F : A -> Type} (P : forall (x:A), F x ->  Prop) {fields : SMAPLIST.smaplist A}: grecord F fields -> Prop :=
   match fields with
   | nil => fun _ => True
   | p :: l => fun r => P (snd p) (proj_field (fst r)) /\ Forall P (snd r)
   end.
 
-
-(*Definition record (fields : SMAPLIST.smaplist Type) := grecord (fun x => x) fields.*)
+(* Definition record (fields : SMAPLIST.smaplist Type) := grecord (fun x => x) fields.*)
 
 Fixpoint record (fields: SMAPLIST.smaplist Type) : Type :=
   match fields with
@@ -179,7 +177,6 @@ Definition cast_record {fields: SMAPLIST.smaplist Type} (r: record fields) : gre
 
 Definition cast_grecord {fields: SMAPLIST.smaplist Type} (r: grecord (fun X => X) fields) : record  fields :=
   cast (eq_sym (record_eq  fields)) r.
-
 
 Fixpoint gproj {A: Type} (F : A -> Type) {fields: SMAPLIST.smaplist A} (rc: grecord F fields) (k: key) {struct fields} : option (gtype_of_field F k fields).
   destruct fields as [| [x tx] fields'].
@@ -219,18 +216,16 @@ Defined.
 Definition proj {fields: SMAPLIST.smaplist Type} (r:record fields) (k: key) : option (type_of_field k fields) :=
   gproj (fun x => x)  (cast_record r) k.
 
-
-  Fixpoint good_proj {A: Type} (k:key) (fields : SMAPLIST.smaplist A) :=
+Fixpoint good_proj {A: Type} (k:key) (fields : SMAPLIST.smaplist A) :=
   match fields with
   | nil => false
   | e::fields' => if String.eqb k (fst e) then true else good_proj k fields'
   end.
 
-
- Lemma good_proj_nil : forall {A: Type} {k}, @good_proj A k nil = true -> False.
-Proof.
-  discriminate.
-Qed.
+Lemma good_proj_nil : forall {A: Type} {k}, @good_proj A k nil = true -> False.
+  Proof.
+    discriminate.
+  Qed.
 
 Fixpoint gtypeof_field {A: Type} (F: A -> Type) (k: key) (fields: SMAPLIST.smaplist A) : forall (GP : good_proj k fields = true), Type.
 Proof.
@@ -243,7 +238,7 @@ Proof.
       apply (gtypeof_field A F k fields).
 Defined.
 
- Fixpoint gproject {A: Type} (F : A -> Type) {fields:SMAPLIST.smaplist A} (rc:grecord F fields) (k:key) : forall (GP : good_proj k fields = true), gtypeof_field F k fields GP.
+Fixpoint gproject {A: Type} (F : A -> Type) {fields:SMAPLIST.smaplist A} (rc:grecord F fields) (k:key) : forall (GP : good_proj k fields = true), gtypeof_field F k fields GP.
 Proof.
   destruct fields.
   - intros. exfalso.
@@ -259,10 +254,8 @@ Defined.
 Definition typeof_field  (k: key) (fields: SMAPLIST.smaplist Type) : forall (GP : good_proj k fields = true), Type :=
   gtypeof_field (fun x => x) k fields.
 
-
 Definition project  {fields:SMAPLIST.smaplist Type} (rc:record fields) (k:key) : forall (GP : good_proj k fields = true), typeof_field  k fields GP :=
   gproject (fun x => x) (cast_record rc) k.
-
 
 (*Fixpoint gupd {A: Type} (F: A -> Type) {fields:SMAPLIST.smaplist A} (rc: grecord F fields) (k:key)
   (GK :good_proj k fields = true) (v:gtype_of_field F k fields) {struct fields} : grecord F fields.
@@ -288,7 +281,6 @@ Proof.
   auto.
 Defined.
 
-
 Fixpoint gupd {A: Type} (F: A -> Type) {fields:SMAPLIST.smaplist A} (rc: grecord F fields) (k:key) (T:A) (v: F T)
   (EQ: find_type_of_field k fields = Some  T)
   {struct fields} : grecord F fields.
@@ -300,7 +292,6 @@ Proof.
     + apply (Field (fst p) (cast (f_equal F (eq_sym (Some_inj EQ))) v),snd rc).
     + apply (fst rc,gupd _ F _ (snd rc) k _ v EQ).
 Defined.
-
 
 Definition upd {fields:SMAPLIST.smaplist Type} (rc: record  fields) (k:key) {T:Type} (v: T)
   (EQ: find_type_of_field k fields = Some  T) : record  fields :=
@@ -328,7 +319,6 @@ Proof.
       apply EQ.
 Qed.
 
-
 (*
 Lemma gupd_upd : forall {A: Type} (F: A -> Type) {fields:SMAPLIST.smaplist A} (rc: grecord F fields) (k:key) (T:A) (v: F T)
   (EQ:find_type_of_field k fields = Some  T),
@@ -348,7 +338,6 @@ Proof.
       rewrite IHfields.
       destruct (k =? fst a)%string.
 *)
-
 
 Fixpoint dyn_upd {A: Type} (F: A -> Type) (eq_dec : forall (x y:A), {x = y} + {x <> y}) {fields:SMAPLIST.smaplist A} (rc: grecord F fields) (k:key)
   (ty:A) (v: F ty) {struct fields} : option (grecord F fields).

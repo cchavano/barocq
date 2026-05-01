@@ -331,7 +331,6 @@ Module Box.
         lia.
       }
   Qed.
-
   
   Fixpoint keep (s:string) (n:nat) :=
     match n with
@@ -341,7 +340,6 @@ Module Box.
              | String a s => String a (keep s n)
              end
     end.
-
 
   Definition dup_until (s:string) (w:N) :=
     let len := N.of_nat (String.length s) in
@@ -356,7 +354,6 @@ Module Box.
     | _           => s
     end.
 
-
   Definition frame (tp:string) (l:string) (b:t) : t :=
     let l := of_empty l in
     let s := of_empty tp in
@@ -364,7 +361,6 @@ Module Box.
     let w := ((width b) + 2 * (N.of_nat (String.length l)))%N in
     let t := dup_until s w in
     mk (t::(List.app c (t::nil))) w (height b + 2)%N.
-
   
   Fixpoint pict_of_box (b:box) :=
     match b with
@@ -399,7 +395,6 @@ Module Box.
 
 End Box.
 
-
 Definition pp (b:box) := Box.to_string (Box.pict_of_box b).
 
 Definition output {Out:Type} (output_string : Out -> string -> Out) (o:Out) (b:box) :=
@@ -424,7 +419,6 @@ Section PPLIST.
     | e::nil => pp_elt e
     | e1::l  => Bstack (pp_elt e1) (pp_slist l) Left
     end.
-
 
 End PPLIST.
 

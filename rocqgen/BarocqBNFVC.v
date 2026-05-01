@@ -14,7 +14,6 @@ From Stdlib Require Import ZifyBool.
 Open Scope string_scope.
 Local Open Scope option_monad_scope.
 
-
 Definition ident_of_globdef (g : globdef) :=
   match g with
   | DefConst id _ _ => id
@@ -30,12 +29,10 @@ Section S.
 
   (** Generation of proof obligations - some could be factorised *)
 
-
   Definition val_of_value (v: value tabs) : # (typeof_value tabs v) :=
     match v with
     | Val _ _ v => v
     end.
-
 
   Fixpoint vars_of_atom (vars:STree.t unit) (a:atom) :=
     match a with
@@ -110,7 +107,6 @@ Section S.
     destruct (STree.elt_eq x s); auto.
   Qed.
 
-
   Lemma remove_params_r_comm : forall {A:Type} (p1 p2:smaplist A) vars x,
       STree.get x (remove_params_r p1 (remove_params_r p2 vars)) =   STree.get x (remove_params_r p2 (remove_params_r p1 vars)).
   Proof.
@@ -127,7 +123,6 @@ Section S.
     reflexivity.
   Qed.
 
-
   Lemma remove_params_eq : forall {A: Type} (params:smaplist A) vars,
     forall x, STree.get  x (remove_params params vars) =
                 STree.get  x (remove_params_r params vars).
@@ -140,8 +135,6 @@ Section S.
       rewrite remove_params_r_comm.
       simpl. reflexivity.
   Qed.
-
-
 
   Definition vars_of_fun {A:Type} (params : smaplist A) (e:expr) :=
     remove_params params (vars_of_expr STree.empty e).
@@ -173,7 +166,6 @@ Section S.
       ret o
     else fail.
 
-
   Definition stree_equal {A B: Type} (s1: STree.t A) (s2: STree.t B) :=
     STree.beq (fun _ _ => true) (STree.map (fun _ _ => tt) s1)
       (STree.map (fun _ _ => tt) s2).
@@ -193,8 +185,6 @@ Section S.
     simpl in H. intuition congruence.
   Qed.
 
-
-
   Definition generate_def_fun_obligation' (f:ident) (te:Typing.tenv)  (params : smaplist btyp) (tret : btyp) (e : expr) (checked : list (propt tabs))
     (prop : value tabs) : option Prop :=
     if MergeSort.nodup String.leb String.eqb (List.map fst params)
@@ -212,7 +202,6 @@ Section S.
         ret o
       else None
     else None.
-
 
   Definition eq_env (keys: STree.t unit) (le le': genv tabs) (ge ge' : genv tabs) :=
     forall x,
@@ -252,10 +241,6 @@ Section S.
       generalize (STree.set i tt acc) as acc'.
       induction l; simpl ; auto.
   Qed.
-
-
-
-
 
   Fixpoint get_var_of_expr_acc (x:string) (e:expr): forall acc,
       STree.get x acc = Some tt ->
@@ -366,8 +351,6 @@ Section S.
       rewrite! STree.gempty.
       destruct (STree.elt_eq x i); intuition congruence.
   Qed.
-
-
 
   Fixpoint get_var_of_expr_case (x:string) (e:expr): forall acc,
       STree.get x (vars_of_expr acc e) = Some tt <->
@@ -482,9 +465,6 @@ Section S.
     apply get_var_of_atom_acc; auto.
   Qed.
 
-
-
-
   Definition eq_env_vars_of_expr_acc (e:expr) : forall acc le le' ge ge',
       eq_env (vars_of_expr acc e) le le' ge ge' ->
       eq_env acc le le' ge ge'.
@@ -505,8 +485,6 @@ Section S.
     rewrite get_var_of_atom_case.
     tauto.
   Qed.
-
-
 
   Definition eq_env_vars_of_expr (e:expr) : forall acc le le' ge ge',
       eq_env (vars_of_expr acc e) le le' ge ge' ->
@@ -545,7 +523,6 @@ Section S.
       tauto.
   Qed.
 
-
   Lemma get_fold_vars_of_atom : forall x args acc,
       STree.get x (fold_left vars_of_atom args acc) = Some tt <->
         (STree.get x (fold_left vars_of_atom args STree.empty) = Some tt \/
@@ -560,7 +537,6 @@ Section S.
       rewrite IHargs.
       tauto.
   Qed.
-
 
   Lemma eq_env_exprs : forall args acc le le' ge ge',
       eq_env (fold_left vars_of_expr args acc) le le' ge ge' ->
@@ -586,8 +562,6 @@ Section S.
     rewrite get_fold_vars_of_atom; tauto.
   Qed.
 
-
-
   Lemma vars_of_pattern : forall x cases acc,
       let F := (fun (vars : STree.t unit) (_ : Benum.pattern) (ep : expr) => vars_of_expr vars ep) in
       STree.get x (MapList.fold_left F cases acc) = Some tt <->
@@ -602,7 +576,6 @@ Section S.
       symmetry. rewrite IHcases.
       tauto.
   Qed.
-
 
   Lemma eq_env_pattern : forall cases acc le le' ge ge',
       eq_env
@@ -655,7 +628,6 @@ Section S.
       + constructor.
       + exact H1.
   Qed.
-
 
   Lemma eq_env_remove : forall x e le le' v1 v2 ge ge',
       eq_env (STree.remove x (vars_of_expr STree.empty e)) le le' ge ge' ->
@@ -1078,7 +1050,6 @@ Section S.
        apply eq_env_all_lenv_update; auto.
   Qed.
 
-
   Lemma eq_env_fst : forall {A B:Type} (v1 : smaplist A) (v2:smaplist B) e g1 g2,
       map fst v1 = map fst v2 ->
       eq_env (vars_of_fun v1 e) STree.empty STree.empty g1 g2 ->
@@ -1123,7 +1094,6 @@ Section S.
     - reflexivity.
     - intros. monadInv H.
   Qed.
-
   
   Lemma generate_def_fun_obligation_impl : forall f te params tret e checked prop o',
       generate_def_fun_obligation' f te params tret e checked prop = Some o' ->
@@ -1204,7 +1174,6 @@ Section S.
 (*  Definition obligation_def_type (te: Typing.tenv) (x: ident) (td: Syntax.type_def field_descr) : option Typing.tenv :=
     eval_def_type te x td. *)
 
-
   Fixpoint generate_obligations (te:Typing.tenv) (ge0 : genv tabs)
     (checked : list (propt tabs)) (vc : list Prop) (p:list globdef) (props : list (propt tabs)) : option (list Prop) :=
     match p with
@@ -1246,9 +1215,6 @@ Section S.
     inv H. reflexivity.
     discriminate.
   Qed.
-
-
-
 
   Definition wf_checked (props : list (propt tabs)) (prog:list globdef) :=
     forall s p, In (s,p) props -> In s (map ident_of_globdef prog) ->  False.
@@ -1387,7 +1353,6 @@ Section S.
     lia.
   Qed.
 
-
   Lemma String_leb_trans : forall (x y z:string),
       x <=? y = true -> y <=? z = true  -> x <=? z = true.
   Proof.
@@ -1448,8 +1413,6 @@ Section S.
       intuition congruence.
   Qed.
 
-
-
   Lemma nodup_eq : forall (V: Type) (l: smaplist V) ,
       MergeSort.nodup String.leb String.eqb (map fst l) = true ->
       MapList.nodup string_dec l = true.
@@ -1476,8 +1439,6 @@ Section S.
     intros.
     eapply String_leb_trans; eauto.
   Qed.
-
-
 
   (** For each program declaration,
     if the proof obligation holds then the evaluation succeeds and
@@ -1539,7 +1500,6 @@ Section S.
       + inv H0. auto.
       + eapply IHALL;auto.
   Qed.
-
 
   Lemma has_property_equal :
     forall te ge0 ge s t v prog
@@ -1618,7 +1578,6 @@ Section S.
     eapply cast_value_eq_value;eauto.
   Qed.
 
-
   Lemma generate_decl_fun_obligation_sound :
     forall te x tparams tret ge0 ge P prop
            (GEN : generate_decl_fun_obligation  te ge0 x tparams tret prop = Some P)
@@ -1654,7 +1613,6 @@ Section S.
     }
   Qed.
 
-
 (*  Definition has_def (g:globdef) :=
     match g with
     | DefConst _ _ _ | DefFun _ _ => true
@@ -1676,7 +1634,6 @@ Section S.
     reflexivity.
   Qed.
 
-  
   Lemma wf_env_tail : forall ge d prog,
       wf_env ge (d :: prog) ->
       wf_env ge prog.
@@ -1785,7 +1742,6 @@ Section S.
     eapply wf_env_set;eauto.
   Qed.
 
-
   Lemma wf_env_DefFun :
     forall te ge ge' x f prog
            (DUP : NoDup (map ident_of_globdef (DefFun x f :: prog)))
@@ -1886,7 +1842,6 @@ Section S.
     destruct v'. unfold same_value in EQ.
     auto.
   Qed.
-
 
   Lemma generate_obligations_sound :
     forall prog te checked props ol vc ge0
