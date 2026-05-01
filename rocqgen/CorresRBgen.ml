@@ -447,12 +447,12 @@ module HelperTactics = struct
       let eid = ident_to_string ed_name in
       sprintf
         "%s| %s_ShallowR.%s =>\n\
-         %serewrite Benum.match_with_err_eq_match_with_err2 with\n\
+         %serewrite Benum.ematch_with_eq_ematch_with2 with\n\
          %s(E_eq_dec := %s_eq_dec)\n\
          %s(econv_to := econv_%s_BtoR)\n\
          %s(econv_from := econv_%s_RtoB);\n\
          %sintros; try (apply econv_%s_inv1 || apply econv_%s_inv2);\n\
-         %scbn [Benum.match_with_err2]; rewrite econv_%s_inv1;\n\
+         %scbn [Benum.ematch_with2]; rewrite econv_%s_inv1;\n\
          %sautorewrite with corresRB_pattern_matching; simpl;\n\
          %sautorewrite with corresRB_pattern_matching;\n\
          %sdestruct E; simpl"
@@ -553,7 +553,7 @@ module HelperTactics = struct
        reflexivity\n\
        %s\n\
        %s| Benum.enum_eq (_ ?E) _ => destruct E; try reflexivity\n\
-       %s| Benum.match_with_err (_ ?E) _ => pattern_match_err_corres E\n\
+       %s| Benum.ematch_with (_ ?E) _ => pattern_match_err_corres E\n\
        %s| Barray.get ?A ?I =>\n\
        %sdestruct (Barray.get A I); simpl; try reflexivity\n\
        %s| Barray.set ?A ?I ?V =>\n\
@@ -708,7 +708,7 @@ let print_opaque_defs (out : out_channel) (prog : program) : unit =
   fprintf
     out
     "Opaque Benum.enum.\n\
-     Opaque Benum.match_with_err.\n\
+     Opaque Benum.ematch_with.\n\
      Opaque Brecord.record.\n\
      Opaque Brecord.project.\n\
      Opaque Brecord.upd.\n\

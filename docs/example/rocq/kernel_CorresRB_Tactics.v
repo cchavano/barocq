@@ -67,12 +67,12 @@ Class RewriteRB_Kernel_schedule := {
 Ltac pattern_match_err_corres E :=
   match type of E with
   | kernel_ShallowR.Kernel_proc_status =>
-      erewrite Benum.match_with_err_eq_match_with_err2 with
+      erewrite Benum.ematch_with_eq_ematch_with2 with
         (E_eq_dec := Kernel_proc_status_eq_dec)
         (econv_to := econv_Kernel_proc_status_BtoR)
         (econv_from := econv_Kernel_proc_status_RtoB);
       intros; try (apply econv_Kernel_proc_status_inv1 || apply econv_Kernel_proc_status_inv2);
-      cbn [Benum.match_with_err2]; rewrite econv_Kernel_proc_status_inv1;
+      cbn [Benum.ematch_with2]; rewrite econv_Kernel_proc_status_inv1;
       autorewrite with corresRB_pattern_matching; simpl;
       autorewrite with corresRB_pattern_matching;
       destruct E; simpl
@@ -96,7 +96,7 @@ Ltac corres_rb_match P :=
   | Kernel_proc_status_of_Z ?X =>
       destruct (Kernel_proc_status_of_Z X); simpl; try reflexivity
   | Benum.enum_eq (_ ?E) _ => destruct E; try reflexivity
-  | Benum.match_with_err (_ ?E) _ => pattern_match_err_corres E
+  | Benum.ematch_with (_ ?E) _ => pattern_match_err_corres E
   | Barray.get ?A ?I =>
       destruct (Barray.get A I); simpl; try reflexivity
   | Barray.set ?A ?I ?V =>

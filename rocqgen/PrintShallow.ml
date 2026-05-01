@@ -441,7 +441,7 @@ let rec expr_to_rocq_rec (prefix : string) (e : expr) : string =
               prefix
         | ShallowASTgen.ShallowB -> begin
             sprintf
-              "match_with_err %s [\n%s\n%s]"
+              "ematch_with %s [\n%s\n%s]"
               (opt_parens a1)
               (list_to_string
                  ~sep:";\n"

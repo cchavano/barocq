@@ -7,7 +7,7 @@ Open Scope option_monad_scope.
 Open Scope string_scope.
 
 Opaque Benum.enum.
-Opaque Benum.match_with_err.
+Opaque Benum.ematch_with.
 Opaque Brecord.record.
 Opaque Brecord.project.
 Opaque Brecord.upd.

@@ -1349,7 +1349,7 @@ Section S.
     match v with
     | Vptr _ _ => fail
     | Vprim _ e => match e with
-                   | PEnum id l en => match_with_err en cases
+                   | PEnum id l en => ematch_with en cases
                    |  _  => fail
                    end
     end.

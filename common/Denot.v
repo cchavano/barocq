@@ -619,7 +619,7 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
   Definition eval_match (tv:typ) (v: eval_typ tv) (tr: typ) (cases: list (pattern * (option(eval_typ tr)))) : option(eval_typ tr) :=
     (match tv as t0 return (eval_typ t0 -> option(eval_typ tr)) with
     | TEnum _ elems => 
-        (fun v0 => match_with_err v0 cases)
+        (fun v0 => ematch_with v0 cases)
     | _ => (fun _ => fail)
     end) v.
 

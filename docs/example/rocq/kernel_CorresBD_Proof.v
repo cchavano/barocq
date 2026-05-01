@@ -35,7 +35,7 @@ Ltac has_property_FFI :=
     apply same_value_refl; reflexivity].
 
 Opaque Benum.enum_eq_dec.
-Opaque Benum.match_with_err.
+Opaque Benum.ematch_with.
 Opaque Benum.of_Z.
 Opaque Int.add Int64.add.
 Opaque Int.sub Int64.sub.

@@ -226,7 +226,7 @@ Section DENOT.
   Definition eval_match (tv:typ) (v: eval_typ tv) (tr: typ) (cases: list (pattern * option (eval_typ tr * lenv))) : option (eval_typ tr * lenv) :=
     (match tv as t0 return (eval_typ t0 -> option (eval_typ tr * lenv)) with
     | TEnum _ elems => 
-        (fun v0 => match_with_err v0 cases)
+        (fun v0 => ematch_with v0 cases)
     | _ => (fun _ => fail)
     end) v.
 

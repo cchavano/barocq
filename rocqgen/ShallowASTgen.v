@@ -135,11 +135,11 @@ Module NormalizationR.
         sret ((x, be) :: nil, AVar x)
       end
     in
-    let fix mk_norm (le: smaplist BNF.expr) (e: expr) : BNF.expr :=
+    let fix letseq (le: smaplist BNF.expr) (e: expr) : BNF.expr :=
       match le with
       | nil => e
       | (x, be) :: le' =>
-          ELetIn x be (mk_norm le' e)
+          ELetIn x be (letseq le' e)
       end
     in
     let fix norm_exprlist_rec (e: Barocq.expr) (la: list atom) (le: list Barocq.expr) : crmon (smaplist BNF.expr * BNF.expr) :=
@@ -155,7 +155,7 @@ Module NormalizationR.
     in
     let norm_exprlist (e: Barocq.expr) (le: list Barocq.expr) : crmon BNF.expr :=
       do (lx, er) <- norm_exprlist_rec e [] le;
-      sret (mk_norm lx er)
+      sret (letseq lx er)
     in
     let fix norm_match_cases (cases: list (pattern * Barocq.expr)) : crmon (list (pattern * BNF.expr)) :=
       match cases with
@@ -199,11 +199,11 @@ Module NormalizationR.
         do (le, c) <- norm_expr_aux e1;
         do ne2 <- norm_expr_rec e2;
         do ne3 <- norm_expr_rec e3;
-        sret (mk_norm le (EIfThenElse c ne2 ne3))
+        sret (letseq le (EIfThenElse c ne2 ne3))
     | Barocq.EMatch e1 cases =>
         do (le, a) <- norm_expr_aux e1;
         do ncases <- norm_match_cases cases;
-        sret (mk_norm le (EMatch a ncases))
+        sret (letseq le (EMatch a ncases))
     | Barocq.ELetIn x e1 e2 =>
         do ne1 <- norm_expr_rec e1;
         do ne2 <- norm_expr_rec e2;

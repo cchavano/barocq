@@ -123,7 +123,7 @@ Section NORM.
           sret ((x, be) :: nil, AVar x (BarocqTyped.typof_expr e))
       end
     in
-    let fix mk_norm (le: smaplist BarocqBNF.expr) (e: BarocqBNF.expr) : BarocqBNF.expr :=
+    let fix letseq (le: smaplist BarocqBNF.expr) (e: BarocqBNF.expr) : BarocqBNF.expr :=
       let te := BarocqBNF.btypof_expr e in
       let fix mk_rec le :=
         match le with
@@ -146,7 +146,7 @@ Section NORM.
     in
     let norm_exprlist (e: BarocqTyped.expr) (le: list BarocqTyped.expr) : crmon BarocqBNF.expr :=
       do (lx, er) <- norm_exprlist_rec e [] le;
-      sret (mk_norm lx er)
+      sret (letseq lx er)
     in
     let fix norm_match_cases (cases: list (pattern * BarocqTyped.expr)) : crmon (list (pattern * BarocqBNF.expr)) :=
       match cases with
@@ -190,11 +190,11 @@ Section NORM.
         do (le, c) <- norm_expr_aux e1;
         do ne2 <- norm_expr_rec e2;
         do ne3 <- norm_expr_rec e3;
-        sret (mk_norm le (EIfThenElse c ne2 ne3 ty))
+        sret (letseq le (EIfThenElse c ne2 ne3 ty))
     | BarocqTyped.EMatch e1 cases ty =>
         do (le, a) <- norm_expr_aux e1;
         do ncases <- norm_match_cases cases;
-        sret (mk_norm le (EMatch a ncases ty))
+        sret (letseq le (EMatch a ncases ty))
     | BarocqTyped.ELetIn x e1 e2 ty =>
         do ne1 <- norm_expr_rec e1;
         do ne2 <- norm_expr_rec e2;
