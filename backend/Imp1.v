@@ -5,7 +5,6 @@ From BarocqComp Require Printer.
 
 Local Open Scope error_monad_scope.
 
-
 (** * Abstract syntax *)
 
 (** ** Statements *)

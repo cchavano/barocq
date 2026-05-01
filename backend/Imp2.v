@@ -146,8 +146,6 @@ Module Pp.
     | Some a => pp_atom a
     end.
 
-
-
   Fixpoint pp_statement (s:statement) :=
     match s with
     | StSkip    => Bstr "skip"

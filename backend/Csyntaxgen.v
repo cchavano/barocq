@@ -34,7 +34,6 @@ Section TRANSL.
         | _ => tr
         end
     | TEnum te => Tenum (Ident.to_pos te) noattr
-    (* | TEnum te => tint *)
     | TFun tparams tret =>
         let tparams' := List.map (transl_typ2_rec LyBoxed) tparams in
         let tret' := transl_typ2_rec LyBoxed tret in
@@ -451,11 +450,7 @@ Definition transl_program (prog: Imp2.program) : res Csyntax.program :=
   match Ctypes.make_program ts cdefs public main with
   | Errors.OK prog =>
       match Ctyping.typecheck_program prog with
-      | _ => eret prog
-      (* | OK prog => OK prog
-      | _ => OK prog
-      | Error (MSG msg :: CTX id :: _) => efailwith (String.append (String.append "CSyntaxgen.transl_program: typing efailed: " msg) (string_of_ident id))
-      | _ => efailwith "CSyntaxgen.transl_program: typing efailed" *)
+      | _ => eret prog (* TODO: implement enum types in Csyntax *)
       end
   | Errors.Error (Errors.MSG msg :: Errors.CTX id :: _) => efailwith (String.append msg (string_of_ident id))
   | Errors.Error _ => efailwith "Csyntaxgen.transl_program: error when calling Ctypes.make_program"

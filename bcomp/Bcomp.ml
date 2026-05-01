@@ -73,42 +73,48 @@ let usage_msg = "Usage: barocq [options] <files> \noptions:"
 
 let options =
   [
-    ("-debug", Arg.Set debug, "\t\t\t\tdebug flag");
-    ("-interp", Arg.Set opt_interp, "\t\t\t\tInterpret the given files");
+    ("-debug", Arg.Set debug, "\t\t\t\t\tDebug flag");
+    ("-interp", Arg.Set opt_interp, "\t\t\t\t\tInterpret the given files");
     ( "-parse",
       Arg.Set opt_parse,
-      "\t\t\t\tParse the given files (stop after parsing)" );
-    ("-typecheck", Arg.Set opt_typecheck, "\t\t\t\tTypecheck the input files");
+      "\t\t\t\t\tParse the given files (stop after parsing)" );
+    ("-typecheck", Arg.Set opt_typecheck, "\t\t\t\t\tTypecheck the input files");
     ( "-aliascheck",
       Arg.Set opt_aliascheck,
-      "\t\t\t\tRun the alias analysis on the input files" );
-    ("-o", Arg.Set_string c_output, "<file>\t\t\t\tGenerate C output in <file>");
+      "\t\t\t\t\tRun the alias analysis on the input files" );
+    ( "-o",
+      Arg.Set_string c_output,
+      "<file>\t\t\t\t\tGenerate C output in <file>" );
     ( "-orocq",
       Arg.Set_string rocq_output_prefix,
-      "<prefix>\t\t\tPrefix all Rocq generated files with <prefix_> (default: \
-       name of the C output)" );
+      "<prefix>\t\t\t\tPrefix all Rocq generated files with <prefix_> \
+       (default: name of the C output)" );
     ( "-odir",
       Arg.Set_string output_dir,
-      "<dir>\t\t\t\tPlace all generated files in <dir>" );
+      "<dir>\t\t\t\t\tPlace all generated files in <dir>" );
     ( "-print-tokens",
       Arg.Set opt_print_tokens,
-      "\t\t\tPrint parsed tokens (stop after lexing)" );
+      "\t\t\t\tPrint parsed tokens (stop after lexing)" );
     ( "-print",
       Arg.Symbol
         (["barocq"; "bbnf"; "ibnf"; "imp1"; "copy"; "imp2"], set_opt_print),
       "\tPretty-print the IR" );
-    ("-export-csyntax", Arg.Set opt_export_csyntax, "Export the Csyntax AST");
+    ( "-export-csyntax",
+      Arg.Set opt_export_csyntax,
+      "\t\t\t\tExport the Csyntax AST" );
     ( "-debug-aliasing",
       Arg.Set opt_debug_aliasing,
-      "\t\t\tDisplay the alias analysis debugging information on stderr" );
-    ("-fcopy-prop", Arg.Set flag_copy_prop, "\tPerform copy propagation");
+      "\t\t\t\tDisplay the alias analysis debugging information on stderr" );
+    ("-fcopy-prop", Arg.Set flag_copy_prop, "\t\t\t\t\tPerform copy propagation");
     ( "-types-impl",
       Arg.Set_string file_types_impl,
-      "<file>\t\t\tUse <file> as the C implementation for abstract types" );
-    ("-gen-header", Arg.Set opt_gen_header, "\t\t\t\tGenerate the C header file");
+      "<file>\t\t\t\tUse <file> as the C implementation for abstract types" );
+    ( "-gen-header",
+      Arg.Set opt_gen_header,
+      "\t\t\t\t\tGenerate the C header file" );
     ( "-gen-corres",
       Arg.Set opt_gen_corres,
-      "\t\t\t\tGenerate the Rocq embeddings correspondence material" );
+      "\t\t\t\t\tGenerate the Rocq embeddings correspondence material" );
   ]
 
 let set_source_files (file : string) : unit =

@@ -41,8 +41,6 @@ Module InvMap.
     | Some p => check_tree p
     end.
 
-
-
   Definition check (m:t):=
     STree.fold (fun acc _ v => acc && check_tree v) m true.
 
@@ -74,7 +72,6 @@ Module InvMap.
 
   Definition init (l:list string) (v:G.PathTree.t) :=
     List.fold_right (fun e acc => STree.set  e v acc) STree.empty l.
-
 
   Definition empty : t := STree.empty.
 
@@ -109,10 +106,8 @@ Definition of_alias (fd:EdgeLabel.t) (p : option (list EdgeLabel.t))  : G.PathTr
   | Some l => G.PathTree.create (fd::l)
   end.
 
-
 Definition inv_may_alias (env:InvMap.t) (paths : STree.t (list EdgeLabel.t)) (fd:EdgeLabel.t) :=
   InvMap.join env (STree.map (fun _ l => G.PathTree.create (List.rev (fd::l))) paths).
-
 
 Fixpoint find_may_edge {A: Type} (e:EdgeLabel.t) (l:list (EdgeLabel.t * A)) : option A :=
   match l with
@@ -194,7 +189,6 @@ Fixpoint combine_path_tree (lp : list (EdgeLabel.t * G.PathTree.t)) (ed: list (E
                  end
   end.
 
-
 (** [inv_down d n i] takes the intersection between the tree rooted at n
     and the invalid paths i. It then invalidates the variables in the tree *)
 Fixpoint inv_down  (d:domain) (fuel:nat) (n:int) (i : G.PathTree.t) : res InvMap.t :=
@@ -270,7 +264,6 @@ Definition suffix_alias (suf: G.PathTree.t) (p : option (list EdgeLabel.t))  : G
   | Some l => G.PathTree.create_with  l suf
   end.
 
-
 Definition inv_suffix_alias (env:InvMap.t) (paths : STree.t (list EdgeLabel.t)) (suf:G.PathTree.t) :=
   InvMap.join env (STree.map (fun _ p => G.PathTree.create_with (List.rev p) suf) paths).
 
@@ -343,7 +336,6 @@ Definition check_valid_args (env:InvMap.t) (f:ident) (args : list atom) : res un
                                                         pp_path p :: nil))))
   end.
 
-
 Definition call (te:tenv) (age: aenv) (d:domain) (ge:genv) (id:ident) (args:list atom) (env:InvMap.t) :=
   match Vars.get id (Vars d) with
   | Some _ => Error ((MSG "identifier ") :: MSG id :: MSG " should be a function." :: nil)
@@ -360,9 +352,6 @@ Definition call (te:tenv) (age: aenv) (d:domain) (ge:genv) (id:ident) (args:list
           end
   end.
 
-
-
-
 Definition inv_comp  (te:tenv) (age: aenv) (d:domain) (ge:genv)  (env:InvMap.t) (c:comp) :=
   match c with
   | CpAtom a => OK (eval_atom env a,env)
@@ -370,7 +359,6 @@ Definition inv_comp  (te:tenv) (age: aenv) (d:domain) (ge:genv)  (env:InvMap.t) 
   | CpRecordUpdate a1 fd v _ => set_field te age d env a1 (EdgeLabel.Field fd) v
   | CpCall id _ args _  => call te age d ge id args env
   end.
-
 
 Definition join (v1 v2 : option G.PathTree.t * InvMap.t) : res (option G.PathTree.t * InvMap.t) :=
   OK (InvMap.merge (fst v1) (fst v2) , InvMap.join (snd v1) (snd v2)).
@@ -402,14 +390,11 @@ Fixpoint inv_statement (te:tenv) (age:aenv) (d:domain) (ge:genv) (env:InvMap.t) 
       else inv_statement te age d ge env s
   end.
 
-
 Definition get_inv_arguments (inv:InvMap.t) (l:list (string * btyp)) :=
   List.map  (fun '(s,bt) => (bt,STree.get s inv)) l.
 
-
 Definition error_of_path (p : G.PathTree.t) :=
   Bcat (Bstr "the return expression has invalid paths;") (pp_path p).
-
 
 Definition inv_def_function (te:tenv)  (age:aenv) (ge:genv) (f:function) : res Afunction.t :=
   do d <- domain_of_function te f;

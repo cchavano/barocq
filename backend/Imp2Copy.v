@@ -14,7 +14,6 @@ Definition is_var (v:Syntax.ident) (c:constant) :=
   | _ => false
   end.
 
-
 Definition layout_eq_dec (l1 l2:layout) : {l1 = l2} + {l1 <> l2}.
 Proof.
   decide equality.
@@ -34,7 +33,6 @@ Proof.
   apply typ2_eq_dec.
 Defined.
 
-
 Definition constant_eq_dec (c1 c2: constant) : { c1 = c2 } + { c1 <> c2}.
 Proof.
   generalize Bool.bool_dec.
@@ -52,8 +50,6 @@ Definition var_of_constant (c:constant) :=
   | _ => None
   end.
 
-
-
 Definition constant_of_atom (a:atom)  : option constant :=
   match a with
   | ATrue => Some (CBool true)
@@ -63,15 +59,6 @@ Definition constant_of_atom (a:atom)  : option constant :=
   | AVar v bt    => Some (CVar v bt)
   |  _         => None
   end.
-
-(*Definition constant_of_comp (c:comp) : option constant :=
-  match c with
-  | CpAtom a => constant_of_atom a
-  | CpArraySet _ _ _ _ => None
-  | CpRecordUpdate _ _ _ _ => None
-  | CpCall _ _ _ _ => None
-  end.
-*)
 
 Definition atom_of_constant (c:constant) : atom :=
   match c with
@@ -101,18 +88,8 @@ Fixpoint rename_atom (ren : STree.t constant) (a:atom) : atom :=
   | APureCall fid b l bt  => APureCall fid b (List.map (rename_atom ren) l) bt
   end.
 
-(*Definition rename_comp (ren : STree.t constant) (c:comp) : comp :=
-  match c with
-  | CpAtom a => CpAtom (rename_atom ren a)
-  | CpArraySet a1 a2 a3 bt => CpArraySet (rename_atom ren a1) (rename_atom ren a2) (rename_atom ren a3) bt
-  | CpRecordUpdate a id v bt => CpRecordUpdate (rename_atom ren a) id (rename_atom ren v) bt
-  | CpCall fid bt l btr  => CpCall fid bt (List.map (rename_atom ren) l) btr
-  end.
- *)
-
 Definition merge_ren (r1 : STree.t constant) (r2: STree.t constant) :=
   STree.combine (fun i j =>  Some (i,j)) r1 r2.
-
 
 Definition is_skip (s:statement) :=
   match s with
@@ -124,7 +101,6 @@ Definition stseq (s1 s2 : statement) :=
   if is_skip s1 then s2
   else if is_skip s2 then s1 else
          StSequence s1 s2.
-
 
 Definition merge_one (s1 s2: statement) (ren: STree.t constant) (v:Ident.ident) (c1 c2:option constant) :
   (STree.t constant * statement * statement ) :=
@@ -143,19 +119,8 @@ Definition merge_one (s1 s2: statement) (ren: STree.t constant) (v:Ident.ident) 
 Definition merge_statement (r1 r2 : STree.t constant) :=
   STree.fold (fun '(ren,s1,s2) v '(c1,c2) => merge_one s1 s2 ren v c1 c2) (merge_ren r1 r2) (STree.empty, StSkip, StSkip).
 
-
-
-
-
 Definition statement_of_renaming (r:STree.t constant) : statement :=
   STree.fold (fun st v c => stseq (StSet v (atom_of_constant c)) st) r StSkip.
-
-(*Fixpoint merge_statement_list (ren : STree.t constant) (l : list (Benum.pattern * (STree.t constant * statement))) : STree.t constant * list (Benum.pattern * statement) :=
-  match l with
-  | nil => (ren , nil)
-  | (p,(r1,s1)) :: l => let (ren',s',r
-*)
-
 
 Definition transl_ecomp (ren: STree.t constant) (ec:ecomp) : ecomp :=
   match ec with

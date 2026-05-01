@@ -48,7 +48,6 @@ Section MAPACC.
 
 End MAPACC.
 
-
 Inductive cedge :=
   | CField (id:ident)
   | CIndex (i: usize).
@@ -98,8 +97,6 @@ Definition addr_of_ptr {ty:typ} (p:ptr ty) : option addr :=
   | PtrAbs a _ => Some a
   end.
 
-
-
 Definition set_addr_of_ptr {ty:typ} (p:ptr ty) (i:positive) : ptr ty :=
   match p with
   | PtrA _ ty => PtrA i ty
@@ -107,7 +104,6 @@ Definition set_addr_of_ptr {ty:typ} (p:ptr ty) (i:positive) : ptr ty :=
   | PtrF id l r   => PtrF id l r
   | PtrAbs _ id => PtrAbs i id
   end.
-
 
 Section S.
   Variable abs : Maps.PMap.t Type.
@@ -241,8 +237,6 @@ Section S.
     apply (pval_eq_dec_cast  _ v1 _ v2 eq_refl).
   Defined.
 
-
-
   Lemma ptr_eq_dec_cast : forall (ty1:typ) (v1: ptr ty1)  (ty2:typ) (v2: ptr ty2)
                                 (EQ: ty2 = ty1), {v1 = cast (f_equal ptr EQ) v2 } +
                                                    {v1 <> (cast (f_equal ptr EQ) v2)}.
@@ -329,7 +323,6 @@ Section S.
     change v2 with (cast (f_equal val eq_refl) v2).
     apply (val_eq_dec_cast  _ v1 _ v2 eq_refl).
   Defined.
-
 
   Lemma mval_eq_dec_cast : forall (ty1:typ) (v1: mval ty1)  (ty2:typ) (v2: mval ty2)
                                 (EQ: ty2 = ty1), {v1 = cast (f_equal mval EQ) v2 } +
@@ -444,9 +437,7 @@ Section S.
   | GFun  (args : list typ) (tret : typ) (fct: Fun args tret)
   | GConst  (ty:typ) (v : val ty).
 
-
   Definition genv := ident -> option gval.
-
 
   Definition  get {ty:typ} (p:ptr ty) (m:mem) : option (mval ty):=
     let* a := addr_of_ptr p in
@@ -471,7 +462,6 @@ Section S.
     |  _        => fail
     end.
 
-
   Definition decomp_ptr_t (ty: typ)  :=
     match ty with
     | TArray ty' => addr
@@ -485,9 +475,6 @@ Section S.
   Proof.
     destruct v; auto.
   Defined.
-
-
-
 
   Lemma ptr_not_prim : forall ty (p:ptr ty),
       typ_is_prim ty = true -> False.
@@ -508,7 +495,6 @@ Section S.
     | Vprim _ _ => true
     | Vptr _ _  => false
     end.
-
 
   Definition  get_fun {args :list typ} {ret : typ}  (p:ptr (TFun args ret)) (ge:genv) : option (mem -> typ_of_fun args ret).
   Proof.
@@ -591,8 +577,6 @@ Section S.
     | _   => false
     end.
 
-
-
   Inductive wf_val (ge:genv) (m:mem) : forall (ty:typ), val ty -> Prop :=
   (** primitive values are well-formed *)
   | WFVprim : forall ty v, wf_val ge m ty (Vprim ty v)
@@ -616,7 +600,6 @@ Section S.
     | GFun args tret _ => ty = TFun args tret
     | GConst ty' _      => ty = ty'
     end.
-
 
   (*** Wellformed properties *)
 
@@ -691,7 +674,6 @@ Section S.
     -  eexists. reflexivity.
     -  eexists. reflexivity.
   Qed.
-
 
   (*    Fixpoint eval_mem_ok (ge: genv) (m:t) (WF: wf ge m) (ty:typ) :
       forall  v
@@ -929,7 +911,6 @@ Section S.
     unfold empty,wf.
     simpl. discriminate.
   Qed.
-
 
   (*        Lemma wf_set : forall (ge:genv) ty (p:ptr ty) (mv:mval ty) (m m':t),
             wf ge m -> wf_mval ge m _ mv ->
