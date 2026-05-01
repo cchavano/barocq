@@ -2,11 +2,11 @@ open Printf
 open PrintUtils
 open Types
 open Syntax
-open BarocqShallow.Monadic
+open ShallowAST.Monadic
 
 let coqlib : string ref = ref ""
 
-let shver : BarocqShallowgen.shallow_version ref = ref BarocqShallowgen.ShallowR
+let shver : ShallowASTgen.shallow_version ref = ref ShallowASTgen.ShallowR
 
 let rec is_simpl_mtyp (ty : mtyp) : bool =
   match ty with
@@ -228,8 +228,8 @@ let binary_op_to_rocq (ty : mtyp) (op : binary_op) : string =
       | MBool -> "eqb"
       | MEnum t ->
           begin match !shver with
-          | BarocqShallowgen.ShallowR -> sprintf "%s_eq" (ident_to_string t)
-          | BarocqShallowgen.ShallowB -> "enum_eq"
+          | ShallowASTgen.ShallowR -> sprintf "%s_eq" (ident_to_string t)
+          | ShallowASTgen.ShallowB -> "enum_eq"
           end
       | _ -> intop "eq"
       end
@@ -238,8 +238,8 @@ let binary_op_to_rocq (ty : mtyp) (op : binary_op) : string =
       | MBool -> "neqb"
       | MEnum t ->
           begin match !shver with
-          | BarocqShallowgen.ShallowR -> sprintf "%s_neq" (ident_to_string t)
-          | BarocqShallowgen.ShallowB -> "enum_neq"
+          | ShallowASTgen.ShallowR -> sprintf "%s_neq" (ident_to_string t)
+          | ShallowASTgen.ShallowB -> "enum_neq"
           end
       | _ -> sprintf "%s %s" (intop "cmp") "Cne"
       end
@@ -253,7 +253,7 @@ let is_simpl_atom (a : atom) : bool =
   | ATrue | AFalse | AInt32 _ | AInt64 _ | AConstr _ | AVar _ -> true
   | ARecordProj _ ->
       begin match !shver with
-      | BarocqShallowgen.ShallowR -> true
+      | ShallowASTgen.ShallowR -> true
       | _ -> false
       end
   | _ -> false
@@ -263,7 +263,7 @@ let field_name_prefix (ty : mtyp) : string =
   | MRecord rid -> String.lowercase_ascii (ident_to_string rid)
   | _ -> assert false
 
-let typof_atom (a : atom) : mtyp = BarocqShallowgen.Monadification.typof_atom a
+let typof_atom (a : atom) : mtyp = ShallowASTgen.Monadification.typof_atom a
 
 let imod_of_mtyp (ty : mtyp) : string =
   match ty with
@@ -282,8 +282,8 @@ let rec atom_to_rocq (a : atom) : string =
   | AConstr (x, _) ->
       let x = ident_to_string x in
       begin match !shver with
-      | BarocqShallowgen.ShallowR -> x
-      | BarocqShallowgen.ShallowB -> sprintf "%s_Types.%s" !coqlib x
+      | ShallowASTgen.ShallowR -> x
+      | ShallowASTgen.ShallowB -> sprintf "%s_Types.%s" !coqlib x
       end
   | AVar (x, _) -> ident_to_string x
   | ACast (a1, dst_ty, _) ->
@@ -292,9 +292,8 @@ let rec atom_to_rocq (a : atom) : string =
       | MEnum tid ->
           let cast_op =
             match !shver with
-            | BarocqShallowgen.ShallowR ->
-                sprintf "%s_to_Z" (ident_to_string tid)
-            | BarocqShallowgen.ShallowB -> "Benum.to_Z"
+            | ShallowASTgen.ShallowR -> sprintf "%s_to_Z" (ident_to_string tid)
+            | ShallowASTgen.ShallowB -> "Benum.to_Z"
           in
 
           sprintf
@@ -307,9 +306,9 @@ let rec atom_to_rocq (a : atom) : string =
           | MEnum tid ->
               let cast_op =
                 match !shver with
-                | BarocqShallowgen.ShallowR ->
+                | ShallowASTgen.ShallowR ->
                     sprintf "%s_of_Z" (ident_to_string tid)
-                | BarocqShallowgen.ShallowB ->
+                | ShallowASTgen.ShallowB ->
                     sprintf "Benum.of_Z elems_of_%s" (ident_to_string tid)
               in
               sprintf
@@ -342,32 +341,32 @@ let rec atom_to_rocq (a : atom) : string =
       end
   | ARecordProj (a1, x, _) ->
       begin match !shver with
-      | BarocqShallowgen.ShallowR ->
+      | ShallowASTgen.ShallowR ->
           sprintf
             "%s.(%s_%s)"
             (opt_parens a1)
             (field_name_prefix (typof_atom a1))
             (ident_to_string x)
-      | BarocqShallowgen.ShallowB ->
+      | ShallowASTgen.ShallowB ->
           sprintf
             "Brecord.project %s %s eq_refl"
             (opt_parens a1)
-            (Deepgen.ident_to_deep x)
+            (PrintDeep.ident_to_deep x)
       end
   | ARecordUpdate (a1, x, a2, ty) ->
       begin match !shver with
-      | BarocqShallowgen.ShallowR ->
+      | ShallowASTgen.ShallowR ->
           sprintf
             "%s <| %s_%s := %s |>"
             (opt_parens a1)
             (field_name_prefix ty)
             (ident_to_string x)
             (atom_to_rocq a2)
-      | BarocqShallowgen.ShallowB ->
+      | ShallowASTgen.ShallowB ->
           sprintf
             "%s @ %s <- %s" (* Notation is using ltac in terms *)
             (opt_parens a1)
-            (Deepgen.ident_to_deep x)
+            (PrintDeep.ident_to_deep x)
             (opt_parens a2)
       end
   | ALambda (params, a1, _) ->
@@ -434,13 +433,13 @@ let rec expr_to_rocq_rec (prefix : string) (e : expr) : string =
         end
     | EMatch (a1, cases, _) ->
         begin match !shver with
-        | BarocqShallowgen.ShallowR ->
+        | ShallowASTgen.ShallowR ->
             sprintf
               "match %s with\n%s\n%send"
               (opt_parens a1)
               (list_to_string ~sep:"\n" (match_case_to_string prefix) cases)
               prefix
-        | BarocqShallowgen.ShallowB -> begin
+        | ShallowASTgen.ShallowB -> begin
             sprintf
               "match_with_err %s [\n%s\n%s]"
               (opt_parens a1)
@@ -496,7 +495,7 @@ let rec expr_to_rocq_rec (prefix : string) (e : expr) : string =
 and match_case_to_string (prefix : string) ((p, ep) : Benum.pattern * expr) :
     string =
   match !shver with
-  | BarocqShallowgen.ShallowR ->
+  | ShallowASTgen.ShallowR ->
       let case =
         match p with
         | Benum.PIdent (i, _) -> ident_to_string i
@@ -507,13 +506,13 @@ and match_case_to_string (prefix : string) ((p, ep) : Benum.pattern * expr) :
         prefix
         case
         (expr_to_rocq_rec (prefix ^ make_indent 2) ep)
-  | BarocqShallowgen.ShallowB ->
+  | ShallowASTgen.ShallowB ->
       let case =
         match p with
         | Benum.PIdent (i, z) ->
             sprintf
               "PIdent %s %i"
-              (Deepgen.ident_to_deep i)
+              (PrintDeep.ident_to_deep i)
               (Camlcoq.Z.to_int z)
         | Benum.PWildcard -> "PWildcard"
       in
@@ -708,7 +707,7 @@ module SR = struct
      From BarocqComp Require Import ShallowNotations.\n"
 
   let print_program (out : out_channel) (prog : program) : unit =
-    shver := BarocqShallowgen.ShallowR;
+    shver := ShallowASTgen.ShallowR;
     let types = prog.prog_types in
     let tabs = prog.prog_tabs in
     let defs = prog.prog_defs in
@@ -774,7 +773,7 @@ module SB = struct
       (fun (fname, lit) acc ->
         sprintf
           "(Field %s %s, %s)"
-          (Deepgen.ident_to_deep fname)
+          (PrintDeep.ident_to_deep fname)
           (opt_parens lit)
           acc)
       rc
@@ -793,7 +792,7 @@ module SB = struct
       eid
       (list_to_string
          ~sep:";\n"
-         (fun cid -> sprintf "%s%s" indent (Deepgen.ident_to_deep cid))
+         (fun cid -> sprintf "%s%s" indent (PrintDeep.ident_to_deep cid))
          ed_elems)
       eid
       eid
@@ -802,7 +801,7 @@ module SB = struct
     sprintf
       "%s(%s, %s : Type)"
       indent2
-      (Deepgen.ident_to_deep fname)
+      (PrintDeep.ident_to_deep fname)
       (mtyp_to_rocq fty)
 
   let record_def_to_rocq (rd_name : ident) (rd_fields : mtyp Maps2.smaplist) :
@@ -850,7 +849,7 @@ module SB = struct
         (gen_args 0)
     in
     let gen_return () : string =
-      let tret = BarocqShallowgen.Monadification.unwrap_mtyp tret in
+      let tret = ShallowASTgen.Monadification.unwrap_mtyp tret in
       sprintf
         "%sret %s."
         indent2
@@ -906,7 +905,7 @@ module SB = struct
       !coqlib
 
   let print_program (out : out_channel) (prog : program) : unit =
-    shver := BarocqShallowgen.ShallowB;
+    shver := ShallowASTgen.ShallowB;
     let defs = prog.prog_defs in
     fprintf out "%s" (imports ());
     fprintf out "\n";

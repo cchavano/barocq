@@ -14,24 +14,24 @@ Local Open Scope error_monad_scope.
 (** ** Expressions *)
 
 Inductive expr : Type :=
-  | ETrue : expr                                             (* true constant *)
-  | EFalse : expr                                            (* false constant *)
+  | ETrue : expr                                             (* true literal *)
+  | EFalse : expr                                            (* false literal *)
   | EInt32 (i: int) (s: signedness) : expr                   (* 32-bit signed or unsigned integer *)
   | EInt64 (i: int64) (s: signedness) : expr                 (* 64-bit signed orunsigned integer *)
   | EConstr (x: ident) : expr                                (* enum constructor *)  
   | EVar (x: ident) : expr                                   (* variable *)
   | ECast (e: expr) (ty: btyp)                               (* e as ty *)
-  | EUnaryOp (op: unary_op) (e: expr) : expr                 (* op e *)
-  | EBinaryOp (op: binary_op) (e1 e2 : expr) : expr          (* e1 op e2 *)
+  | EUnaryOp (op: unary_op) (e: expr) : expr                 (* uop e *)
+  | EBinaryOp (op: binary_op) (e1 e2 : expr) : expr          (* e1 bop e2 *)
   | EArrayGet (a i: expr) : expr                             (* a[i] *)
   | EArraySet (a i e: expr) : expr                           (* a[i] <- e *)
-  | ERecordProj (st: expr) (f: ident) : expr                 (* st.f *)
-  | ERecordUpdate (st: expr) (f: ident) (e: expr) : expr     (* st.f <- e *)
+  | ERecordProj (r: expr) (f: ident) : expr                  (* r.f *)
+  | ERecordUpdate (r: expr) (f: ident) (e: expr) : expr      (* r.f <- e *)
   | EApp (e: expr) (args: list expr) : expr                  (* e(args) *)
   | EIfThenElse (e1 e2 e3: expr) : expr                      (* if e1 then e2 else e3 *)
-  | EMatch (e: expr) (cases: list (pattern * expr)) : expr   (* match e with V1 -> e1 ... | Vn -> en end *)    
+  | EMatch (e: expr) (cases: list (pattern * expr)) : expr   (* match e with V1 -> e1 ... Vn -> en end *)    
   | ELetIn (x: ident) (e1 e2: expr) : expr                   (* let x = e1 in e2 *)
-  | EAttr (x:ident) (e:expr).                                (* expression with a decoration  *)
+  | EAttr (x: ident) (e: expr).                              (* expression with a decoration  *)
 
 (** ** Functions *)
 
@@ -192,27 +192,6 @@ Module Typed.
 
   Definition iprogram := list command.
 
- (* Module Pp.
-
-    Fixpoint pp_expr (e:expr) : box :=
-    match e with
-      | ETrue  => Bstr "true"
-      | EFalse => Bstr "false"
-      | EInt32 i s => Printer.pp_sint s i
-      | EInt64 i s => Printer.pp_sint64 s i
-      | EConstr s  _ => Bstr s
-      | EVar v _     => Bstr v
-      | ECast e v    => Pp.seq (Bstr "(":: Printer.pp_btyp v :: Bstr ")" :: pp_expr e :: nil)
-      | EUnaryOp o e1 _ => Bcat (Bstr (Printer.string_of_unary_op o)) (pp_expr e1)
-      | EBinaryOp o e1 e2 => Pp.seq ((pp_expr e1):: (Bstr (Printer.string_of_binary_op o)) :: (pp_expr e2) :: nil)
-      | EArrayGet e1 e2   => Pp.seq (pp_expr e1 :: Bstr "[" :: pp_expr e2  :: "]" :: nil)
-      | EArraySet e i v   => Pp.seq (pp_expr e  :: Bstr "[" :: pp_expr i  :: "] <- " :: pp_expr v :: nil)
-      | ERecordProj e id  => Pp.seq (pp_expr e1 :: Bstr "." :: Bstr id :: nil)
-      | ERecordUpdate e id v _  =>  Pp.seq (pp_expr e1 :: Bstr "." :: Bstr id :: nil)
-      end.
-
- End Pp. *)
-
   Section PURITY.
 
   Variable pure_funs: SSet.t.
@@ -270,8 +249,6 @@ Module Typing.
 
   Import BarocqTyped.
 
-  Import Res.
-
   Fixpoint typecheck_expr (be: benv) (gx: gcontext) (lx: lcontext) (e: Barocq.expr) : res BarocqTyped.expr :=
     match e with
     | Barocq.ETrue => eret ETrue
@@ -320,7 +297,7 @@ Module Typing.
         eret (ERecordUpdate e1' x e2' t)
     | Barocq.EApp e1 args =>
         do e1' <- typecheck_expr be gx lx e1;
-        do args' <- mmap (typecheck_expr be gx lx) args;
+        do args' <- Res.mmap (typecheck_expr be gx lx) args;
         let targs := List.map typof_expr args' in 
         do t <- typecheck_call (typof_expr e1') targs;
         eret (EApp e1' args' t)
@@ -751,9 +728,8 @@ Section DENOT.
     let* v := genv_get tabs ge x in
     if (typ_eq_dec (TFun tparam tret) (typeof_value tabs v)) then Some tt else fail.
 
-
-
   (** Evaluation of a definition with dynamic environments *)
+
   Fixpoint eval_def_rec (te: tenv) (ge: genv) (prog: program) (x: ident) : option (value tabs) :=
     match prog with
     | nil => fail

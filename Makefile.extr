@@ -163,9 +163,6 @@ endif
 $(BUILD_DIR)/bparser:
 	@mkdir -p $(BUILD_DIR)/bparser
 
-$(BUILD_DIR)/printer:
-	@mkdir -p $(BUILD_DIR)/printer
-
 builddir: $(addprefix $(BUILD_DIR)/,$(MLDIRS))
 
 $(BUILD_DIR)/%.ml: %.ml | builddir

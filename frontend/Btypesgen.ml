@@ -1,7 +1,7 @@
 open Printf
 open PrintUtils
 open Syntax
-open BarocqShallow.Monadic
+open ShallowAST.Monadic
 
 let coqlib : string ref = ref ""
 
@@ -13,14 +13,14 @@ let rec is_simpl_mtyp (ty : mtyp) : bool =
   | MRes ty' -> is_simpl_mtyp ty'
   | _ -> false
 
-let ident_to_shallow (shver : BarocqShallowgen.shallow_version) (id : ident) :
+let ident_to_shallow (shver : ShallowASTgen.shallow_version) (id : ident) :
     string =
   match shver with
-  | BarocqShallowgen.ShallowR ->
+  | ShallowASTgen.ShallowR ->
       sprintf "%s.%s" !shallowR_file (ident_to_string id)
-  | BarocqShallowgen.ShallowB -> ident_to_string id
+  | ShallowASTgen.ShallowB -> ident_to_string id
 
-let rec mtyp_to_rocq (shver : BarocqShallowgen.shallow_version) (ty : mtyp) :
+let rec mtyp_to_rocq (shver : ShallowASTgen.shallow_version) (ty : mtyp) :
     string =
   match ty with
   | MBool -> "bool"
@@ -41,7 +41,7 @@ let rec mtyp_to_rocq (shver : BarocqShallowgen.shallow_version) (ty : mtyp) :
       end
   | MRes ty' -> sprintf "res %s" (opt_parens shver ty')
 
-and opt_parens (shver : BarocqShallowgen.shallow_version) (ty : mtyp) : string =
+and opt_parens (shver : ShallowASTgen.shallow_version) (ty : mtyp) : string =
   PrintUtils.opt_parens is_simpl_mtyp (mtyp_to_rocq shver) ty
 
 let enum_def_to_rocq (ed_name : ident) (ed_elems : ident list) : string =
@@ -54,7 +54,7 @@ let enum_def_to_rocq (ed_name : ident) (ed_elems : ident list) : string =
     eid
     (list_to_string
        ~sep:";\n"
-       (fun cid -> sprintf "%s%s" indent (Deepgen.ident_to_deep cid))
+       (fun cid -> sprintf "%s%s" indent (PrintDeep.ident_to_deep cid))
        ed_elems)
     eid
     eid
@@ -62,8 +62,8 @@ let enum_def_to_rocq (ed_name : ident) (ed_elems : ident list) : string =
 let field_typ_to_rocq ((fname, fty) : ident * mtyp) : string =
   sprintf
     "(%s, %s : Type)"
-    (Deepgen.ident_to_deep fname)
-    (mtyp_to_rocq BarocqShallowgen.ShallowB fty)
+    (PrintDeep.ident_to_deep fname)
+    (mtyp_to_rocq ShallowASTgen.ShallowB fty)
 
 let record_def_to_rocq (rd_name : ident) (rd_fields : mtyp Maps2.smaplist) :
     string =
@@ -104,7 +104,7 @@ let print_enum_constructors (out : out_channel)
           eid
           indent
           eid
-          (Deepgen.ident_to_deep i);
+          (PrintDeep.ident_to_deep i);
         aux elems'
   in
   aux ed_elems
@@ -155,7 +155,7 @@ module EnumConv = struct
             !shallowR_file
             (ident_to_string i)
             constr
-            (Deepgen.ident_to_deep i)
+            (PrintDeep.ident_to_deep i)
             parens
       | i :: elems' ->
           let constr' = sprintf "%s (inr" constr in
@@ -166,7 +166,7 @@ module EnumConv = struct
             !shallowR_file
             (ident_to_string i)
             constr
-            (Deepgen.ident_to_deep i)
+            (PrintDeep.ident_to_deep i)
             parens
             (aux elems' constr' parens')
     in
@@ -178,7 +178,7 @@ module EnumConv = struct
           indent
           !shallowR_file
           (ident_to_string i)
-          (Deepgen.ident_to_deep i)
+          (PrintDeep.ident_to_deep i)
           (aux elems' "inr" "")
 
   let gen_econv_RtoB ((ed_name, ed_elems) : ident * ident list) : string =
@@ -374,7 +374,7 @@ module EnumConv = struct
             cid
             indent
             (ident_to_string ed_name)
-            (Deepgen.ident_to_deep constr)
+            (PrintDeep.ident_to_deep constr)
             cid
             indent)
         ed_elems
@@ -471,7 +471,7 @@ module RecordConv = struct
     in
     sprintf
       "Field %s %s"
-      (Deepgen.ident_to_deep fname)
+      (PrintDeep.ident_to_deep fname)
       (conv_value_opt_parens RtoB fty v)
 
   let rconv_RtoB (rd_name : string) (rd_fields : mtyp Maps2.smaplist)
@@ -582,7 +582,7 @@ module RecordConv = struct
             "%s@Brecord.project fields_of_%s b %s eq_refl = %s"
             indent
             rid
-            (Deepgen.ident_to_deep fname)
+            (PrintDeep.ident_to_deep fname)
             rproj)
         rd_fields
     in
@@ -617,7 +617,7 @@ module RecordConv = struct
           indent
           rid
           rid
-          (Deepgen.ident_to_deep fid)
+          (PrintDeep.ident_to_deep fid)
           rproj
       in
       sprintf
@@ -650,8 +650,8 @@ module RecordConv = struct
           indent
           rid
           rid
-          (Deepgen.ident_to_deep fid)
-          (mtyp_to_rocq BarocqShallowgen.ShallowB fty)
+          (PrintDeep.ident_to_deep fid)
+          (mtyp_to_rocq ShallowASTgen.ShallowB fty)
           (conv_value_opt_parens RtoB fty "v")
           rid
           (String.lowercase_ascii rid)
@@ -669,7 +669,7 @@ module RecordConv = struct
         indent
         !shallowR_file
         rid
-        (mtyp_to_rocq BarocqShallowgen.ShallowR fty)
+        (mtyp_to_rocq ShallowASTgen.ShallowR fty)
         update_correct
         indent
     in
@@ -688,7 +688,7 @@ module RecordConv = struct
         sprintf
           "@Brecord.project fields_of_%s b %s eq_refl"
           rid
-          (Deepgen.ident_to_deep fname)
+          (PrintDeep.ident_to_deep fname)
       in
       let proj_conv =
         let proj_paren = sprintf "(%s)" proj in

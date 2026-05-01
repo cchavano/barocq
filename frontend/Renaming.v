@@ -3,6 +3,8 @@ From BarocqComp Require Import StateMonads Syntax Barocq Benum Ident Maps2.
 
 Open Scope string_scope.
 
+(** * Rename local variables and parameters with fresh identifiers. *)
+
 Module STATE <: STATE_TYPE.
   Definition t := STree.t nat.
 End STATE.

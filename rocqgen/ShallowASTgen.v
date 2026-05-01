@@ -1,7 +1,7 @@
 From Stdlib Require Import List String ZArith.
 From compcert Require Import Maps.
 From BarocqComp  Require Import Pp Printer.
-From BarocqComp Require Import StateMonads Res Maps2 Types Utils Syntax Barray Benum Barocq BarocqShallow.
+From BarocqComp Require Import StateMonads Res Maps2 Types Utils Syntax Barray Benum Barocq ShallowAST.
 Import ListNotations.
 Import MonCounterErr.
 
@@ -214,7 +214,7 @@ Module Normalization.
       fn_body := body_norm
     |}.
 
-  Fixpoint norm_program (prog: Barocq.program) : res (BarocqShallow.BNF.program) :=
+  Fixpoint norm_program (prog: Barocq.program) : res (ShallowAST.BNF.program) :=
     match prog with
     | nil => eret (mk_program nil nil nil)
     | d :: prog' =>
@@ -385,7 +385,7 @@ Module Normalization2.
       fn_body := body_norm
     |}.
 
-  Fixpoint norm_program (prog: Barocq.program) : res (BarocqShallow.BNF.program) :=
+  Fixpoint norm_program (prog: Barocq.program) : res (ShallowAST.BNF.program) :=
     match prog with
     | nil => eret (mk_program nil nil nil)
     | d :: prog' =>

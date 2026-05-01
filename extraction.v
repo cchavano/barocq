@@ -5,7 +5,7 @@ From Stdlib Require Import ExtrOCamlInt63.
 From Stdlib Require BinInt BinPos.
 From compcert Require Integers Floats Machregs Archi AST Memdata Csyntax Initializers.
 From compcert Require Import Ctyping Ctypes Clight Ctypesdefs Values Cabs Parser.
-From BarocqComp Require Imp1 Imp1gen Barocq BarocqBNFUndo Compiler BarocqShallowgen BarocqVC.
+From BarocqComp Require Imp1 Imp1gen Barocq BarocqBNFUndo Compiler ShallowASTgen BarocqVC.
 
 (* Extraction language *)
 Extraction Language OCaml.
@@ -78,9 +78,9 @@ Separate Extraction
   Compiler.aliascheck_program
   Compiler.compile_to_imp1
   Compiler.compile Compiler.ir_name Compiler.opt_flag
-  BarocqShallow.Monadic.get_record_typedefs
-  BarocqShallowgen.monadify_norm_program
-  BarocqShallowgen.monadify_norm2_program
+  ShallowAST.Monadic.get_record_typedefs
+  ShallowASTgen.monadify_norm_program
+  ShallowASTgen.monadify_norm2_program
   Syntax.get_enum_typedefs
   Syntax.get_record_typedefs
   Syntax.get_record_typedefs

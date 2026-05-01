@@ -1,29 +1,32 @@
 -include Makefile.config
 
 COMMON=\
-	Unsigned63.v ZifyUint63.v StateMonads.v Res.v Utils.v Barray.v Brecord.v Benum.v Maps2.v Option.v \
-	ZlistPlus.v Types.v Syntax.v Typing.v Intop.v Ident.v MergeSort.v DList.v \
-	Graph.v ExtOrdered.v Pp.v Printer.v \
-	Denot.v
+	Unsigned63.v ZifyUint63.v StateMonads.v Res.v Utils.v Barray.v Brecord.v Benum.v Maps2.v Option.v\
+	ZlistPlus.v Types.v Syntax.v Typing.v Intop.v Ident.v MergeSort.v DList.v Denot.v\
+	Graph.v ExtOrdered.v Pp.v Printer.v\
 
 FRONTEND=\
-	Barocq.v Renaming.v BarocqBNF.v BarocqBNFgen.v BarocqBNFUndo.v \
-	BarocqShallow.v BarocqShallowgen.v ExtEqual.v BarocqVC.v BarocqBNFVC.v CorresBD_Tactics.v \
-	ShallowNotations.v
+	Barocq.v Renaming.v BarocqBNF.v BarocqBNFgen.v\
+	ImpBNF.v ImpBNFgen.v Imp1gen.v Imp1Pure.v
 
 BACKEND=\
-	ImpBNF.v ImpBNFgen.v Imp1.v Imp1gen.v Imp1Pure.v Imp1Imp.v Imp1Instr.v\
-	Imp1ElimAlias.v InvAnalysis.v Imp2Copy.v Imp2.v Imp2gen.v GlobRewrite.v Csyntaxgen.v
+	Imp1.v Imp1Imp.v Imp1Instr.v Imp1ElimAlias.v InvAnalysis.v\
+	Imp2Copy.v Imp2.v Imp2gen.v GlobRewrite.v Csyntaxgen.v
+
+ROCQGEN=\
+	ShallowAST.v ShallowASTgen.v ShallowNotations.v BarocqBNFUndo.v\
+	ExtEqual.v BarocqVC.v BarocqBNFVC.v CorresBD_Tactics.v
 
 BCOMP=Compiler.v
 
-VDIRS=common frontend backend bcomp
+VDIRS=common frontend backend rocqgen bcomp
 
 VDIRS_BUILD=$(addprefix $(BUILD_DIR)/, $(VDIRS))
 
 VSOURCE=\
 	$(addprefix common/,$(COMMON)) $(addprefix frontend/,$(FRONTEND))\
-	$(addprefix backend/,$(BACKEND)) $(addprefix bcomp/,$(BCOMP))
+	$(addprefix backend/,$(BACKEND)) $(addprefix rocqgen/, $(ROCQGEN))\
+	$(addprefix bcomp/,$(BCOMP))
 
 VBUILD=$(addprefix $(BUILD_DIR)/, $(VSOURCE))
 
@@ -62,7 +65,7 @@ $(EXTRDEP): | builddir
 
 extrdep: $(EXTRDEP) 
 
-# Copy Coq source files to the build directory
+# Copy Rocq source files to the build directory
 
 $(BUILD_DIR)/%.v: %.v | builddir
 	@echo COPY $< to $@
@@ -74,15 +77,15 @@ $(BUILD_DIR)/extraction.v: extraction.v | builddir
 	@echo COPY extraction.v to $@
 	@cp extraction.v $(BUILD_DIR)
 
-# Generate dependencies between Coq files
+# Generate dependencies between Rocq files
 
 depend1: $(VBUILD) $(EXTRDEP) $(BUILD_DIR)/extraction.v
-	@echo Analyzing Coq dependencies
+	@echo Analyzing Rocq dependencies
 	@$(COQDEP) $^ > .depend
 
 depend: depend1
 
-# Compile Coq source files
+# Compile Rocq source files
 
 %.vo: %.v
 	@echo COQC $*.v
@@ -104,9 +107,6 @@ $(BUILD_DIR)/extraction/STAMP: $(VBUILD:.v=.vo) $(EXTRDEP.v=.vo) $(BUILD_DIR)/ex
 	mkdir $(BUILD_DIR)/extraction; \
     fi
 	@./sync.sh $(BUILD_DIR)/extraction_tmp $(BUILD_DIR)/extraction
-
-
-#extraction: $(BUILD_DIR)/extraction/STAMP
 
 .depend.extr: $(BUILD_DIR)/extraction/STAMP
 	$(MAKE) -f Makefile.extr depend
@@ -155,9 +155,10 @@ clean_theories:
 	rm -f $(VBUILD:.v=.vok)
 	rm -f $(VBUILD:.v=.vos)
 	rm -f $(VBUILD:.v=.glob)
-	rm -f $(BUILD_DIR)/backend/.*.aux
 	rm -f $(BUILD_DIR)/common/.*.aux
 	rm -f $(BUILD_DIR)/frontend/.*.aux
+	rm -f $(BUILD_DIR)/backend/.*.aux
+	rm -f $(BUILD_DIR)/rocqgen/.*.aux
 	rm -f $(BUILD_DIR)/bcomp/.*.aux
 
 clean:

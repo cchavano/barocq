@@ -1,6 +1,6 @@
 open Printf
 open Syntax
-open BarocqShallow.Monadic
+open ShallowAST.Monadic
 open PrintUtils
 
 let coqlib : string ref = ref ""
@@ -56,14 +56,14 @@ let fun_corres_shallowR_call_ret (indent : string) (call : string) (tr : mtyp)
         indent
         (Btypesgen.conv_value_opt_parens Btypesgen.RtoB tr (sprintf "%s" call))
 
-let param_to_rocq (shver : BarocqShallowgen.shallow_version)
-    (param : ident * mtyp) : string =
+let param_to_rocq (shver : ShallowASTgen.shallow_version) (param : ident * mtyp)
+    : string =
   sprintf
     "(%s: %s)"
     (ident_to_string (fst param))
     (Btypesgen.mtyp_to_rocq shver (snd param))
 
-let param_list_to_rocq (shver : BarocqShallowgen.shallow_version)
+let param_list_to_rocq (shver : ShallowASTgen.shallow_version)
     (params : (ident * mtyp) list) : string =
   match params with
   | [] -> "(_: unit)"
@@ -72,8 +72,7 @@ let param_list_to_rocq (shver : BarocqShallowgen.shallow_version)
 let fun_corres_forall (params : (ident * mtyp) list) : string =
   match params with
   | [] -> ""
-  | _ ->
-      sprintf "forall %s," (param_list_to_rocq BarocqShallowgen.ShallowR params)
+  | _ -> sprintf "forall %s," (param_list_to_rocq ShallowASTgen.ShallowR params)
 
 let args_to_string (args : (ident * mtyp) list) : string =
   match args with
@@ -489,7 +488,7 @@ module HelperTactics = struct
   let print_helper_rewrite_tac (out : out_channel) (prog : program) : unit =
     let funs =
       List.filter
-        (fun (d : BarocqShallow.Monadic.globdef) ->
+        (fun (d : ShallowAST.Monadic.globdef) ->
           match d with
           | DefFun _ | DeclFun _ -> true
           | _ -> false)
@@ -507,7 +506,7 @@ module HelperTactics = struct
   let print_helper_match_tac (out : out_channel) (prog : program) : unit =
     let funs =
       List.filter
-        (fun (d : BarocqShallow.Monadic.globdef) ->
+        (fun (d : ShallowAST.Monadic.globdef) ->
           match d with
           | DefFun _ | DeclFun _ -> true
           | _ -> false)

@@ -256,9 +256,7 @@ let generate_c (gen_csyntax : bool) (gen_header : bool)
       end
 
 let gen_rocq_program (prog : Barocq.program) =
-  match
-    BarocqShallowgen.monadify_norm_program BarocqShallowgen.ShallowR prog
-  with
+  match ShallowASTgen.monadify_norm_program ShallowASTgen.ShallowR prog with
   | Res.OK prog -> prog
   | Res.Error msg ->
       raise
@@ -273,7 +271,7 @@ let gen_shallowB_program (l : Compiler.ir_prog list) =
   | Some bnf -> (
       let prog = BarocqBNFUndo.decompile_program bnf in
       match
-        BarocqShallowgen.monadify_norm2_program BarocqShallowgen.ShallowB prog
+        ShallowASTgen.monadify_norm2_program ShallowASTgen.ShallowB prog
       with
       | Res.OK bprog -> bprog
       | Res.Error msg ->
@@ -296,8 +294,8 @@ let generate_corres (prog : Barocq.program) (tprog : Barocq.Typed.program)
     let full_filename = get_full_filename rawname in
     let file = get_full_filename rawname "_ShallowR.v" in
     let oc = open_out file in
-    Shallowgen.coqlib := rawname;
-    Shallowgen.SR.print_program oc rprog;
+    PrintShallow.coqlib := rawname;
+    PrintShallow.SR.print_program oc rprog;
     close_out oc;
     printf "ShallowR embedding generated at %s\n" (Filename.basename file);
     (* Generate Rocq Deep embedding *)
@@ -309,7 +307,7 @@ let generate_corres (prog : Barocq.program) (tprog : Barocq.Typed.program)
       | None -> raise @@ UnexpectedError "Barocq BNF is not generated"
       | Some p -> p
     in
-    Deepgen.BarocqBNFDeep.print_program oc dprog;
+    PrintDeep.BarocqBNFDeep.print_program oc dprog;
     close_out oc;
     printf "Deep embedding generated at %s\n" (Filename.basename file);
 
@@ -323,8 +321,8 @@ let generate_corres (prog : Barocq.program) (tprog : Barocq.Typed.program)
     let bprog = gen_shallowB_program l in
     let shallowB_file = get_full_filename rawname "_ShallowB.v" in
     let shallowB_oc = open_out shallowB_file in
-    Shallowgen.coqlib := rawname;
-    Shallowgen.SB.print_program shallowB_oc bprog;
+    PrintShallow.coqlib := rawname;
+    PrintShallow.SB.print_program shallowB_oc bprog;
     close_out shallowB_oc;
     printf
       "ShallowB embedding generated at %s\n"

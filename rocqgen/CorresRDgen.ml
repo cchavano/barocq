@@ -1,6 +1,6 @@
 open Printf
 open Syntax
-open BarocqShallow.Monadic
+open ShallowAST.Monadic
 open PrintUtils
 open Btypesgen
 
@@ -61,14 +61,14 @@ module Deeptypes = struct
             "%sDefinition elems_of_%s : list ident := %s.\n"
             indent
             eid
-            (list_to_string_bracket Deepgen.ident_to_deep elems)
+            (list_to_string_bracket PrintDeep.ident_to_deep elems)
         in
         sprintf
           "%s\n%sDefinition %s : typ := TEnum %s elems_of_%s."
           elems
           indent
           eid
-          (Deepgen.ident_to_deep tname)
+          (PrintDeep.ident_to_deep tname)
           eid
     | TdRecord fields ->
         let rid = ident_to_string tname in
@@ -81,7 +81,7 @@ module Deeptypes = struct
                (fun (fname, (fty, _)) ->
                  sprintf
                    "(%s, %s)"
-                   (Deepgen.ident_to_deep fname)
+                   (PrintDeep.ident_to_deep fname)
                    (mtyp_to_typ_string fty))
                fields)
         in
@@ -90,7 +90,7 @@ module Deeptypes = struct
           fields
           indent
           (ident_to_string tname)
-          (Deepgen.ident_to_deep tname)
+          (PrintDeep.ident_to_deep tname)
           rid
 
   let deftype_to_string (def : globdef) : string =
@@ -146,7 +146,7 @@ let gen_const_corres (cid : ident) (ty : mtyp) : string =
   let thm =
     sprintf
       "eval_def %s = Some (VAL Deeptypes.typof_%s (%s))"
-      (Deepgen.ident_to_deep cid)
+      (PrintDeep.ident_to_deep cid)
       (ident_to_string cid)
       (conv_value RtoB ty (sprintf "%s.%s" !shallowfile (ident_to_string cid)))
   in
@@ -184,7 +184,7 @@ let fun_corres_shallow_call_ret (indent : string) (call : string) (ty : mtyp) :
 let fun_corres_forall (params : (ident * mtyp) list) : string =
   match params with
   | [] -> ""
-  | _ -> sprintf "forall %s," (Shallowgen.param_list_to_rocq params)
+  | _ -> sprintf "forall %s," (PrintShallow.param_list_to_rocq params)
 
 let fun_corres_shallow_call (indent : string) (fid : ident)
     (params : (ident * mtyp) list) (tret : mtyp) : string =
@@ -199,7 +199,7 @@ let fun_corres_shallow_call (indent : string) (fid : ident)
 let gen_fun_corres (fid : ident) (params : (ident * mtyp) list) (tret : mtyp) :
     string =
   let forall = fun_corres_forall params in
-  let fid_deep = Deepgen.ident_to_deep fid in
+  let fid_deep = PrintDeep.ident_to_deep fid in
   let fid_shallow = ident_to_string fid in
   let call_deep =
     sprintf "%s_val %s" fid_shallow (fun_corres_deep_call_args params)
@@ -263,7 +263,7 @@ let print_defs_corres (out : out_channel) (defs : globdef list) : unit =
     out
     ~delim:("", "\n")
     ~sep:"\n\n"
-    (fun (d : BarocqShallow.Monadic.globdef) ->
+    (fun (d : ShallowAST.Monadic.globdef) ->
       match d with
       | DefConst (cid, _, ty) | DeclConst (cid, ty) -> gen_const_corres cid ty
       | DefFun (fid, f) -> gen_fun_corres fid f.fn_params f.fn_return

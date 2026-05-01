@@ -1,6 +1,6 @@
 open Printf
 open Syntax
-open BarocqShallow.Monadic
+open ShallowAST.Monadic
 open PrintUtils
 
 let coqlib : string ref = ref ""
@@ -60,14 +60,14 @@ module Deeptypes = struct
             "%sDefinition elems_of_%s : list ident := %s.\n"
             indent
             eid
-            (list_to_string_bracket Deepgen.ident_to_deep elems)
+            (list_to_string_bracket PrintDeep.ident_to_deep elems)
         in
         sprintf
           "%s\n%sDefinition %s : typ := TEnum %s elems_of_%s."
           elems
           indent
           eid
-          (Deepgen.ident_to_deep tname)
+          (PrintDeep.ident_to_deep tname)
           eid
     | TdRecord fields ->
         let rid = ident_to_string tname in
@@ -80,7 +80,7 @@ module Deeptypes = struct
                (fun (fname, (fty, _)) ->
                  sprintf
                    "(%s, %s)"
-                   (Deepgen.ident_to_deep fname)
+                   (PrintDeep.ident_to_deep fname)
                    (mtyp_to_typ_string "" fty))
                fields)
         in
@@ -89,7 +89,7 @@ module Deeptypes = struct
           fields
           indent
           (ident_to_string tname)
-          (Deepgen.ident_to_deep tname)
+          (PrintDeep.ident_to_deep tname)
           rid
 
   let deftype_to_string (def : globdef) : string =
@@ -144,7 +144,7 @@ end
 let gen_abs_types_impl_env (types : struct_or_union Maps2.smaplist) : string =
   let lassoc (types : struct_or_union Maps2.smaplist) : (string * string) list =
     List.map
-      (fun (tname, _) -> (Deepgen.ident_to_deep tname, ident_to_string tname))
+      (fun (tname, _) -> (PrintDeep.ident_to_deep tname, ident_to_string tname))
       types
   in
   let env_list prefix l =
@@ -183,7 +183,7 @@ let gen_abs_defs_impl_env (defs : globdef list) : string =
         let r = lassoc defs' in
         begin match d with
         | DeclConst (x, _) | DeclFun (x, _, _) ->
-            (Deepgen.ident_to_deep x, ident_to_string x) :: r
+            (PrintDeep.ident_to_deep x, ident_to_string x) :: r
         | _ -> r
         end
   in
@@ -219,7 +219,7 @@ let gen_const_corres (cid : ident) (ty : mtyp) : string =
   let thm =
     sprintf
       "eval_def %s = Some (VAL Deeptypes.typof_%s %s)"
-      (Deepgen.ident_to_deep cid)
+      (PrintDeep.ident_to_deep cid)
       (ident_to_string cid)
       (sprintf "%s.%s" !shallowfile (ident_to_string cid))
   in
@@ -244,7 +244,7 @@ let fun_corres_shallow_call_ret (indent : string) (call : string) (ty : mtyp) :
 let fun_corres_forall (params : (ident * mtyp) list) : string =
   match params with
   | [] -> ""
-  | _ -> sprintf "forall %s," (Shallowgen.param_list_to_rocq params)
+  | _ -> sprintf "forall %s," (PrintShallow.param_list_to_rocq params)
 
 let fun_corres_shallow_call (indent : string) (fid : ident)
     (params : (ident * mtyp) list) (tret : mtyp) : string =
@@ -259,7 +259,7 @@ let fun_corres_shallow_call (indent : string) (fid : ident)
 let gen_fun_corres (fid : ident) (params : (ident * mtyp) list) (tret : mtyp) :
     string =
   let forall = fun_corres_forall params in
-  let fid_deep = Deepgen.ident_to_deep fid in
+  let fid_deep = PrintDeep.ident_to_deep fid in
   let fid_shallow = ident_to_string fid in
   let call_deep =
     sprintf "%s_val %s" fid_shallow (fun_corres_deep_call_args params)
@@ -294,7 +294,7 @@ let print_defs_corres (out : out_channel) (defs : globdef list) : unit =
     out
     ~delim:("", "\n")
     ~sep:"\n\n"
-    (fun (d : BarocqShallow.Monadic.globdef) ->
+    (fun (d : ShallowAST.Monadic.globdef) ->
       match d with
       | DefConst (cid, _, ty) | DeclConst (cid, ty) -> gen_const_corres cid ty
       | DefFun (fid, f) -> gen_fun_corres fid f.fn_params f.fn_return
@@ -308,7 +308,7 @@ let gen_def_property (d : globdef) : string =
     let cid_str = ident_to_string cid in
     sprintf
       "(%s,VAL Deeptypes.typof_%s %s.%s)"
-      (Deepgen.ident_to_deep cid)
+      (PrintDeep.ident_to_deep cid)
       cid_str
       !shallowfile
       cid_str
@@ -338,12 +338,12 @@ let print_typing_env (out : out_channel)
     | TdEnum _ ->
         sprintf
           "%s (TdEnum Deeptypes.elems_of_%s)"
-          (Deepgen.ident_to_deep tname)
+          (PrintDeep.ident_to_deep tname)
           (ident_to_string tname)
     | TdRecord _ ->
         sprintf
           "%s (TdRecord Deeptypes.fields_of_%s)"
-          (Deepgen.ident_to_deep tname)
+          (PrintDeep.ident_to_deep tname)
           (ident_to_string tname)
   in
   let rec tenv_defs_to_string (indent : string)
@@ -364,7 +364,7 @@ let print_typing_env (out : out_channel)
     | e :: elems' ->
         sprintf
           "STree.set %s %s\n%s(%s)"
-          (Deepgen.ident_to_deep e)
+          (PrintDeep.ident_to_deep e)
           eid
           indent
           (tenv_enum_def_constr_types
@@ -381,7 +381,7 @@ let print_typing_env (out : out_channel)
         let indent' = sprintf "%s%s" indent (make_indent (List.length elems)) in
         tenv_enum_def_constr_types
           indent
-          (Deepgen.ident_to_deep tname)
+          (PrintDeep.ident_to_deep tname)
           elems
           (tenv_constr_types_to_string indent' types')
     | _ :: types' -> tenv_constr_types_to_string indent types'
@@ -409,7 +409,7 @@ module VCgen = struct
 
   let rec print_needed_checked_lists (out : out_channel)
       (bprog : Barocq.Typed.globdef list)
-      (sdefs : BarocqShallow.Monadic.globdef list) : unit =
+      (sdefs : ShallowAST.Monadic.globdef list) : unit =
     match bprog with
     | [] -> ()
     | bd :: bprog' ->
@@ -453,7 +453,7 @@ module VCgen = struct
         (fun (pid, pty) ->
           sprintf
             "(%s, %s)" (* get p_ by renaming pass ? *)
-            (Deepgen.ident_to_deep pid)
+            (PrintDeep.ident_to_deep pid)
             (Deeptypes.mtyp_to_typ_string "Deeptypes." pty))
         params
     in
@@ -540,7 +540,7 @@ module VCgen = struct
     | DeclConst (cid, ty) -> gen_const_vc true cid ty
 
   let print_vc (out : out_channel) (bprog : Barocq.Typed.program)
-      (sprog : BarocqShallow.Monadic.program) : unit =
+      (sprog : ShallowAST.Monadic.program) : unit =
     let sdefs = sprog.prog_defs in
     fprintf out "\n";
     print_needed_checked_lists out bprog sprog.prog_defs;
