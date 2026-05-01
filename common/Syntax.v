@@ -57,37 +57,37 @@ Inductive binary_op : Type :=
 
 (** cast operators are implicit and resolved using typing information *)
 Inductive cast_operator :=
-| Cid (* Identitty *)
-| I32_of_bool
-| U32_of_bool
-| I64_of_bool
-| U64_of_bool
-| Benum_of_i32_I32_of_bool (enum: list ident) (* *)
-| I32_to_bool
-| U32_to_bool
-| U32_of_i32
-| I32_of_u32
-| I64_of_i32
-| U64_of_i32
-| U64_of_u32
-| I64_of_u32
-| Benum_of_i32 (enum: list ident)
-| Benum_of_i32_I32_of_u32 (enum : list ident)
-| I64_to_bool
-| U64_to_bool
-| I32_of_i64
-| U32_of_i64
-| I32_of_u64
-| U32_of_u64
-| U64_of_i64
-| I64_of_u64
-| Benum_of_i32_I32_of_i64 (enum: list ident)
-| Benum_of_i32_I32_of_u64 (enum: list ident)
-| I32_to_bool_Benum_to_i32 (enum: list ident)
-| Benum_to_i32
-| U32_of_i32_Benum_to_i32
-| I64_of_i32_Benum_to_i32
-| U64_of_i32_Benum_to_i32.
+  | Cid (* Identitty *)
+  | I32_of_bool
+  | U32_of_bool
+  | I64_of_bool
+  | U64_of_bool
+  | Benum_of_i32_I32_of_bool (enum: list ident) (* *)
+  | I32_to_bool
+  | U32_to_bool
+  | U32_of_i32
+  | I32_of_u32
+  | I64_of_i32
+  | U64_of_i32
+  | U64_of_u32
+  | I64_of_u32
+  | Benum_of_i32 (enum: list ident)
+  | Benum_of_i32_I32_of_u32 (enum : list ident)
+  | I64_to_bool
+  | U64_to_bool
+  | I32_of_i64
+  | U32_of_i64
+  | I32_of_u64
+  | U32_of_u64
+  | U64_of_i64
+  | I64_of_u64
+  | Benum_of_i32_I32_of_i64 (enum: list ident)
+  | Benum_of_i32_I32_of_u64 (enum: list ident)
+  | I32_to_bool_Benum_to_i32 (enum: list ident)
+  | Benum_to_i32
+  | U32_of_i32_Benum_to_i32
+  | I64_of_i32_Benum_to_i32
+  | U64_of_i32_Benum_to_i32.
 
 (** ** Atoms *)
 

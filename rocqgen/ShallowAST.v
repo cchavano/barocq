@@ -23,7 +23,8 @@ Module BNF.
     | AUnaryOp : unary_op -> atom -> atom
     | ABinaryOp : binary_op -> atom -> atom -> atom
     | ARecordProj : atom -> ident -> atom
-    | ARecordUpdate : atom -> ident -> atom -> atom.
+    | ARecordUpdate : atom -> ident -> atom -> atom
+    | AApp : ident -> list atom -> atom.
 
   (** ** Expressions *)
 
@@ -100,7 +101,7 @@ Module Monadic.
     | ARecordUpdate : atom -> ident -> atom -> mtyp -> atom
     | ALambda : list ident -> atom -> mtyp -> atom
     | ALambdaRet : list ident -> atom -> mtyp -> atom
-    | AApp : ident -> list ident -> mtyp -> atom.
+    | AApp : ident -> list atom -> mtyp -> atom.
 
   (** ** Expressions *)
 
@@ -158,9 +159,7 @@ Module Monadic.
     | ARecordUpdate a id v _ => Pp.seq (pp_atom a :: Bstr " <- " :: Bstr id :: Bstr " := " :: pp_atom v :: nil)
     | ALambda lid a _  => Bstr "lambda"
     | ALambdaRet lid _ _ => Bstr "lambda_ret"
-    | AApp f args _      => Pp.seq ((Bstr f) :: Bstr "(" :: Pp.seq (List.map Bstr args) :: Bstr ")" :: nil)
+    | AApp f args _      => Pp.seq ((Bstr f) :: Bstr "(" :: Pp.seq (List.map pp_atom args) :: Bstr ")" :: nil)
     end.
-
-
 
 End Monadic.

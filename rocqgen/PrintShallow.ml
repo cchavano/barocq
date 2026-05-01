@@ -383,7 +383,7 @@ let rec atom_to_rocq (a : atom) : string =
       sprintf
         "%s %s"
         (ident_to_string f)
-        (list_to_string ~sep:" " ident_to_string args)
+        (list_to_string ~sep:" " atom_to_rocq args)
 
 and opt_parens (a : atom) : string =
   PrintUtils.opt_parens is_simpl_atom atom_to_rocq a

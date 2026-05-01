@@ -10,8 +10,8 @@ Local Open Scope error_monad_scope.
 Inductive shallow_version : Type :=
   | ShallowR  (* shallow embedding with native Rocq records and enums. *)
   | ShallowB. (* shallow embedding with Barocq encoding for records and enums. *)
-
-Module Normalization.
+  
+Module NormalizationR.
 
   Import BNF.
 
@@ -53,6 +53,10 @@ Module Normalization.
   Local Open Scope state_err_monad_scope.
 
   Definition fresh_var : crmon ident := Utils.fresh_var_err "b".
+
+  Section NORM.
+
+  Variable pure_funs: SSet.t.
 
   Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BNF.expr :=
     let fix norm_expr_aux (e: Barocq.expr) : crmon (smaplist BNF.expr * atom) :=
@@ -114,8 +118,17 @@ Module Normalization.
                 sret (acc_l ++ lia, acc_args ++ [a]))
               args
               (sret ([], []));
-          do x <- fresh_var;
-          sret (li1 ++ l_args ++ [(x, EApp a1 a_args)], AVar x)
+          let impure_call :=
+            do x <- fresh_var;
+            sret (li1 ++ l_args ++ [(x, EApp a1 a_args)], AVar x)
+          in
+          match a1 with
+          | AVar f =>
+              if SSet.mem f pure_funs then
+                sret (li1 ++ l_args, AApp f a_args)
+              else impure_call
+          | _ => impure_call
+          end
       | _ =>
         do x <- fresh_var;
         do be <- norm_expr_rec e;
@@ -240,10 +253,12 @@ Module Normalization.
             eret (mk_program b_defs' b_types b_tabs)
         end
     end.
+  
+  End NORM.
 
-End Normalization.
+End NormalizationR.
 
-Module Normalization2.
+Module NormalizationB.
 
   Import BNF.
 
@@ -285,12 +300,12 @@ Module Normalization2.
 
   Open Scope state_err_monad_scope.
 
-  Definition fresh_var : crmon ident := Normalization.fresh_var.
+  Definition fresh_var : crmon ident := NormalizationR.fresh_var.
 
   Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BNF.expr :=
     let fix norm_exprlist_rec (e: Barocq.expr) (la: list atom) (le: list Barocq.expr) : crmon BNF.expr :=
       match le with
-      | nil => lift_err (Normalization.bnfexpr_of_atomlist e (rev' la))
+      | nil => lift_err (NormalizationR.bnfexpr_of_atomlist e (rev' la))
       | e1 :: le' =>
           match atom_of_expr e1 with
           | OK a1 => norm_exprlist_rec e (a1 :: la) le'
@@ -412,7 +427,7 @@ Module Normalization2.
         end
     end.
 
-End Normalization2.
+End NormalizationB.
 
 Module Monadification.
 
@@ -525,13 +540,19 @@ Module Monadification.
 
   Definition fresh_var : crmon ident := Utils.fresh_var_err "b".
 
-  Fixpoint make_lambda_args (n: nat) : crmon (list ident) :=
-    match n with
+  Fixpoint make_lambda_args (tparams: list mtyp) : crmon (list atom) :=
+    match tparams with
+    | nil => sret nil
+    | ty :: tparams' =>
+        do x <- fresh_var;
+        do r <- make_lambda_args tparams';
+        sret (AVar x ty :: r)
+    (* match n with
     | 0 => sret nil
     | S n' =>
         do x <- fresh_var;
         do r <- make_lambda_args n';
-        sret (x :: r)
+        sret (x :: r) *)
     end.
   
   Definition mtyp_list_eq_dec :
@@ -540,7 +561,8 @@ Module Monadification.
     apply list_eq_dec. apply mtyp_eq_dec.
   Defined.
 
-  Fixpoint eta_expand_rec (f: ident) (ty1: mtyp) (ty2: mtyp) (l: list ident) : crmon atom :=
+  Fixpoint eta_expand_rec (f: ident) (ty1: mtyp) (ty2: mtyp) (l: list atom) : crmon atom :=
+    let var_id a := match a with AVar x _ => x | _ => "ERROR"%string end in
     match ty1, ty2 with
     | MBool, MBool
     | MInt32 _, MInt32 _
@@ -564,13 +586,13 @@ Module Monadification.
           else
             match tr2 with
             | MRes tr2' =>
-                do args <- make_lambda_args (List.length t1);
+                do args <- make_lambda_args t1;
                 do a <- eta_expand_rec f tr1 tr2' (l ++ args);
-                sret (ALambdaRet args a ty2)
+                sret (ALambdaRet (List.map var_id args) a ty2)
             | _ =>
-              do args <- make_lambda_args (List.length t1);
+              do args <- make_lambda_args t1;
               do a <- eta_expand_rec f tr1 tr2 (l ++ args);
-              sret (ALambda args a ty2)
+              sret (ALambda (List.map var_id args) a ty2)
             end
         else sfail
     | _, _ => sfail
@@ -802,6 +824,23 @@ Module Monadification.
     | _ => efail
     end.
 
+  Fixpoint typecheck_call_rec (tparams: list mtyp) (args: list atom) (tret: mtyp) : res (list atom * mtyp) :=
+    match tparams, args with
+    | nil, nil => eret (nil, tret)
+    | tp1 :: tparams', a1 :: args' =>
+        let ta1 := typof_atom a1 in
+        do (args1, t) <- typecheck_call_rec tparams' args' tret;
+        do a1' <- typecheck_atom_against a1 tp1;
+        eret (a1' :: args1, t)
+    | _, _ => Error (msg "typecheck_call_rec")
+    end.
+
+  Definition typecheck_call (ty1: mtyp) (args: list atom) : res (list atom * mtyp) :=
+    match ty1 with
+    | MFun tparams tret => typecheck_call_rec tparams args tret
+    | _ => Error (msg "typecheck_call")
+    end.
+
   Fixpoint typecheck_atom (me : menv) (gx: gcontext) (lx: lcontext) (a: BNF.atom) : res atom :=
     match a with
     | BNF.ATrue => eret ATrue
@@ -842,29 +881,21 @@ Module Monadification.
         let ty1 := typof_atom a1' in
         do (a2', t) <- typecheck_record_update me ty1 a2' x;
         eret (ARecordUpdate a1' x a2' t)
+    | BNF.AApp f args =>
+        do tf <- typof_var gx lx f;
+        match tf with
+        | MFun _ (MRes _) => efail
+        | _ =>
+          do args' <- mmap (typecheck_atom me gx lx) args;
+          do (args1, t) <- typecheck_call tf args';
+          eret (AApp f args1 t)
+        end
     end.
 
   Definition typecheck_atom_err (me : menv) (gx: gcontext) (lx: lcontext) (a: BNF.atom) : res atom :=
     match typecheck_atom me gx lx a with
     | Error e => Error (MSG "typecheck_atom_err" :: e)
     | OK a => OK a
-    end.
-
-  Fixpoint typecheck_call_rec (tparams: list mtyp) (args: list atom) (tret: mtyp) : res (list atom * mtyp) :=
-    match tparams, args with
-    | nil, nil => eret (nil, tret)
-    | tp1 :: tparams', a1 :: args' =>
-        let ta1 := typof_atom a1 in
-        do (args1, t) <- typecheck_call_rec tparams' args' tret;
-        do a1' <- typecheck_atom_against a1 tp1;
-        eret (a1' :: args1, t)
-    | _, _ => Error (msg "typecheck_call_rec")
-    end.
-
-  Definition typecheck_call (ty1: mtyp) (args: list atom) : res (list atom * mtyp) :=
-    match ty1 with
-    | MFun tparams tret => typecheck_call_rec tparams args tret
-    | _ => Error (msg "typecheck_call")
     end.
 
   Fixpoint wrap_mtyp (ty: mtyp) : mtyp :=
@@ -1204,12 +1235,12 @@ End Monadification.
 Local Open Scope error_monad_scope.
 
 Definition monadify_norm_program (shver: shallow_version) (prog: Barocq.program) : res Monadic.program :=
-  do/c bnf <- Normalization.norm_program prog /> efailwith "unable to normalize the program";
+  do/c bnf <- NormalizationR.norm_program (Barocq.tot_functions prog) prog /> efailwith "unable to normalize the program";
   do/c mon <- Monadification.monadify_program shver bnf /> efailwith "unable to monadify the program";
   eret mon.
 
 Definition monadify_norm2_program (shver: shallow_version) (prog: Barocq.program) : res Monadic.program :=
-  match Normalization2.norm_program prog with
+  match NormalizationB.norm_program prog with
   | Error e => Error (MSG "Unable to normalize the program (v2):" ::MSG "Error " :: e)
   | OK bnf  => match Monadification.monadify_program shver bnf with
                | Error e => Error (MSG "unable to monadify the program (v2):" :: MSG "Error " :: e)

@@ -71,6 +71,61 @@ Definition iprog_to_prog (iprog: iprogram) : program :=
     nil
     iprog.
 
+Section TOTALITY.
+
+  Variable tot_funs: SSet.t.
+
+  Fixpoint expr_is_tot (e: expr) : bool :=
+    match e with
+    | ETrue | EFalse | EInt32 _ _ | EInt64 _ _
+    | EConstr _ | EVar _ => true
+    | ECast e1 ty =>
+        match ty with
+        | BEnum _ => false
+        | _ => expr_is_tot e1
+        end
+    | ERecordProj e1 _
+    | EUnaryOp _ e1 => expr_is_tot e1
+    | EBinaryOp op e1 e2 =>
+        match op with
+        | BopDiv | BopMod => false
+        | _ => (expr_is_tot e1) && (expr_is_tot e2)
+        end
+    | ERecordUpdate e1 _ e2
+    | ELetIn _ e1 e2 => (expr_is_tot e1) && (expr_is_tot e2)
+    | EApp e1 args =>
+        match e1 with
+        | EVar f =>
+            SSet.mem f tot_funs
+            && (List.forallb expr_is_tot args)
+        | _ => false
+        end
+    | EArrayGet _ _
+    | EArraySet _ _ _ => false
+    | EIfThenElse e1 e2 e3 =>
+        (expr_is_tot e1)
+        && (expr_is_tot e2)
+        && (expr_is_tot e3)
+    | EMatch e cases =>
+        (expr_is_tot e) && List.forallb (fun '(_, ei) => expr_is_tot ei) cases
+    | EAttr _ e => expr_is_tot e
+    end.
+
+End TOTALITY.
+
+Definition tot_functions (prog: program) : SSet.t :=
+  List.fold_left
+    (fun acc def =>
+      match def with
+      | DefFun x f =>
+          if btyp_is_prim (fn_return f) && expr_is_tot acc (fn_body f)
+          then (SSet.add x acc)
+          else acc
+      | _ => acc
+      end)
+    prog
+    SSet.empty.
+
 Module Pp.
 
   Fixpoint pp_expr (e:expr) :=
@@ -192,7 +247,7 @@ Module Typed.
 
   Definition iprogram := list command.
 
-  Section PURITY.
+  Section PURITY_MEM.
 
   Variable pure_funs: SSet.t.
 
@@ -224,17 +279,15 @@ Module Typed.
     | EAttr _ e => expr_is_pure e
     end.
 
-  Definition func_is_pure (f: function) : bool :=
-    btyp_is_prim (fn_return f) && expr_is_pure (fn_body f).
-
-  End PURITY.
+  End PURITY_MEM.
 
   Definition pure_functions (prog: program) : SSet.t :=
     List.fold_left
       (fun acc def =>
         match def with
         | DefFun x f =>
-            if func_is_pure acc f then (SSet.add x acc)
+            if btyp_is_prim (fn_return f) && expr_is_pure acc (fn_body f)
+            then (SSet.add x acc)
             else acc
         | _ => acc
         end)
