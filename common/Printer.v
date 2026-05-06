@@ -1,7 +1,7 @@
 (** Printing for programs *)
 From BarocqComp Require Import Pp.
 From Stdlib Require Import String List ZArith.
-From BarocqComp Require Import Syntax.
+From BarocqComp Require Import Syntax Benum.
 From BarocqComp Require Import Unsigned63 Types.
 Open Scope string.
 
@@ -183,6 +183,19 @@ Definition pp_globdef {B T L:Type} (pp_lit :  L -> box) (pp_fct : ident -> funct
                                   (pp_list  (Bstr " -> ") (pp_pair (Bstr ",") pp_attr pp_typ) l)
                                    :: Bstr " -> " :: pp_typ t :: nil)
   end.
+
+
+Definition pp_pattern (p:pattern) : box :=
+  match p with
+  | PIdent id _ => Bstr id
+  | PWildcard   => Bstr "_"
+  end.
+
+Definition pp_match {A B:Type} (pp_expr1 : A -> box) (pp_expr2 : B -> box) (str:string) (e:A) (cases:list (pattern * B)) : box :=
+  Bstack (Pp.seq (Bstr str :: pp_expr1 e :: Bstr " with" :: nil))
+    (Bstack
+       (Pp.pp_slist (fun '(p,e) => Pp.seq (Bstr " "::pp_pattern p :: Bstr " => " :: pp_expr2 e :: nil)) cases)
+       (Bstr "end") Left)   Left.
 
 Fixpoint pp_literal (l:literal) :=
   match l with

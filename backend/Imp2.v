@@ -105,6 +105,19 @@ Module Pp.
   Import String.
   Import ListNotations.
 
+  Fixpoint pp_typ2 (t:typ2) : box :=
+    match t with
+    | TVoid => Bstr "void"
+    | TBool => Bstr "bool"
+    | TInt32 s => if s then Bstr "i32" else Bstr "u32"
+    | TInt64 s => if s then Bstr "i64" else Bstr "u64"
+    | TArray ty _ => Pp.seq (Bstr "[" :: pp_typ2 ty :: Bstr "]" :: nil)
+    | TEnum id    => Bcat (Bstr "enum ") (Bstr id)
+    | TRecord id _ => Bcat (Bstr "record ") (Bstr id)
+    | TFun args r => Pp.seq (Bstr "(" :: pp_list (Bstr ", ") pp_typ2 args :: Bstr ") -> " :: pp_typ2 r :: nil)
+    | TAbs id   => Bcat (Bstr "abs ") (Bstr id)
+    end.
+
   Fixpoint pp_atom (a:atom) : box :=
     match a with
     | ATrue =>  Bstr "true"
@@ -113,7 +126,7 @@ Module Pp.
     | AInt64 i s => pp_sint64 s i
     | AConstr s _ _ =>  Bstr s
     | AVar s _     => Bstr s
-    | ACast a0 bt => seq [pp_atom a0; Bstr " as "; Bstr "??"]
+    | ACast a0 bt => seq [pp_atom a0; Bstr " as "; pp_typ2 bt]
     | AUnaryOp o a0 _ => Bcat (Bstr (string_of_unary_op o)) (pp_atom a0)
     | ABinaryOp o a1 a2 _ => Bcat (pp_atom a1) (Bcat (Bstr (string_of_binary_op o)) (pp_atom a2))
     | AArrayGet a0 i _ _ => Bcat (pp_atom a0) (array_index pp_atom i)
@@ -158,7 +171,7 @@ Module Pp.
         let c  := pp_atom a in
         let cd := Bcat (Bstr "if ") c in
         Bstack cd (Bstack s1 s2 Left) Left
-    | StSwitch a l => Bstr "case..."
+    | StSwitch a l => pp_match pp_atom pp_statement "case " a l
     | StSequence s1 s2 =>
         let s1 := pp_statement s1 in
         let s2 := pp_statement s2 in
@@ -167,9 +180,17 @@ Module Pp.
     | StReturn a => Bcat (Bstr "return ") (pp_option_atom a)
     end.
 
-  Definition pp_typ2 (t:typ2) : box := Bstr "???".
-
-  Definition pp_literal (l:literal) : box := Bstr "???".
+  Fixpoint pp_literal (l:literal) : box :=
+    match l with
+    | LTrue  => Bstr "true"
+    | LFalse => Bstr "false"
+    | LInt32 i _ => pp_int i
+    | LInt64 i _ => pp_int64 i
+    | LVar id ty => Bstr id
+    | LArray l0 _ _ => Bcat (Bstr "[| ") (Bcat (pp_list (Bstr ";") pp_literal l0) (Bstr " |]"))
+    | LRecord l0 _ _ =>
+        Bcat (Bstr "{| ") (Bcat (pp_list (Bstr ";") (pp_pair (Bstr ":") Bstr pp_literal) l0) (Bstr " |}"))
+    end.
 
   Definition pp_program (p:program) := Printer.pp_program  pp_typ2 pp_literal pp_statement  p.
 

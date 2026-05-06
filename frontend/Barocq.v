@@ -159,17 +159,41 @@ Module Pp.
                              (Bcat (Bstr "if ") (pp_expr c))
                              (Bstack (Bcat (Bstr "then ") (pp_expr t))
                                 (Bcat (Bstr "else ") (pp_expr e)) Left) Left
-    | EMatch e cases => Bstr "match ... "
+    | EMatch e cases => pp_match pp_expr pp_expr "match " e cases
     | ELetIn id e1 e2 => Bcat (Bstr "let ") (Bstack (Pp.seq (Bstr id :: Bstr " = " :: pp_expr e1 :: Bstr " in " :: nil))                                               (pp_expr e2) Left)
     | EAttr id e => Pp.seq (Bstr "#[ " :: Bstr id :: Bstr " ]"  :: pp_expr e :: nil)
     end.
 
+  Definition pp_type_def {T: Type} (pp_elt : T -> box) (td : type_def T) :=
+    match td with
+    | TdEnum l => pp_list (Bstr ",") (fun x => Bstr x) l
+    | TdRecord l => seq (Bstr "{ " ::
+                           pp_list (Bstr ",") (fun x => Pp.seq (Bstr (fst x) :: Bstr " : " :: pp_elt (snd x) :: nil)) l
+                           :: Bstr " }" :: nil)
+    end.
+
+  Definition pp_field_desc (fd:btyp * layout) : box :=
+    pp_btyp (fst fd).
+
+  Definition struct_or_union_string (s:struct_or_union) : string :=
+    match s with
+    | SU_struct => "struct"
+    | SU_union  => "union"
+    end.
+
   Definition pp_globdef (gd:globdef) : box :=
     match gd with
-    | DefType id td => Bcat (Bstr "type") (Bstr id)
+    | DefType id td => seq (Bstr "type " :: Bstr id :: Bstr "=" :: pp_type_def pp_field_desc td :: nil)
     | DefConst id lit _ => Pp.seq (Bstr "defn ":: Bstr id :: Bstr " = " :: Printer.pp_literal lit :: nil)
     | DefFun id f       => Printer.pp_function pp_expr pp_btyp id f
-    | _                 => Bstr "decl ..."
+    | DeclType id su     => seq (Bstr "type ":: Bstr id :: Bstr " of " :: Bstr (struct_or_union_string su) :: nil)
+    | DeclFun id arg r  => seq
+                             [Bstr "decl ";
+                              Bstr id; Bstr " : " ;
+                              pp_list (Bstr " -> ") (fun x => pp_btyp (snd x)) arg ; Bstr " -> "; pp_btyp r]
+    | DeclConst id bt   => seq
+                             [Bstr "decl ";
+                              Bstr id; Bstr " : " ; pp_btyp bt ]
     end.
 
   Definition pp_program (p:program) := pp_slist pp_globdef p.
@@ -397,7 +421,7 @@ Module Typing.
       |}
     else efailwith "Barocq.Typing.typecheck_function: return type mismatch".
 
-  Definition typecheck_globdef (be:benv) (gx:gcontext) (d: Barocq.globdef) : res (benv * gcontext * BarocqTyped.globdef) :=
+  Definition xtypecheck_globdef (be:benv) (gx:gcontext) (d: Barocq.globdef) : res (benv * gcontext * BarocqTyped.globdef) :=
     match d with
     | Barocq.DefType x td =>
         do be' <- Res.of_opt (TEnv.update_defs be x td);
@@ -423,6 +447,22 @@ Module Typing.
           let tf := mk_fun_btyp tparams tret in
           do gx' <- gcontext_update gx x tf;
           eret (be,gx',DeclFun x tparams tret)
+    end.
+
+  Definition ident_of_globdef (gd : Barocq.globdef) :=
+    match gd with
+    | Barocq.DefType id _ => id
+    | Barocq.DefConst id _ _ => id
+    | Barocq.DefFun id _ => id
+    | Barocq.DeclType id _ => id
+    | Barocq.DeclConst id _ => id
+    | Barocq.DeclFun id _ _ => id
+    end.
+
+  Definition typecheck_globdef (be:benv) (gx:gcontext) (d: Barocq.globdef) : res (benv * gcontext * BarocqTyped.globdef) :=
+    match xtypecheck_globdef be gx d with
+    | OK r => OK r
+    | Error m => Error (MSG "Cannot typecheck " :: MSG (ident_of_globdef d) :: m)
     end.
 
   Fixpoint typecheck_globdefs (be: benv) (gx: gcontext) (defs: list Barocq.globdef) : res (list BarocqTyped.globdef) :=
