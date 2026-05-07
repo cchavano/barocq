@@ -1,4 +1,4 @@
-= Barocq user manual
+= The Barocq programming language: User manual
 :toc:
 
 == Preamble
