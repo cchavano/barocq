@@ -40,10 +40,10 @@ Module Pp.
   Fixpoint pp_statement (s:statement) :=
     match s with
     | StSkip    => Bstr "skip"
-    | StSet i c => Bcat (Bstr i) (Bcat (Bstr "=") (Printer.pp_comp c))
+    | StSet i c => Bcat (Bstr i) (Bcat (Bstr " := ") (Printer.pp_comp c))
     | StIfThenElse a s1 s2 =>
-        let s1 := Bcat (Bstr " then ") (pp_statement s1) in
-        let s2 := Bcat (Bstr " else ") (pp_statement s2) in
+        let s1 := Bcat (Bstr "then ") (pp_statement s1) in
+        let s2 := Bcat (Bstr "else ") (pp_statement s2) in
         let c  := Printer.pp_atom a in
         let cd := Bcat (Bstr "if ") c in
         Bstack cd (Bstack s1 s2 Left) Left
@@ -51,8 +51,7 @@ Module Pp.
     | StSequence s1 s2 =>
         let s1 := pp_statement s1 in
         let s2 := pp_statement s2 in
-        Bstack s1
-          (Bcat (Bstr ";") s2) Left
+        Bstack (suffix_nocat s1 ";") s2 Left
     | StReturn a => Bcat (Bstr "return ") (Printer.pp_atom a)
     | StAttr a s => Bcat (Bstr "[#") (Bcat (Bstr a) (Bcat (Bstr "]") (pp_statement s)))
     end.

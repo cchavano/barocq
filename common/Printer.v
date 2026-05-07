@@ -48,7 +48,7 @@ Definition pp_arrow_typ {T:Type} (pp_typ : T -> box) (args : list (ident * T)) (
 Definition pp_function {B T: Type}  (pp_body: B -> box) (pp_typ : T -> box) (id:ident) (f:function B T) : box :=
   Bstack
     (Pp.seq  (Bstr "defn " :: Bstr id :: pp_arrow_typ pp_typ f.(fn_params) f.(fn_return) :: Bstr " = " :: nil))
-    (Bcat (Bstr " ") (pp_body f.(fn_body))) Left.
+    (Bcat (Bstr "  ") (pp_body f.(fn_body))) Left.
 
 Definition string_of_unary_op (o:unary_op) :=
   match o with
@@ -91,33 +91,9 @@ Fixpoint pp_btyp (bt: btyp) :=
   | BArray bt ly => Pp.seq (Bstr "[" :: pp_btyp bt :: Bstr "]" :: nil)
   | BEnum id => Bcat (Bstr "enum ") (Bstr id)
   | BRecord id _ => Bcat (Bstr "record ") (Bstr id)
-  (* | BFun args r  => PP.seq Bcat (pp_list (Bstr "") pp_btyp args) (pp_btyp r) *)
   | BFun args r => Pp.seq (Bstr "(" :: pp_list (Bstr ", ") pp_btyp args :: Bstr ") -> " :: pp_btyp r :: nil)
   | BAbs id      => Bcat (Bstr "abs ") (Bstr id)
   end.
-
-(* Fixpoint pp_atom (a:atom) :=
-  match a with
-  | ATrue => Bstr "true"%string
-  | AFalse => Bstr "false"%string
-  | AInt32 i s => pp_sint s i
-  | AInt64 i s => pp_sint64 s i
-  | AConstr s  => Bstr s
-  | AVar s     => Bstr s
-  | ACast a bt   => Pp.seq (pp_atom a :: Bstr " as " :: pp_btyp bt :: nil)
-  | AUnaryOp o a => Bcat (Bstr (string_of_unary_op o)) (pp_atom a)
-  | ABinaryOp o a1 a2 => Bcat (pp_atom a1)
-                             (Bcat (Bstr (string_of_binary_op o)) (pp_atom a2))
-  | AArrayGet a i  => Bcat (pp_atom a )
-                           (array_index pp_atom i)
-  | ARecordProj a i => Bcat (pp_atom a)
-                         (Bcat (Bstr ".") (Bstr i))
-  | APureCall f l => Pp.seq (Bstr f :: Bstr "(" :: pp_list (Bstr ", ") pp_atom l
-                        :: Bstr ")" :: nil)
-  end. *)
-
-(* Module Typed.
-  Import Typed. *)
 
 Section PPATOM.
   Variables pp_atom : atom -> box.
@@ -139,8 +115,9 @@ Fixpoint pp_atom (a:atom) {struct a} :=
   | AVar s _     => Bstr s
   | ACast a bt   => Pp.seq (pp_atom a :: Bstr " as " :: pp_btyp bt :: nil)
   | AUnaryOp o a _ => Bcat (Bstr (string_of_unary_op o)) (pp_atom a)
-  | ABinaryOp o a1 a2 _ => Bcat (pp_atom a1)
-                            (Bcat (Bstr (string_of_binary_op o)) (pp_atom a2))
+  | ABinaryOp o a1 a2 _ =>
+      Pp.seq ((pp_atom a1) :: Bstr " " :: Bstr (string_of_binary_op o)
+                :: Bstr " " :: (pp_atom a2) :: nil)
   | AArrayGet a i _ _ => Bcat (pp_atom a )
                                 (array_index pp_atom i)
   | ARecordProj a i _ _ => Bcat (pp_atom a)
@@ -155,12 +132,12 @@ Definition pp_comp (c:comp) :=
   | CpAtom a => pp_atom a
   | CpRecordUpdate a f v _ => Bcat (pp_atom a)
                               (Bcat
-                                  (Bcat (Bcat (Bstr ".") (Bstr f)) (Bstr "<-"))
+                                  (Bcat (Bcat (Bstr ".") (Bstr f)) (Bstr " <- "))
                                   (pp_atom v))
   | CpArraySet a i v _    => Bcat (pp_atom a)
                                     (Bcat
                                         (Bcat (array_index pp_atom i)
-                                          (Bstr "<-")) (pp_atom v))
+                                          (Bstr " <- ")) (pp_atom v))
   | CpCall f _ l _ => Pp.seq (Bstr f :: Bstr "(" :: pp_list (Bstr ", ") pp_atom l
                         :: Bstr ")" :: nil)
 end.
@@ -178,12 +155,12 @@ Definition pp_globdef {B T L:Type} (pp_lit :  L -> box) (pp_fct : ident -> funct
   match gd with
   | DefConst id l t => Pp.seq (Bstr "defn ":: Bstr id :: Bstr " : " :: pp_typ t :: Bstr " = " :: pp_lit l :: nil)
   | DefFun   id  f  => (pp_fct id f)
-  | DeclConst id t  => Pp.seq  (Bstr "defn "::Bstr id :: Bstr " : " :: pp_typ t :: nil)
-  | DeclFun id l t  => Pp.seq  (Bstr "defn ":: Bstr id :: Bstr " : " ::
-                                  (pp_list  (Bstr " -> ") (pp_pair (Bstr ",") pp_attr pp_typ) l)
-                                   :: Bstr " -> " :: pp_typ t :: nil)
+  | DeclConst id t  => Pp.seq  (Bstr "decl "::Bstr id :: Bstr " : " :: pp_typ t :: nil)
+  | DeclFun id l t =>
+      Pp.seq (Bstr "decl ":: Bstr id :: Bstr " : "
+        :: Bstr "(" :: pp_list (Bstr ", ") (pp_pair (Bstr " ") pp_attr pp_typ) l :: Bstr ") -> "
+          :: pp_typ t :: nil)
   end.
-
 
 Definition pp_pattern (p:pattern) : box :=
   match p with
@@ -194,19 +171,18 @@ Definition pp_pattern (p:pattern) : box :=
 Definition pp_match {A B:Type} (pp_expr1 : A -> box) (pp_expr2 : B -> box) (str:string) (e:A) (cases:list (pattern * B)) : box :=
   Bstack (Pp.seq (Bstr str :: pp_expr1 e :: Bstr " with" :: nil))
     (Bstack
-       (Pp.pp_slist (fun '(p,e) => Pp.seq (Bstr " "::pp_pattern p :: Bstr " => " :: pp_expr2 e :: nil)) cases)
+       (Pp.pp_slist (fun '(p,e) => Pp.seq (Bstr " " :: pp_pattern p :: Bstr " => " :: pp_expr2 e :: nil)) cases)
        (Bstr "end") Left)   Left.
 
 Fixpoint pp_literal (l:literal) :=
   match l with
   | LTrue => Bstr "true"
   | LFalse => Bstr "false"
-  | LInt32 i s => pp_int i
-  | LInt64 i s => pp_int64 i
+  | LInt32 i s => pp_sint s i
+  | LInt64 i s => pp_sint64 s i
   | LArray l bt _ => Bcat (Bstr "[| ") (Bcat (pp_list (Bstr ";") pp_literal l) (Bstr " |]"))
   | LRecord l _ _ => Bcat (Bstr "{| ")  (Bcat (pp_list (Bstr ";") (pp_pair (Bstr ":") Bstr pp_literal) l) (Bstr " |}"))
   end.
-
 
 Definition pp_layout (p:layout) :=
   match p with

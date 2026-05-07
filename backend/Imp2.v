@@ -128,7 +128,9 @@ Module Pp.
     | AVar s _     => Bstr s
     | ACast a0 bt => seq [pp_atom a0; Bstr " as "; pp_typ2 bt]
     | AUnaryOp o a0 _ => Bcat (Bstr (string_of_unary_op o)) (pp_atom a0)
-    | ABinaryOp o a1 a2 _ => Bcat (pp_atom a1) (Bcat (Bstr (string_of_binary_op o)) (pp_atom a2))
+    | ABinaryOp o a1 a2 _ =>
+        Pp.seq ((pp_atom a1) :: Bstr " " :: Bstr (string_of_binary_op o)
+          :: Bstr " " :: (pp_atom a2) :: nil)
     | AArrayGet a0 i _ _ => Bcat (pp_atom a0) (array_index pp_atom i)
     | ARecordProj a0 i _ _ => Bcat (pp_atom a0) (Bcat (Bstr ".") (Bstr i))
     | APureCall f _ l _ => seq [Bstr f; Bstr "("; pp_list (Bstr ", ") pp_atom l; Bstr ")"]
@@ -162,12 +164,12 @@ Module Pp.
   Fixpoint pp_statement (s:statement) :=
     match s with
     | StSkip    => Bstr "skip"
-    | StSet i c => Bcat (Bstr i) (Bcat (Bstr "=") (pp_atom c))
+    | StSet i c => Bcat (Bstr i) (Bcat (Bstr " := ") (pp_atom c))
     | StEcomp e  => pp_ecomp e
     | StCall r f _ l _ => seq [pp_opt_ident r ; Bstr " := ";Bstr f; Bstr "("; pp_list (Bstr ", ") pp_atom l; Bstr ")"]
     | StIfThenElse a s1 s2 =>
-        let s1 := Bcat (Bstr " then ") (pp_statement s1) in
-        let s2 := Bcat (Bstr " else ") (pp_statement s2) in
+        let s1 := Bcat (Bstr "then ") (pp_statement s1) in
+        let s2 := Bcat (Bstr "else ") (pp_statement s2) in
         let c  := pp_atom a in
         let cd := Bcat (Bstr "if ") c in
         Bstack cd (Bstack s1 s2 Left) Left
@@ -175,8 +177,7 @@ Module Pp.
     | StSequence s1 s2 =>
         let s1 := pp_statement s1 in
         let s2 := pp_statement s2 in
-        Bstack s1
-          (Bcat (Bstr ";") s2) Left
+        Bstack (suffix_nocat s1 ";") s2 Left
     | StReturn a => Bcat (Bstr "return ") (pp_option_atom a)
     end.
 

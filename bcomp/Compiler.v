@@ -115,7 +115,7 @@ Definition compile_aux (opt : compiler_opt) (globinfo: option (ident * ident)) (
         end
       in 
       do/l clight <- Csyntaxgen.transl_program imp2_grw;
-      (fun '(p, log ) => (OK tt , (Csyntax clight :: p , log))).
+      (fun '(p, log) => (OK tt , (Csyntax clight :: p , log))).
 
 Definition compile (opt : compiler_opt) (globinfo: option (ident * ident)) (prog: Barocq.program) : (res unit * (list ir_prog * Log.t)) :=
   compile_aux opt globinfo prog (nil, Log.empty).

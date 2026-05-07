@@ -35,6 +35,14 @@ Definition seq (l:list box) :=
 Definition stack (p:position) (l:list box) :=
   List.fold_right (fun b1 b => Bstack b1 b p) Bemp l.
 
+Fixpoint suffix_nocat (b: box) (s: string): box :=
+  match b with
+  | Bemp => Bstr s
+  | Bstr s1 => Bstr (String.append s1 s)
+  | Bcat b1 b2 => Bcat b1 (suffix_nocat b2 s)
+  | Bstack b1 b2 p => Bstack b1 (suffix_nocat b2 s) p
+  | Bframe s1 s2 b => Bframe s1 s2 (suffix_nocat b s)
+  end.
 
 Module CString.
   (* High level strings, easy to print *)

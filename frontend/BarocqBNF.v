@@ -119,7 +119,7 @@ Module Pp.
                              (Bstack (Bcat (Bstr "then ") (pp_expr t))
                                      (Bcat (Bstr "else ") (pp_expr e)) Left) Left
     | ELetIn id e1 e2 _ => Bstack (Pp.seq (Bstr "let " :: Bstr id :: Bstr " = " :: pp_expr e1 :: nil))
-                             (Bcat (Bstr " in ") (pp_expr e2)) Left
+                             (Bcat (Bstr "  in ") (pp_expr e2)) Left
     | EAttr id e => Pp.seq (Bstr "#[ " :: Bstr id :: Bstr " ]"  :: pp_expr e :: nil)
     end.
 
