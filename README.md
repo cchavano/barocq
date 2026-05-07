@@ -37,10 +37,10 @@ make install install-dev
 
 # Usage
 
-Barocq file extension is `.br`. To compile a Barocq file to C, use:
+Barocq file extension is `.brc`. To compile a Barocq file to C, use:
 
 ```bash
-barocq path/to/file.br
+barocq path/to/file.brc
 ```
 
 Without any additionnal option, a C file will be created at `path/to/a.c`.
@@ -48,7 +48,7 @@ Without any additionnal option, a C file will be created at `path/to/a.c`.
 To generate the shallow and deep embeddings, as well as the correspondence proofs, use:
 
 ```bash
-barocq -gen-corres path/to/file.br
+barocq -gen-corres path/to/file.brc
 ```
 
 Other compiler flags and options are described with `barocq -help`.

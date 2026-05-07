@@ -558,12 +558,12 @@ To ensure that these transformations remain correct, marking a global variable w
 === A toy microkernel
 
 In this example, we write of what could be an excerpt of a microkernel.
-We have two source files: `kernel.br` and `machine.br`.
+We have two source files: `kernel.brc` and `machine.brc`.
 
-First, let's look at `machine.br`.
+First, let's look at `machine.brc`.
 
 [source]
-.machine.br
+.machine.brc
 ----
 module Machine
 
@@ -574,10 +574,10 @@ decl write_timecmp : (@write state, u64) -> state
 
 This module defines the FFI to interact with the underlying machine. It first declares an abstract type - the machine state - that will be implemented as a C struct. Then it declares function `write_timecmp`, that writes the time compare register of the machine state.
 
-Now, let's look at `kernel.br`.
+Now, let's look at `kernel.brc`.
 
 [source]
-.kernel.br
+.kernel.brc
 ----
 module Kernel
 
@@ -640,7 +640,7 @@ To compile those files with the Barocq compiler, we use the following command:
 
 [source,bash]
 ----
-barocq -fcopy-prop -o kernel.c -gen-header -types-impl machine.h machine.br kernel.br
+barocq -fcopy-prop -o kernel.c -gen-header -types-impl machine.h machine.brc kernel.brc
 ----
 
 This command will generate a C file `kernel.c` and the associated header file `kernel.h`. All definitions are grouped together in `kernel.c` and prefixed with the name of the module from which they originate. For exemple, the function `schedule` becomes `Kernel_schedule`. The option `-types-impl` allows the user to specify the location of the file containing the implemention of all abstract types. This option appends the necessary `#include` directive at the beginning of `kernel.h` and `kernel.c`. You can find the source files and the compilation artefacts of this example under the `example` directory.
@@ -653,7 +653,7 @@ The following command generates all of the Rocq files (embeddings + corresponden
 
 [source,bash]
 ----
-barocq -odir rocq -orocq kernel -gen-corres machine.br kernel.br
+barocq -odir rocq -orocq kernel -gen-corres machine.brc kernel.brc
 ----
 
 The correcntess of the translation to a Rocq shallow embedding is verified via an a-posteriori validation. This validation requires proving some correspondence theorems between the shallow embedding and the semantics given to the deep embedding. We divide the proofs by generating two shallow embeddings: a high-level one (`kernel_ShallowR.v`) that uses the native Rocq enums and records, and a low-level one (`kernel_ShallowB.v`) that uses the Barocq encoding of enums and records. The high-level embedding is well-suited for formal verification.
