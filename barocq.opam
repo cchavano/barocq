@@ -1,17 +1,17 @@
 opam-version: "2.0"
 name: "project"
-version: "0.5~dev"
+version: "0.5"
 synopsis: "The Barocq compiler"
 maintainer: "Clément Chavanon <clement.chavanon@inria.fr>"
 authors: "Clément Chavanon and Frédéric Besson"
 homepage: "https://gitlab.inria.fr/cchavano/barocq"
-license: "INRIA Non-Commercial License Agreement"
+license: "GNU Lesser General Public License"
 bug-reports: "https://gitlab.inria.fr/cchavano/barocq/-/issues"
-dev-repo: "git+https://gitlab.inria.fr/cchavano/barocq.git#v0.5"
+dev-repo: "git+https://gitlab.inria.fr/cchavano/barocq.git"
 depends: [
   "ocaml" {= "4.14.2"}
   "menhir" {>= "20200624" & != "20260122" & != "dev"}
-  "coq" {>= "8.20.1" and < "9.2~"}
+  "coq" {>= "8.20.1" & < "9.2~"}
   "coq-record-update" {= "0.3.6"}
   "coq-vst-zlist" {= "2.13"}
   "compcert-ce" {= "3.17-20260403ce"}
