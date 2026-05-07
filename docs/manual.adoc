@@ -484,7 +484,7 @@ Barocq supports multi-file compilation. Each file corresponds to a module, and m
 module Mname
 ----
 
-The first character of a module name must be an uppercase letter. The following characters can be lowercase or uppercase letters or underscores.
+Module names are composed of letters, and the first one must be capitalized.
 
 To reference an external idenfitier in the current module, the identifier must be prefixed with `Mname::` where `Mname` is the module name. The external identifiers can refer to a type, a constant, a function or an enum constructor.
 
