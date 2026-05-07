@@ -48,7 +48,7 @@ Definition pp_arrow_typ {T:Type} (pp_typ : T -> box) (args : list (ident * T)) (
 Definition pp_function {B T: Type}  (pp_body: B -> box) (pp_typ : T -> box) (id:ident) (f:function B T) : box :=
   Bstack
     (Pp.seq  (Bstr "defn " :: Bstr id :: pp_arrow_typ pp_typ f.(fn_params) f.(fn_return) :: Bstr " = " :: nil))
-    (Bcat (Bstr "     ") (pp_body f.(fn_body))) Left.
+    (Bcat (Bstr " ") (pp_body f.(fn_body))) Left.
 
 Definition string_of_unary_op (o:unary_op) :=
   match o with

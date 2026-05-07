@@ -51,8 +51,8 @@ Module Pp.
     | StSequence s1 s2 =>
         let s1 := pp_statement s1 in
         let s2 := pp_statement s2 in
-        Bstack (Bcat s1 (Bstr ";"))
-               s2 Left
+        Bstack s1
+          (Bcat (Bstr ";") s2) Left
     | StReturn a => Bcat (Bstr "return ") (Printer.pp_atom a)
     | StAttr a s => Bcat (Bstr "[#") (Bcat (Bstr a) (Bcat (Bstr "]") (pp_statement s)))
     end.
