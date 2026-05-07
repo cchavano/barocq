@@ -114,7 +114,7 @@ let options =
       "\t\t\t\t\tGenerate the C header file" );
     ( "-gen-corres",
       Arg.Set opt_gen_corres,
-      "\t\t\t\t\tGenerate the Rocq embeddings correspondence material" );
+      "\t\t\t\t\tGenerate the Rocq embeddings and correspondence proofs" );
   ]
 
 let set_source_files (file : string) : unit =

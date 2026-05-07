@@ -167,9 +167,9 @@ Module Pp.
 
   Definition pp_type_def {T: Type} (pp_elt : T -> box) (td : type_def T) :=
     match td with
-    | TdEnum l => pp_list (Bstr ",") (fun x => Bstr x) l
-    | TdRecord l => seq (Bstr "{ " ::
-                           pp_list (Bstr ",") (fun x => Pp.seq (Bstr (fst x) :: Bstr " : " :: pp_elt (snd x) :: nil)) l
+    | TdEnum l => Pp.seq (Bstr "{ " :: (pp_list (Bstr ", ") (fun x => Bstr x) l) :: Bstr " }" :: nil)
+    | TdRecord l => Pp.seq (Bstr "{ " :: 
+                           pp_list (Bstr ", ") (fun x => Pp.seq (Bstr (fst x) :: Bstr ": " :: pp_elt (snd x) :: nil)) l
                            :: Bstr " }" :: nil)
     end.
 
@@ -184,14 +184,14 @@ Module Pp.
 
   Definition pp_globdef (gd:globdef) : box :=
     match gd with
-    | DefType id td => seq (Bstr "type " :: Bstr id :: Bstr "=" :: pp_type_def pp_field_desc td :: nil)
+    | DefType id td => seq (Bstr "type " :: Bstr id :: Bstr " = " :: pp_type_def pp_field_desc td :: nil)
     | DefConst id lit _ => Pp.seq (Bstr "defn ":: Bstr id :: Bstr " = " :: Printer.pp_literal lit :: nil)
     | DefFun id f       => Printer.pp_function pp_expr pp_btyp id f
     | DeclType id su     => seq (Bstr "type ":: Bstr id :: Bstr " of " :: Bstr (struct_or_union_string su) :: nil)
-    | DeclFun id arg r  => seq
-                             [Bstr "decl ";
-                              Bstr id; Bstr " : " ;
-                              pp_list (Bstr " -> ") (fun x => pp_btyp (snd x)) arg ; Bstr " -> "; pp_btyp r]
+    | DeclFun id args r  =>
+        Pp.seq (Bstr "decl ":: Bstr id :: Bstr " : "
+          :: Bstr "(" :: pp_list (Bstr ", ") (pp_pair (Bstr " ") pp_attr pp_btyp) args :: Bstr ") -> "
+            :: pp_btyp r :: nil)
     | DeclConst id bt   => seq
                              [Bstr "decl ";
                               Bstr id; Bstr " : " ; pp_btyp bt ]

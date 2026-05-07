@@ -5,9 +5,9 @@
   open SurfaceAST
   open Location
 
-  (* A module name must begin with an uppercase letter. *)
+  (* A module name must consist only of alphanum characaters and begin with a capital letter. *)
   let valid_modul_ident mid =
-    let re = Str.regexp {|^\([A-Z][a-zA-Z0-9_]*\)$|} in
+    let re = Str.regexp {|^\([A-Z][a-zA-Z0-9]*\)$|} in
     Str.string_match re mid 0
 
   (* An enum constructor name must begin with an uppercase letter. *)
