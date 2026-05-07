@@ -321,7 +321,7 @@ module Barocq = struct
         sprintf "LInt64 (%s) %s" (int64_to_deep i s) (signedness_to_deep s)
     | LArray (la, ta, ly) ->
         sprintf
-          "LArray %s %s %s"
+          "LArray %s (%s) (%s)"
           (list_to_string_bracket literal_to_deep la)
           (btyp_to_deep ta)
           (layout_to_deep ly)
@@ -329,7 +329,7 @@ module Barocq = struct
         sprintf
           "LRecord %s %s %s"
           (fields_lit_to_deep ls)
-          (list_to_string_bracket ident_to_string ub)
+          (list_to_string_bracket ident_to_deep ub)
           (ident_to_deep id)
 
   and fields_lit_to_deep (fields : (ident * literal) list) : string =
@@ -887,7 +887,8 @@ module BarocqBNFDeep = struct
 
   let print_prog_tabs out l =
     output_list
-      ~delim:("Definition prog_tabs  := [\n", "\n].\n")
+      ~delim:
+        ("Definition prog_tabs : Maps2.smaplist struct_or_union := [\n", "].\n")
       ~sep:";\n"
       (fun o (id, su) ->
         Printf.fprintf
@@ -961,7 +962,9 @@ module BarocqBNFDeep = struct
     output_list
       ~delim:("Definition prog_defs : list globdef := [\n", "\n].\n")
       ~sep:";\n"
-      globdef_to_deep
+      (fun o d ->
+        fprintf o "%s" indent;
+        globdef_to_deep o d)
       out
       defs;
     fprintf out "\n";
