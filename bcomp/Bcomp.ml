@@ -189,10 +189,12 @@ let irname = function
 
 let gen_compile_opt () =
   let irs_log = !opt_print in
-  (* Always generate C *)
   let irs_gen =
     if !opt_gen_corres then [Compiler.Ir_BBNF; Compiler.Ir_Csyntax]
-    else [Compiler.Ir_Csyntax]
+    else
+      match !opt_print with
+      | [] -> [Compiler.Ir_Csyntax]
+      | _ -> []
   in
   let optim = if !flag_copy_prop then [Compiler.Opt_Copy] else [] in
   let opt =
@@ -234,10 +236,9 @@ let rec get_bnf (l : Compiler.ir_prog list) : BarocqBNF.program option =
 let generate_c (gen_csyntax : bool) (gen_header : bool)
     (l : Compiler.ir_prog list) =
   match get_csyntax l with
-  | None ->
-      raise
-        (CompilerError "C code cannot be generated (add option for Ir_csyntax)")
+  | None -> ()
   | Some prog ->
+      Printf.printf "BONNNNSOIR";
       Camlcoq.use_canonical_atoms := true;
       let ids = Csyntaxgen.program_idents prog in
       record_idents (List.map (fun id -> Ctypesdefs.string_of_ident id) ids);

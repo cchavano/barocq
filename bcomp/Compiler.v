@@ -63,13 +63,6 @@ Inductive ir_prog :=
 | Imp2     (p:Imp2.program)
 | Csyntax  (p:Csyntax.program).
 
-Definition insert_log (opt:compiler_opt) (ir:ir_name) {A : Type} (F: A -> box) (G: A -> ir_prog)  (a:A) (l:Log.t) (progs: list ir_prog) :=
-  let l := if List.In_dec ir_name_eq_dec ir (opt.(ir_log))
-           then Log.add_entry (pp_ir ir) (F a) l else l in
-  let progs := if List.In_dec ir_name_eq_dec ir (opt.(ir_gen))
-               then (G a) :: progs else progs in
-  (l,progs).
-
 Module StateLog <: STATE_TYPE.
   Definition t : Type := (list ir_prog * Log.t).
 End StateLog.
@@ -115,7 +108,12 @@ Definition compile_aux (opt : compiler_opt) (globinfo: option (ident * ident)) (
         end
       in 
       do/l clight <- Csyntaxgen.transl_program imp2_grw;
-      (fun '(p, log) => (OK tt , (Csyntax clight :: p , log))).
+      (fun '(p, log) =>
+        let p :=
+          if List.In_dec ir_name_eq_dec Ir_Csyntax (opt.(ir_gen))
+          then Csyntax clight :: p 
+          else p
+        in (OK tt, (p, log))).
 
 Definition compile (opt : compiler_opt) (globinfo: option (ident * ident)) (prog: Barocq.program) : (res unit * (list ir_prog * Log.t)) :=
   compile_aux opt globinfo prog (nil, Log.empty).
