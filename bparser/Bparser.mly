@@ -12,7 +12,8 @@
 
   (* An enum constructor name must begin with an uppercase letter. *)
   let valid_constr_ident eid =
-    valid_modul_ident eid
+    let re = Str.regexp {|^\([A-Z][a-zA-Z0-9_]*\)$|} in
+    Str.string_match re eid 0
 
   (* A global or local variable / function cannot begin with an uppercase letter. *)
   let valid_var_ident vid =
