@@ -13,7 +13,7 @@
     "languages": [{
       "id": "barocq",
       "aliases": ["Barocq", "barocq"],
-      "extensions": [".br"],
+      "extensions": [".brc"],
       "configuration": "./language-configuration.json"
     }],
     "grammars": [{
