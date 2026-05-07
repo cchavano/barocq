@@ -180,8 +180,8 @@ Fixpoint pp_literal (l:literal) :=
   | LFalse => Bstr "false"
   | LInt32 i s => pp_sint s i
   | LInt64 i s => pp_sint64 s i
-  | LArray l bt _ => Bcat (Bstr "[| ") (Bcat (pp_list (Bstr ";") pp_literal l) (Bstr " |]"))
-  | LRecord l _ _ => Bcat (Bstr "{| ")  (Bcat (pp_list (Bstr ";") (pp_pair (Bstr ":") Bstr pp_literal) l) (Bstr " |}"))
+  | LArray l bt _ => Bcat (Bstr "[") (Bcat (pp_list (Bstr ", ") pp_literal l) (Bstr ",]"))
+  | LRecord l _ _ => Bcat (Bstr "{")  (Bcat (pp_list (Bstr ", ") (pp_pair (Bstr " = ") Bstr pp_literal) l) (Bstr ",}"))
   end.
 
 Definition pp_layout (p:layout) :=

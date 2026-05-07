@@ -188,9 +188,9 @@ Module Pp.
     | LInt32 i _ => pp_int i
     | LInt64 i _ => pp_int64 i
     | LVar id ty => Bstr id
-    | LArray l0 _ _ => Bcat (Bstr "[| ") (Bcat (pp_list (Bstr ";") pp_literal l0) (Bstr " |]"))
+    | LArray l0 _ _ => Bcat (Bstr "[") (Bcat (pp_list (Bstr ", ") pp_literal l0) (Bstr ",]"))
     | LRecord l0 _ _ =>
-        Bcat (Bstr "{| ") (Bcat (pp_list (Bstr ";") (pp_pair (Bstr ":") Bstr pp_literal) l0) (Bstr " |}"))
+        Bcat (Bstr "{") (Bcat (pp_list (Bstr ", ") (pp_pair (Bstr " = ") Bstr pp_literal) l0) (Bstr ",}"))
     end.
 
   Definition pp_program (p:program) := Printer.pp_program  pp_typ2 pp_literal pp_statement  p.
