@@ -238,7 +238,6 @@ let generate_c (gen_csyntax : bool) (gen_header : bool)
   match get_csyntax l with
   | None -> ()
   | Some prog ->
-      Printf.printf "BONNNNSOIR";
       Camlcoq.use_canonical_atoms := true;
       let ids = Csyntaxgen.program_idents prog in
       record_idents (List.map (fun id -> Ctypesdefs.string_of_ident id) ids);

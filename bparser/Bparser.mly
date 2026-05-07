@@ -229,7 +229,7 @@ raw_const:
   | FALSE { SurfaceAST.CFalse }
   | i = LIT_INT32 { SurfaceAST.CInt32 (coqint_of_camlint (fst i), (snd i)) }
   | i = LIT_INT64 { SurfaceAST.CInt64 (coqint_of_camlint64 (fst i), (snd i)) }
-  | a = delimited(LBRACKET, separated_list(COMMA, const), RBRACKET)
+  | a = delimited(LBRACKET, nonempty_list(const_array_elem), RBRACKET)
     { SurfaceAST.CArray a }
   | rc = delimited(LBRACE, nonempty_list(const_field), RBRACE)
     { SurfaceAST.CRecord rc }
@@ -241,6 +241,9 @@ raw_const:
 const:
   | c = raw_const { Location.make $startpos $endpos c }
   | c = delimited(LPAREN, const, RPAREN) { c }
+
+const_array_elem:
+  | c = const COMMA { c }
 
 const_field:
   | key = var_ident BIND l = const COMMA { (key, l) }
