@@ -11,6 +11,7 @@ let print_csyntax (types_header : string) (prog : Csyntax.program) : unit =
   | None -> ()
   | Some f ->
       PrintCsyntax.destination := !destination;
+      Barocq2C.glob_arrays := Csyntaxgen.program_glob_arrays prog;
       let oc = open_out f in
       if types_header <> "" then
         Printf.fprintf oc "#include \"%s\"\n\n" types_header;

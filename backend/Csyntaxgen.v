@@ -531,3 +531,23 @@ Section IDENTS.
     PositiveSet.elements ids.
 
 End IDENTS.
+
+Section GLOB_ARRAYS.
+
+  Definition is_glob_array (g: AST.globdef (Ctypes.fundef Csyntax.function) type) : bool :=
+    match g with
+    | Gvar gv =>
+        match gvar_info gv with
+        | Tarray _ _ _ => true
+        | _ => false
+        end
+    | _ => false
+    end.
+
+  Definition program_glob_arrays (prog: Csyntax.program) : list AST.ident :=
+    List.fold_left
+      (fun acc '(x, g) => if is_glob_array g then x :: acc else acc)
+      (Ctypes.prog_defs prog)
+      nil.
+
+End GLOB_ARRAYS.

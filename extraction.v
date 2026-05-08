@@ -67,6 +67,7 @@ Separate Extraction
   Ctypesdefs.string_of_ident
   Ctypesdefs.ident_of_string
   Csyntaxgen.program_idents
+  Csyntaxgen.program_glob_arrays
   Barocq.Typing.typecheck_program
   Barocq.Typing.typecheck_iprogram
   Barocq.Typing.program_of_iprogram

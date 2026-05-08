@@ -14,8 +14,8 @@ depends: [
   "coq" {>= "8.20.1" & < "9.2~"}
   "coq-record-update" {= "0.3.6"}
   "coq-vst-zlist" {= "2.13"}
-  "compcert-ce" {= "3.17-20260403ce"}
+  "compcert-ce" {= "3.17-20260508ce"}
 ]
-pin-depends: ["compcert-ce.3.17-20260403ce" "git+https://gitlab.inria.fr/cchavano/compcert-ce.git"]
+pin-depends: ["compcert-ce.3.17-20260508ce" "git+https://gitlab.inria.fr/cchavano/compcert-ce.git"]
 build: [[make]]
 install: [make "install-all"]
