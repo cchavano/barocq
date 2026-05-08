@@ -173,7 +173,7 @@ Module Pp.
         let c  := pp_atom a in
         let cd := Bcat (Bstr "if ") c in
         Bstack cd (Bstack s1 s2 Left) Left
-    | StSwitch a l => pp_match pp_atom pp_statement "case " a l
+    | StSwitch a l => pp_match pp_atom pp_statement "match " a l
     | StSequence s1 s2 =>
         let s1 := pp_statement s1 in
         let s2 := pp_statement s2 in

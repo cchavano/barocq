@@ -41,7 +41,7 @@ let opt_print = ref []
 
 let opt_gen_header = ref false
 
-let opt_gen_corres = ref false
+let opt_gen_rocq = ref false
 
 let opt_gen_alias_call_state_of = ref ""
 
@@ -112,8 +112,8 @@ let options =
     ( "-gen-header",
       Arg.Set opt_gen_header,
       "\t\t\t\t\tGenerate the C header file" );
-    ( "-gen-corres",
-      Arg.Set opt_gen_corres,
+    ( "-gen-rocq",
+      Arg.Set opt_gen_rocq,
       "\t\t\t\t\tGenerate the Rocq embeddings and correspondence proofs" );
   ]
 
@@ -190,7 +190,7 @@ let irname = function
 let gen_compile_opt () =
   let irs_log = !opt_print in
   let irs_gen =
-    if !opt_gen_corres then [Compiler.Ir_BBNF; Compiler.Ir_Csyntax]
+    if !opt_gen_rocq then [Compiler.Ir_BBNF; Compiler.Ir_Csyntax]
     else
       match !opt_print with
       | [] -> [Compiler.Ir_Csyntax]
@@ -287,10 +287,10 @@ let gen_shallowB_program (l : Compiler.ir_prog list) =
                   "fail to generate the ShallowB embedding: %s"
                   (PrintUtils.string_of_errmsg msg)))
 
-let generate_corres (prog : Barocq.program) (tprog : Barocq.Typed.program)
+let generate_rocq (prog : Barocq.program) (tprog : Barocq.Typed.program)
     (l : Compiler.ir_prog list) =
-  if !debug then Printf.fprintf stdout "gen_corress := %b\n" !opt_gen_corres;
-  if not !opt_gen_corres then ()
+  if !debug then Printf.fprintf stdout "gen_rocq := %b\n" !opt_gen_rocq;
+  if not !opt_gen_rocq then ()
   else begin
     if !debug then Printf.fprintf stdout "generate embeddings\n";
     (* Generate Rocq Shallow embedding *)
@@ -440,7 +440,7 @@ let () =
       | Res.OK _, (progs, log) -> begin
           ignore (output_log stdout log);
           generate_c !opt_export_csyntax !opt_gen_header progs;
-          generate_corres prog tprog progs
+          generate_rocq prog tprog progs
         end
       | Res.Error msg, _ ->
           raise @@ CompilerError (PrintUtils.string_of_errmsg msg)

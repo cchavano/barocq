@@ -161,16 +161,16 @@ Module Pp.
                                 (Bcat (Bstr "else ") (pp_expr e)) Left) Left
     | EMatch e cases => pp_match pp_expr pp_expr "match " e cases
     | ELetIn id e1 e2 => (Bstack (Pp.seq (Bstr "let " :: Bstr id :: Bstr " = " :: pp_expr e1 :: nil))
-                            (Bcat (Bstr "  in ") (pp_expr e2)) Left)
+                            (Bcat (Bstr "in ") (pp_expr e2)) Left)
     | EAttr id e => Pp.seq (Bstr "#[ " :: Bstr id :: Bstr " ]"  :: pp_expr e :: nil)
     end.
 
   Definition pp_type_def {T: Type} (pp_elt : T -> box) (td : type_def T) :=
     match td with
-    | TdEnum l => Pp.seq (Bstr "{ " :: (pp_list (Bstr ", ") (fun x => Bstr x) l) :: Bstr " }" :: nil)
-    | TdRecord l => Pp.seq (Bstr "{ " :: 
+    | TdEnum l => Pp.seq (Bstr "{" :: (pp_list (Bstr ", ") (fun x => Bstr x) l) :: Bstr "}" :: nil)
+    | TdRecord l => Pp.seq (Bstr "{" :: 
                            pp_list (Bstr ", ") (fun x => Pp.seq (Bstr (fst x) :: Bstr ": " :: pp_elt (snd x) :: nil)) l
-                           :: Bstr " }" :: nil)
+                           :: Bstr "}" :: nil)
     end.
 
   Definition pp_field_desc (fd:btyp * layout) : box :=
