@@ -9,16 +9,11 @@ Local Open Scope option_monad_scope.
 (** ** Tail computations *)
 
 Inductive tailcomp : Type :=
-  | TcBegin : statement -> tailcomp -> btyp -> tailcomp
+  | TcBegin : ident -> tailcomp -> tailcomp -> btyp -> tailcomp
   | TcComp : comp -> tailcomp
   | TcIfThenElse : atom -> tailcomp -> tailcomp -> btyp -> tailcomp
   | TcSwitch : atom -> list (pattern * tailcomp) -> btyp -> tailcomp
-  | TcAttr : ident -> tailcomp -> tailcomp
-
-(** ** Statements *)
-
-with statement : Type :=
-  | StSetTailcomp : ident -> tailcomp -> statement.
+  | TcAttr : ident -> tailcomp -> tailcomp.
 
 (** ** Functions *)
 
@@ -38,8 +33,8 @@ Section TAILCOMP_IND.
 
   Fixpoint tailcomp_depth (t: ImpBNF.tailcomp) : nat :=
     match t with
-    | ImpBNF.TcBegin s t1 _ =>
-        1 + Nat.max (statement_depth s) (tailcomp_depth t1)
+    | ImpBNF.TcBegin _ t1 t2 _ =>
+        1 + Nat.max (tailcomp_depth t1) (tailcomp_depth t2)
     | ImpBNF.TcComp _ => 0
     | ImpBNF.TcIfThenElse _ t1 t2 _ =>
         let m := Nat.max (tailcomp_depth t1) (tailcomp_depth t2) in
@@ -49,18 +44,12 @@ Section TAILCOMP_IND.
         let m := List.fold_right (fun d m => Nat.max m d) 0 cases_depths in
         1 + m
     | ImpBNF.TcAttr _ e => 1 + tailcomp_depth e
-    end
-
-  with statement_depth (s: ImpBNF.statement) : nat :=
-    match s with
-    | ImpBNF.StSetTailcomp _ t => 1 + (tailcomp_depth t)
     end.
 
   Variable P : tailcomp -> Prop.
-  Variable P0 : statement -> Prop.
 
   Variable PTcBegin :
-    forall s tc ty, P0 s -> P tc -> P (TcBegin s tc ty).
+    forall x tc1 tc2 ty, P tc1 -> P tc2 -> P (TcBegin x tc1 tc2 ty).
 
   Hypothesis PTcComp : forall c, P (TcComp c).
 
@@ -74,9 +63,6 @@ Section TAILCOMP_IND.
       
   Hypothesis PTcAttr : forall x tc, P tc -> P (TcAttr x tc).
 
-  Hypothesis P0StSetTailcomp :
-    forall i tc, P tc -> P0 (StSetTailcomp i tc).
-
   Theorem tailcomp_depth_ind : forall tc, P tc.
   Proof.
     intros. remember (tailcomp_depth tc) as n.
@@ -86,15 +72,12 @@ Section TAILCOMP_IND.
     - destruct tc; try (auto || discriminate).
     - destruct tc; simpl in Heqn; try (auto || discriminate);
       simpl; intros.
-      + inv Heqn. apply PTcBegin.
-        * destruct s. apply P0StSetTailcomp.
-          simpl in H. destruct (tailcomp_depth tc).
-          -- assert (tailcomp_depth t < S (S (tailcomp_depth t))).
-            lia. exact (H (tailcomp_depth t) H0 t eq_refl).
-          -- assert (tailcomp_depth t < S (S (Nat.max (tailcomp_depth t) n))).
-            lia. exact (H (tailcomp_depth t) H0 t eq_refl).
-        * assert (tailcomp_depth tc < S (Nat.max (statement_depth s) (tailcomp_depth tc))).
-          lia. exact (H (tailcomp_depth tc) H0 tc eq_refl).
+      + inv Heqn.
+        assert (tailcomp_depth tc1 < S (Nat.max (tailcomp_depth tc1) (tailcomp_depth tc2))). lia.
+        assert (tailcomp_depth tc2 < S (Nat.max (tailcomp_depth tc1) (tailcomp_depth tc2))). lia.
+        pose proof (H (tailcomp_depth tc1) H0 tc1 eq_refl).
+        pose proof (H (tailcomp_depth tc2) H1 tc2 eq_refl).
+        apply PTcBegin; auto.
       + inv Heqn. 
         assert (tailcomp_depth tc1 < S (Nat.max (tailcomp_depth tc1) (tailcomp_depth tc2))). lia.
         assert (tailcomp_depth tc2 < S (Nat.max (tailcomp_depth tc1) (tailcomp_depth tc2))). lia.
@@ -117,33 +100,16 @@ Section TAILCOMP_IND.
         exact (H (tailcomp_depth tc) H0 tc eq_refl).
   Qed.
 
-  Theorem statement_depth_ind : forall s, P0 s.
-  Proof.
-    intros. remember (statement_depth s) as n.
-    revert s Heqn.
-    induction n using Wf_nat.lt_wf_ind; intros.
-    destruct n.
-    - destruct s; discriminate.
-    - destruct s. simpl in Heqn. inv Heqn. apply P0StSetTailcomp.
-      apply tailcomp_depth_ind.
-  Qed.
-
-  Theorem tailcomp_depth_ind_mut : (forall tc, P tc) /\ (forall s, P0 s).
-  Proof.
-    split; (apply tailcomp_depth_ind) || (apply statement_depth_ind).
-  Qed.
-
 End TAILCOMP_IND.
 
 Fixpoint btypof_tailcomp (tc: tailcomp) : btyp :=
   match tc with
   | TcComp c => btypof_comp c
-  | TcBegin _ _ ty
+  | TcBegin _ _ _ ty
   | TcIfThenElse _ _ _ ty
   | TcSwitch _ _ ty => ty
   | TcAttr _ tc => btypof_tailcomp tc
   end.
-
 
 Definition convertible_btyp (te: tenv) (ty: btyp) : bool :=
   match btyp_to_typ te ty with
@@ -168,11 +134,11 @@ Fixpoint wf_tailcomp (te: tenv) (tc: tailcomp) : bool :=
   match tc with
   | TcComp c =>
       convertible_btyp te (btypof_comp c)
-  | TcBegin s tc1 ty =>
+  | TcBegin x tc1 tc2 ty =>
       convertible_btyp te ty
-      && btyp_eqb (btypof_tailcomp tc1) ty
-      && wf_statement te s
+      && btyp_eqb (btypof_tailcomp tc2) ty
       && wf_tailcomp te tc1
+      && wf_tailcomp te tc2
   | TcIfThenElse _ tc1 tc2 ty =>
       convertible_btyp te ty
       && btyp_eqb (btypof_tailcomp tc1) ty
@@ -184,10 +150,7 @@ Fixpoint wf_tailcomp (te: tenv) (tc: tailcomp) : bool :=
       && List.forallb (fun '(_, tci) => btyp_eqb (btypof_tailcomp tci) ty) cases
       && (List.forallb (fun '(_, tci) => wf_tailcomp te tci) cases)
   | TcAttr _ tc1 => wf_tailcomp te tc1
-  end
-
-with wf_statement (te: tenv) (s: statement) : bool :=
-  match s with StSetTailcomp _ tc => wf_tailcomp te tc end.
+  end.
 
 Lemma wf_tailcomp_btyp_to_typ:
   forall te tc,
@@ -232,9 +195,12 @@ Section DENOT.
 
   Fixpoint eval_tailcomp_rec (te: tenv) (ge: genv) (le: lenv) (ty: typ) (tc: tailcomp) : option (eval_typ ty * lenv) :=
     match tc with
-    | TcBegin s tc1 _ =>
-        let* le' := eval_statement te ge le s in
-        eval_tailcomp_rec te ge le' ty tc1
+    | TcBegin x tc1 tc2 _ =>
+        let* ty1 := typof_tailcomp te tc1 in
+        let* (v1, le1) := eval_tailcomp_rec te ge le ty1 tc1 in
+        (* let* le' := eval_statement te ge le s in *)
+        let le' := lenv_update tabs le1 x (Val tabs ty1 v1) in
+        eval_tailcomp_rec te ge le' ty tc2
     | TcComp c =>
         let* tc := typof_comp te c in
         let* vc := ecast_typ tabs (eval_comp te ge le tc c) ty in
@@ -249,14 +215,6 @@ Section DENOT.
         let vcases := MapList.map (eval_tailcomp_rec te ge le ty) cases in
         eval_match ta va ty vcases
     | TcAttr _ tc1 => eval_tailcomp_rec te ge le ty tc1
-    end
-  
-  with eval_statement (te: tenv) (ge: genv) (le: lenv) (s: statement) : option lenv :=
-    match s with
-    | StSetTailcomp x tc =>
-        let* ttc := typof_tailcomp te tc in
-        let* (v, lec) := eval_tailcomp_rec te ge le ttc tc in
-        ret (lenv_update tabs lec x (Val tabs ttc v))
     end.
 
   Definition eval_tailcomp (te: tenv) (ge: genv) (le: lenv) (tr: typ) (tc: tailcomp) : option (eval_typ tr) :=

@@ -6,42 +6,37 @@ Local Open Scope error_monad_scope.
 Close Scope Z_scope.
 Open Scope string_scope.
 
-Fixpoint norm_statement (fuel: nat) (s: ImpBNF.statement) : res Imp1.statement :=
-  match fuel with
-  | O => efail
-  | S fuel' =>
-      let '(ImpBNF.StSetTailcomp x t) := s in
-      match t with
-      | ImpBNF.TcBegin s tc _ =>
-          do s' <- norm_statement fuel' s;
-          do sc <- norm_statement fuel' (ImpBNF.StSetTailcomp x tc);
-          eret (StSequence s' sc)
-      | ImpBNF.TcIfThenElse a t1 t2 _ =>
-          do s1 <- norm_statement fuel' (ImpBNF.StSetTailcomp x t1);
-          do s2 <- norm_statement fuel' (ImpBNF.StSetTailcomp x t2);
-          eret (StIfThenElse a s1 s2)
-      | ImpBNF.TcSwitch a cases _ =>
-          do cases' <-
-            Utils.list_fold_right_err
-              (fun '(ci, ti) acc =>
-                 do si <- norm_statement fuel' (ImpBNF.StSetTailcomp x ti);
-                 eret ((ci, si) :: acc))
-              nil
-              cases;
-          eret (StSwitch a cases')
-      | ImpBNF.TcComp c => eret (StSet x c)
-      | ImpBNF.TcAttr a c =>
-          do s1 <- norm_statement fuel' (StSetTailcomp x c);
-          eret (StAttr a s1)
-      end
+Fixpoint norm_begin (x: ident) (t: ImpBNF.tailcomp) : res Imp1.statement :=
+  match t with
+  | ImpBNF.TcBegin x1 t1 t2 _ =>
+      do s1 <- norm_begin x1 t1;
+      do s2 <- norm_begin x t2;
+      eret (StSequence s1 s2)
+  | ImpBNF.TcIfThenElse a t1 t2 _ =>
+      do s1 <- norm_begin x t1;
+      do s2 <- norm_begin x t2;
+      eret (StIfThenElse a s1 s2)
+  | ImpBNF.TcSwitch a cases _ =>
+      do cases' <-
+        Utils.list_fold_right_err
+          (fun '(ci, ti) acc =>
+              do si <- norm_begin x ti;
+              eret ((ci, si) :: acc))
+          nil
+          cases;
+      eret (StSwitch a cases')
+  | ImpBNF.TcComp c => eret (StSet x c)
+  | ImpBNF.TcAttr a t1 =>
+      do s1 <- norm_begin x t1;
+      eret (StAttr a s1)
   end.
 
 Fixpoint norm_tailcomp (t: ImpBNF.tailcomp) : res Imp1.statement :=
   match t with
-  | ImpBNF.TcBegin s t1 _ =>
-      do s' <- norm_statement (statement_depth s + 1) s;
-      do t1' <- norm_tailcomp t1;
-      eret (StSequence s' t1')
+  | ImpBNF.TcBegin x t1 t2 _ =>
+      do s1 <- norm_begin x t1;
+      do s2 <- norm_tailcomp t2;
+      eret (StSequence s1 s2)
   | ImpBNF.TcIfThenElse a t1 t2 _ =>
       do t1' <- norm_tailcomp t1;
       do t2' <- norm_tailcomp t2;
@@ -91,230 +86,64 @@ Definition norm_program (prog: ImpBNF.program) : res Imp1.program :=
 
 Section CORRECTNESS.
 
-  Lemma norm_statement_fuel_gt: 
-    forall fuel fuel' (FUEL_GT: fuel' > fuel) s s1,
-      norm_statement fuel s = OK s1 ->
-      norm_statement fuel' s = OK s1.
-  Proof.
-    induction fuel; intros.
-    - simpl in H. discriminate.
-    - simpl in H. destruct fuel'; try lia.
-      apply PeanoNat.lt_S_n in FUEL_GT.
-      destruct s. destruct t.
-      + monadInv H. inv EQ2. simpl. 
-        rewrite IHfuel with (s1 := x); auto. simpl.
-        rewrite IHfuel with (s1 := x0); auto.    
-      + inv H. reflexivity.
-      + monadInv H. inv EQ2. simpl.
-        rewrite IHfuel with (s1 := x); auto. simpl.
-        rewrite IHfuel with (s1 := x0); auto.
-      + monadInv H. inv EQ0. simpl.
-        specialize (IHfuel _ FUEL_GT).
-        remember (
-          fun '(ci, ti) (acc: list (Benum.pattern * statement)) =>
-            do si <- norm_statement fuel (StSetTailcomp i ti);
-            eret ((ci, si) :: acc)
-        ) as f.
-        remember (
-          fun '(ci, ti) (acc : list (Benum.pattern * statement)) =>
-            do si <- norm_statement fuel' (StSetTailcomp i ti);
-            eret ((ci, si) :: acc)
-        ) as g.
-        apply list_fold_right_err_ext_OK with (f := f) (g := g) in EQ.
-        rewrite EQ; simpl. reflexivity.
-        subst; intros. destruct b0.
-        destruct (norm_statement fuel (StSetTailcomp i t)) eqn:Hnorm; try discriminate.
-        simpl in H. inv H. rewrite IHfuel with (s1 := s); auto.
-      + monadInv H. inv EQ0. simpl. 
-        rewrite IHfuel with (s1 := x); auto.
-  Qed.
-
   Variable tabs : Maps.PMap.t Type.
 
   Import Option.
 
-  Lemma norm_statement_set_fw:
-    forall te ge fuel
-    (NORM_STATEMENT_CORRECT:
-      forall sb s1 le le',
-        norm_statement fuel sb = OK s1 ->
-        ImpBNF.eval_statement tabs te ge le sb = Some le' ->
-        Imp1Pure.eval_statement_rec tabs te ge le None s1 = Some le')
-    i tc s1 le le' ty v,
-      norm_statement fuel (StSetTailcomp i tc) = OK s1 ->
+  Lemma norm_begin_correct_fw:
+    forall te ge tc i s le le' ty v,
+      norm_begin i tc = OK s ->
       ImpBNF.eval_tailcomp_rec tabs te ge le ty tc = Some (v, le') ->
-      Imp1Pure.eval_statement_rec tabs te ge le None s1 =
+      Imp1Pure.eval_statement_rec tabs te ge le None s =
       Some (Denot.lenv_update tabs le' i (Denot.Val tabs ty v)).
   Proof.
-    induction fuel; intros.
-    - simpl in H. discriminate.
-    - simpl in H. destruct tc.
-      + Res.monadInv H. inv EQ2.
-        simpl in H0. monadInv H0. simpl.
-        erewrite NORM_STATEMENT_CORRECT; eauto.
-        simpl. eapply IHfuel; eauto.
-        intros. eapply NORM_STATEMENT_CORRECT; eauto.
-        eapply norm_statement_fuel_gt; eauto.
-        eapply norm_statement_fuel_gt; eauto.
-      + inv H. simpl in H0. monadInv H0. inv EQ2.
-        simpl. rewrite EQ; simpl. erase_cast EQ1.
-        setoid_rewrite EQ1; simpl. reflexivity.
-      + Res.monadInv H. inv EQ2. simpl in H0. monadInv H0.
-        simpl. setoid_rewrite EQ0; simpl.
-        destruct x1.
-        * eapply IHfuel with (tc := tc1) (s1 := x); eauto; intros.
-          eapply NORM_STATEMENT_CORRECT; eauto.
-          eapply norm_statement_fuel_gt; eauto.
-        * eapply IHfuel with (tc := tc2) (s1 := x0); eauto; intros.
-          eapply NORM_STATEMENT_CORRECT; eauto.
-          eapply norm_statement_fuel_gt; eauto.
-      + Res.monadInv H. inv EQ0. simpl in H0. monadInv H0.
-        simpl. setoid_rewrite EQ0; simpl. setoid_rewrite EQ2; simpl.
-        rename x0 into ta. rename x1 into va.
-        rename l into cases. rename x into cases'.
-        destruct ta; try discriminate. simpl in va.
-        simpl in EQ3. simpl.
-        revert b le le' ty v cases' EQ EQ0 va EQ2 EQ3.
-        {
-          induction cases; intros.
-          - simpl in EQ. inv EQ. simpl in EQ3. discriminate.
-          - simpl in EQ. Res.monadInv EQ. destruct a0. Res.monadInv EQ4.
-            inv EQ5. simpl. simpl in EQ3. destruct p.
-            + monadInv EQ3. rewrite EQ4; simpl.
-              destruct (Benum.enum_eq x1 va).
-              eapply IHfuel; eauto; intros;
-              eapply NORM_STATEMENT_CORRECT; eauto;
-              eapply norm_statement_fuel_gt; eauto.
-              apply IHcases; auto.
-            + eapply IHfuel; eauto; intros;
-              eapply NORM_STATEMENT_CORRECT; eauto;
-              eapply norm_statement_fuel_gt; eauto.
-        }
-        + Res.monadInv H. inv EQ0. simpl in H0.
-          simpl. eapply IHfuel; eauto; intros;
-          eapply NORM_STATEMENT_CORRECT; eauto;
-          eapply norm_statement_fuel_gt; eauto.
+    induction tc using tailcomp_depth_ind; simpl; intros.
+    - Res.monadInv H. inv EQ2.
+      simpl. simpl in H0. monadInv H0.
+      rename x0 into s1, x1 into s2, x2 into ty1, 
+      x3 into v1, x4 into le1.
+      eapply IHtc1 with (i := x) (s := s1) (le := le) (le' := le1) in EQ3; eauto.
+      rewrite EQ3; simpl. eapply IHtc2 with (i := i) (s := s2) in EQ4; eauto.
+    - monadInv H0. inv EQ2. inv H. erase_cast EQ1. simpl.
+      rewrite EQ; simpl. rewrite EQ1; simpl. reflexivity.
+    - Res.monadInv H. monadInv H0.
+      rename x into s1, x0 into s2, x1 into va.
+      inv EQ2. simpl; rewrite EQ0; simpl. destruct va; simpl.
+      eapply IHtc1; eauto. eapply IHtc2; eauto.
+    - Res.monadInv H0. monadInv H1. inv EQ0.
+      rename x0 into ta, x1 into va. simpl.
+      rewrite EQ1; simpl. rewrite EQ3; simpl.
+      destruct ta; try discriminate. simpl in EQ4; simpl.
+      rename x into cases'.
+      revert ty H i le le' ty0 v cases' EQ i0 l EQ1 va EQ3 EQ4.
+      induction cases; simpl; intros.
+      + discriminate.
+      + Res.monadInv EQ. destruct a0. simpl in EQ4.
+        Res.monadInv EQ2. inv EQ5. simpl.
+        destruct p.
+        * monadInv EQ4. rewrite EQ2; simpl.
+          destruct (Benum.enum_eq x1 va).
+          -- eapply H; eauto.
+          -- eapply IHcases; eauto.
+        * eapply H; eauto.
+    - Res.monadInv H. inv EQ0. simpl.
+      eapply IHtc; eauto.
   Qed.
 
-  Lemma norm_statement_set_bw:
-    forall te ge fuel
-    (NORM_STATEMENT_CORRECT_BW:
-      forall sb s1 le le'
-        (WF_STMT: wf_statement te sb = true),
-        norm_statement fuel sb = OK s1 ->
-        Imp1Pure.eval_statement_rec tabs te ge le None s1 = Some le' ->
-        ImpBNF.eval_statement tabs te ge le sb = Some le')
-      i tc s1 le le' ty
-      (TYPOF_TAIL: typof_tailcomp te tc = Some ty)
-      (WF_TAIL: wf_tailcomp te tc = true),
-      norm_statement fuel (StSetTailcomp i tc) = OK s1 ->
-      Imp1Pure.eval_statement_rec tabs te ge le None s1 = Some le' ->
-      (exists v le1,
-        ImpBNF.eval_tailcomp_rec tabs te ge le ty tc = Some (v, le1) /\
-        (lenv_update tabs le1 i (Val tabs ty v) = le')).
-  Proof.
-    induction fuel; intros.
-    - simpl in H. discriminate.
-    - simpl in H. destruct tc;
-      simpl in WF_TAIL; destruct_conj WF_TAIL.
-      + Res.monadInv H. inv EQ2.
-        simpl in H0. monadInv H0. simpl.
-        erewrite NORM_STATEMENT_CORRECT_BW; eauto.
-        eapply IHfuel; eauto. intros.
-        eapply NORM_STATEMENT_CORRECT_BW; eauto.
-        eapply norm_statement_fuel_gt; eauto.
-        unfold typof_tailcomp in *. simpl in TYPOF_TAIL.
-        rewrite btyp_eqb_eq in C3. rewrite C3. exact TYPOF_TAIL.
-        eapply norm_statement_fuel_gt; eauto.
-      + inv H. simpl in H0. monadInv H0. inv EQ2. simpl.
-        rewrite EQ; simpl. unfold typof_tailcomp in TYPOF_TAIL.
-        simpl in TYPOF_TAIL. unfold Typing.typof_comp in EQ.
-        rewrite TYPOF_TAIL in EQ. inv EQ.
-        rewrite ecast_typ_id. setoid_rewrite EQ1; simpl.
-        exists x0, le. split; reflexivity.
-      + Res.monadInv H. inv EQ2. simpl in H0. monadInv H0.
-        simpl. setoid_rewrite EQ0; simpl.
-        rewrite btyp_eqb_eq in C4, C3.
-        destruct x1.
-        * eapply IHfuel; eauto. intros.
-          eapply NORM_STATEMENT_CORRECT_BW; eauto.
-          eapply norm_statement_fuel_gt; eauto.
-          unfold typof_tailcomp in *; simpl in TYPOF_TAIL.
-          rewrite C4. exact TYPOF_TAIL.
-        * eapply IHfuel; eauto. intros.
-          eapply NORM_STATEMENT_CORRECT_BW; eauto.
-          eapply norm_statement_fuel_gt; eauto.
-          unfold typof_tailcomp in *; simpl in TYPOF_TAIL.
-          rewrite C3. exact TYPOF_TAIL.       
-      + Res.monadInv H. inv EQ0. simpl in H0. monadInv H0.
-        simpl. setoid_rewrite EQ0; simpl. setoid_rewrite EQ2; simpl.
-        rename x0 into ta. rename x1 into va.
-        rename l into cases. rename x into cases'.
-        destruct ta; try discriminate. simpl in va.
-        simpl in EQ3.
-        revert b le le' ty TYPOF_TAIL C1 C2 C0 cases' EQ i0 l va EQ0 EQ2 EQ3.
-        {
-          induction cases; intros.
-          - simpl in EQ. inv EQ. simpl in EQ3. discriminate.
-          - simpl in EQ. Res.monadInv EQ. destruct a0. Res.monadInv EQ4.
-            inv EQ5. simpl. simpl in EQ3. destruct p.
-            + monadInv EQ3. rewrite EQ4; simpl.
-              destruct (Benum.enum_eq x1 va).
-              eapply IHfuel; eauto; intros.
-              eapply NORM_STATEMENT_CORRECT_BW; eauto.
-              eapply norm_statement_fuel_gt; eauto.
-              simpl in C2. destruct_conj C2.
-              rewrite btyp_eqb_eq in C.
-              unfold typof_tailcomp in *. simpl in TYPOF_TAIL.
-              rewrite C. exact TYPOF_TAIL.
-              simpl in C0. destruct_conj C0. exact C.
-              eapply IHcases; eauto.
-              simpl. simpl in C2. destruct_conj C2. exact C3.
-              simpl in C0. destruct_conj C0. exact C3.
-            + eapply IHfuel; eauto; intros.
-              eapply NORM_STATEMENT_CORRECT_BW; eauto.
-              eapply norm_statement_fuel_gt; eauto.
-              unfold typof_tailcomp in *. simpl in TYPOF_TAIL.
-              simpl in C2. destruct_conj C2.
-              rewrite btyp_eqb_eq in C. rewrite C.
-              exact TYPOF_TAIL.
-              simpl in C0. destruct_conj C0. exact C.
-        }
-        + Res.monadInv H. inv EQ0. simpl in H0.
-          simpl. eapply IHfuel; eauto; intros;
-          eapply NORM_STATEMENT_CORRECT_BW; eauto;
-          eapply norm_statement_fuel_gt; eauto.
-  Qed.
-
-  Section NORM_TAILCOMP.
-
-  Local Notation norm_tailcomp_correct_fw_def tc :=
-    (forall s te ge le le' ty (v: eval_typ tabs ty),
+  Lemma norm_tailcomp_correct_fw :
+    forall tc s te ge le le' ty (v: eval_typ tabs ty),
       norm_tailcomp tc = OK s ->
       ImpBNF.eval_tailcomp_rec tabs te ge le ty tc = Some (v, le') ->
-      Imp1Pure.eval_statement_rec tabs te ge le (Some ty) s = Some v).
-
-  Local Notation norm_statement_correct_fw_def sb :=
-    (forall fuel s1 te ge le le',
-      norm_statement fuel sb = OK s1 ->
-      ImpBNF.eval_statement tabs te ge le sb = Some le' ->
-      Imp1Pure.eval_statement_rec tabs te ge le None s1 = Some le').
-
-  Lemma norm_tailcomp_correct_mut:
-    (forall tc, norm_tailcomp_correct_fw_def tc) /\
-    (forall sb, norm_statement_correct_fw_def sb).
+      Imp1Pure.eval_statement_rec tabs te ge le (Some ty) s = Some v.
   Proof.
-    apply tailcomp_depth_ind_mut with
-      (P := fun tc => norm_tailcomp_correct_fw_def tc)
-      (P0 := fun sb => norm_statement_correct_fw_def sb);
-    intros.
-    - simpl in H1. Res.monadInv H1. inv EQ2.
-      simpl in H2. monadInv H2. simpl.
-      erewrite H; eauto.
-    - simpl in H0. monadInv H0. inv EQ2.
+    induction tc using tailcomp_depth_ind; simpl; intros.
+    - monadInv H0. Res.monadInv H. inv EQ5.
+      simpl. eapply norm_begin_correct_fw in EQ1; eauto.
+      rewrite EQ1; simpl. eapply IHtc2; eauto.
+    - monadInv H0. inv EQ2.
       destruct c eqn:Ec; simpl in EQ.
       1: { inv H. erase_cast EQ1.
-           simpl; simpl in EQ1. simpl in EQ.
+           simpl; simpl in EQ1.
            unfold Typing.typof_comp in EQ. simpl in EQ.
            unfold Typing.typof_atom.
            rewrite EQ; simpl. rewrite ecast_typ_id.
@@ -327,20 +156,20 @@ Section CORRECTNESS.
         rewrite ecast_typ_id; unfold eval_var;
         unfold lenv_get, lenv_update; rewrite STree.gss; simpl;
         apply cast_typ_id).
-    - simpl in H1. Res.monadInv H1. inv EQ2.
-      simpl in H2. monadInv H2. simpl.
-      setoid_rewrite EQ0; simpl.
+    - Res.monadInv H. inv EQ2.
+      monadInv H0. simpl.
+      rewrite EQ0; simpl.
       destruct x1.
-      + eapply H; eauto.
-      + eapply H0; eauto.
-    - simpl in H0. Res.monadInv H0. inv EQ0.
-      simpl in H1. monadInv H1. simpl.
+      + eapply IHtc1; eauto.
+      + eapply IHtc2; eauto.
+    - Res.monadInv H0. inv EQ0.
+      monadInv H1. simpl.
       rename x into cases'.
       rename x0 into ta.
       rename x1 into va.
-      setoid_rewrite EQ0; simpl. setoid_rewrite EQ2; simpl.
+      rewrite EQ0; simpl. rewrite EQ2; simpl.
       destruct ta; try discriminate.
-      unfold ImpBNF.eval_match in EQ3. simpl in EQ3.
+      unfold ImpBNF.eval_match in EQ3.
       unfold Imp1Pure.eval_match.
       revert le le' cases' EQ va EQ2 EQ3.
       clear - H l.
@@ -359,227 +188,146 @@ Section CORRECTNESS.
             eapply H with (p := Benum.PWildcard); eauto.
             apply List.in_eq.
       }
-    - simpl in H0. Res.monadInv H0. inv EQ0.
-      simpl in H1. simpl. eapply H; eauto.
-    - remember (StSetTailcomp i tc) as s. 
-      clear - H0 H1. 
-      revert s s1 le le' H0 H1.
-      induction fuel; intros.
-      + simpl in H0. discriminate.
-      + simpl in H0. destruct s. destruct t.
-        * Res.monadInv H0. inv EQ2.
-          simpl in H1. monadInv H1.
-          monadInv EQ3.
-          simpl. inv EQ4.
-          erewrite IHfuel; eauto; simpl.
-          eapply norm_statement_set_fw; eauto.
-        * inv H0. simpl in H1. monadInv H1.
-          monadInv EQ1. simpl. inv EQ4.
-          rewrite EQ0; simpl. inv EQ2. simpl.
-          erase_cast EQ1. setoid_rewrite EQ1; simpl.
-          reflexivity.
-        * Res.monadInv H0. inv EQ2. simpl in H1. monadInv H1.
-          monadInv EQ3. inv EQ4. simpl.
-          setoid_rewrite EQ2; simpl. destruct x4;
-          eapply norm_statement_set_fw; eauto.
-        * Res.monadInv H0. inv EQ0. simpl in H1.
-          monadInv H1. monadInv EQ2.
-          inv EQ3. simpl. setoid_rewrite EQ1; simpl.
-          setoid_rewrite EQ2; simpl. rename l into cases.
-          rename x into cases'. rename x0 into tb.
-          rename x3 into ta. rename x4 into va.
-          unfold typof_tailcomp in EQ0.
-          rename x1 into v. rename x2 into le'.
-          destruct ta; try discriminate. simpl in EQ5. simpl.
-          revert cases cases' EQ EQ0 EQ5.
-          {
-            induction cases; simpl; intros.
-            - discriminate.
-            - Res.monadInv EQ. destruct a0. simpl in EQ5.
-              Res.monadInv EQ4. inv EQ6. simpl.
-              destruct p.
-              + monadInv EQ5. rewrite EQ4; simpl.
-                 destruct (Benum.enum_eq x1 va).
-                 eapply norm_statement_set_fw; eauto.
-                 eapply IHcases; eauto.
-              + eapply norm_statement_set_fw; eauto.
-          }
-        * Res.monadInv H0. inv EQ0. simpl in H1.
-          monadInv H1. inv EQ3.
-          simpl. eapply norm_statement_set_fw; eauto.
+    - Res.monadInv H. inv EQ0.
+      simpl. eapply IHtc; eauto.
   Qed.
 
-  Theorem norm_tailcomp_correct_fw:
-    forall tc, norm_tailcomp_correct_fw_def tc.
+  Lemma norm_begin_correct_bw:
+  forall te ge tc i s le le' ty
+    (TYPOF_TAIL: typof_tailcomp te tc = Some ty)
+    (WF_TAIL: wf_tailcomp te tc = true),
+    norm_begin i tc = OK s ->
+    Imp1Pure.eval_statement_rec tabs te ge le None s = Some le' ->
+    (exists v le1,
+      ImpBNF.eval_tailcomp_rec tabs te ge le ty tc = Some (v, le1) /\
+      lenv_update tabs le1 i (Val tabs ty v) = le').
   Proof.
-    pose proof norm_tailcomp_correct_mut.
-    destruct H. exact H.
+    induction tc using tailcomp_depth_ind; simpl; intros.
+    - Res.monadInv H. inv EQ2. rename x0 into s1, x1 into s2.
+      destruct_conj WF_TAIL.
+      pose proof C2. apply wf_tailcomp_btyp_to_typ in H.
+      destruct H. unfold typof_tailcomp. rewrite H; simpl.
+      simpl in H0. monadInv H0.
+      eapply IHtc1 in EQ0; eauto. destruct EQ0 as [v1 [le1 [EVAL_TC1 LE1_UPDATE]]].
+      rewrite EVAL_TC1; simpl. rename x1 into le1'.
+      pose proof C0. apply wf_tailcomp_btyp_to_typ in H0.
+      destruct H0. unfold typof_tailcomp. rename x1 into ty2.
+      rewrite LE1_UPDATE. eapply IHtc2 with (ty := ty0) (i := i) in EQ2; eauto.
+      unfold typof_tailcomp in TYPOF_TAIL. simpl in TYPOF_TAIL.
+      rewrite btyp_eqb_eq in C3. unfold typof_tailcomp.
+      rewrite C3. exact TYPOF_TAIL.
+    - inv H. simpl in H0. monadInv H0. inv EQ2.
+      rewrite EQ; simpl. rewrite EQ1; simpl.
+      unfold typof_tailcomp in TYPOF_TAIL.
+      simpl in TYPOF_TAIL. unfold Typing.typof_comp in EQ.
+      rewrite EQ in TYPOF_TAIL. inv TYPOF_TAIL.
+      rewrite ecast_typ_id; simpl. eauto.
+    - destruct_conj WF_TAIL. Res.monadInv H.
+      inv EQ2. simpl in H0. monadInv H0.
+      rewrite EQ0; simpl.
+      unfold typof_tailcomp in TYPOF_TAIL.
+      simpl in TYPOF_TAIL.
+      rewrite btyp_eqb_eq in C4, C3. destruct x1.
+      eapply IHtc1; eauto. unfold typof_tailcomp. congruence.
+      eapply IHtc2; eauto. unfold typof_tailcomp. congruence.
+    - destruct_conj WF_TAIL. Res.monadInv H0. inv EQ0.
+      simpl in H1. monadInv H1. rewrite EQ0; simpl.
+      rewrite EQ2; simpl.
+      rename x0 into ta, x1 into va, x into cases'.
+      destruct ta; try discriminate.
+      simpl in EQ3; simpl.
+      revert ty H i le le' ty0 TYPOF_TAIL C1 C2 C0 cases' EQ i0 l EQ0 va EQ2 EQ3.
+      {
+        induction cases; simpl; intros.
+        - inv EQ. simpl in EQ3. discriminate.
+        - Res.monadInv EQ. destruct a0; simpl.
+          Res.monadInv EQ4. inv EQ5. simpl in EQ3.
+          destruct_conj C2. destruct_conj C0.
+          unfold typof_tailcomp in TYPOF_TAIL.
+          simpl in TYPOF_TAIL.
+          pose proof C2.
+          apply wf_tailcomp_btyp_to_typ in C2.
+          destruct C2. apply btyp_eqb_eq in C.
+          destruct p.
+          + destruct (Benum.make_enum l i1); simpl in *.
+            * destruct (Benum.enum_eq e va).
+              -- eapply H; eauto.
+                  unfold typof_tailcomp. congruence.
+              -- rename x into cases'. rename x0 into s.
+                  eapply IHcases; eauto.
+            * discriminate.
+          + eapply H; eauto. unfold typof_tailcomp.
+            congruence.    
+      }
+    - Res.monadInv H. inv EQ0.
+      eapply IHtc; eauto.
   Qed.
 
-  Theorem norm_statement_fw_correct:
-    forall sb, norm_statement_correct_fw_def sb.
-  Proof.
-    pose proof norm_tailcomp_correct_mut.
-    destruct H. exact H0.
-  Qed.
-
-  Local Notation norm_tailcomp_correct_bw_def tc :=
-    (forall s te ge le ty (v: eval_typ tabs ty)
+  Lemma norm_tailcomp_correct_bw:
+    forall tc s te ge le ty (v: eval_typ tabs ty)
     (WF_TAIL: wf_tailcomp te tc = true),
       norm_tailcomp tc = OK s ->
       Imp1Pure.eval_statement_rec tabs te ge le (Some ty) s = Some v ->
-      (exists le', ImpBNF.eval_tailcomp_rec tabs te ge le ty tc = Some (v, le'))).
-
-  Local Notation norm_statement_correct_bw_def sb :=
-    (forall fuel s1 te ge le le'
-    (WF_STMT: wf_statement te sb = true),
-      norm_statement fuel sb = OK s1 ->
-      Imp1Pure.eval_statement_rec tabs te ge le None s1 = Some le' ->
-      ImpBNF.eval_statement tabs te ge le sb = Some le').
-
-  Theorem norm_tailcomp_bw_correct:
-    forall tc, norm_tailcomp_correct_bw_def tc.
+      (exists le', ImpBNF.eval_tailcomp_rec tabs te ge le ty tc = Some (v, le')).
   Proof.
-    induction tc using tailcomp_depth_ind with
-      (P0 := fun sb => norm_statement_correct_bw_def sb);
-    intros.
-    - simpl in H. Res.monadInv H. inv EQ2. simpl in H0.
-      monadInv H0. simpl. simpl in WF_TAIL.
-      destruct_conj WF_TAIL. erewrite IHtc; eauto.
-    - simpl in H. destruct c eqn:Ec.
-      1: inv H. simpl in H0. simpl. monadInv H0.
-        erase_cast EQ0. unfold Typing.typof_comp. simpl.
-        unfold Typing.typof_atom in EQ.
-        rewrite EQ; simpl. rewrite ecast_typ_id.
-        rewrite EQ0; simpl. exists le. reflexivity.
-      all: ltac:(rewrite <- Ec in *;
-        inversion H; clear H; rewrite <- H2 in H0;
-        simpl in H0; monadInv H0; monadInv EQ;
-        inversion EQ4; simpl; rewrite EQ0; simpl;
-        clear EQ4; erase_cast EQ2;
-        assert (x1 = ty) by (simpl in EQ0; unfold Typing.typof_atom in EQ1;
-        simpl in EQ1; unfold Typing.typof_comp in EQ0; simpl in EQ0;
-        congruence); subst;
-        rewrite ecast_typ_id; rewrite EQ; exists le;
-        simpl; unfold eval_var in EQ2; unfold lenv_get, lenv_update in EQ2;
-        rewrite STree.gss in EQ2; simpl in EQ2; erase_cast EQ2;
-        inv EQ2; reflexivity).
-    - simpl in H. Res.monadInv H. inv EQ2. simpl in H0.
-      monadInv H0. simpl. rewrite EQ0; simpl.
-      simpl in WF_TAIL. destruct_conj WF_TAIL. 
-      destruct x1. eapply IHtc1; eauto. eapply IHtc2; eauto.
-    - simpl in H0. Res.monadInv H0. inv EQ0.
-      simpl in H1. monadInv H1. simpl.
-      setoid_rewrite EQ0; simpl. setoid_rewrite EQ2; simpl.
-      simpl in WF_TAIL. destruct_conj WF_TAIL.
-      destruct x0; try discriminate. simpl in EQ3; simpl.
-      rename x into cases'. rename x1 into va. simpl in va.
-      clear - C0 H EQ EQ3 cases.
+    induction tc using tailcomp_depth_ind; simpl; intros.
+    - destruct_conj WF_TAIL. Res.monadInv H. inv EQ2.
+      rename x0 into s1, x1 into s2.
+      pose proof C2. eapply wf_tailcomp_btyp_to_typ in C2.
+      destruct C2. unfold typof_tailcomp. rewrite H1; simpl.
+      simpl in H0. monadInv H0. simpl in x1. 
+      rename x0 into t1, x1 into le1.
+      eapply norm_begin_correct_bw in EQ0; eauto.
+      destruct EQ0 as [v1 [le' [EVAL_TC1 LE2_UPDATE]]].
+      rewrite EVAL_TC1; simpl. rewrite LE2_UPDATE.
+      eapply IHtc2 in EQ2; eauto.
+    - destruct c eqn:Ec.
+      1: { inv H. monadInv H0. erase_cast EQ0.
+           simpl; simpl in EQ0. unfold Typing.typof_atom in EQ.
+           unfold Typing.typof_comp. simpl. rewrite EQ; simpl.
+           rewrite ecast_typ_id. rewrite EQ0; simpl. eauto. }
+      all: ltac:(rewrite <- Ec in *; simpl; clear Ec; inv H; simpl in H0;
+        monadInv H0; monadInv EQ; rewrite EQ0; simpl; inv EQ4;
+        erase_cast EQ2; unfold Typing.typof_comp in EQ0;
+        unfold Typing.typof_atom in EQ1; simpl in EQ1;
+        rewrite EQ1 in EQ0; inv EQ0; rewrite ecast_typ_id;
+        rewrite EQ; simpl; unfold lenv_update in EQ2;
+        unfold eval_var in EQ2; unfold lenv_get in EQ2;
+        rewrite STree.gss in EQ2; unfold cast_value in EQ2;
+        rewrite cast_typ_id in EQ2; inv EQ2; eauto;
+        apply convertible_btyp_iff in WF_TAIL; destruct WF_TAIL;
+        unfold Typing.typof_comp; rewrite H1; simpl;
+        rewrite <- H2 in H0).
+    - destruct_conj WF_TAIL. Res.monadInv H.
+      inv EQ2. rename x into s1, x0 into s2.
+      simpl in H0. monadInv H0.
+      rename x into va. rewrite EQ0; simpl.
+      destruct va.
+      + eapply IHtc1; eauto.
+      + eapply IHtc2; eauto.
+    - destruct_conj WF_TAIL. Res.monadInv H0.
+      inv EQ0. rename x into cases'. simpl in H1.
+      monadInv H1. rename x into ta, x0 into va.
+      rewrite EQ0; simpl. rewrite EQ2; simpl.
+      destruct ta; try discriminate.
+      simpl in EQ3; simpl.
+      revert ty H te ge le ty0 v C1 C2 C0 cases' EQ i l EQ0 va EQ2 EQ3.
       {
-        revert cases' l va EQ3 EQ.
         induction cases; simpl; intros.
         - inv EQ. simpl in EQ3. discriminate.
-        - Res.monadInv EQ. destruct a. Res.monadInv EQ0.
-          inv EQ2. simpl. simpl in EQ3.
-          simpl in C0. destruct_conj C0.
-          destruct p.
-          + monadInv EQ3. rewrite EQ0; simpl.
+        - Res.monadInv EQ. destruct a0. Res.monadInv EQ1.
+          inv EQ5. rename x0 into cases', x1 into s.
+          simpl in EQ3. simpl. destruct_conj C2.
+          destruct_conj C0. destruct p.
+          + monadInv EQ3. rewrite EQ1; simpl.
             destruct (Benum.enum_eq x va).
-            * eapply H; eauto. apply List.in_eq.
-            * simpl in H. eapply IHcases; eauto.
-          + eapply H; eauto. apply List.in_eq.
+            * eapply H; eauto.
+            * eapply IHcases; eauto.
+          + eapply H; eauto.
       }
-    - simpl in H. Res.monadInv H. inv EQ0. simpl in H0.
-      simpl. eapply IHtc; eauto.
-    - clear - WF_STMT H H0.
-      revert s1 le le' i tc H H0 WF_STMT.
-      {
-        induction fuel; intros.
-        - simpl in H. discriminate.
-        - simpl in H. destruct tc; simpl.
-          + Res.monadInv H. inv EQ2. simpl in H0. monadInv H0.
-            unfold typ_of_statement in x1, le'.
-            unfold typof_tailcomp; simpl.
-            rename x into s'. rename x0 into si.
-            rename x1 into le1.
-            simpl in WF_STMT. destruct_conj WF_STMT.
-            rewrite convertible_btyp_iff in C. destruct C.
-            rewrite H; simpl.
-            destruct s. erewrite IHfuel; eauto; simpl.
-            eapply norm_statement_set_bw with (ty := x) in EQ2; eauto.
-            destruct EQ2. destruct H0. destruct H0.
-            rewrite H0; simpl. rewrite H1. reflexivity.
-            intros. destruct sb. eapply IHfuel; eauto.
-            rewrite btyp_eqb_eq in C3.
-            unfold typof_tailcomp. rewrite C3.
-            exact H.
-          + inv H. simpl in H0. monadInv H0. inv EQ2.
-            unfold typof_tailcomp. simpl.
-            unfold Typing.typof_comp in *. rewrite EQ; simpl.
-            rewrite ecast_typ_id. setoid_rewrite EQ1; simpl. reflexivity.
-          + Res.monadInv H. inv EQ2. simpl in WF_STMT. destruct_conj WF_STMT.
-            simpl in H0. monadInv H0. unfold typof_tailcomp.
-            simpl. rewrite convertible_btyp_iff in C1. destruct C1.
-            rewrite H. simpl.
-            setoid_rewrite EQ0; simpl. destruct x1.
-            * eapply norm_statement_set_bw with (ty := x2) in EQ; eauto.
-              destruct EQ. destruct H0. destruct H0. rewrite H0; simpl.
-              rewrite H1. reflexivity.
-              intros. destruct sb. eapply IHfuel; eauto.
-              rewrite btyp_eqb_eq in C4. unfold typof_tailcomp.
-              rewrite C4. exact H. 
-            * eapply norm_statement_set_bw with (ty := x2) in EQ1; eauto.
-              destruct EQ1. destruct H0. destruct H0. rewrite H0; simpl.
-              rewrite H1. reflexivity.
-              intros. destruct sb. eapply IHfuel; eauto.
-              rewrite btyp_eqb_eq in C3. unfold typof_tailcomp.
-              rewrite C3. exact H. 
-          + simpl in WF_STMT. destruct_conj WF_STMT.
-            Res.monadInv H. inv EQ0. simpl in H0. monadInv H0.
-            rewrite convertible_btyp_iff in C1.
-            unfold typof_tailcomp; simpl. destruct C1.
-            rewrite H; simpl.
-            setoid_rewrite EQ0; simpl. setoid_rewrite EQ2; simpl.
-            destruct x0; try discriminate.
-            simpl; simpl in EQ3. rename l into cases.
-            rename x into cases'.
-            revert b cases' x2 H C2 C0 EQ i0 l0 EQ0 x1 EQ2 EQ3.
-            {
-              induction cases; intros.
-              - simpl in EQ. inv EQ. simpl in EQ3. discriminate.
-              - simpl in EQ. Res.monadInv EQ. destruct a0. Res.monadInv EQ4.
-                inv EQ5. simpl. simpl in EQ3.
-                simpl in C2. destruct_conj C2.
-                simpl in C0. destruct_conj C0.
-                destruct p.
-                + monadInv EQ3. rewrite EQ4; simpl.
-                  destruct (Benum.enum_eq x3 x1).
-                  * eapply norm_statement_set_bw with (ty := x2) in EQ; eauto.
-                    destruct EQ. destruct H0. destruct H0.
-                    rewrite H0; simpl. rewrite H1; reflexivity.
-                    intros. destruct sb. eapply IHfuel; eauto.
-                    rewrite btyp_eqb_eq in C. unfold typof_tailcomp.
-                    rewrite C. exact H.
-                  * eapply IHcases; eauto.
-                + eapply norm_statement_set_bw with (ty := x2) in EQ; eauto.
-                  destruct EQ. destruct H0. destruct H0. rewrite H0; simpl.
-                  rewrite H1; reflexivity.
-                  intros. destruct sb. eapply IHfuel; eauto.
-                  rewrite btyp_eqb_eq in C. unfold typof_tailcomp.
-                  rewrite C. exact H.
-            }
-          + Res.monadInv H. inv EQ0. simpl in H0.
-            simpl in WF_STMT. unfold typof_tailcomp.
-            simpl. pose proof (wf_tailcomp_btyp_to_typ _ _ WF_STMT).
-            destruct H. rewrite H; simpl.
-            eapply norm_statement_set_bw with (ty := x0) in EQ; eauto.
-              destruct EQ. destruct H1. destruct H1.
-              rewrite H1; simpl. rewrite H2; reflexivity.
-              intros. destruct sb. eapply IHfuel; eauto.
-      }
-  Qed.
-
-  End NORM_TAILCOMP.
+    - Res.monadInv H. inv EQ0. simpl in H0.
+      eapply IHtc; eauto.
+  Qed. 
 
   Theorem norm_tailcomp_correct:
     forall te ge le tc s ty,
@@ -593,7 +341,7 @@ Section CORRECTNESS.
     simpl.
     - erewrite norm_tailcomp_correct_fw; eauto.
     - destruct (eval_statement_rec tabs te ge le (Some ty) s) eqn:Eeval_s; simpl.
-      + eapply norm_tailcomp_bw_correct in Eeval_s; eauto.
+      + eapply norm_tailcomp_correct_bw in Eeval_s; eauto.
         destruct Eeval_s. rewrite H1 in Eeval_tc. discriminate.
       + reflexivity.
   Qed.

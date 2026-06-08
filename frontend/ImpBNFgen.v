@@ -23,7 +23,7 @@ Fixpoint transl_expr (e: expr) : res tailcomp :=
   | ELetIn x e1 e2 ty =>
       do tc1 <- transl_expr e1;
       do tc2 <- transl_expr e2;
-      eret (TcBegin (StSetTailcomp x tc1) tc2 ty)
+      eret (TcBegin x tc1 tc2 ty)
   | EIfThenElse a e1 e2 ty =>
       do tc1 <- transl_expr e1;
       do tc2 <- transl_expr e2;
@@ -463,7 +463,6 @@ Section CORRECTNESS.
 
   Ltac ecast_typ_err_resolve :=
     try (unfold ecast_typ; destruct (typ_eq_dec _ _); subst; simpl); eauto.
-
 
   Fixpoint transl_expr_correct_err e:
     forall te ge le1 le2 ty tc
