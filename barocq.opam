@@ -1,6 +1,6 @@
 opam-version: "2.0"
 name: "project"
-version: "0.5"
+version: "0.5.1"
 synopsis: "The Barocq compiler"
 maintainer: "Clément Chavanon <clement.chavanon@inria.fr>"
 authors: "Clément Chavanon and Frédéric Besson"
@@ -16,6 +16,6 @@ depends: [
   "coq-vst-zlist" {= "2.13"}
   "compcert-ce" {= "3.17-20260508ce"}
 ]
-pin-depends: ["compcert-ce.3.17-20260508ce" "git+https://gitlab.inria.fr/cchavano/compcert-ce.git"]
+pin-depends: ["compcert-ce.3.17-20260508ce" "git+https://gitlab.inria.fr/cchavano/compcert-ce.git#barocq-v0.5"]
 build: [[make]]
 install: [make "install-all"]
