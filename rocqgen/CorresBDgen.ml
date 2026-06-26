@@ -428,16 +428,16 @@ module VCgen = struct
               "Definition needed_checked_%s : list propt := "
               (ident_to_string fid);
             let delim =
-              if sdefs_needed = [] then ("[", "]")
-              else (sprintf "[\n%s" indent2, sprintf "\n%s]\n" indent)
+              if sdefs_needed = [] then ("[", "].\n")
+              else
+                (sprintf "\n%s[\n%s" indent indent2, sprintf "\n%s].\n" indent)
             in
             print_list
               out
               ~delim
               ~sep:(sprintf ";\n%s" indent2)
               gen_def_property
-              sdefs_needed;
-            fprintf out "%s.\n" indent
+              sdefs_needed
         | Barocq.Typed.DeclFun (fid, _, _) ->
             fprintf
               out
@@ -489,7 +489,7 @@ module VCgen = struct
           cid_str
     in
     sprintf
-      "%s check_value abs_types_impl (%s) (Deeptypes.typof_%s) (VAL \
+      "%scheck_value abs_types_impl (%s) (Deeptypes.typof_%s) (VAL \
        Deeptypes.typof_%s %s)"
       indent2
       constval_deep
@@ -521,35 +521,44 @@ module VCgen = struct
       "%slet ge := genv_has_property abs_types_impl STree.empty \
        needed_checked_%s in\n\
        %slet v : #Deeptypes.typof_%s := %s in\n\
-       eq_value abs_types_impl (VAL Deeptypes.typof_%s %s) _ v\n"
+       %seq_value abs_types_impl (VAL Deeptypes.typof_%s %s) _ v"
       indent2
       fid_shallow
-      indent3
+      indent2
       fid_shallow
       funval_deep
+      indent2
       fid_shallow
       fid_shallow
 
   let gen_def_vc (d : globdef) : string =
-    match d with
-    | DefFun (fid, f) -> gen_fun_vc false fid f.fn_params f.fn_return
-    | DeclFun (fid, tparams, tret) ->
-        let params = params_of_absfun tparams in
-        gen_fun_vc true fid params tret
-    | DefConst (cid, _, ty) -> gen_const_vc false cid ty
-    | DeclConst (cid, ty) -> gen_const_vc true cid ty
+    let sd =
+      match d with
+      | DefFun (fid, f) -> gen_fun_vc false fid f.fn_params f.fn_return
+      | DeclFun (fid, tparams, tret) ->
+          let params = params_of_absfun tparams in
+          gen_fun_vc true fid params tret
+      | DefConst (cid, _, ty) -> gen_const_vc false cid ty
+      | DeclConst (cid, ty) -> gen_const_vc true cid ty
+    in
+    let id = ident_of_globdef d in
+    (* Abitrary separator length value, but should be set w.r.t the length of
+       the longest global identifier. *)
+    let dashes = String.make (50 - String.length id) '=' in
+    sprintf "%s(* %s %s *)\n%s" indent2 id dashes sd
 
   let print_vc (out : out_channel) (bprog : Barocq.Typed.program)
       (sprog : ShallowAST.Monadic.program) : unit =
     let sdefs = sprog.prog_defs in
-    fprintf out "\n";
     print_needed_checked_lists out bprog sprog.prog_defs;
+    fprintf out "\n";
     print_functions_params out sdefs;
+    fprintf out "\n";
     fprintf out "Definition vc : list Prop :=\n";
     print_list
       out
       ~delim:(sprintf "%s[\n" indent, sprintf "\n%s]." indent)
-      ~sep:(sprintf ";\n%s(* ========================== *)\n" indent2)
+      ~sep:(sprintf ";\n")
       gen_def_vc
       (List.rev sdefs)
 end
@@ -612,7 +621,7 @@ let print_prelude (out : out_channel) (bprog : Barocq.Typed.program)
   end;
   if defs <> [] then begin
     fprintf out "\n";
-    fprintf out "(** Properties environments *)\n";
+    fprintf out "(** Verification conditions *)\n";
     fprintf out "\n";
     print_properties_envs out defs;
     fprintf out "\n";
