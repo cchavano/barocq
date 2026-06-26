@@ -613,23 +613,6 @@ module SR = struct
         let ty = MFun (List.map snd tparams, tret) in
         sprintf "Parameter %s : %s." (ident_to_string x) (mtyp_to_rocq ty)
 
-  let gen_record_eta_update
-      ((rd_name, rd_fields) : ident * (mtyp * layout) Maps2.smaplist) : string =
-    let rid = ident_to_string rd_name in
-    let fnames =
-      List.map
-        (fun (fname, _) ->
-          sprintf "%s_%s" (String.lowercase_ascii rid) (ident_to_string fname))
-        rd_fields
-    in
-    sprintf
-      "Instance eta_%s : Settable %s :=\n%ssettable! mk_%s <%s>."
-      rid
-      rid
-      (String.make 2 ' ')
-      rid
-      (PrintUtils.list_to_string ~sep:"; " (fun x -> x) fnames)
-
   let gen_enum_eq_dec ((ed_name, ed_elems) : ident * ident list) : string =
     let eid = ident_to_string ed_name in
     let eq_dec =
@@ -728,11 +711,6 @@ module SR = struct
       print_list out ~delim:("", "\n") ~sep:"\n\n" type_def_to_rocq types
     end;
     let records = Syntax.get_record_typedefs types in
-    if records <> [] then begin
-      fprintf out "\n";
-      fprintf out "(** * Setters for records *)\n\n";
-      print_list out ~delim:("", "\n") ~sep:"\n\n" gen_record_eta_update records
-    end;
     fprintf out "\n";
     fprintf out "(** * Auxiliary functions *)\n";
     let enums = Syntax.get_enum_typedefs types in
