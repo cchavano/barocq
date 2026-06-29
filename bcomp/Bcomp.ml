@@ -17,6 +17,10 @@ let syntax_error_msg lexbuf msg =
     sep
     msg
 
+let version = "v0.5.2~dev"
+
+let opt_show_version = ref false
+
 let debug = ref false
 
 let source_files = ref []
@@ -73,6 +77,9 @@ let usage_msg = "Usage: barocq [options] <files> \noptions:"
 
 let options =
   [
+    ( "-version",
+      Arg.Set opt_show_version,
+      "\t\t\t\t\tDisplay the installed version of the compiler" );
     ("-debug", Arg.Set debug, "\t\t\t\t\tDebug flag");
     ("-interp", Arg.Set opt_interp, "\t\t\t\t\tInterpret the given files");
     ( "-parse",
@@ -383,6 +390,11 @@ let generate_rocq (prog : Barocq.program) (tprog : Barocq.Typed.program)
 let () =
   begin
     Arg.parse options set_source_files usage_msg;
+
+    if !opt_show_version then begin
+      printf "The Barocq compiler %s" version;
+      exit 0
+    end;
 
     if !source_files = [] then begin
       eprintf "Error: no source file provided\n";
