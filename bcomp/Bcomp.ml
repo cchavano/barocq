@@ -392,7 +392,7 @@ let () =
     Arg.parse options set_source_files usage_msg;
 
     if !opt_show_version then begin
-      printf "The Barocq compiler %s" version;
+      printf "The Barocq compiler %s\n" version;
       exit 0
     end;
 

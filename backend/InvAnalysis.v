@@ -1,11 +1,12 @@
 (** Invalid Path for imp1 *)
 From Stdlib Require Import Uint63.
 From Stdlib Require Import String FMapInterface FMapList ZArith Int ListSet.
-From BarocqComp Require Import Res Maps2 Types Syntax Imp1 Graph Typing Utils Pp Printer.
+From BarocqComp Require Import Option Res Maps2 Types Syntax Imp1 Graph Typing Utils Pp Printer.
 From BarocqComp Require Import Imp1ElimAlias.
 From Stdlib Require Import FMapPositive.
 
 Local Open Scope error_monad_scope.
+Local Open Scope option_monad_scope.
 
 (** The analysis requires an alias analysis.
     We have the [Imp1ElimAlias] and this is hardcoded.
@@ -83,15 +84,16 @@ Module Afunction.
     mk
       {
         fn_areturn  :  (btyp * option G.PathTree.t);
-        fn_aparams : list (btyp * option G.PathTree.t);
+        fn_aparams : list (ident * (btyp * option G.PathTree.t));
       }.
 
   Definition pp_elt (x:btyp * option G.PathTree.t) :=
     pp_option G.PathTree.pp (snd x).
 
   Definition pp (f:t) :=
+    let aparams := List.map (fun ai => snd ai) (fn_aparams f) in
     Bcat
-      (pp_list (Bstr "->") pp_elt (fn_aparams f))
+      (pp_list (Bstr "->") pp_elt aparams)
       (Bcat (Bstr "->") (pp_elt (fn_areturn f))).
 
 End Afunction.
@@ -336,6 +338,32 @@ Definition check_valid_args (env:InvMap.t) (f:ident) (args : list atom) : res un
                                                         pp_path p :: nil))))
   end.
 
+Definition subst_edge (env: smaplist atom) (e: EdgeLabel.t) : res EdgeLabel.t :=
+  match e with
+  | EdgeLabel.Index a =>
+      do a' <- subst_atom env a ;
+      eret (EdgeLabel.Index a')
+  | _ => eret e
+  end.
+
+Fixpoint subst_pathtree (env: smaplist atom) (n: G.PathTree.t) : res G.PathTree.t :=
+  match n with
+  | Node l =>
+      do l' <- 
+        Res.mmap (fun '(ei, ni) => do ei' <- subst_edge env ei; do ni' <- subst_pathtree env ni; eret (ei', ni')) l;
+      eret (Node l')
+  end.
+
+Fixpoint call_env (args: list atom) (params: list (ident * (btyp * option (G.PathTree.t)))) : res (smaplist atom) :=
+  match args, params with
+  | nil, nil => eret MapList.empty
+  | (ai :: args'), (pi :: params') =>
+      let '(pid, (ti, ni)) := pi in
+      do env <- call_env args' params';
+      eret (MapList.add Ident.eq_dec pid ai env)
+  | _, _ => efail
+  end.
+
 Definition call (te:tenv) (age: aenv) (d:domain) (ge:genv) (id:ident) (args:list atom) (env:InvMap.t) :=
   match Vars.get id (Vars d) with
   | Some _ => Error ((MSG "identifier ") :: MSG id :: MSG " should be a function." :: nil)
@@ -344,7 +372,18 @@ Definition call (te:tenv) (age: aenv) (d:domain) (ge:genv) (id:ident) (args:list
       | None => Error ((MSG "function ") :: MSG id :: MSG " does not exist" :: nil)
       | Some af =>
           do _ <- check_valid_args env id args;
-          let fargs := Afunction.fn_aparams af in
+          let fparams := Afunction.fn_aparams af in
+          do cenv <- call_env args fparams;
+          do fargs <-
+            Res.mmap
+            (fun '(pid, (ti, ni)) =>
+              do ni' <- 
+                match ni with
+                | Some ni => do ni' <- subst_pathtree cenv ni; eret (Some ni')
+                | None => eret None
+                end;
+              eret (ti, ni'))
+            fparams;
           let (_,p) := Afunction.fn_areturn af in
           (** Invalidate the aliases of the arguments *)
           do env' <- invalid_arguments te age d env args fargs;
@@ -386,17 +425,45 @@ Fixpoint inv_statement (te:tenv) (age:aenv) (d:domain) (ge:genv) (env:InvMap.t) 
   | StAttr a s  =>
       if String.eqb "aliasing" a
       then
-        Error (MSG "#[aliasing]":: MSG nl :: MSG (Pp.pp (InvMap.pp env)):: MSG nl :: MSG (Pp.pp (pp_domain d)) :: nil)
+        Error (MSG "#[aliasiastng]":: MSG nl :: MSG (Pp.pp (InvMap.pp env)):: MSG nl :: MSG (Pp.pp (pp_domain d)) :: nil)
       else inv_statement te age d ge env s
   end.
 
-Definition get_inv_arguments (inv:InvMap.t) (l:list (string * btyp)) :=
-  List.map  (fun '(s,bt) => (bt,STree.get s inv)) l.
+Fixpoint wf_index_atom (a: atom) (l: list (string * btyp)) : bool :=
+  match a with
+  | AVar x _ => MapList.mem Ident.eq_dec x l
+  | ACast a1 _
+  | AUnaryOp _ a1 _
+  | ARecordProj a1 _ _ _ => wf_index_atom a1 l
+  | ABinaryOp _ a1 a2 _
+  | AArrayGet a1 a2 _ _ =>
+      wf_index_atom a1 l && wf_index_atom a2 l
+  | APureCall _ _ args _ =>
+      List.forallb (fun ai => wf_index_atom ai l) args
+  |_ => false
+   end.
+    
+Definition inv_ret_label (e: EdgeLabel.t) (l: list (string * btyp)) : EdgeLabel.t :=
+  match e with
+  | EdgeLabel.Index a => if wf_index_atom a l then e else EdgeLabel.Top
+  | _ => e
+  end.
 
+Fixpoint inv_ret_pathtree (t: G.PathTree.t) (l: list (string * btyp)): G.PathTree.t :=
+  match t with
+  | Node ls =>
+      let ls' := List.map (fun '(e, t') => (inv_ret_label e l, inv_ret_pathtree t' l)) ls in
+      Node ls'
+  end.
+
+Definition get_inv_arguments (inv:InvMap.t) (params: list (string * btyp)) :=
+  let l := List.map (fun '(s, bt) => (s, (bt, STree.get s inv))) params in
+  List.map (fun '(s, (bt, t)) => (s, (bt, let* t := t in Some (inv_ret_pathtree t params)))) l.
+  
 Definition error_of_path (p : G.PathTree.t) :=
   Bcat (Bstr "the return expression has invalid paths;") (pp_path p).
 
-Definition inv_def_function (te:tenv)  (age:aenv) (ge:genv) (f:function) : res Afunction.t :=
+Definition inv_def_function (te:tenv) (age:aenv) (ge:genv) (f:function) : res Afunction.t :=
   do d <- domain_of_function te f;
   do (r,inv) <- inv_statement te age d ge InvMap.empty (fn_body f);
   match r with
@@ -411,7 +478,7 @@ Definition inv_of_attr (a:param_attr) :=
   end.
 
 Definition inv_decl_function (l:list (param_attr * btyp)) (r:btyp) :=
-  Afunction.mk (r,None) (List.map (fun '(p,t) => (t,inv_of_attr p)) l).
+  Afunction.mk (r,None) (List.map (fun '(p,t) => ("", (t,inv_of_attr p))) l).
 
 Definition inv_globdef (te:tenv) (age:aenv) (ge:genv) (gd:globdef) : res genv :=
   match gd with

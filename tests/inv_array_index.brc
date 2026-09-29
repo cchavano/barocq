@@ -1,0 +1,13 @@
+module Test
+
+defn foo(a: [i32], i: u64) : [i32] =
+  a[i] <- 3
+  
+
+defn bar(a: [i32]) : [i32] =
+  let i = 2ul in
+  let a1 = foo(a, i) in
+  a1
+
+
+
