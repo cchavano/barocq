@@ -215,6 +215,21 @@ Section S.
                         else fail
     end.
 
+
+  Section REMOVELETW.
+
+    Fixpoint remove_let {A: Type} (l : list (ident * A)) (vars : STree.t unit) (vars2 : STree.t unit) :=
+      match l with
+      | nil => vars2
+      | (x,_)::l => match STree.get x vars with
+                    | Some _ => remove_let l vars vars2
+                    | None   => remove_let l vars (STree.remove x vars2)
+                    end
+      end.
+
+  End REMOVELETW.
+
+
   Fixpoint vars_of_expr (vars : STree.t unit) (e:expr)  : STree.t unit :=
     match e with
     | ETrue  | EFalse  |EInt32 _ _ | EInt64 _ _ | EConstr _ _ _ => vars
@@ -235,6 +250,13 @@ Section S.
           | Some _ => vars_of_expr vars e2
           | None   => STree.remove x (vars_of_expr vars e2)
           end in vars_of_expr vars_e2 e1
+    | EActR l  _     => (** What about field names? *)
+        List.fold_left (fun acc '(_,a) => vars_of_expr acc a) l vars
+    | ELetW l cond variant body e _ =>
+        (* scopes? *)
+        let vars_e2 := remove_let l vars (vars_of_expr vars e) in
+        let vars_loop := vars_of_expr (vars_of_expr (vars_of_expr vars_e2 body) cond) variant in
+        MapList.fold_left (fun vars _ e => vars_of_expr vars e) l vars_loop
     | EAttr _ e => vars_of_expr vars e
     end.
 
@@ -345,8 +367,10 @@ Section S.
     unfold STree.get in *.
     rewrite! PTree.gmap in *.
     destruct (s1 ! (StringIndexed.index x)) ;
-      destruct (s2 ! (StringIndexed.index x)); try tauto.
-    simpl in H. intuition congruence.
+      destruct (s2 ! (StringIndexed.index x)); try tauto;
+      simpl in H.
+    intuition congruence.
+    inv H. inv H.
   Qed.
 
   Definition generate_def_fun_obligation' (f:ident) (te:Typing.tenv)  (params : smaplist btyp) (tret : btyp) (e : expr) (checked : list propt)
@@ -449,43 +473,143 @@ Section S.
     apply ext_equal_cast_typ; simpl in *; congruence.
   Qed.
 
-(*  Lemma equal_upd_record_aux :
-    forall fields r1 r2 f ty v1 v2,
-      equal_record ext_equal fields r1 r2 ->
-      ext_equal ty v1 v2 ->
-      res_rel (equal_record ext_equal fields) (eval_record_upd_aux tabs fields r1 f ty v1)
-        (eval_record_upd_aux tabs fields r2 f ty v2).
+  Lemma get_var_remove_let_acc : forall {A:Type} (x:string) (l : list (ident * A)) acc acc'
+      (LE : forall x, STree.get x acc = Some tt -> STree.get x acc' = Some tt),
+      STree.get x acc = Some tt ->
+      STree.get x (remove_let l acc acc') = Some tt.
   Proof.
-    unfold eval_recordtyp.
-    intros.
-    unfold eval_record_upd_aux.
-    {
-      revert r1 r2 H.
-      induction fields.
-      - simpl.
-        constructor.
-      - simpl.
+    induction l; simpl.
+    - auto.
+    - destruct a.
+      intros.
+      destruct (STree.get i acc) eqn:GET.
+      + eapply IHl ; eauto.
+      + apply IHl; auto.
         intros.
-        destruct a as(fd,ty1).
-        destruct r1 as (f1 & r1').
-        destruct r2 as (f2 & r2').
-        simpl in f1,f2.
-        simpl.
-        destruct (f =?fd).
-        destruct (typ_eq_dec ty ty1).
-        + subst. constructor.
-          simpl in *.
-          tauto.
-        + constructor.
-        + simpl in *.
-          destruct H as (FD & RST).
-          specialize (IHfields r1' r2' RST).
-          inv IHfields.
-          constructor.
-          simpl. constructor ;auto.
-    }
+        rewrite STree.grspec.
+        destruct (STree.elt_eq x0 i). congruence.
+        eapply LE;eauto.
   Qed.
-*)
+
+  Lemma get_var_remove_let_acc_incr :
+    forall {A: Type} (x:string) (l : list (ident * A)) acc1 acc1' acc2 acc2'
+           (LE1 : forall x, STree.get x acc1 = Some tt -> STree.get x acc1' = Some tt)
+           (LE2 : forall x, STree.get x acc2 = Some tt -> STree.get x acc2' = Some tt),
+      STree.get x (remove_let l acc1 acc2) = Some tt ->
+      STree.get x (remove_let l acc1' acc2') = Some tt.
+  Proof.
+    induction l; simpl.
+    - auto.
+    - destruct a.
+      intros.
+      destruct (STree.get i acc1) eqn:GET.
+      + destruct u.  rewrite LE1 by auto.
+        eapply IHl ; eauto.
+      +  destruct (STree.get i acc1') eqn:ACC2.
+         revert H.
+         eapply IHl;eauto.
+         intros. rewrite STree.grspec in H.
+         destruct (STree.elt_eq x0 i). discriminate.
+         eauto.
+         revert H.  eapply IHl;eauto.
+         intro.
+         rewrite! STree.grspec.
+         destruct (STree.elt_eq x0 i);auto.
+  Qed.
+
+
+
+  Lemma get_fold_left_acc :
+    forall {A: Type} (vars_of_expr : PTree.t unit -> A -> PTree.t unit) (x:string)
+                 (HYP :  forall acc e, STree.get x acc = Some tt
+                                     -> STree.get x (vars_of_expr acc e) = Some tt)
+           (l: list (string * A)) acc,
+
+
+      STree.get x acc = Some tt ->
+      STree.get x
+        (MapList.fold_left (fun (vars : STree.t unit) (_ : Syntax.ident) (e : A) => vars_of_expr vars e) l
+           acc) =
+        Some tt.
+  Proof.
+    induction l; simpl; auto.
+    destruct a.
+    intros.
+    apply IHl; auto.
+  Defined.
+
+  Fixpoint get_var_of_atom_acc (x:string) (a: Syntax.atom) :
+    forall acc,
+      STree.get x acc = Some tt ->
+      STree.get x (vars_of_atom acc a) = Some tt.
+  Proof.
+    destruct a; simpl; auto.
+    - intros.
+      rewrite STree.gsspec.
+      destruct (STree.elt_eq x i); auto.
+    - intros.
+      assert (STree.get x (STree.set i tt acc) = Some tt).
+      {
+        rewrite STree.gsspec.
+        destruct (STree.elt_eq x i); auto.
+      }
+      revert H0.
+      generalize (STree.set i tt acc) as acc'.
+      induction l; simpl;auto.
+  Qed.
+
+  Fixpoint get_var_of_atom_case (x:string) (a:Syntax.atom): forall acc,
+      STree.get x (vars_of_atom acc a) = Some tt <->
+        (STree.get x acc = Some tt \/
+           STree.get x (vars_of_atom STree.empty a) = Some tt).
+  Proof.
+    destruct a; simpl; try rewrite STree.gempty;
+      try intuition congruence.
+    - intros. rewrite! STree.gsspec.
+      destruct (STree.elt_eq x i); subst.
+      intuition congruence.
+      rewrite STree.gempty. intuition congruence.
+    - intros.
+      rewrite get_var_of_atom_case.
+      tauto.
+    - intros.
+      rewrite get_var_of_atom_case.
+      tauto.
+    - intros.
+      rewrite get_var_of_atom_case.
+      rewrite get_var_of_atom_case.
+      rewrite get_var_of_atom_case with (acc:= vars_of_atom STree.empty a1).
+      tauto.
+    - intros.
+      rewrite get_var_of_atom_case.
+      rewrite get_var_of_atom_case.
+      rewrite get_var_of_atom_case with (acc:= vars_of_atom STree.empty a1).
+      tauto.
+    - intros.
+      rewrite get_var_of_atom_case.
+      tauto.
+    - assert (ACC': forall acc,
+                 STree.get x (fold_left vars_of_atom l acc) = Some tt <->
+                   STree.get x acc = Some tt \/ STree.get x (fold_left vars_of_atom l STree.empty) = Some tt).
+      {
+        induction l;simpl;auto.
+        - rewrite STree.gempty. intuition congruence.
+        - intros. rewrite IHl.
+          symmetry. rewrite IHl.
+          rewrite get_var_of_atom_case with (acc:= acc).
+          tauto.
+      }
+      intros.
+      rewrite ACC'.
+      symmetry.
+      rewrite ACC'.
+      rewrite! STree.gsspec.
+      rewrite STree.gempty.
+      destruct (STree.elt_eq x i).
+      intuition congruence.
+      intuition congruence.
+  Qed.
+
 
   Fixpoint get_var_of_expr_acc (x:string) (e:expr): forall acc,
       STree.get x acc = Some tt ->
@@ -521,7 +645,73 @@ Section S.
          rewrite STree.grspec.
          destruct (STree.elt_eq x i);try congruence.
          apply get_var_of_expr_acc;auto.
+    - induction l; simpl; auto.
+      intros. destruct a.
+      apply IHl;auto.
+    - intros.
+      assert (ACC' : STree.get x (vars_of_expr (vars_of_expr (vars_of_expr (remove_let l acc (vars_of_expr acc e4)) e3) e1) e2) = Some tt).
+      {
+        apply get_var_of_expr_acc.
+        apply get_var_of_expr_acc.
+        apply get_var_of_expr_acc.
+        apply get_var_remove_let_acc.
+        intros ; apply get_var_of_expr_acc;auto.
+        assumption.
+      }
+      apply get_fold_left_acc.
+      intros.
+      apply get_var_of_expr_acc; auto.
+      auto.
   Qed.
+
+
+  Lemma remove_let_iff : forall {A: Type} x (l:list (string * A))  acc acc',
+      STree.get x (remove_let l acc acc') =
+        if List.existsb (fun x_e => String.eqb x (fst x_e)) l
+        then match STree.get x acc with
+             | Some _ => STree.get x acc'
+             | None   => None
+             end
+        else STree.get x acc'.
+  Proof.
+    induction l ; simpl; auto.
+    destruct a.
+    intros.
+    destruct (STree.get s acc) eqn:GET.
+    - simpl.
+      rewrite IHl.
+      destruct (string_dec x s).
+      + subst. rewrite String.eqb_refl. simpl.
+        destruct (existsb (fun x_e : string * A => s =? fst x_e) l) eqn:EX; auto.
+        rewrite GET. auto.
+      + assert (x =? s = false).
+        {
+          rewrite eqb_neq. auto.
+        }
+        rewrite H. auto.
+    - simpl.
+      rewrite IHl.
+      destruct (string_dec x s).
+      + subst. rewrite String.eqb_refl. simpl.
+        rewrite GET.
+        destruct (existsb (fun x_e : string * A => s =? fst x_e) l) eqn:EX; auto.
+        apply STree.grs.
+      +
+        assert (x =? s = false).
+        {
+          rewrite eqb_neq. auto.
+        }
+        rewrite H. simpl.
+        destruct (existsb (fun x_e : string * A => x =? fst x_e) l) eqn:EX.
+        rewrite STree.grspec.
+        destruct (STree.elt_eq x s); try congruence.
+        rewrite STree.grspec.
+        destruct (STree.elt_eq x s); try congruence.
+  Qed.
+
+
+
+
 
   Fixpoint get_var_of_expr_case (x:string) (e:expr): forall acc,
       STree.get x (vars_of_expr acc e) = Some tt <->
@@ -647,6 +837,59 @@ Section S.
         symmetry.
         rewrite get_var_of_expr_case.
         tauto.
+    - induction l ; simpl; auto.
+      + rewrite STree.gempty.
+        intuition congruence.
+      + intros.
+        rewrite IHl. destruct a.
+        symmetry. rewrite IHl.
+        symmetry. rewrite get_var_of_expr_case.
+        intuition congruence.
+    - assert (ACC' :
+                 forall acc : STree.t unit,
+                   STree.get x
+                     (MapList.fold_left (fun (vars : STree.t unit) (_ : Syntax.ident) (e : expr) => vars_of_expr vars e) l
+                        acc) =
+                     Some tt <->
+                     STree.get x acc = Some tt \/
+                       STree.get x
+                         (MapList.fold_left (fun (vars : STree.t unit) (_ : Syntax.ident) (e : expr) => vars_of_expr vars e) l
+                            STree.empty) =
+                         Some tt).
+      {
+        induction l ;simpl; auto.
+        - rewrite STree.gempty. intuition congruence.
+        - intros. destruct a.
+          rewrite IHl.
+          symmetry. rewrite IHl.
+          rewrite get_var_of_expr_case with (acc:=acc).
+          intuition congruence.
+      }
+      intro.
+      rewrite ACC'.
+      symmetry.
+      rewrite ACC'.
+      rewrite get_var_of_expr_case.
+      rewrite get_var_of_expr_case.
+      rewrite get_var_of_expr_case.
+      symmetry.
+      rewrite get_var_of_expr_case.
+      rewrite get_var_of_expr_case.
+      rewrite get_var_of_expr_case.
+      (*rewrite! STree.gempty.*)
+      rewrite get_var_of_expr_case.
+      symmetry.
+      rewrite get_var_of_expr_case.
+      rewrite! remove_let_iff.
+      rewrite ! STree.gempty.
+      destruct (existsb (fun x_e : string * expr => x =? fst x_e) l).
+      + destruct (STree.get x acc) eqn:GACC.
+        * destruct u.
+          rewrite! get_var_of_expr_case with (acc:= acc).
+          intuition  congruence.
+        * intuition congruence.
+      +       rewrite! get_var_of_expr_case with (acc:= acc).
+              intuition congruence.
     - apply get_var_of_expr_case.
   Qed.
 
@@ -976,8 +1219,13 @@ Section S.
         apply H0.
       }
       eapply eq_env_remove in EQ2;eauto.
+    - simpl in H.
+      destruct ty; try constructor.
+      (* TODO HARD *)
+      admit.
+    - (* TODO HARD *) admit.
     - apply eq_genv_eval_expr; tauto.
-  Qed.
+  Admitted.
 
   Lemma eq_env_all_empty : eq_env_all STree.empty STree.empty.
   Proof.

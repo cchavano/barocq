@@ -29,6 +29,7 @@ let rec mtyp_to_rocq (shver : ShallowASTgen.shallow_version) (ty : mtyp) :
   | MArray ta -> sprintf "array %s" (opt_parens shver ta)
   | MEnum te -> ident_to_shallow shver te
   | MRecord tr -> ident_to_shallow shver tr
+  | MActR _    -> failwith "mtyp_to_rocq ActR is not implemented"
   | MAbs t -> ident_to_string t
   | MFun (tparams, tret) ->
       begin match tparams with

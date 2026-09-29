@@ -13,6 +13,7 @@ Inductive statement : Type :=
 | StSkip
 | StSet : ident -> comp -> statement
 | StIfThenElse : atom -> statement -> statement -> statement
+| StWhile : atom -> atom -> statement -> statement
 | StSwitch : atom -> list (pattern * statement) -> statement
 | StSequence : statement -> statement -> statement
 | StReturn : atom -> statement
@@ -41,6 +42,10 @@ Module Pp.
     match s with
     | StSkip    => Bstr "skip"
     | StSet i c => Bcat (Bstr i) (Bcat (Bstr " := ") (Printer.pp_comp c))
+    | StWhile cond variant body =>
+        Pp.seq
+          (Bstr "while " :: pp_atom cond :: Bstr " decr " :: pp_atom variant :: Bstr " do " ::
+          pp_statement body :: Bstr " done " :: nil)
     | StIfThenElse a s1 s2 =>
         let s1 := Bcat (Bstr "then ") (pp_statement s1) in
         let s2 := Bcat (Bstr "else ") (pp_statement s2) in
@@ -135,6 +140,10 @@ Module Typing.
         let ta := btypof_atom a' in
         do (ty, ly) <- typecheck_record_proj2 be ta f;
         eret (ARecordProj a' f ly ty)
+(*    | Syntax.ARecordMake l _ =>
+        do l <- MapList.map_err (typecheck_atom be gx lx) l ;
+        let targs := MapList.map  btypof_atom l in
+        eret (Syntax.ARecordMake l (BActR targs)) *)
     | Syntax.APureCall f _ args _ =>
         do tf <- typof_var gx lx f;
         do args' <- mmap (typecheck_atom be gx lx) args;
@@ -216,6 +225,15 @@ Module Typing.
         do c' <- typecheck_comp be gx lx c;
         do lx' <- lcontext_update_imp lx x (btypof_comp c');
         eret (StSet x c', lx')
+    | Imp1.StWhile cond variant st =>
+        do (st',lx1) <- typecheck_statement be gx lx tret st;
+        do cond <- typecheck_atom be gx lx cond;
+        do variant <- typecheck_atom be gx lx variant;
+        if (btyp_eqb BBool (btypof_atom cond))
+        then if btyp_is_int (btypof_atom variant)
+             then  eret (StWhile cond variant st,lx1)
+             else efailwith "Imp1.Typing.typecheck_statement: variant should be a numeric type"
+        else efailwith "Imp1.Typing.typecheck_statement: cond should be a boolean"
     | Imp1.StIfThenElse a s1 s2 =>
         do (s1', lx1) <- typecheck_statement be gx lx tret s1;
         do (s2', lx2) <- typecheck_statement be gx lx tret s2;

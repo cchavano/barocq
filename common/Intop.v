@@ -17,21 +17,21 @@ Module Int16.
   Include Integers.Make(Wordsize_Int16).
 End Int16.
 
-Notation i8 := Byte.int.
+Notation i8 := (Byte.int : Type).
 
-Notation u8 := Byte.int.
+Notation u8 := (Byte.int : Type).
 
-Notation i16 := Int16.int.
+Notation i16 := (Int16.int : Type).
 
-Notation u16 := Int16.int.
+Notation u16 := (Int16.int : Type).
 
-Notation i32 := Int.int.
+Notation i32 := (Int.int : Type).
 
-Notation u32 := Int.int.
+Notation u32 := (Int.int : Type).
 
-Notation i64 := Int64.int.
+Notation i64 := (Int64.int : Type).
 
-Notation u64 := Int64.int.
+Notation u64 := (Int64.int:Type).
 
 Notation isize := Intsize.int.
 
@@ -113,6 +113,10 @@ Module MakeS(INT: INTTYPE).
     then fail
     else ret (INT.mods x y).
 
+
+  Definition to_nat (x: INT.int) : nat :=
+    Z.to_nat (INT.signed x).
+
 End MakeS.
 
 Module MakeU(INT: INTTYPE).
@@ -127,6 +131,9 @@ Module MakeU(INT: INTTYPE).
   Definition mod (x y: INT.int) : option INT.int :=
     if INT.eq y INT.zero then fail
     else ret (INT.modu x y).
+
+  Definition to_nat (x: INT.int) : nat :=
+    Z.to_nat (INT.unsigned x).
 
 End MakeU.
 

@@ -17,7 +17,7 @@ Inductive kalias :=
 | MAY
 | NOTMAY.
 
-Definition eqb_of_dec {A: Type} (eq_dec:forall (x y:A), {x = y}+{x <> y}) : A -> A -> bool :=
+Definition eqb_of_dec {A: Type} {eq: A -> A -> Prop} (eq_dec:forall (x y:A), {eq x y}+{~ eq x y}) : A -> A -> bool :=
   fun x y => if eq_dec x y then true else false.
 
 (*Fixpoint In_eq {A : Type} (eq : A -> A -> Prop) (e:A) (l:list A) :=
@@ -306,72 +306,51 @@ Section ListREMOVE.
 
 End ListREMOVE.
 
-Module Int <: OrderedType.
-  Definition t := int.
-
-  Definition eq : t -> t -> Prop := @eq t.
-  Definition lt : t -> t -> Prop := fun x y => ltb x y = true.
-
-  Lemma eq_refl : forall (x:t), x = x.
-  Proof. reflexivity. Qed.
-
-  Lemma eq_sym : forall (x y:t), x = y -> y = x.
-  Proof. congruence. Qed.
-
-  Lemma eq_trans : forall (x y z:t), x = y -> y = z -> x = z.
-  Proof. congruence. Qed.
-
-  Lemma lt_trans : forall (x y z:t), lt x y -> lt y z -> lt x z.
-  Proof.
-    unfold lt. intros. rewrite ltb_spec in *.
-    lia.
-  Qed.
-
-  Lemma lt_not_eq : forall x y, lt x y -> eq x y -> False.
-  Proof.
-    unfold lt. intros. rewrite ltb_spec in *.
-    unfold eq in H0.
-    apply (f_equal to_Z) in H0.
-    lia.
-  Qed.
-
-  Definition compare : forall x y : t, Compare lt eq x y.
-  Proof.
-    intros.
-    destruct (ltb x y) eqn:LTB.
-    - apply LT. apply LTB.
-    - destruct (eqb x y) eqn:EQB.
-      apply EQ. rewrite eqb_spec in EQB. apply EQB.
-      apply GT. unfold lt. rewrite ltb_spec.
-      rewrite <- not_true_iff_false in LTB.
-      rewrite <- not_true_iff_false in EQB.
-      rewrite ltb_spec in LTB.
-      rewrite eqb_spec in EQB.
-      assert (to_Z x <> to_Z y).
-      { intro.
-        apply to_Z_inj in H. congruence. }
-      lia.
-  Qed.
-
-  Definition eq_dec (x y:t) : {x = y} + {x <> y}.
-  Proof.
-    destruct (eqb x y) eqn:EQB.
-    - left. rewrite eqb_spec in EQB. auto.
-    - right. intro.
-      subst. rewrite eqb_refl in EQB. discriminate.
-  Qed.
-
-
-End Int.
-
-Module IntSet := FSetAVL.Make(Int).
+Module IntSet := FSetAVL.Make(UnsignedInt63).
 
 From Stdlib Require FMapFacts.
 
 Module Map(O:OrderedType).
+
   Module M := Make(O).
   Module Facts := FMapFacts.Facts(M).
   Include M.
+
+  Module CMP(E:OrderedType).
+    Import M.Raw.
+
+    Definition compare_more (x1:O.t) (d1:E.t) (cont:enumeration E.t -> comparison) (e2:enumeration E.t) :=
+      match e2 with
+      | End _ => Gt
+      | More x2 d2 r2 e2 =>
+          match O.compare x1 x2 with
+          | EQ _  => match E.compare d1 d2 with
+                    | EQ _ => cont (cons r2 e2)
+                    | LT _ => Lt
+                    | GT _ => Gt
+                    end
+          | LT _ => Lt
+          | GT _  => Gt
+          end
+      end.
+
+    Fixpoint compare_cont (m1:Raw.t E.t) (cont: enumeration E.t -> comparison) (e2 : enumeration E.t) {struct m1} : comparison :=
+      match m1 with
+      | Leaf  _ => cont e2
+      | Node l1 x1 d1 r1 _ => compare_cont l1 (compare_more x1 d1 (compare_cont r1 cont)) e2
+      end.
+
+    Definition compare_end (e2: enumeration E.t) : comparison :=
+      match e2 with
+      | End _ => Eq
+      | More _ _ _ _ => Lt
+      end.
+
+    Definition compare (m1:M.t E.t) (m2:M.t E.t) : comparison := compare_cont (this m1) (compare_end ) (cons (this m2) (End _)).
+
+  End CMP.
+
+
 
   Definition merge {A: Type} (f : A -> A -> A) (e1 e2:option A) :=
     match e1 , e2 with
@@ -507,12 +486,16 @@ Module Map(O:OrderedType).
 
 End Map.
 
-Module IntMap := Map(Int).
+Module IntMap := Map(UnsignedInt63).
+
+
 
 Module Type NodeLabelT.
   Axiom t : Type.
+
   Axiom lt: t -> t -> Prop.
-  Definition eq:= @eq t.
+  Definition eq:= @eq t. (* Nice to have this *)
+
   Axiom depth : t -> nat.
 
   Axiom eq_refl  : forall x, eq x x.
@@ -520,7 +503,6 @@ Module Type NodeLabelT.
   Axiom eq_trans : forall x y z, eq x y -> eq y z -> eq x z.
   Axiom lt_trans : forall x y z, lt x y -> lt y z -> lt x z.
   Axiom lt_not_eq : forall x y, lt x y -> not (eq x y).
-
   Axiom compare : forall x y : t, Compare lt eq x y.
   Axiom eq_dec : forall (x y:t),{eq x y} + {not (eq x y)}.
 
@@ -528,14 +510,15 @@ End NodeLabelT.
 
 Module Type EdgeLabelT.
   Axiom t : Type.
+
   Axiom lt: t -> t -> Prop.
-  Definition eq:= @eq t.
+  Definition eq:= @eq t. (* Nice to have this *)
+
   Axiom eq_refl  : forall x, eq x x.
   Axiom eq_sym   : forall x y, eq x y -> eq y x.
   Axiom eq_trans : forall x y z, eq x y -> eq y z -> eq x z.
   Axiom lt_trans : forall x y z, lt x y -> lt y z -> lt x z.
   Axiom lt_not_eq : forall x y, lt x y -> not (eq x y).
-
   Axiom compare : forall x y : t, Compare lt eq x y.
   Axiom eq_dec : forall (x y:t),{eq x y} + {not (eq x y)}.
 
@@ -618,6 +601,30 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
 
     (** [top] is the set of all paths *)
     Definition top := Node nil.
+
+    (** [leb] assumes [EdgeLabel] are sorted.
+     *)
+    Fixpoint leb (t1 t2:t) : bool :=
+      match t1 , t2 with
+      | Node l1 , Node l2 =>
+          match l1 , l2 with
+          | nil , nil => true
+          | nil , _   => false
+          |  _  , nil => true
+          |  _   , _  =>
+               ExtOrdered.list_leb
+                 (fun x y => if EdgeLabel.eq_dec (fst x) (fst y)
+                             then leb (snd x) (snd y) else false) l1 l2
+          end
+      end.
+
+    Fixpoint eqb (t1 t2:t) : bool :=
+      match t1 , t2 with
+      | Node l1 , Node l2 => forall2b
+                               (fun x y => if EdgeLabel.eq_dec (fst x) (fst y)
+                                           then eqb (snd x) (snd y) else false) l1 l2
+      end.
+
 
 
     Fixpoint pp (tr:t) : box :=
@@ -798,8 +805,8 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       - discriminate.
       - destruct a as (e1,v).
         intros. destruct (EdgeLabel.eq_dec e e1).
-        + inv H. exists nil. exists l. unfold EdgeLabel.eq in e0. subst.
-        reflexivity.
+        + inv H. exists nil. exists l. unfold EdgeLabel.eq in e0.
+          subst.  reflexivity.
         + apply IHl in H.
           destruct H as (l1 & l2 & EQ).
           subst.
@@ -1000,7 +1007,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
         | nil => ln2
         | (f1,t1) ::ln1' => match find_edge f1 ln2 with
                             | Some t2 => (f1, union t1 t2) ::
-                                           union_list ln1' (List_remove_assoc (eqb_of_dec EdgeLabel.eq_dec) f1 ln2)
+                                           union_list ln1' (List_remove_assoc  (eqb_of_dec EdgeLabel.eq_dec) f1 ln2)
                             | None    => (f1,t1) :: union_list ln1' ln2
                             end
         end.
@@ -1157,9 +1164,10 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       induction l1;simpl;auto.
       - discriminate.
       - destruct a as( e1,v1).
-        unfold eqb_of_dec.
+        intros. unfold eqb_of_dec.
+        destruct (EdgeLabel.eq_dec x e1).
+        reflexivity.
         intros.
-        destruct (EdgeLabel.eq_dec x e1);auto.
         erewrite IHl1;eauto.
     Qed.
 
@@ -1170,8 +1178,9 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     Proof.
       induction l1;simpl;auto.
       - destruct a. intros.
-        unfold eqb_of_dec at 1.
-        destruct (EdgeLabel.eq_dec x t0); try discriminate.
+        unfold eqb_of_dec.
+        destruct (EdgeLabel.eq_dec x t0); try intuition congruence.
+        destruct (EdgeLabel.eq_dec x t0); try intuition congruence.
         rewrite IHl1; auto.
     Qed.
 
@@ -1224,7 +1233,8 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
         + subst.
           rewrite find_remove_None by auto.
           simpl.
-          unfold eqb_of_dec at 1.
+          unfold EdgeLabel.eq in n.
+          unfold eqb_of_dec.
           destruct (EdgeLabel.eq_dec f1 f); try tauto.
           assert (IN2 : In (f,tr) (l1' ++ (f, tr) :: List_remove_assoc (eqb_of_dec EdgeLabel.eq_dec) f1 l3')).
         {
@@ -1430,8 +1440,10 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
            apply H3. rewrite in_map_iff.
            exists (e1,tr).
            simpl. split; auto.
-        +  eapply IHl;eauto.
-           unfold EdgeLabel.eq in n ; intuition congruence.
+        + destruct H0. inv H.
+          exfalso.
+          apply n. apply EdgeLabel.eq_refl.
+          eapply IHl;eauto.
     Qed.
 
     Lemma Forall_forall : forall {A: Type} P (l:list A),
@@ -1538,7 +1550,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       discriminate.
       intros.
       destruct H0 ; subst.
-      unfold EdgeLabel.eq in n. intuition congruence.
+      apply n. inv H0. apply EdgeLabel.eq_refl.
       eapply IHl; eauto.
     Qed.
 
@@ -1572,7 +1584,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
           eapply find_edge_None in FIND ; eauto.
     Qed.
 
-                End  S.
+    End  S.
 
   End PathTree.
 
@@ -1640,7 +1652,9 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Proof.
     decide equality.
     apply eqs.
-    apply EdgeLabel.eq_dec.
+    destruct (EdgeLabel.eq_dec a t0).
+    unfold EdgeLabel.eq in e. left; auto.
+    right; intro. subst. apply n  ; apply EdgeLabel.eq_refl.
   Qed.
 
 
@@ -1675,6 +1689,113 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
         le_edge : forall o e d, has_edge (edges g1) o e d  -> has_edge (edges g2) o e d ;
         le_fresh : (fresh g1 <=? fresh g2)%uint63 = true
       }.
+
+  Module EdgeOrdered <: ExtOrdered.OrderedCompare.
+
+    Definition t := (NodeLabel.t * list (EdgeLabel.t * int))%type.
+
+    Definition compare : t -> t -> comparison :=
+      ExtOrdered.pair_compare (ExtOrdered.compare_of_compare NodeLabel.compare)
+        (list_compare (ExtOrdered.pair_compare (ExtOrdered.compare_of_compare EdgeLabel.compare)  compare)).
+
+    Lemma NodeLabel_compare_eq :
+      forall a b : NodeLabel.t, ExtOrdered.compare_of_compare NodeLabel.compare a b = Eq <-> a = b.
+    Proof.
+      apply ExtOrdered.compare_of_compare_eq.
+      unfold NodeLabel.eq ; auto.
+      unfold NodeLabel.eq ; tauto.
+      apply NodeLabel.lt_not_eq ; auto.
+    Qed.
+
+    Lemma EdgeLabel_compare_eq :
+      forall a b, ExtOrdered.compare_of_compare EdgeLabel.compare a b = Eq <-> a = b.
+    Proof.
+      apply ExtOrdered.compare_of_compare_eq.
+      unfold EdgeLabel.eq ; auto.
+      unfold EdgeLabel.eq ; tauto.
+      apply EdgeLabel.lt_not_eq ; auto.
+    Qed.
+
+
+    Lemma compare_antisym  : forall x y, compare x y = CompOpp (compare y x).
+    Proof.
+      unfold compare.
+      intros.
+      apply ExtOrdered.pair_compare_antisym.
+      apply ExtOrdered.compare_of_compare_antisym.
+      apply NodeLabel.eq_refl. apply NodeLabel.eq_sym.
+      apply NodeLabel.lt_not_eq. apply NodeLabel.lt_trans.
+      apply list_compare_antisym.
+      intros.
+      apply ExtOrdered.pair_compare_eq.
+      apply EdgeLabel_compare_eq.
+      apply UInt63Cmp.compare_eq.
+      intros.
+      apply ExtOrdered.pair_compare_antisym.
+      simpl.
+      apply ExtOrdered.compare_of_compare_antisym.
+      reflexivity.
+      apply EdgeLabel.eq_sym.
+      apply EdgeLabel.lt_not_eq.
+      apply EdgeLabel.lt_trans.
+      apply UInt63Cmp.compare_antisym.
+    Qed.
+
+    Lemma compare_eq  : forall x y, compare x y = Eq <-> x = y.
+    Proof.
+      unfold compare.
+      intros.
+      apply ExtOrdered.pair_compare_eq.
+      apply NodeLabel_compare_eq.
+      apply ExtOrdered.list_compare_eq.
+      intros.
+      apply ExtOrdered.pair_compare_eq.
+      apply EdgeLabel_compare_eq.
+      apply UInt63Cmp.compare_eq.
+    Qed.
+
+    Lemma compare_trans : forall x y z c, compare x y = c -> compare y z = c -> compare x z = c.
+    Proof.
+      intros x y z c.
+      unfold compare.
+      apply ExtOrdered.pair_compare_trans.
+      apply NodeLabel_compare_eq.
+      destruct x,y,z.
+      apply ExtOrdered.compare_of_compare_trans.
+      unfold NodeLabel.eq. tauto.
+      apply NodeLabel.lt_trans.
+      apply NodeLabel.lt_not_eq.
+      intro.
+      apply ExtOrdered.list_compare_trans.
+      destruct x0,y0.
+      apply ExtOrdered.pair_compare_eq.
+      apply EdgeLabel_compare_eq.
+      apply UInt63Cmp.compare_eq.
+      intros x0 y0 z0 c1 I1 I2 I3.
+      apply ExtOrdered.pair_compare_trans.
+      apply EdgeLabel_compare_eq.
+      apply ExtOrdered.compare_of_compare_trans.
+      unfold EdgeLabel.eq. tauto.
+      apply EdgeLabel.lt_trans.
+      apply EdgeLabel.lt_not_eq.
+      apply UInt63Cmp.compare_trans.
+    Qed.
+
+
+  End EdgeOrdered.
+
+  Module EO := ExtOrdered.Make(EdgeOrdered).
+
+
+  Module IntMapCmp := IntMap.CMP(EO).
+
+  Definition graph_leb (g1 g2:t) :=
+    eqb (root g1) (root g2)
+    && compare_le (IntMapCmp.compare (edges g1) (edges g2)).
+
+
+
+
 
   Lemma le_graph_refl : forall g, le_graph  g g.
   Proof.
@@ -1789,7 +1910,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Fixpoint find_node (n:int) (l:list (EdgeLabel.t * int)) :=
     match l with
     | nil => None
-    | (e,n')::l => if Int.eq_dec n  n'  then Some e else find_node n l
+    | (e,n')::l => if eqs n  n'  then Some e else find_node n l
     end.
 
   Fixpoint partition_label (lb:EdgeLabel.t) (l:list (EdgeLabel.t * int)) :=
@@ -1910,7 +2031,6 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       congruence.
   Qed.
 
-
   Lemma has_edge_add :
     forall  o e d1 g nl l
            (WF : wf  g),
@@ -1922,18 +2042,17 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     split; intros.
     - destruct H as (nl1 & l1 & FIND & IN).
     rewrite IntMap.find_add in FIND.
-    destruct (Int.eq_dec o (fresh g)).
-    * inv FIND.
-      tauto.
+    destruct (UnsignedInt63.eq_dec o (fresh g)).
+    * inv FIND. tauto.
     * left.
       do 2 eexists; split; eauto.
     - destruct H as [FIND| IN].
       +
       destruct FIND as (nl1 & l1 & FIND & IN).
       rewrite IntMap.find_add.
-      destruct (Int.eq_dec o (fresh g)).
+      destruct (UnsignedInt63.eq_dec o (fresh g)).
       * subst.
-      assert (E : has_edge (edges g) (fresh g) e d1 ).
+        assert (E : has_edge (edges g) (fresh g) e d1 ).
       {
         do 2 eexists. split; eauto.
       }
@@ -1943,8 +2062,9 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       * do 2 eexists; split;eauto.
       + destruct IN ; subst.
         rewrite IntMap.find_add.
-        destruct (Int.eq_dec (fresh g) (fresh g)); try congruence.
+        destruct (UnsignedInt63.eq_dec (fresh g) (fresh g)).
         do 2 eexists ; split ; eauto.
+        congruence.
   Qed.
 
   Lemma has_edge_mkroot : forall o e d1 lb,
@@ -1958,7 +2078,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     intros (nl & l & FIND).
     rewrite IntMap.find_add in FIND.
     rewrite IntMap.find_empty in FIND.
-    destruct (Int.eq_dec o 0).
+    destruct (UnsignedInt63.eq_dec o 0%uint63).
     destruct FIND. inv H.
     simpl in H0. tauto.
     intuition congruence.
@@ -1982,9 +2102,10 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     unfold has_node_label.
     intros. unfold get_label,mkroot; simpl.
     rewrite IntMap.find_add.
-    destruct (Int.eq_dec o 0).
-    - intuition congruence.
-    - simpl. unfold efail ; intuition congruence.
+    destruct (UnsignedInt63.eq_dec o 0%uint63).
+    -  intuition congruence.
+    - rewrite IntMap.find_empty.
+      simpl. unfold efail ; intuition congruence.
   Qed.
 
   Lemma has_node_label_rev_mkroot : forall o nl lb,
@@ -1998,7 +2119,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     destruct (NodeLabel.eq_dec nl lb).
     - simpl. intuition congruence.
     - rewrite NLMap.find_empty.
-      simpl. intuition congruence.
+      simpl.  intuition congruence.
   Qed.
 
 
@@ -2085,10 +2206,10 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
        destruct a as (e1,n1).
        intros.
        rewrite IntMap.find_add.
-       destruct (Int.eq_dec n' n1).
-       + subst. reflexivity.
+       destruct (UnsignedInt63.eq_dec n' n1).
+       + destruct (eqs n' n1); try congruence.
        + rewrite IHl.
-         reflexivity.
+         destruct (eqs n' n1); try congruence.
   Qed.
 
   Lemma find_node_Some : forall n l e,
@@ -2097,7 +2218,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     induction l; simpl.
     - discriminate.
     - destruct a.
-      destruct (Int.eq_dec n i).
+      destruct (eqs n i).
       intuition congruence.
       intros.
       apply IHl in H. intuition congruence.
@@ -2109,7 +2230,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Proof.
     induction l; simpl; intros; auto.
     destruct a.
-    destruct (Int.eq_dec n i);try discriminate.
+    destruct (eqs n i);try discriminate.
     destruct H0. congruence.
     eapply IHl;eauto.
   Qed.
@@ -2157,8 +2278,8 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     unfold get_label.
     rewrite IntMap.find_add.
     unfold has_node_label, get_label.
-    destruct (Int.eq_dec o o');
-    intuition congruence.
+    destruct (UnsignedInt63.eq_dec o o');
+      intuition congruence.
   Qed.
 
 (*  Lemma has_node_label_add : forall o lb lb' l g
@@ -2665,7 +2786,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
   Fixpoint remove_edges (n:int) (l:list (EdgeLabel.t * int)) (lb:ELMap.t (list int) ) : ELMap.t (list int) :=
     match l with
     | nil => lb
-    | (el,_)::l => ELMap.remove_from_list (eqb_of_dec Int.eq_dec) el n (remove_edges n l lb)
+    | (el,_)::l => ELMap.remove_from_list (eqb_of_dec UnsignedInt63.eq_dec) el n (remove_edges n l lb)
     end.
 
   Definition remove_node (n:int) (g:t) : t:=
@@ -2673,13 +2794,13 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     | None => g
     | Some(nl,l) => mk (root g) (IntMap.remove n (edges g))
                        (remove_parents n l (parent g))
-                      (NLMap.remove_from_list (eqb_of_dec Int.eq_dec) nl n (nodelabels g))
+                      (NLMap.remove_from_list (eqb_of_dec UnsignedInt63.eq_dec) nl n (nodelabels g))
                       (remove_edges n l (edgelabels g)) (fresh g)
     end.
 
   Definition eqb_edge_node (e1_n1 e2_n2:EdgeLabel.t * int) : bool :=
     if EdgeLabel.eq_dec (fst e1_n1) (fst e2_n2)
-    then eqb_of_dec Int.eq_dec (snd e1_n1) (snd e2_n2)
+    then eqb_of_dec UnsignedInt63.eq_dec (snd e1_n1) (snd e2_n2)
     else false.
 
   Definition remove_edge_from_list (o:int)  (e:EdgeLabel.t) (d:int) (m:IntMap.t (NodeLabel.t * list (EdgeLabel.t * int))) :=
@@ -2826,7 +2947,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
              (register_parents o el' (parent g))
             (nodelabels g)
             (ELMap.addl  e' o
-               (ELMap.remove_from_list (eqb_of_dec Int.eq_dec) e o (edgelabels g)))
+               (ELMap.remove_from_list (eqb_of_dec UnsignedInt63.eq_dec) e o (edgelabels g)))
             (fresh g)
       end.
 
@@ -2878,7 +2999,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     is_parent_rec g d p n.
 
   Fixpoint get_upward_path_rec (fuel:nat) (g:t) (n:int) :=
-    if Int.eq_dec n (root g) then OK nil
+    if UnsignedInt63.eq_dec n (root g) then OK nil
     else match fuel with
          | O => efail
          | S fuel =>
@@ -2936,7 +3057,8 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     inv H. simpl.
     rewrite IntMap.Facts.add_o.
     destruct (IntMap.M.E.eq_dec (fresh g) n).
-    - assert (has_node_label (edges g) n nl ).
+    -
+      assert (has_node_label (edges g) n nl ).
       { unfold has_node_label.
         unfold get_label.
         rewrite H1. reflexivity.
@@ -2959,7 +3081,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     split; intros.
     - destruct H as (nl1 & l1 & FIND & IN).
     rewrite IntMap.find_add in FIND.
-    destruct (Int.eq_dec o n).
+    destruct (UnsignedInt63.eq_dec o n).
     * inv FIND.
       tauto.
     * left. split;auto.
@@ -2968,12 +3090,12 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
       +
       destruct FIND as (NEQ & nl1 & l1 & FIND & IN).
       rewrite IntMap.find_add.
-      destruct (Int.eq_dec o n); try tauto.
+      destruct (UnsignedInt63.eq_dec o n); try tauto.
       do 2 eexists ; split; eauto.
       + destruct IN as (EQ & IN); subst.
         subst.
         rewrite IntMap.find_add.
-        destruct (Int.eq_dec n n); try congruence.
+        destruct (UnsignedInt63.eq_dec n n); try congruence.
         do 2 eexists ; split ; eauto.
   Qed.
 
@@ -2997,7 +3119,7 @@ Module Make(NodeLabel: NodeLabelT)(EdgeLabel:EdgeLabelT).
     intros.
     unfold has_edge_rev.
     rewrite IntMap.find_add.
-    destruct (Int.eq_dec d d1);
+    destruct (UnsignedInt63.eq_dec d d1);
     intuition congruence.
   Qed.
 

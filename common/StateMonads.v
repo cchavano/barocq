@@ -49,7 +49,27 @@ Module MonState (S: STATE_TYPE) <: SMONAD.
   Notation "'do' ( X , Y ) <- A ; B" := (bind2 A (fun X Y => B))
     (at level 200, X name, Y name, A at level 100, B at level 200)
     : state_monad_scope.
-        
+
+  Notation "'do' ( X , Y , Z ) <- A ; B" := (bind A (fun '(X, Y, Z) => B))
+    (at level 200, X name, Y name, Z name, A at level 100, B at level 200)
+    : state_monad_scope.
+
+
+
+  Section FOLDR.
+    Open Scope state_monad_scope.
+    Context {A B: Type}.
+    Variables (F : B -> A -> M A).
+
+    Fixpoint fold_right (l:list B) (m : M A) : M A :=
+      match l with
+      | nil => m
+      | e::l => do r <- fold_right l m ;
+                F e r
+      end.
+    End FOLDR.
+
+
 End MonState.
 
 Module MonStateErr (S: STATE_TYPE) <: SMONAD.

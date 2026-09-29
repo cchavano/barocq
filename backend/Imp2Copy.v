@@ -1,5 +1,6 @@
 (** Copy propagation *)
-From BarocqComp Require Import Syntax Types Imp2 Maps2.
+From Stdlib Require Import Bool.
+From BarocqComp Require Import Syntax ExtOrdered Types Imp2 Maps2.
 From compcert Require Import Integers.
 
 Inductive constant :=
@@ -7,6 +8,21 @@ Inductive constant :=
 | CInt32 (i:int) (s:signedness)
 | CInt64 (i:int64) (s:signedness)
 | CVar   (v:Syntax.ident) (bt:typ2).
+
+
+Definition constant_eqb (c1 c2:constant) :=
+  match c1, c2 with
+  | CBool b1 , CBool b2 => Bool.eqb b1 b2
+  | CInt32 i1 s1 , CInt32 i2 s2 =>
+      Int.eq i1 i2 && signedness_eqb s1 s2
+  | CInt64 i1 s1 , CInt64 i2 s2 =>
+      Int64.eq i1 i2 && signedness_eqb s1 s2
+  | CVar v1 t1 , CVar v2 t2 =>
+      String.eqb v1 v2 && typ2_eqb t1 t2
+  | _ , _ => false
+  end.
+
+
 
 Definition is_var (v:Syntax.ident) (c:constant) :=
   match c with
@@ -27,10 +43,13 @@ Proof.
   generalize signedness_eq_dec.
   generalize layout_eq_dec.
   decide equality.
-  apply List.list_eq_dec.
-  apply Ident.eq_dec.
-  apply List.list_eq_dec.
-  apply typ2_eq_dec.
+  - apply List.list_eq_dec.
+    apply Ident.eq_dec.
+  - apply List.list_eq_dec.
+    apply pair_eq_dec. exact Ident.eq_dec.
+    exact typ2_eq_dec.
+  - apply List.list_eq_dec.
+    exact typ2_eq_dec.
 Defined.
 
 Definition constant_eq_dec (c1 c2: constant) : { c1 = c2 } + { c1 <> c2}.
@@ -182,6 +201,14 @@ Definition gen_switch (l : list ((Benum.pattern * statement) * (STree.t constant
   else let shared_ren := inter_list l in
        (shared_ren, List.map (filter_pattern shared_ren) l, is_return).
 
+
+
+
+Definition eqb (v1 v2: STree.t constant * statement * bool) :=
+  let '(c1,s1,b1) := v1 in
+  let '(c2,s2,b2) := v2 in
+  STree.beq constant_eqb c1 c2 && statement_eqb s1 s2 && Bool.eqb b1 b2.
+
 Fixpoint transl_statement (ren:STree.t constant) (s:statement) : (STree.t constant * statement * bool) :=
   match s with
   | StSkip     => (ren,StSkip,false)
@@ -201,6 +228,22 @@ Fixpoint transl_statement (ren:STree.t constant) (s:statement) : (STree.t consta
       if andb b1 b2
       then (rn, StIfThenElse a1 s1 s2, true) (* the statement returns *)
       else (rn, StIfThenElse a1 (stseq s1 cp1) (stseq s2 cp2),false)
+  | StWhile cond variant body =>
+      (*match itern (fun rn =>
+                          let '(rn1,_,_) := transl_statement rn body in
+                          OK rn1)
+                       (STree.beq constant_eqb)
+                       (fun rn1 rn2 =>
+                          let '(rn,_,_) := merge_statement rn1 rn2 in
+                          OK rn)
+                       ren 10  with
+        Error => *)
+      (* Would be better to iterate *)
+      let st := statement_of_renaming ren in
+      let '(rn',body',b) := transl_statement STree.empty body in
+      let st' := statement_of_renaming rn' in
+      (STree.empty ,
+        stseq st (StWhile cond variant (stseq body' st')) , false)
   | StSwitch a l =>
       let a1 := rename_atom ren a in
       let l  := List.map (fun x =>

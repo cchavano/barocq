@@ -6,7 +6,7 @@ This is adapted from the [BarocqVC] version.
 
 From Stdlib Require Import String List.
 From compcert Require Import Integers Maps.
-From BarocqComp Require Import Denot Syntax Ident Option Barray Brecord Types BarocqBNF Maps2 MergeSort Utils.
+From BarocqComp Require Import  Denot Syntax Ident Option Barray Brecord Types BarocqBNF Maps2 MergeSort Utils.
 From BarocqComp Require Import ExtEqual.
 From compcert Require Import Coqlib.
 From Stdlib Require Import ZifyBool.
@@ -34,21 +34,51 @@ Section S.
     | Val _ _ v => v
     end.
 
-  Fixpoint vars_of_atom (vars:STree.t unit) (a:atom) :=
+  Section VARLET.
+    Variable vars_of_expr : STree.t unit -> expr -> STree.t unit.
+
+    Definition vars_of_let (vars : STree.t unit) (x:ident) (e1 e2:expr) :=
+      let vars_e2 :=
+        match STree.get x vars with
+        | Some _ => (* x escapes *) vars_of_expr vars e2
+        | None   => STree.remove x (vars_of_expr vars e2)
+        end in vars_of_expr vars_e2 e1.
+
+  End VARLET.
+
+  Section REMOVELETW.
+
+    Fixpoint remove_let {A: Type} (l : list (ident * A)) (vars : STree.t unit) (vars2 : STree.t unit) :=
+      match l with
+      | nil => vars2
+      | (x,_)::l => match STree.get x vars with
+                    | Some _ => remove_let l vars vars2
+                    | None   => remove_let l vars (STree.remove x vars2)
+                    end
+      end.
+
+  End REMOVELETW.
+
+
+
+  Fixpoint vars_of_atom (vars: STree.t unit) (a : Syntax.atom) : STree.t unit :=
     match a with
-    | ATrue
-    | AFalse
-    | AInt32 _ _
-    | AInt64 _ _
-    | AConstr _ _ _ => vars
-    | AVar id _ => STree.set id tt vars
-    | ACast a _ => vars_of_atom vars a
-    | AUnaryOp _ a _ => vars_of_atom vars a
-    | ABinaryOp _ a1 a2 _ => vars_of_atom (vars_of_atom vars a1) a2
-    | AArrayGet a1 a2 _ _ => vars_of_atom (vars_of_atom vars a1) a2
-    | ARecordProj a _ _ _ => vars_of_atom vars a
-    | APureCall f _ args _ => List.fold_left vars_of_atom args (STree.set f tt vars)
+    | Syntax.ATrue
+    | Syntax.AFalse
+    | Syntax.AInt32 _ _
+    | Syntax.AInt64 _ _
+    | Syntax.AConstr _ _ _ => vars
+    | Syntax.AVar id _ => STree.set id tt vars
+    | Syntax.AUnaryOp _ a _
+    | Syntax.ARecordProj a  _ _ _
+    | Syntax.ACast a _ => vars_of_atom vars a
+    | Syntax.AArrayGet a1 a2 _ _
+    | Syntax.ABinaryOp _ a1 a2 _ => vars_of_atom (vars_of_atom vars a1) a2
+    | Syntax.APureCall f _ l _ =>
+        List.fold_left vars_of_atom l (STree.set f tt vars)
     end.
+
+
 
   Fixpoint vars_of_expr (vars : STree.t unit) (e:expr)  : STree.t unit :=
     match e with
@@ -59,14 +89,43 @@ Section S.
     | EIfThenElse e1 e2 e3 _ => vars_of_expr (vars_of_expr (vars_of_atom vars e1) e2) e3
     | EMatch e1 cases _  =>
         MapList.fold_left (fun vars _ ep => vars_of_expr vars ep) cases (vars_of_atom vars e1)
-    | ELetIn x e1 e2 _ => (* Ignore scopes - should remove x from e2 *)
-        let vars_e2 :=
-          match STree.get x vars with
-          | Some _ => vars_of_expr vars e2
-          | None   => STree.remove x (vars_of_expr vars e2)
-          end in vars_of_expr vars_e2 e1
+    | ELetIn x e1 e2 _ =>
+        vars_of_let vars_of_expr vars x e1 e2
+    | ELetW l cond variant body e _ =>
+        (* scopes? *)
+        let vars_loop := vars_of_atom (vars_of_atom (vars_of_expr (vars_of_expr vars e) body) cond) variant in
+        let vars_cont := remove_let l vars vars_loop in
+        MapList.fold_left (fun vars _ e => vars_of_expr vars e) l vars_cont
+    | EActR l  _     => (** What about field names? *)
+        List.fold_left (fun acc v_a => vars_of_atom acc (snd v_a)) l vars
     | EAttr _ e => vars_of_expr vars e
     end.
+
+
+  Lemma vars_of_expr_rw : forall (vars : STree.t unit) (e:expr),
+      vars_of_expr vars e =
+    match e with
+    | EAtom a  => vars_of_atom vars a
+    | EArraySet a1 a2 a3 _ => vars_of_atom (vars_of_atom (vars_of_atom vars a1) a2) a3
+    | ERecordUpdate a1 _ a2 _ => vars_of_atom (vars_of_atom vars a1) a2
+    | EApp e l _   => List.fold_left vars_of_atom l (vars_of_atom vars e)
+    | EIfThenElse e1 e2 e3 _ => vars_of_expr (vars_of_expr (vars_of_atom vars e1) e2) e3
+    | EMatch e1 cases _  =>
+        MapList.fold_left (fun vars _ ep => vars_of_expr vars ep) cases (vars_of_atom vars e1)
+    | ELetIn x e1 e2 _ => (* Ignore scopes - should remove x from e2 *)
+        vars_of_let vars_of_expr vars x e1 e2
+    | ELetW l cond variant body e _ =>
+        let vars_loop := vars_of_atom (vars_of_atom (vars_of_expr (vars_of_expr vars e)  body) cond) variant in
+        let vars_cont := remove_let l vars vars_loop in
+        MapList.fold_left (fun vars _ e => vars_of_expr vars e) l vars_cont
+
+    | EActR l  _     => (** What about field names? *)
+        List.fold_left (fun acc v_a => vars_of_atom acc (snd v_a)) l vars
+    | EAttr _ e => vars_of_expr vars e
+    end.
+  Proof.
+    destruct e; reflexivity.
+  Qed.
 
 
   Definition has_var (s:string) (vars:STree.t unit) :=
@@ -155,7 +214,7 @@ Section S.
     if MergeSort.nodup String.leb String.eqb (List.map fst params)
     then
       let* tret' := Typing.btyp_to_typ te tret in
-      let* params' := map_err (Typing.btyp_to_typ te) params in
+      let* params' := MapList.mmap _ (Typing.btyp_to_typ te) params in
       let vars     := vars_of_fun params e in
       let needed_checked := List.filter (fun '(k,_) => has_var k vars) checked in
       let o := forall ge,
@@ -181,16 +240,21 @@ Section S.
     unfold STree.get in *.
     rewrite! PTree.gmap in *.
     destruct (s1 ! (StringIndexed.index x)) ;
-      destruct (s2 ! (StringIndexed.index x)); try tauto.
-    simpl in H. intuition congruence.
+      destruct (s2 ! (StringIndexed.index x)); try tauto;
+      simpl in H.
+    intuition congruence.
+    inv H. inv H.
   Qed.
+
+
+
 
   Definition generate_def_fun_obligation' (f:ident) (te:Typing.tenv)  (params : smaplist btyp) (tret : btyp) (e : expr) (checked : list (propt tabs))
     (prop : value tabs) : option Prop :=
     if MergeSort.nodup String.leb String.eqb (List.map fst params)
     then
       let* tret' := Typing.btyp_to_typ te tret in
-      let* params' := map_err (Typing.btyp_to_typ te) params in
+      let* params' := MapList.mmap _ (Typing.btyp_to_typ te) params in
       let vars     := vars_of_fun params e in
       let needed_checked := List.filter (fun '(k,_) => has_var k vars) checked in
       let ge := genv_has_property tabs STree.empty needed_checked in
@@ -225,22 +289,195 @@ Section S.
     auto.
   Qed.
 
-  Fixpoint get_var_of_atom_acc (x:string) (a:atom): forall acc,
+  Lemma eq_env_le : forall vars vars' le le' ge ge',
+      eq_env vars' le le' ge ge' ->
+      (forall x, STree.get x vars = Some tt -> STree.get x vars' = Some tt) ->
+      eq_env vars le le' ge ge'.
+  Proof.
+    unfold eq_env; intros.
+    apply H; auto.
+  Qed.
+
+  
+  Fixpoint get_var_of_atom_acc (x:string) (a: Syntax.atom) :
+    forall acc,
       STree.get x acc = Some tt ->
       STree.get x (vars_of_atom acc a) = Some tt.
   Proof.
     destruct a; simpl; auto.
-    - intros. rewrite STree.gsspec.
+    - intros.
+      rewrite STree.gsspec.
       destruct (STree.elt_eq x i); auto.
     - intros.
-      assert (ACC : STree.get x (STree.set i tt acc) = Some tt).
-      { intros. rewrite STree.gsspec.
+      assert (STree.get x (STree.set i tt acc) = Some tt).
+      {
+        rewrite STree.gsspec.
         destruct (STree.elt_eq x i); auto.
       }
-      revert ACC.
+      revert H0.
       generalize (STree.set i tt acc) as acc'.
-      induction l; simpl ; auto.
+      induction l; simpl;auto.
   Qed.
+
+  Fixpoint get_var_of_atom_case (x:string) (a:Syntax.atom): forall acc,
+      STree.get x (vars_of_atom acc a) = Some tt <->
+        (STree.get x acc = Some tt \/
+           STree.get x (vars_of_atom STree.empty a) = Some tt).
+  Proof.
+    destruct a; simpl; try rewrite STree.gempty;
+      try intuition congruence.
+    - intros. rewrite! STree.gsspec.
+      destruct (STree.elt_eq x i); subst.
+      intuition congruence.
+      rewrite STree.gempty. intuition congruence.
+    - intros.
+      rewrite get_var_of_atom_case.
+      tauto.
+    - intros.
+      rewrite get_var_of_atom_case.
+      tauto.
+    - intros.
+      rewrite get_var_of_atom_case.
+      rewrite get_var_of_atom_case.
+      rewrite get_var_of_atom_case with (acc:= vars_of_atom STree.empty a1).
+      tauto.
+    - intros.
+      rewrite get_var_of_atom_case.
+      rewrite get_var_of_atom_case.
+      rewrite get_var_of_atom_case with (acc:= vars_of_atom STree.empty a1).
+      tauto.
+    - intros.
+      rewrite get_var_of_atom_case.
+      tauto.
+    - assert (ACC': forall acc,
+                 STree.get x (fold_left vars_of_atom l acc) = Some tt <->
+                   STree.get x acc = Some tt \/ STree.get x (fold_left vars_of_atom l STree.empty) = Some tt).
+      {
+        induction l;simpl;auto.
+        - rewrite STree.gempty. intuition congruence.
+        - intros. rewrite IHl.
+          symmetry. rewrite IHl.
+          rewrite get_var_of_atom_case with (acc:= acc).
+          tauto.
+      }
+      intros.
+      rewrite ACC'.
+      symmetry.
+      rewrite ACC'.
+      rewrite! STree.gsspec.
+      rewrite STree.gempty.
+      destruct (STree.elt_eq x i).
+      intuition congruence.
+      intuition congruence.
+  Qed.
+
+  Lemma get_var_remove_let_acc : forall {A:Type} (x:string) (l : list (ident * A)) acc acc'
+      (LE : forall x, STree.get x acc = Some tt -> STree.get x acc' = Some tt),
+      STree.get x acc = Some tt ->
+      STree.get x (remove_let l acc acc') = Some tt.
+  Proof.
+    induction l; simpl.
+    - auto.
+    - destruct a.
+      intros.
+      destruct (STree.get i acc) eqn:GET.
+      + eapply IHl ; eauto.
+      + apply IHl; auto.
+        intros.
+        rewrite STree.grspec.
+        destruct (STree.elt_eq x0 i). congruence.
+        eapply LE;eauto.
+  Qed.
+
+  Lemma get_var_remove_let_acc_incr :
+    forall {A: Type} (x:string) (l : list (ident * A)) acc1 acc1' acc2 acc2'
+           (LE1 : forall x, STree.get x acc1 = Some tt -> STree.get x acc1' = Some tt)
+           (LE2 : forall x, STree.get x acc2 = Some tt -> STree.get x acc2' = Some tt),
+      STree.get x (remove_let l acc1 acc2) = Some tt ->
+      STree.get x (remove_let l acc1' acc2') = Some tt.
+  Proof.
+    induction l; simpl.
+    - auto.
+    - destruct a.
+      intros.
+      destruct (STree.get i acc1) eqn:GET.
+      + destruct u.  rewrite LE1 by auto.
+        eapply IHl ; eauto.
+      +  destruct (STree.get i acc1') eqn:ACC2.
+         revert H.
+         eapply IHl;eauto.
+         intros. rewrite STree.grspec in H.
+         destruct (STree.elt_eq x0 i). discriminate.
+         eauto.
+         revert H.  eapply IHl;eauto.
+         intro.
+         rewrite! STree.grspec.
+         destruct (STree.elt_eq x0 i);auto.
+  Qed.
+
+  Lemma get_fold_left_acc :
+    forall {A: Type} (vars_of_expr : PTree.t unit -> A -> PTree.t unit) (x:string)
+                 (HYP :  forall acc e, STree.get x acc = Some tt
+                                     -> STree.get x (vars_of_expr acc e) = Some tt)
+           (l: list (string * A)) acc,
+
+
+      STree.get x acc = Some tt ->
+      STree.get x
+        (MapList.fold_left (fun (vars : STree.t unit) (_ : Syntax.ident) (e : A) => vars_of_expr vars e) l
+           acc) =
+        Some tt.
+  Proof.
+    induction l; simpl; auto.
+    destruct a.
+    intros.
+    apply IHl; auto.
+  Defined.
+
+  Lemma remove_let_iff : forall {A: Type} x (l:list (string * A))  acc acc',
+      STree.get x (remove_let l acc acc') =
+        if List.existsb (fun x_e => String.eqb x (fst x_e)) l
+        then match STree.get x acc with
+             | Some _ => STree.get x acc'
+             | None   => None
+             end
+        else STree.get x acc'.
+  Proof.
+    induction l ; simpl; auto.
+    destruct a.
+    intros.
+    destruct (STree.get s acc) eqn:GET.
+    - simpl.
+      rewrite IHl.
+      destruct (string_dec x s).
+      + subst. rewrite String.eqb_refl. simpl.
+        destruct (existsb (fun x_e : string * A => s =? fst x_e) l) eqn:EX; auto.
+        rewrite GET. auto.
+      + assert (x =? s = false).
+        {
+          rewrite eqb_neq. auto.
+        }
+        rewrite H. auto.
+    - simpl.
+      rewrite IHl.
+      destruct (string_dec x s).
+      + subst. rewrite String.eqb_refl. simpl.
+        rewrite GET.
+        destruct (existsb (fun x_e : string * A => s =? fst x_e) l) eqn:EX; auto.
+        apply STree.grs.
+      +
+        assert (x =? s = false).
+        {
+          rewrite eqb_neq. auto.
+        }
+        rewrite H. simpl.
+        destruct (existsb (fun x_e : string * A => x =? fst x_e) l) eqn:EX.
+        rewrite STree.grspec.
+        destruct (STree.elt_eq x s); try congruence.
+        rewrite STree.grspec.
+        destruct (STree.elt_eq x s); try congruence.
+  Qed.
+
 
   Fixpoint get_var_of_expr_acc (x:string) (e:expr): forall acc,
       STree.get x acc = Some tt ->
@@ -261,8 +498,10 @@ Section S.
       revert H.
       generalize (vars_of_atom acc a) as acc'.
       induction l; simpl ; auto.
-      intros.
-      apply IHl. apply get_var_of_atom_acc; auto.
+      {
+        intros.
+        apply IHl. apply get_var_of_atom_acc; auto.
+      }
     - intros.
       eapply get_var_of_expr_acc; eauto.
       eapply get_var_of_expr_acc; eauto.
@@ -275,82 +514,44 @@ Section S.
       intros.
       destruct a0.
       eapply IHl; eauto.
-    - intros. destruct (STree.get i acc) eqn:GET.
-      + rewrite get_var_of_expr_acc; auto.
+    - intros.
+      unfold vars_of_let.
+      destruct (STree.get i acc) eqn:GET.
+      +   rewrite get_var_of_expr_acc; auto.
       +  destruct (STree.elt_eq x i).
          congruence.
          apply get_var_of_expr_acc.
          rewrite STree.grspec.
          destruct (STree.elt_eq x i);try congruence.
          apply get_var_of_expr_acc;auto.
+    - induction l;simpl; auto.
+      intros. apply IHl.
+      destruct a. apply get_var_of_atom_acc; auto.
+    - intros.
+      assert (ACC' : STree.get x (vars_of_atom (vars_of_atom (vars_of_expr (remove_let l acc (vars_of_expr acc e2)) e1) a) a0) = Some tt).
+      {
+        apply get_var_of_atom_acc.
+        apply get_var_of_atom_acc.
+        apply get_var_of_expr_acc.
+        apply get_var_remove_let_acc.
+        intros ; apply get_var_of_expr_acc;auto.
+        assumption.
+      }
+      apply get_fold_left_acc.
+      intros.
+      apply get_var_of_expr_acc; auto.
+      rewrite remove_let_iff.
+      destruct (existsb (fun x_e : string * expr => x =? fst x_e) l) eqn:EX.
+      +  rewrite H.
+         apply get_var_of_atom_acc.
+         apply get_var_of_atom_acc.
+         apply get_var_of_expr_acc; auto.
+      +  apply get_var_of_atom_acc.
+         apply get_var_of_atom_acc.
+         apply get_var_of_expr_acc; auto.
   Qed.
 
-  Fixpoint get_var_of_atom_case (x:string) (a:atom): forall acc,
-      STree.get x (vars_of_atom acc a) = Some tt <->
-        (STree.get x acc = Some tt \/
-           STree.get x (vars_of_atom STree.empty a) = Some tt).
-  Proof.
-    destruct a; simpl.
-    - intros. rewrite STree.gempty.
-      intuition congruence.
-    - intros. rewrite STree.gempty.
-      intuition congruence.
-    - intros. rewrite STree.gempty.
-      intuition congruence.
-    - intros. rewrite STree.gempty.
-      intuition congruence.
-    - intros. rewrite STree.gempty.
-      intuition congruence.
-    - intros. rewrite! STree.gsspec.
-      destruct (STree.elt_eq x i).
-      tauto.
-      rewrite STree.gempty. intuition congruence.
-    - intros.
-      rewrite get_var_of_atom_case.
-      tauto.
-    - intros.
-      rewrite get_var_of_atom_case.
-      tauto.
-    - intros.
-      rewrite get_var_of_atom_case.
-      rewrite get_var_of_atom_case.
-      rewrite (get_var_of_atom_case x a2 (vars_of_atom STree.empty a1)).
-      tauto.
-    - intros.
-      rewrite get_var_of_atom_case.
-      rewrite get_var_of_atom_case.
-      rewrite (get_var_of_atom_case x a2 (vars_of_atom STree.empty a1)).
-      tauto.
-    - intros.
-      rewrite get_var_of_atom_case.
-      rewrite get_var_of_atom_case.
-      symmetry.
-      rewrite get_var_of_atom_case.
-      rewrite get_var_of_atom_case.
-      tauto.
-    - intros.
-      assert (forall acc',
-                 STree.get x (fold_left vars_of_atom l acc') = Some tt <->
-                   (STree.get x acc' = Some tt \/
-                      STree.get x (fold_left vars_of_atom l STree.empty) = Some tt)).
-      {
-        induction l.
-        - simpl. rewrite STree.gempty.
-          intuition congruence.
-        - simpl. intros.
-          rewrite IHl.
-          symmetry.
-          rewrite IHl.
-          rewrite (get_var_of_atom_case x a acc').
-          tauto.
-      }
-      rewrite H.
-      symmetry.
-      rewrite H.
-      rewrite! STree.gsspec.
-      rewrite! STree.gempty.
-      destruct (STree.elt_eq x i); intuition congruence.
-  Qed.
+
 
   Fixpoint get_var_of_expr_case (x:string) (e:expr): forall acc,
       STree.get x (vars_of_expr acc e) = Some tt <->
@@ -426,6 +627,8 @@ Section S.
       rewrite (get_var_of_atom_case x a acc).
       tauto.
     - intros.
+      unfold vars_of_let.
+      rewrite STree.gempty.
       destruct (STree.get i acc) eqn:GET1.
       + destruct u.
         rewrite get_var_of_expr_case.
@@ -452,6 +655,60 @@ Section S.
         symmetry.
         rewrite get_var_of_expr_case.
         tauto.
+    - induction l.
+      + simpl. intros. rewrite STree.gempty.
+        intuition congruence.
+      + simpl.
+        intros.
+        destruct a.
+        rewrite IHl.
+        symmetry.
+        rewrite IHl.
+        rewrite (get_var_of_atom_case _ _ acc).
+        tauto.
+    -  assert (ACC' :
+                 forall acc : STree.t unit,
+                   STree.get x
+                     (MapList.fold_left (fun (vars : STree.t unit) (_ : Syntax.ident) (e : expr) => vars_of_expr vars e) l
+                        acc) =
+                     Some tt <->
+                     STree.get x acc = Some tt \/
+                       STree.get x
+                         (MapList.fold_left (fun (vars : STree.t unit) (_ : Syntax.ident) (e : expr) => vars_of_expr vars e) l
+                            STree.empty) =
+                         Some tt).
+      {
+        induction l ;simpl; auto.
+        - rewrite STree.gempty. intuition congruence.
+        - intros. destruct a1.
+          rewrite IHl.
+          symmetry. rewrite IHl.
+          rewrite get_var_of_expr_case with (acc:=acc).
+          intuition congruence.
+      }
+      intro.
+      rewrite ACC'.
+      symmetry.
+      rewrite ACC'.
+      rewrite! remove_let_iff.
+      destruct (existsb (fun x_e : string * expr => x =? fst x_e) l).
+      + rewrite ! STree.gempty.
+        destruct (STree.get x acc) eqn:GACC.
+        * destruct u.
+          rewrite get_var_of_atom_case.
+          rewrite get_var_of_atom_case.
+          rewrite get_var_of_expr_case with (acc:=(vars_of_expr acc e2)).
+          rewrite get_var_of_expr_case with (acc:=acc).
+          intuition  congruence.
+        * intuition congruence.
+      +   rewrite get_var_of_atom_case.
+          rewrite get_var_of_atom_case.
+          rewrite get_var_of_expr_case with (acc:= vars_of_expr STree.empty e2).
+          rewrite get_var_of_atom_case with (acc:=vars_of_atom (vars_of_expr (vars_of_expr acc e2) e1) a).
+          rewrite get_var_of_atom_case with (acc:= (vars_of_expr (vars_of_expr acc e2) e1)).
+          rewrite get_var_of_expr_case with (acc:= vars_of_expr acc e2).
+          rewrite get_var_of_expr_case with (acc:= acc).
+          intuition congruence.
     - apply get_var_of_expr_case.
   Qed.
 
@@ -539,15 +796,41 @@ Section S.
   Qed.
 
   Lemma eq_env_exprs : forall args acc le le' ge ge',
-      eq_env (fold_left vars_of_expr args acc) le le' ge ge' ->
+      eq_env (fold_left vars_of_expr args acc) le le' ge ge' <->
       eq_env (fold_left vars_of_expr args STree.empty) le le' ge ge' /\
         eq_env acc le le' ge ge'.
   Proof.
     unfold eq_env; simpl; split; intros.
-    apply H;auto.
-    rewrite get_fold_vars_of_expr; tauto.
-    apply H;auto.
-    rewrite get_fold_vars_of_expr; tauto.
+    - split; intros.
+      apply H;auto.
+      rewrite get_fold_vars_of_expr; tauto.
+      apply H;auto.
+      rewrite get_fold_vars_of_expr; tauto.
+    - destruct H.
+      rewrite get_fold_vars_of_expr in H2.
+      destruct H2; auto.
+  Qed.
+
+  Lemma fold_left_snd : forall {A B C: Type} F (args : list (A * B)) acc,
+      fold_left (fun (acc0 : C) (v_a : A * B) => F acc0 (snd v_a)) args acc =
+        fold_left F (List.map snd args) acc.
+  Proof.
+    induction args ; simpl;auto.
+  Qed.
+
+
+
+  Lemma eq_env_exprs_snd : forall args acc le le' ge ge' ,
+    eq_env
+      (MapList.fold_left (fun (vars : STree.t unit) (_ : Syntax.ident) (e : expr) => vars_of_expr vars e) args
+         acc) le le' ge ge' <->
+    eq_env (MapList.fold_left (fun (vars : STree.t unit) (_ : Syntax.ident) (e : expr) => vars_of_expr vars e) args
+               STree.empty) le le' ge ge' /\ eq_env acc le le' ge ge'.
+  Proof.
+    intros.
+    rewrite! MapList.fold_left_eq in *.
+    rewrite! fold_left_snd in *.
+    apply eq_env_exprs;auto.
   Qed.
 
   Lemma eq_env_atoms : forall args acc le le' ge ge',
@@ -561,6 +844,18 @@ Section S.
     apply H;auto.
     rewrite get_fold_vars_of_atom; tauto.
   Qed.
+
+  Lemma eq_env_snd_atoms : forall {A: Type} (args: list (A * atom)) acc le le' ge ge',
+      eq_env (fold_left (fun acc v_a => vars_of_atom acc (snd v_a)) args acc) le le' ge ge' ->
+      eq_env (fold_left (fun acc v_a => vars_of_atom acc (snd v_a)) args STree.empty) le le' ge ge' /\
+        eq_env acc le le' ge ge'.
+  Proof.
+    intros.
+    rewrite fold_left_snd in *.
+    apply eq_env_atoms; auto.
+  Qed.
+
+
 
   Lemma vars_of_pattern : forall x cases acc,
       let F := (fun (vars : STree.t unit) (_ : Benum.pattern) (ep : expr) => vars_of_expr vars ep) in
@@ -611,7 +906,7 @@ Section S.
   Lemma  ext_equal_eval_match : forall te x y tr l1 l2,
       ext_equal tabs te x y ->
       Forall2 (fun x y => fst x = fst y /\ option_rel (ext_equal tabs tr) (snd x) (snd y))  l1 l2 ->
-      option_rel (ext_equal tabs tr) (eval_match tabs te x tr l1) (eval_match tabs te y tr l2).
+      option_rel (ext_equal tabs tr) (eval_match tabs te x l1) (eval_match tabs te y  l2).
   Proof.
     intros.
     unfold eval_match.
@@ -629,9 +924,9 @@ Section S.
       + exact H1.
   Qed.
 
-  Lemma eq_env_remove : forall x e le le' v1 v2 ge ge',
-      eq_env (STree.remove x (vars_of_expr STree.empty e)) le le' ge ge' ->
-      eq_env (vars_of_expr STree.empty e) (lenv_update tabs le x v1) (lenv_update tabs le' x v2) ge ge'.
+  Lemma eq_env_remove : forall x P le le' v1 v2 ge ge',
+      eq_env (STree.remove x P) le le' ge ge' ->
+      eq_env P (lenv_update tabs le x v1) (lenv_update tabs le' x v2) ge ge'.
   Proof.
     unfold eq_env;intros.
     unfold lenv_update in *.
@@ -641,27 +936,22 @@ Section S.
     rewrite STree.gro;auto.
   Qed.
 
-  Lemma option_rel_bind_equal : forall {A B : Type} R {f g: A -> option B} (v:option A) ,
-      (forall a, option_rel R (f a) (g a)) ->
-      option_rel R (let* x := v in f x)  (let* x := v in g x).
+  Lemma eq_env_remove2 : forall x P le le' v1 v2 ge ge',
+      eq_env  P le le' ge ge' ->
+      eq_env (STree.remove x P) (lenv_update tabs le x v1) (lenv_update tabs le' x v2) ge ge'.
   Proof.
-    destruct v.
-    - simpl. auto.
-    -  constructor.
+    unfold eq_env;intros.
+    unfold lenv_update in *.
+    rewrite STree.gsspec in *.
+    rewrite STree.grspec in *.
+    destruct (STree.elt_eq x0 x); try congruence.
+    apply H; auto.
   Qed.
 
-  Lemma option_rel_bind_rel : forall {A B : Type} (RA: A -> A -> Prop) R {f g: A -> option B} (v1 v2:option A) ,
-      option_rel RA v1 v2 ->
-      (forall x y, RA x y ->
-                 option_rel R (f x) (g y)) ->
-      option_rel R (let* x := v1 in f x)  (let* x := v2 in g x).
-  Proof.
-    intros.
-    inv H.
-    - constructor.
-    - simpl.
-      apply H0; auto.
-  Qed.
+
+
+
+
 
   Lemma eq_env_eval_var :
     forall s le le' ge ge' v ty
@@ -672,20 +962,14 @@ Section S.
   Proof.
     intros.
     unfold eval_var.
-    unfold lenv_get.
-    specialize (LE v).
-    inv LE.
-    - try (rewrite <- H0; rewrite <- H).
-      simpl.
-      unfold eq_env in GE. unfold genv_get.
-      simpl in GE.
-      specialize (GE v (eq_sym H0) (eq_sym H) GET).
-      eapply option_rel_bind_rel.
-      eauto.
-      intros.
-      apply same_value_cast_value; auto.
-    - try (rewrite <- H; rewrite <- H0) ; simpl.
-      apply same_value_cast_value; auto.
+    apply option_rel_bind_rel with (RA:= same_value tabs).
+    { specialize (LE v).
+      unfold get_env.
+      inv LE.
+      apply GE; auto.
+      constructor ;auto. }
+    intros.
+    apply same_value_cast_value; auto.
   Qed.
 
   Fixpoint eq_genv_eval_atom  (te:Typing.tenv)  (ge ge':genv tabs) (ty:typ) (a:atom) : forall le le',
@@ -732,9 +1016,9 @@ Section S.
       apply ext_equal_eval_binary_op; auto.
     - simpl in H.
       apply option_rel_bind_equal.
-      intro t1.
+      intros t1 _.
       apply option_rel_bind_equal.
-      intro t2.
+      intros t2 _.
       eapply option_rel_bind_rel.
       { apply eq_genv_eval_atom; auto.
         eapply eq_env_vars_of_atom_acc; eauto.
@@ -748,7 +1032,7 @@ Section S.
       apply ext_equal_array_get; auto.
     - simpl in H.
       apply option_rel_bind_equal.
-      intro t1.
+      intros t1 _.
       eapply option_rel_bind_rel.
       { apply eq_genv_eval_atom; auto.
       }
@@ -756,7 +1040,7 @@ Section S.
       apply ext_equal_eval_record_proj; auto.
     - simpl in H.
       apply option_rel_bind_equal.
-      intro t1.
+      intros t1 _.
       apply eq_env_atoms in H as (EQ1 & EQ2).
       destruct t1; try constructor.
       apply option_rel_bind_rel with (RA:= ext_equal tabs (TFun l0 t1)).
@@ -790,6 +1074,317 @@ Section S.
       apply ext_equal_eval_app_res; auto.
   Qed.
 
+  Definition and_rel {A B: Type} (R1 R2: A -> B -> Prop) :=
+    fun x y => R1 x y /\ R2 x y.
+
+  Lemma option_rel_and_rel : forall A B (R1 R2 : A -> B -> Prop) x y,
+      option_rel R1 x y ->
+      option_rel R2 x y ->
+      option_rel (and_rel R1 R2) x y.
+  Proof.
+    intros.
+    inv H.
+    - constructor.
+    - inv H0. constructor; split;auto.
+  Qed.
+
+  Lemma option_rel_and_rel_swap : forall A B (R1 R2 : A -> B -> Prop) x y,
+      option_rel (and_rel R1 R2) x y ->
+      option_rel (and_rel R2 R1) x y.
+  Proof.
+    intros.
+    inv H.
+    - constructor.
+    - destruct H0.
+      constructor.
+      unfold and_rel ; auto.
+  Qed.
+
+  Lemma option_rel_and_rel_mp : forall A B (R1 R2 : A -> B -> Prop) x y,
+      (option_rel R1 x y) ->
+      (option_rel R1 x y -> option_rel R2 x y) ->
+      option_rel (and_rel R1 R2) x y.
+  Proof.
+    intros.
+    inv H.
+    - constructor.
+    -  constructor.
+      unfold and_rel ; auto.
+      split; auto.
+      specialize (H0 (option_rel_some _ _ _ H1)).
+      inv H0. auto.
+  Qed.
+
+
+
+  Definition has_keys {A: Type} (P: list (ident * A)) (le:lenv tabs) : bool :=
+    forallb (fun x => SSet.mem (fst x) (STree.keys le)) P.
+
+  Lemma has_keys_nil : forall {A: Type}  (le:lenv tabs),
+      has_keys (A:=A) nil le = true.
+  Proof.
+    unfold has_keys.
+    simpl. tauto.
+  Qed.
+
+  Lemma has_keys_cons : forall {A: Type} (e:ident * A) l le,
+      has_keys (e::l) le =
+        (SSet.mem (fst e) (STree.keys le) && has_keys l le).
+  Proof.
+    unfold has_keys.
+    simpl. intros. split ; intros.
+  Qed.
+
+  Lemma has_keys_map : forall {A: Type} (l1 l2: list (string * A)) le,
+      map fst l1 = map fst l2 ->
+      has_keys l1 le = has_keys l2 le.
+  Proof.
+    unfold has_keys.
+    induction l1 ; simpl; auto.
+    - destruct l2 ; simpl; try discriminate.
+      reflexivity.
+    - destruct l2 ; simpl ; try discriminate.
+      intros. inv H.
+      apply IHl1 with (le:=le) in H2.
+      f_equal;auto.
+      f_equal. auto.
+  Qed.
+
+    
+  Lemma eq_env_all_update_para_lenv :
+    forall  te ge ge'
+            (eq_genv_eval_expr_rec :
+              forall (ty : typ) (e : expr) (le le' : lenv tabs),
+                eq_env (vars_of_expr STree.empty e) le le' ge ge' ->
+                eq_env_all le le' -> option_rel (ext_equal tabs ty) (eval_expr_rec tabs te ge le ty e) (eval_expr_rec tabs te ge' le' ty e)),
+    forall (le le':lenv tabs) l (l1 l1':lenv tabs) P
+           (ALL_EVAL : eq_env_all le le')
+           (ALL : eq_env_all l1 l1')
+           (EQ: eq_env (remove_let l STree.empty P) l1 l1' ge ge')
+           (FORALL : Forall (fun x_e => eq_env (vars_of_expr STree.empty (snd x_e)) le le' ge ge') l),
+      option_rel (and_rel eq_env_all (fun le le' =>
+                                  eq_env  P le le' ge ge'))
+        (update_para_lenv tabs (eval_expr_rec tabs te ge) te le l l1)
+        (update_para_lenv tabs (eval_expr_rec tabs te ge') te le' l l1').
+  Proof.
+    induction l; simpl.
+    - constructor. split; auto.
+    - simpl ; intros.
+      apply option_rel_bind_equal.
+      intros tya1 _.
+      eapply option_rel_bind_rel.
+      eapply eq_genv_eval_expr_rec; eauto.
+      inv FORALL. auto.
+      intros.
+      destruct a.
+      eapply IHl; auto.
+      { apply eq_env_all_lenv_update; auto. }
+      { simpl.
+      apply eq_env_remove; auto.
+      eapply eq_env_le.
+      apply EQ.
+      {
+        clear H0 H1.
+        intros.
+        rewrite STree.grspec in H0.
+        rewrite remove_let_iff in *.
+        rewrite STree.gempty in *.
+        rewrite STree.grspec.
+        destruct (STree.elt_eq x0 i).
+        discriminate.
+        auto.
+      }
+      }
+      inv FORALL ; auto.
+  Defined.
+
+
+  Lemma keys_update_para_lenv :
+    forall  te  F l,
+    forall (le le1 le2:lenv tabs),
+      (update_para_lenv tabs F te le l le1) = Some le2 ->
+      forall x, SSet.mem x (STree.keys le2) =
+                  (SSet.mem x (STree.keys le1) || MapList.mem string_dec x l).
+  Proof.
+    induction l ; simpl.
+    - intros. inv H. rewrite orb_false_r.
+      reflexivity.
+    - intros.
+      monadInv H.
+      apply IHl with (x:= x) in EQ2.
+      rewrite EQ2.
+      destruct a.
+      rewrite keys_lenv_update.
+      simpl.
+      rewrite SSet.mem_add.
+      destruct (string_dec x i);
+        destruct (string_dec i x); try congruence; simpl.
+      rewrite orb_true_r.
+      reflexivity.
+  Defined.
+
+  Lemma has_keys_update_para_lenv :
+    forall {A: Type} te ge (le: lenv tabs) l le1 (lt:list (string *A))
+            (UP1 : update_para_lenv tabs (eval_expr_rec tabs te ge) te le l le =
+                     Some le1)
+        (MMAP : map fst l = map fst lt),
+      has_keys lt le1 = true.
+  Proof.
+    intros.
+    unfold has_keys.
+    rewrite forallb_forall.
+    intros.
+    apply keys_update_para_lenv with (x:=fst x) in UP1.
+    rewrite UP1.
+    rewrite orb_true_iff.
+    right.
+    apply in_map with (f:=fst) in H.
+    setoid_rewrite <- MMAP in H.
+    rewrite in_map_iff in H.
+    destruct H as (x1 & EQ & IN).
+    apply MapList.in_mem with (v:= snd x1); auto.
+    destruct x1,x ; simpl in *.
+    subst. auto.
+  Qed.
+
+
+(*
+
+  Lemma eq_env_all_update_lenv :
+    forall  te ge ge'
+            (eq_genv_eval_expr_rec :
+              forall (ty : typ) (e : expr) (le le' : genv tabs),
+                eq_env (vars_of_expr STree.empty e) le le' ge ge' ->
+                eq_env_all le le' -> option_rel (ext_equal tabs ty) (eval_expr_rec tabs te ge le ty e) (eval_expr_rec tabs te ge' le' ty e)),
+           forall le le' l l1 l1',
+             eq_env_all le le' ->
+             eq_env_all l1 l1' ->
+             eq_env P l1 l1' ge ge' ->
+             Forall (fun x_e => eq_env (vars_of_expr STree.empty (snd x_e)) le le' ge ge') l ->
+             option_rel eq_env_all (update_lenv tabs (eval_expr_rec tabs te ge le) te l l1)
+               (update_lenv tabs (eval_expr_rec tabs te ge' le') te l l1').
+  Proof.
+    induction l.
+    - simpl. constructor. auto.
+    - simpl.
+      intros.
+      apply option_rel_bind_equal.
+      intro tya1.
+      eapply option_rel_bind_rel.
+      eapply eq_genv_eval_expr_rec; eauto.
+      inv H1. auto.
+      intros.
+      apply IHl; auto.
+      apply eq_env_all_lenv_update; auto.
+      inv H1 ; auto.
+Defined.
+*)
+
+  Lemma ext_equal_nat_of_var : forall ty v1 v2,
+      ext_equal tabs ty v1 v2 ->
+      option_rel eq (nat_of_val tabs v1) (nat_of_val tabs v2).
+  Proof.
+    unfold nat_of_val.
+    destruct ty; try constructor.
+    - destruct s; try constructor.
+      +  simpl in H. congruence.
+      +  simpl in H; congruence.
+    - destruct s; try constructor.
+      +  simpl in H. congruence.
+      +  simpl in H; congruence.
+  Qed.
+
+
+  Definition same_value_eq (v1 v2: value tabs) :=
+    same_value tabs v1 v2 \/ v1 = v2.
+
+  Lemma get_env_eq_env_all : forall ge ge' le1 le2 x,
+      eq_env_all le1 le2 ->
+      STree.get x le1 <> None ->
+      option_rel (same_value tabs)
+        (get_env tabs ge le1 x)
+        (get_env tabs ge' le2 x).
+  Proof.
+    unfold eq_env_all.
+    intros.
+    specialize (H x).
+    unfold get_env.
+    inv H; try congruence.
+    constructor; auto.
+  Qed.
+
+
+  Lemma equal_record_record_of_lenv : forall ge ge' le1 le1',
+      eq_env_all le1 le1' ->
+      forall lty,
+        has_keys lty le1 = true ->
+        option_rel (equal_record tabs (ext_equal tabs) lty)
+        (record_of_lenv tabs ge lty le1) (record_of_lenv tabs ge' lty le1').
+  Proof.
+    induction lty.
+    - simpl. constructor. tauto.
+    - simpl. destruct a.
+      simpl; intros.
+      rewrite andb_true_iff in H0.
+      destruct H0 as (MEM1 & MEM2).
+      eapply option_rel_bind_rel with (RA:=same_value tabs).
+      apply get_env_eq_env_all; auto.
+      rewrite STree.keys_get_mem_false_iff. intuition congruence.
+      intros x y SV _ _ .
+      eapply option_rel_bind_rel with (RA:= ext_equal tabs t).
+      apply same_value_cast_value; auto.
+      intros x0 y0 EQ _ _ .
+      eapply option_rel_bind_rel with (RA:= (equal_record tabs (ext_equal tabs) lty)); eauto.
+      intros. constructor.
+      simpl. split; auto.
+  Qed.
+
+  Lemma option_rel_ext_equal_bool : forall  v1 v2,
+      option_rel (ext_equal tabs TBool) v1 v2 ->
+      v1 = v2.
+  Proof.
+    intros. inv H.
+    - reflexivity.
+    - simpl in H0.
+      congruence.
+  Qed.
+
+  Lemma eq_env_lenv_of_record : forall P lt r1 r2 ge ge' le1 le2,
+      eq_env P le1 le2 ge ge' ->
+      eq_env P
+        (lenv_of_record tabs lt r1 le1) (lenv_of_record tabs lt r2 le2)
+        ge ge'.
+  Proof.
+    induction lt.
+    - simpl. auto.
+    - intros.
+      simpl.
+      intros.
+      apply IHlt.
+      apply eq_env_remove.
+      eapply eq_env_le. apply H.
+      intros.
+      rewrite STree.grspec in H0.
+      destruct (STree.elt_eq x (fst a)); congruence.
+  Qed.
+
+  Lemma eq_env_all_lenv_of_record : forall lt r1 r2 le1 le2,
+      eq_env_all le1 le2 ->
+      equal_record tabs (ext_equal tabs) lt r1 r2 ->
+      eq_env_all (lenv_of_record tabs lt r1 le1) (lenv_of_record tabs lt r2 le2).
+  Proof.
+    induction lt.
+    - simpl. auto.
+    - intros.
+      simpl.
+      intros.
+      apply IHlt.
+      apply eq_env_all_lenv_update; auto.
+      simpl in H0. destruct a.
+      tauto. simpl in H0 ; destruct a; tauto.
+  Qed.
+
+
   Fixpoint eq_genv_eval_expr_rec (te:Typing.tenv)  (ge ge':genv tabs) (ty:typ) (e:expr) : forall le le',
       eq_env (vars_of_expr (STree.empty) e) le le' ge ge' ->
       eq_env_all le le'  ->
@@ -803,13 +1398,13 @@ Section S.
       apply ext_equal_ecast_typ.
       eapply eq_genv_eval_atom;eauto.
     - apply option_rel_bind_equal.
-      intro t1.
+      intros t1 _.
       apply option_rel_bind_equal.
-      intro t2.
+      intros t2 _.
       apply option_rel_bind_equal.
-      intro t3.
+      intros t3 _.
       apply option_rel_bind_equal.
-      intro t4.
+      intros t4 _.
       eapply option_rel_bind_rel.
       { apply eq_genv_eval_atom; auto.
         simpl in H.
@@ -837,11 +1432,11 @@ Section S.
       eapply ext_equal_ecast_typ.
       eapply ext_equal_array_set;eauto.
     - apply option_rel_bind_equal.
-      intro t1.
+      intros t1 _.
       apply option_rel_bind_equal.
-      intro t2.
+      intros t2 _.
       apply option_rel_bind_equal.
-      intro t3.
+      intros t3 _.
       eapply option_rel_bind_rel.
       {
         apply eq_genv_eval_atom; auto.
@@ -860,14 +1455,15 @@ Section S.
       eapply ext_equal_eval_record_update;eauto.
     - simpl in H.
       apply option_rel_bind_equal.
-      intro t1.
+      intros t1 _.
       apply option_rel_bind_equal.
-      intro t2.
+      intros t2 _.
       apply eq_env_atoms in H as (EQ1 & EQ2).
       destruct t2; try constructor.
       apply option_rel_bind_rel with (RA:= ext_equal tabs (TFun l0 t2)).
       eapply eq_genv_eval_atom; eauto.
       intros.
+      clear H1 H2.
       set (Ftyp := fun (ty:typ) => option (eval_typ tabs ty)).
       set (Pred := fun ty => option_rel (ext_equal tabs ty)).
       clear EQ2.
@@ -933,7 +1529,7 @@ Section S.
         tauto.
     - simpl in H.
       eapply option_rel_bind_equal.
-      intro t.
+      intros t _.
       apply eq_env_split in H as (EQ1 & EQ2).
       eapply option_rel_bind_rel.
       eapply eq_genv_eval_expr_rec; eauto.
@@ -952,6 +1548,139 @@ Section S.
         apply H0.
       }
       eapply eq_env_remove in EQ2;eauto.
+    - (* ActR *)
+      destruct ty ; try constructor.
+      destruct o; try constructor.
+      eapply option_rel_bind_equal.
+      intros.
+      destruct (typ_eqb (TRecord None l0) a);
+        try constructor.
+      rewrite vars_of_expr_rw in H.
+      {
+        change (ext_equal tabs (TRecord None l0))
+          with  (equal_record tabs (ext_equal tabs) l0).
+        revert l0.
+        induction l.
+        - simpl. destruct l0.
+          + constructor.
+            apply I.
+          + constructor.
+        - destruct l0.
+          + simpl. destruct a0; constructor.
+          + simpl.
+            destruct p as (id,ty).
+            destruct a0 as (id',a').
+            destruct (string_dec id' id).
+            *  subst.
+               assert (EA : option_rel (ext_equal tabs ty)
+                              (eval_atom tabs te ge le ty a')
+                              (eval_atom tabs te ge' le' ty a')).
+               {
+                 apply eq_genv_eval_atom; auto.
+                 - simpl in H.
+                   apply eq_env_snd_atoms in H. tauto.
+               }
+               assert (ER : option_rel
+                              (equal_record tabs (ext_equal tabs) l0)
+                              (eval_act_record tabs (eval_atom tabs) te ge l l0 le)
+                              (eval_act_record tabs (eval_atom tabs) te ge' l l0 le')).
+               {
+                 apply IHl; auto.
+                 simpl in H.
+                 apply eq_env_snd_atoms in H.
+                 tauto.
+               }
+               eapply option_rel_bind_rel.
+               apply EA.
+               intros.
+               eapply option_rel_bind_rel.
+               apply ER.
+               constructor.
+               simpl. tauto.
+            * constructor.
+      }
+    - (* while *)
+      simpl in H.
+      eapply option_rel_bind_rel.
+      { apply eq_env_all_update_para_lenv; auto.
+        - rewrite eq_env_exprs_snd in H.
+          destruct H.
+          apply H1.
+        - rewrite eq_env_exprs_snd in H.
+          destruct H.
+          clear H1.
+          { induction l ; simpl in *.
+            - constructor.
+            -  apply eq_env_exprs_snd in H.
+               destruct a1.
+               constructor ;tauto.
+          }
+      }
+      intros le1 le1' EQ UP1 UP2.
+      destruct EQ as (EQ1 & EQ2).
+      apply option_rel_bind_equal.
+      intros tya _.
+      (* Evaluate the variant *)
+      eapply option_rel_bind_rel with (RA:= ext_equal tabs tya).
+      { apply eq_genv_eval_atom;auto.
+        eapply eq_env_le.
+        apply EQ2.
+        intros.
+        rewrite get_var_of_atom_case.
+        tauto.
+      }
+      intros.
+      eapply option_rel_bind_rel with (RA := @eq nat).
+      apply ext_equal_nat_of_var; auto.
+      intros ; subst.
+      apply option_rel_bind_equal.
+      intros lt MMAP.
+      (* Construct the initial activation record *)
+      intros.
+      eapply option_rel_bind_rel with (RA :=
+                                         equal_record tabs (ext_equal tabs) lt).
+      apply MapList.mmap_fst in MMAP.
+      apply equal_record_record_of_lenv; auto.
+      {
+        eapply has_keys_update_para_lenv; eauto.
+      }
+      intros ar1 ar2 EQR _ _.
+      eapply option_rel_bind_rel with (RA :=
+                                         equal_record tabs (ext_equal tabs) lt).
+      eapply While.while_rel; auto.
+      intros.
+      apply option_rel_ext_equal_bool.
+      apply eq_genv_eval_atom.
+      apply eq_env_lenv_of_record; auto.
+      apply eq_env_vars_of_atom_acc in EQ2.
+      apply eq_env_vars_of_atom in EQ2. auto.
+      apply eq_env_all_lenv_of_record ; auto.
+      {
+        intros.
+        assert (option_rel (ext_equal tabs (TRecord None lt))
+                  (eval_expr_rec tabs te ge (lenv_of_record tabs lt i1 le1) (TRecord None lt) e1)
+                  (eval_expr_rec tabs te ge' (lenv_of_record tabs lt i2 le1') (TRecord None lt) e1)).
+        {
+          apply eq_genv_eval_expr_rec; auto.
+          apply eq_env_lenv_of_record.
+          apply eq_env_vars_of_atom_acc in EQ2.
+          apply eq_env_vars_of_atom_acc in EQ2.
+          apply eq_env_vars_of_expr in EQ2.
+          auto.
+          apply eq_env_all_lenv_of_record; auto.
+        }
+        auto.
+      }
+      {
+        intros.
+        apply eq_genv_eval_expr_rec.
+        apply eq_env_lenv_of_record.
+        apply eq_env_vars_of_atom_acc in EQ2.
+        apply eq_env_vars_of_atom_acc in EQ2.
+        apply eq_env_vars_of_expr_acc in EQ2.
+        auto.
+        apply eq_env_all_lenv_of_record; auto.
+      }
     - apply eq_genv_eval_expr_rec; tauto.
   Qed.
 
@@ -1075,7 +1804,7 @@ Section S.
   Qed.
 
   Lemma map_err_fst : forall (A B:Type) (F : A -> option B) (l1:smaplist A) (l2:smaplist B),
-      map_err F l1  = Some l2 ->
+      MapList.mmap _ F l1  = Some l2 ->
       map fst l1 = map fst l2.
   Proof.
     induction l1;simpl;auto.
@@ -1088,7 +1817,7 @@ Section S.
 
   Lemma map_err_nil
      : forall (A B : Type) (F : A -> option B) (l : list (string * A)),
-      map_err F l = Some nil -> l = nil.
+      MapList.mmap _ F l = Some nil -> l = nil.
   Proof.
     destruct l; simpl.
     - reflexivity.
@@ -1106,7 +1835,7 @@ Section S.
                 (map fst params)); try discriminate.
     destruct (Typing.btyp_to_typ te tret); try discriminate.
     simpl in *.
-    destruct (map_err (Typing.btyp_to_typ te) params)eqn:PARAM; try discriminate.
+    destruct (MapList.mmap _ (Typing.btyp_to_typ te) params)eqn:PARAM; try discriminate.
     simpl in *.
     set (ge :=    (genv_has_property tabs STree.empty
                           (filter (fun '(k, _) => has_var k (vars_of_fun params e))
@@ -1129,7 +1858,7 @@ Section S.
       - intuition congruence.
     }
     unfold eval_fun.
-    destruct l.
+    destruct t0.
     - simpl.
       apply map_err_nil in PARAM. subst.
       generalize (eq_genv_eval_expr te ge ge0 t e STree.empty STree.empty EQENV eq_env_all_empty).
@@ -1468,7 +2197,7 @@ Section S.
     simpl in GEN.
     simpl.
     unfold Syntax.ident, ident in *.
-    destruct (map_err  (Typing.btyp_to_typ te) (fn_params f)); try discriminate.
+    destruct (@MapList.mmap string btyp typ (Typing.btyp_to_typ te) (fn_params f)); try discriminate.
     simpl in GEN; simpl.
     inv GEN.
     unfold genv_update.
@@ -1754,7 +2483,7 @@ Section S.
     destruct (MapList.nodup Ident.eq_dec (Syntax.fn_params f)); try discriminate.
     destruct (Typing.btyp_to_typ te (Syntax.fn_return f)); try discriminate.
     simpl in EVAL.
-    destruct (map_err (Typing.btyp_to_typ te) (Syntax.fn_params f)); try discriminate.
+    destruct (MapList.mmap _ (Typing.btyp_to_typ te) (Syntax.fn_params f)); try discriminate.
     simpl in EVAL.
     unfold genv_update in EVAL.
     destruct (genv_get tabs ge x) eqn:GET; try discriminate.

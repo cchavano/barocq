@@ -60,7 +60,8 @@ let flag_copy_prop = ref false
 let set_opt_print s =
   opt_print :=
     (match s with
-    | "barocq" -> Compiler.Ir_Barocq
+    | "barocq"| "barocqv0" -> Compiler.Ir_Barocq Datatypes.O
+    | "barocqv1" -> Compiler.Ir_Barocq (Datatypes.S Datatypes.O)
     | "bbnf" -> Compiler.Ir_BBNF
     | "ibnf" -> Compiler.Ir_IBNF
     | "imp1" -> Compiler.Ir_Imp1
@@ -104,7 +105,7 @@ let options =
       "\t\t\t\tPrint parsed tokens (stop after lexing)" );
     ( "-print",
       Arg.Symbol
-        (["barocq"; "bbnf"; "ibnf"; "imp1"; "copy"; "imp2"], set_opt_print),
+        (["barocq"; "barocqv0"; "barocqv1"; "bbnf"; "ibnf"; "imp1"; "copy"; "imp2"], set_opt_print),
       "\tPretty-print the IR" );
     ( "-export-csyntax",
       Arg.Set opt_export_csyntax,
@@ -130,10 +131,16 @@ let set_source_files (file : string) : unit =
 let get_raw_filename (file : string) : string =
   Filename.remove_extension (Filename.basename file)
 
+let create_output_dir d =
+  if Sys.file_exists d  then ()
+  else Sys.mkdir d 0o755
+
+
 let get_full_filename (file : string) (suffix : string) : string =
   let file = sprintf "%s/%s" !output_dir file in
   let rawname = get_raw_filename file in
   let dirname = Filename.dirname file in
+  let _ = create_output_dir dirname in
   Printf.sprintf "%s/%s%s" dirname rawname suffix
 
 let clean_filename (file : string) : string =
@@ -186,7 +193,7 @@ let print_token_stream (files : string list) : unit =
   List.iter aux files
 
 let irname = function
-  | Compiler.Ir_Barocq -> "barocq"
+  | Compiler.Ir_Barocq n -> "barocq"
   | Compiler.Ir_BBNF -> "bbnf"
   | Compiler.Ir_IBNF -> "ibnf"
   | Compiler.Ir_Imp1 -> "imp1"
@@ -294,6 +301,8 @@ let gen_shallowB_program (l : Compiler.ir_prog list) =
                   "fail to generate the ShallowB embedding: %s"
                   (PrintUtils.string_of_errmsg msg)))
 
+
+
 let generate_rocq (prog : Barocq.program) (tprog : Barocq.Typed.program)
     (l : Compiler.ir_prog list) =
   if !debug then Printf.fprintf stdout "gen_rocq := %b\n" !opt_gen_rocq;
@@ -302,6 +311,7 @@ let generate_rocq (prog : Barocq.program) (tprog : Barocq.Typed.program)
     if !debug then Printf.fprintf stdout "generate embeddings\n";
     (* Generate Rocq Shallow embedding *)
     Printf.fprintf stdout "Generation in directory %s\n" !output_dir;
+    let _ = create_output_dir (!output_dir) in
     let rprog = gen_rocq_program prog in
     let rawname = gen_rocq_prefix () in
     let full_filename = get_full_filename rawname in
@@ -425,36 +435,39 @@ let () =
 
       let prog = Barocq.iprog_to_prog iprog in
 
-      let tiprog =
-        match Barocq.Typing.typecheck_iprogram iprog with
-        | Res.OK p -> p
-        | Res.Error msg ->
-            raise @@ UnexpectedError (PrintUtils.string_of_errmsg msg)
-      in
+      let (r,(progs,log)) =  Compiler.compile (gen_compile_opt ()) ginfo prog in 
+      ignore (output_log stdout log);
+      match r with
+      | Res.OK _ -> 
+         begin
 
-      let tprog = Barocq.Typing.program_of_iprogram tiprog in
+           let tiprog =
+             match Barocq.Typing.typecheck_iprogram iprog with
+             | Res.OK p -> p
+             | Res.Error msg ->
+                raise @@ UnexpectedError (PrintUtils.string_of_errmsg msg)
+           in
+           
+           let tprog = Barocq.Typing.program_of_iprogram tiprog in
+           
+           if !opt_interp then begin
+               let _ = Binterpreter.interpret tiprog in
+               exit 0
+             end;
+           
+           if !opt_aliascheck then begin
+               begin match Compiler.aliascheck_program (gen_compile_opt ()) prog with
+               | Res.OK _ -> printf "Alias checking succeeded\n"
+               | Res.Error msg ->
+                  raise @@ CompilerError (PrintUtils.string_of_errmsg msg)
+               end;
+               exit 0
+             end;
 
-      if !opt_interp then begin
-        let _ = Binterpreter.interpret tiprog in
-        exit 0
-      end;
-
-      if !opt_aliascheck then begin
-        begin match Compiler.aliascheck_program (gen_compile_opt ()) prog with
-        | Res.OK _ -> printf "Alias checking succeeded\n"
-        | Res.Error msg ->
-            raise @@ CompilerError (PrintUtils.string_of_errmsg msg)
-        end;
-        exit 0
-      end;
-
-      match Compiler.compile (gen_compile_opt ()) ginfo prog with
-      | Res.OK _, (progs, log) -> begin
-          ignore (output_log stdout log);
-          generate_c !opt_export_csyntax !opt_gen_header progs;
-          generate_rocq prog tprog progs
-        end
-      | Res.Error msg, _ ->
+           generate_c !opt_export_csyntax !opt_gen_header progs;
+           generate_rocq prog tprog progs
+         end
+      | Res.Error msg ->
           raise @@ CompilerError (PrintUtils.string_of_errmsg msg)
     with
     | Sys_error msg -> eprintf "System error: %s\n" msg

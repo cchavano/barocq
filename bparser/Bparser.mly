@@ -54,6 +54,7 @@
 %token LET IN
 %token MATCH WITH END
 %token IF THEN ELSE
+%token WHILE DECR DO DONE // loop support
 %token <string> LIT_STRING
 %token <int32 * Types.signedness> LIT_INT32
 %token <int64 * Types.signedness> LIT_INT64
@@ -195,13 +196,18 @@ raw_expr:
     { ERecordUpdate (e1, [(key, e2)]) }
   | LBRACE e1 = expr WITH le = nonempty_list(field_update) RBRACE
     { ERecordUpdate (e1, le) }
+  | LBRACE le = nonempty_list(field_update) RBRACE
+    { EActR le }
   | LET x = var_ident BIND e1 = expr IN e2 = expr { ELetIn (x, e1, e2) }
+  | LET LBRACE le = nonempty_list(field_update) RBRACE BIND  WHILE cond=expr DECR decr=expr DO body=expr DONE
+       IN e2 = expr  {ELetW({init=le; cond=cond;decr=decr; body=body},e2) }
   | IF e1 = expr THEN e2 = expr ELSE e3 = expr { EIfThenElse (e1, e2, e3) }
   | MATCH e = expr WITH cases = nonempty_list(match_case) END { EMatch (e, cases) }
   | op = unary_op e = expr { EUnaryOp (op, e) }
   | e1 = expr op = binary_op e2 = expr { EBinaryOp (op, e1, e2) }
   | e = expr args = delimited(LPAREN, separated_list(COMMA, expr), RPAREN)
     { EApp (e, args) }
+
 
 expr:
   | e = raw_expr { Location.make $startpos $endpos e }

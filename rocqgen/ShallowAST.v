@@ -36,6 +36,8 @@ Module BNF.
     | EIfThenElse : atom -> expr -> expr -> expr
     | EMatch : atom -> list (pattern * expr) -> expr
     | ELetIn : ident -> expr -> expr -> expr
+    | EActR  : list (ident * expr) -> expr
+    | ELetW  : list (ident * expr) ->  expr ->  expr ->  expr ->  expr -> expr
     | EAttr  : ident -> expr -> expr.
 
   (** ** Functions *)
@@ -65,6 +67,7 @@ Module Monadic.
     | MArray : mtyp -> mtyp
     | MEnum : ident -> mtyp
     | MRecord : ident -> mtyp
+    | MActR   : list (ident * mtyp) -> mtyp
     | MFun : list mtyp -> mtyp -> mtyp
     | MAbs : ident -> mtyp
     | MRes : mtyp -> mtyp.
@@ -74,6 +77,26 @@ Module Monadic.
     | MInt32 Unsigned | MInt64 Unsigned => true
     | _ => false
     end.
+
+  Definition get_mres (m:mtyp) : option mtyp :=
+    match m with
+    | MRes ty => Some ty
+    | _       => None
+    end.
+
+  Definition is_mres (m:mtyp) : bool :=
+    match m with
+    | MRes ty => true
+    | _       => false
+    end.
+
+  Definition shrink_mres (m:mtyp) : mtyp :=
+    match m with
+    | MRes ty => ty
+    | _       => m
+    end.
+
+
 
   (** Literals *)
 
@@ -114,6 +137,8 @@ Module Monadic.
     | EMatch : atom -> list (pattern * expr) -> mtyp -> expr
     | ELetIn : ident -> expr -> expr -> mtyp -> expr
     | ELetMon : ident -> expr -> expr -> mtyp -> expr
+    | ELetW   : list (ident * expr) -> expr -> expr -> expr -> expr -> mtyp -> expr
+    | EActR   : list (ident * expr) -> mtyp -> expr
     | ERet : expr -> mtyp -> expr
     | EAttr : ident -> expr -> mtyp -> expr.
 

@@ -349,7 +349,7 @@ Section S.
       change (no_TFun (TArray ty) = true) in FO.
       apply (no_TFun_equal _ FO v1 v2 EQ).
     - intros.
-      change (no_TFun (TRecord i l) = true) in FO.
+      change (no_TFun (TRecord o l) = true) in FO.
       apply (no_TFun_equal _ FO). simpl. apply EQ.
     -   unfold fo_typ.
         unfold eval_typ ; fold eval_typ.
@@ -942,7 +942,7 @@ Section S.
       destruct x,y.
       destruct f0,f1.
       simpl in H.
-      destruct (String.eqb f i0) eqn:EQ.
+      destruct (String.eqb f i) eqn:EQ.
       + unfold eval_record_project_aux.
         simpl.
         unfold good_proj,cast_typof_field.
@@ -1082,7 +1082,7 @@ Section S.
   Lemma  ext_equal_eval_match : forall te x y tr l1 l2,
       ext_equal te x y ->
       Forall2 (fun x y => fst x = fst y /\ option_rel (ext_equal tr) (snd x) (snd y))  l1 l2 ->
-      option_rel (ext_equal tr) (eval_match tabs te x tr l1) (eval_match tabs te y tr l2).
+      option_rel (ext_equal tr) (eval_match tabs te x  l1) (eval_match tabs te y  l2).
   Proof.
     intros.
     unfold eval_match.
@@ -1299,7 +1299,7 @@ Section S.
 
 
   Lemma map_err_nil : forall {A B:Type} (F : A -> option B) (l:list (string * A)),
-      map_err F l = Some nil -> l = nil.
+      MapList.mmap _ F l = Some nil -> l = nil.
   Proof.
     induction l; simpl.
     - congruence.

@@ -8,8 +8,7 @@ Import ListNotations.
 Local Open Scope option_monad_scope.
 Local Open Scope error_monad_scope.
 
-Definition map_err  {V A : Type} (f : V -> option A) (l : list (ident* V))  :=
-  mmap (fun v => let* a := f (snd v) in Some (fst v, a)) l.
+
 
 Section DENOT.
 
@@ -39,6 +38,209 @@ Section DENOT.
 
   Definition lenv_update (le: lenv) (x: ident) (v: value) : lenv :=
     STree.set x v le.
+
+
+  Definition get_env (ge:genv) (le:lenv) (x:ident) : option value :=
+    match STree.get x le with
+    | None => STree.get x ge
+    | Some v => Some v
+    end.
+
+  Definition match_env (ge1:genv) (le1:lenv) (ge2:genv) (le2:lenv) :=
+    forall x, less_def (get_env ge1 le1 x) (get_env ge2 le2 x).
+
+
+  Definition same_env (s: ident -> Prop) (ge1:genv) (le1:lenv) (ge2:genv) (le2:lenv) :=
+    forall x, s x -> get_env ge1 le1 x = get_env ge2 le2 x.
+
+
+  Definition match_lenv (le1 le2: lenv) : Prop :=
+    forall x, less_def (lenv_get le1 x) (lenv_get le2 x).
+
+  Lemma keys_lenv_update : forall le k v,
+      STree.keys (lenv_update  le k v) = SSet.add k (STree.keys le).
+  Proof.
+    unfold STree.keys, lenv_update.
+    unfold STree.map1, STree.set.  intros.
+    rewrite PTree.map1_set.
+    reflexivity.
+  Qed.
+
+
+  Lemma match_lenv_refl:
+    forall (le: lenv), match_lenv le le.
+  Proof.
+    intros. unfold match_lenv. constructor.
+  Qed.
+
+  Lemma match_lenv_update1:
+    forall (le: lenv) k v,
+    lenv_get  le k = None ->
+    match_lenv le (lenv_update  le k v).
+  Proof.
+    unfold match_lenv; intros.
+    destruct (Ident.eq_dec x k).
+    - subst. rewrite H. constructor.
+    - unfold lenv_update. unfold lenv_get in *.
+      rewrite STree.gso; auto. constructor.
+  Qed.
+
+  Lemma match_lenv_update2:
+    forall (le1 le2: lenv) (k: string) v,
+      match_lenv le1 le2 ->
+      match_lenv (lenv_update le1 k v) (lenv_update le2 k v).
+  Proof.
+    unfold match_lenv, lenv_get, lenv_update; intros.
+    destruct (Ident.eq_dec x k).
+    - subst. rewrite STree.gss. rewrite STree.gss. constructor.
+    - rewrite! STree.gso in * by auto. auto.
+  Qed.
+
+  Lemma match_lenv_trans:
+    forall (le1 le2 le3: lenv),
+      match_lenv le1 le2 ->
+      match_lenv le2 le3 ->
+      match_lenv le1 le3.
+  Proof.
+    unfold match_lenv; intros.
+    eapply less_def_trans;eauto.
+  Qed.
+
+  (* Defines whether environment e2 shadows some variables of environment e1 *)
+  Definition env_noshadow {A B} (e1: STree.t A) (e2: STree.t B) : Prop :=
+    forall x v,
+      STree.get x e1 = Some v ->
+      STree.get x e2 = None.
+
+  Lemma env_noshadow_set:
+    forall (A B: Type) (e1: STree.t A) (e2: STree.t B) x,
+      env_noshadow e1 e2 ->
+      STree.get x e1 = None ->
+      (forall b, env_noshadow e1 (STree.set x b e2)).
+  Proof.
+    unfold env_noshadow. intros.
+    specialize (H _ _ H1).
+    destruct (string_dec x0 x).
+    - subst. congruence.
+    - rewrite STree.gso; tauto.
+  Qed.
+
+  Lemma match_lenv_match_env : forall ge le1 le2,
+      env_noshadow ge le2 ->
+      match_lenv le1 le2 ->
+      match_env ge le1 ge le2.
+  Proof.
+    unfold env_noshadow,match_lenv,match_env.
+    intros.
+    unfold get_env.
+    specialize (H0 x).
+    unfold lenv_get in H0. inv H0.
+    destruct (STree.get x ge) eqn:GET.
+    apply H in GET. rewrite GET. constructor.
+    constructor.
+    rewrite H3.
+    constructor.
+  Qed.
+
+  Lemma match_env_refl : forall ge1 le1,
+      match_env ge1 le1 ge1 le1.
+  Proof.
+    unfold match_env.
+    intros.
+    constructor.
+  Qed.
+
+  Lemma match_env_trans : forall ge1 le1 ge2 le2 ge3 le3,
+      match_env ge1 le1 ge2 le2 -> match_env ge2 le2 ge3 le3 ->
+      match_env ge1 le1 ge3 le3.
+  Proof.
+    unfold match_env.
+    intros.
+    eapply less_def_trans; eauto.
+  Qed.
+
+  Lemma match_env_update : forall ge1 le1 ge2 le2 x v,
+      match_env ge1 le1 ge2 le2 ->
+      match_env ge1 (lenv_update le1 x v) ge2 (lenv_update le2 x v).
+  Proof.
+    unfold match_env.
+    intros.
+    unfold get_env, lenv_update.
+    rewrite! STree.gsspec.
+    destruct (STree.elt_eq x0 x). constructor.
+    apply H.
+  Qed.
+
+  Definition match_on (P: ident -> bool) (ge1:genv) (le1:lenv) (ge2:genv) (le2:lenv) :=
+    forall x, P x = true -> option_rel eq (get_env ge1 le1 x) (get_env ge2 le2 x).
+
+  Lemma match_on_eq : forall P Q ge1 ge2 le1 le2,
+    (forall x, P x = Q x) ->
+    match_on P ge1 le1 ge2 le2 <-> match_on Q ge1 le1 ge2 le2.
+  Proof.
+    unfold match_on. intros.
+    split; intros.
+    - apply H0; auto.
+      rewrite H; auto.
+    - apply H0; auto.
+      rewrite <- H; auto.
+  Qed.
+
+  Lemma match_on_union : forall P Q ge1 ge2 le1 le2,
+      match_on (BSet.union P Q) ge1 le1 ge2 le2 <->
+        (match_on P ge1 le1 ge2 le2 /\ match_on Q ge1 le1 ge2 le2).
+  Proof.
+    unfold match_on. intros.
+    split ; intros.
+    - split ; intros.
+      + apply H. unfold BSet.union. rewrite orb_true_iff. tauto.
+      + apply H. unfold BSet.union. rewrite orb_true_iff. tauto.
+    - unfold BSet.union in H0.
+      destruct H.
+      rewrite orb_true_iff in H0.
+      destruct H0; auto.
+  Qed.
+
+  Lemma match_on_bset_union : forall P Q ge1 ge2 le1 le2,
+      match_on (SSet.bset (SSet.union P Q)) ge1 le1 ge2 le2 <->
+        (match_on (SSet.bset P) ge1 le1 ge2 le2 /\ match_on (SSet.bset Q) ge1 le1 ge2 le2).
+  Proof.
+    intros.
+    rewrite <- match_on_union.
+    apply match_on_eq.
+    intros.
+    apply SSet.bset_union.
+  Qed.
+
+  Lemma match_on_trans : forall ge1 le1 P1 ge2 le2 P2 ge3 le3,
+      match_on P1 ge1 le1 ge2 le2 ->
+      match_on P2 ge2 le2 ge3 le3 ->
+      match_on (BSet.inter P1 P2) ge1 le1 ge3 le3.
+  Proof.
+    unfold match_on.
+    intros.
+    eapply option_rel_trans.
+    { repeat intro; congruence. }
+    apply H.
+    unfold BSet.inter in *. rewrite andb_true_iff in H1.
+    tauto.
+    apply H0.
+    unfold BSet.inter in *. rewrite andb_true_iff in H1.
+    tauto.
+  Qed.
+
+  
+
+
+  Definition nat_of_val {ty:typ} : forall (v: eval_typ ty), option nat :=
+    match ty with
+    | TInt32 Signed => fun v => Some (I32.to_nat v)
+    | TInt32 Unsigned => fun v => Some (U32.to_nat v)
+    | TInt64 Signed => fun v => Some (I64.to_nat v)
+    | TInt64 Unsigned => fun v => Some (U64.to_nat v)
+    |  _       => fun v => None
+    end.
+
 
   Definition cast_typ  {t2:typ} (v: eval_typ t2) (t1:typ): option (eval_typ t1) :=
     match typ_eq_dec t2 t1 with
@@ -98,12 +300,43 @@ Section DENOT.
     apply (cast_typ v t1).
   Defined.
 
-  Definition eval_var  (ge: genv) (le: lenv) (x: ident) (ty:typ) : option (eval_typ ty) :=
-    match (lenv_get le x) with
-    | Some v => cast_value  v ty
-    | None => let* v := genv_get ge x in
-                 cast_value v ty
+  Definition lenv_of_record (lt : @MapList.t string typ) (r : eval_recordtyp eval_typ lt) (le:lenv) : lenv:=
+    grecord_fold_left  (fun x bt e acc => lenv_update  acc x (Val  _ e)) lt r le.
+
+  Fixpoint record_of_lenv (ge:genv) (lt : @MapList.t string typ) (le:lenv) : option (eval_recordtyp eval_typ lt) :=
+    match lt as l return (option (grecord eval_typ l)) with
+    | [] => Some tt : option (grecord eval_typ [])
+    | p :: l =>
+        let* v := get_env ge le (fst p) in
+        let* vti := cast_value v (snd p) in
+        let* r := record_of_lenv ge l le in
+        Some (Field (fst p) vti, r)
     end.
+
+
+  Definition lenv_of_val (ty:typ) : forall (v: eval_typ ty) (le:lenv), option lenv :=
+    match ty with
+    | TRecord _ l => fun v le => Some (lenv_of_record l v le)
+    | _           => fun _ _ => None
+    end.
+
+  Definition eval_var  (ge: genv) (le: lenv) (x: ident) (ty:typ) : option (eval_typ ty) :=
+    let* v := get_env ge le x in
+    cast_value  v ty.
+
+  Lemma eval_var_lenv_update : forall ge le x ty v,
+    eval_var  ge (lenv_update  le x (Val  ty v)) x ty = Some v.
+  Proof.
+    unfold eval_var,lenv_update.
+    intros. unfold get_env.
+    rewrite STree.gss. simpl.
+    apply cast_typ_id.
+  Qed.
+
+
+
+
+
 
   Definition eval_constr (te: tenv) (x: ident) (ty:typ) : option (eval_typ ty) :=
     match ty with
@@ -420,7 +653,7 @@ Section DENOT.
     destruct lv as [|x lv'].
     - apply fail.
     - destruct (eval_record_lit_rec (x :: lv') fields) as [r |].
-      * apply (ret (Val (TRecord n fields) r)).
+      * apply (ret (Val (TRecord (Some n) fields) r)).
       * apply fail.
   Defined.
 
@@ -499,6 +732,7 @@ Section DENOT.
     - exact fail.
   Defined.
     *)
+
 
   Definition eval_record_project (ty:typ) : forall (v: eval_typ ty) (k: ident) (tyr : typ), option(eval_typ tyr) :=
     match ty with
@@ -614,10 +848,8 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
   Definition eval_ifthenelse (c:bool) (t2: typ) (v2:option(eval_typ t2)) (t3: typ)  (v3: option(eval_typ t3)) (tr:typ) : option(eval_typ tr) :=
     if c then ecast_typ v2 tr else ecast_typ v3 tr.
 
-
-
-  Definition eval_match (tv:typ) (v: eval_typ tv) (tr: typ) (cases: list (pattern * (option(eval_typ tr)))) : option(eval_typ tr) :=
-    (match tv as t0 return (eval_typ t0 -> option(eval_typ tr)) with
+  Definition eval_match {A:Type} (tv:typ) (v: eval_typ tv)  (cases: list (pattern * (option A))) : option A :=
+    (match tv as t0 return (eval_typ t0 -> option A) with
     | TEnum _ elems => 
         (fun v0 => ematch_with v0 cases)
     | _ => (fun _ => fail)
@@ -702,6 +934,36 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
         auto.
   Qed.
 
+  Section EVAL.
+
+    Context {T : Type}.
+
+    Variable eval : tenv -> genv -> lenv -> (forall (ty: typ) (e: T), option(eval_typ ty)).
+
+
+  Fixpoint eval_act_record (te:tenv) (ge:genv) (l:list (string * T)) (fields : list (string * typ)) (le:lenv) : option (eval_recordtyp eval_typ fields):=
+      match l with
+      | nil => match fields with
+               | nil => Some tt
+               | _   => None
+               end
+      | (x1,e1)::l' => match fields with
+                       | nil => None
+                       | (x1',t1)::fields' =>
+                           if string_dec x1 x1'
+                           then
+                             let* v1 := eval te ge le t1 e1 in
+                             let* r  := eval_act_record te ge l' fields' le in
+                             Some (Field x1' v1 , r)
+                           else None
+                       end
+      end.
+
+  End EVAL.
+
+
+
+
   Fixpoint eval_atom (te: tenv) (ge: genv) (le: lenv) (ty: typ) (a: atom) : option (eval_typ ty) :=
     match a with
     | ATrue  => @cast_typ TBool true ty
@@ -748,7 +1010,7 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
         end
     end.
 
-  Definition eval_comp (te: tenv) (ge: genv) (le: lenv) (ty: typ) (c: comp) : option(eval_typ ty) :=
+  Definition eval_comp (te: tenv) (ge: genv) (le: lenv) (ty: typ) (c: comp) : option (eval_typ ty) :=
     match c with
     | CpAtom a => eval_atom te ge le ty a
     | CpArraySet a1 a2 a3 bt =>
@@ -778,6 +1040,287 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
         end
     end.
 
+  Definition comp_has_var (c:comp) :=
+    match c with
+    | CpAtom a => AtomOrdered.has_var a
+    | CpArraySet a1 a2 a3 bt =>
+        BSet.union (AtomOrdered.has_var a1)
+          (BSet.union (AtomOrdered.has_var a2)
+          (AtomOrdered.has_var a3))
+    | CpRecordUpdate a1 k a2 bt =>
+        BSet.union (AtomOrdered.has_var a1)
+          (AtomOrdered.has_var a2)
+    | CpCall f btf args btr =>
+        BSet.union (BSet.singleton  String.string_dec f)
+                   (BSet.union_list AtomOrdered.has_var args)
+    end.
+
+
+
+  Lemma less_def_eval_var :
+    forall ge1 (le1 : lenv) ge2 (le2 : STree.t value) (ty : typ) (x:ident)
+           (MATCH: match_env  ge1 le1 ge2 le2),
+      less_def (eval_var  ge1 le1 x ty) (eval_var  ge2 le2 x ty).
+  Proof.
+    unfold eval_var.
+    intros.
+    apply less_def_bind_less_def.
+    apply MATCH. intros.
+    apply less_def_refl.
+  Qed.
+
+  Lemma less_def_eval_app_option :
+    forall lt f ty ty' a1 a2,
+           (DList.forall2
+              (fun (ty : typ) (v1 v2 : option (eval_typ ty)) =>
+                 less_def v1 v2)
+              lt a1 a2) ->
+  less_def (eval_app_option  lt f ty a1 ty')
+    (eval_app_option  lt f ty a2 ty').
+  Proof.
+    induction lt.
+    - intros.
+      simpl in H.
+      rewrite DList.dlist_nil with (x:= a1).
+      rewrite DList.dlist_nil with (x:= a2).
+      simpl. constructor.
+    - intros.
+      simpl in H.
+      destruct H as (H1 & H2).
+      rewrite DList.car_cdr with (dl := a1).
+      rewrite DList.car_cdr with (dl := a2).
+      simpl. destruct lt.
+      + apply less_def_bind_less_def; auto.
+        intro. constructor.
+      + apply less_def_bind_less_def; auto.
+  Qed.
+
+  Lemma less_def_eval_app_option_args :
+    forall
+      (less_def_eval_atom :
+        forall (ge1 : genv) (ge2: genv) (te : tenv) (a : atom)
+               (le1 : lenv) (le2 : STree.t value) (ty : typ),
+          match_env  ge1 le1 ge2 le2 ->
+          less_def (eval_atom te ge1 le1 ty a) (eval_atom te ge2 le2 ty a))
+      (ge1 ge2 : genv) (te : tenv)
+      (le1 le2 : lenv)
+      (MATCH : match_env  ge1 le1 ge2 le2)
+      (ty : typ)
+      (lt : list typ)
+      (ty ty': typ)
+      (f : eval_funtyp eval_typ lt (eval_typ ty))
+      l,
+      less_def
+      (let* vargs := DList.map2 eval_typ (eval_atom te ge1 le1) l lt
+     in eval_app_option  lt ty f vargs ty')
+    (let* vargs := DList.map2 eval_typ (eval_atom te ge2 le2) l lt
+     in eval_app_option  lt ty f vargs ty').
+  Proof.
+    intros.
+    assert (
+        option_rel (fun l1 l2 => DList.forall2
+                                   (fun ty (v1:option (eval_typ ty))
+                                        (v2:option (eval_typ ty)) =>
+                                      less_def v1 v2) lt l1 l2)
+          (DList.map2 eval_typ (eval_atom te ge1 le1) l lt)
+          (DList.map2 eval_typ (eval_atom te ge2 le2) l lt)).
+    clear f.
+    revert lt.
+    { induction l; simpl.
+      - destruct lt. constructor.
+        constructor. constructor.
+      - destruct lt; try constructor.
+        eapply option_rel_bind_rel.
+        apply IHl.
+        intros.
+        simpl.
+        constructor.
+        split; auto.
+        unfold DList.car.
+        unfold DList.inj_list_hd. simpl.
+        unfold DList.cast. simpl.
+        apply less_def_eval_atom; auto.
+    }
+    inv H.
+    + simpl. constructor.
+    + simpl.
+      apply less_def_eval_app_option; auto.
+  Defined.
+
+
+
+  Fixpoint less_def_eval_atom (ge1 ge2:genv) (te:tenv) (a:atom):
+    forall le1 le2 ty
+           (MATCH : match_env  ge1 le1 ge2 le2),
+      less_def (eval_atom te ge1 le1 ty a) (eval_atom te ge2 le2 ty a).
+  Proof.
+    destruct a; simpl; try constructor.
+    - intros. eapply less_def_eval_var; eauto.
+    - intros. apply less_def_bind_eq.
+      intros. apply less_def_bind_eq.
+      intros.
+      apply less_def_bind_less_def.
+      auto.
+      intros. constructor.
+    - intros. apply less_def_bind_eq.
+      intros. apply less_def_bind_less_def.
+      auto.
+      intros. constructor.
+    - intros. apply less_def_bind_eq.
+      intros. apply less_def_bind_eq.
+      intros. apply less_def_bind_less_def.
+      auto.
+      intros. apply less_def_bind_less_def.
+      auto.
+      intros ; constructor.
+    - intros. apply less_def_bind_eq.
+      intros. apply less_def_bind_eq.
+      intros. apply less_def_bind_less_def.
+      auto.
+      intros. apply less_def_bind_less_def.
+      auto.
+      intros ; constructor.
+    - intros. apply less_def_bind_eq.
+      intros. apply less_def_bind_less_def.
+      auto.
+      intros ; constructor.
+    - intros.
+      apply less_def_bind_eq.
+      intros. destruct x; try constructor.
+      intros. apply less_def_bind_less_def.
+      apply less_def_eval_var with (ty:= TFun l0 x); auto.
+      intros.
+      apply less_def_eval_app_option_args; auto.
+  Qed.
+
+  Fixpoint eval_atom_match_on (ge1 ge2:genv) (te:tenv) (a:atom):
+    forall le1 le2 ty
+           (MATCH : match_on (AtomOrdered.has_var a)  ge1 le1 ge2 le2),
+      option_rel eq (eval_atom te ge1 le1 ty a) (eval_atom te ge2 le2 ty a).
+  Proof.
+    destruct a; intros; simpl; try (apply option_rel_refl; auto; fail).
+    - unfold eval_var.
+      eapply option_rel_bind_rel.
+      apply MATCH. simpl.  auto with bset.
+      intros. subst. apply option_rel_refl;auto.
+    - repeat (intros; apply option_rel_bind_equal).
+      intros. eapply option_rel_bind_rel.
+      apply eval_atom_match_on; auto.
+      intros. subst. apply option_rel_refl;auto.
+    - repeat (intros; apply option_rel_bind_equal).
+      intros. eapply option_rel_bind_rel.
+      apply eval_atom_match_on; auto.
+      intros. subst. apply option_rel_refl;auto.
+    - repeat (intros; apply option_rel_bind_equal).
+      apply match_on_union in MATCH.
+      intros. eapply option_rel_bind_rel.
+      apply eval_atom_match_on; auto.
+      tauto.
+      intros. eapply option_rel_bind_rel.
+      apply eval_atom_match_on; auto. tauto.
+      intros. subst.
+      apply option_rel_refl;auto.
+    - repeat (intros; apply option_rel_bind_equal).
+      apply match_on_union in MATCH.
+      intros. eapply option_rel_bind_rel.
+      apply eval_atom_match_on; auto.
+      tauto.
+      intros. eapply option_rel_bind_rel.
+      apply eval_atom_match_on; auto. tauto.
+      intros. subst.
+      apply option_rel_refl;auto.
+    - repeat (intros; apply option_rel_bind_equal).
+      intros. eapply option_rel_bind_rel.
+      apply eval_atom_match_on; auto.
+      intros. subst.
+      apply option_rel_refl;auto.
+    - intros; apply option_rel_bind_equal.
+      intros. destruct a; try constructor.
+      apply match_on_union in MATCH as (M1 & M2).
+      eapply option_rel_bind_rel.
+      unfold eval_var. eapply option_rel_bind_rel.
+      apply M1. auto with bset.
+      intros. subst.
+      apply option_rel_refl. apply RelationClasses.eq_Reflexive.
+      intros.
+      eapply option_rel_bind_rel with (RA:=eq).
+      { clear - eval_atom_match_on M2.
+        revert l0.
+        induction l; destruct l0; simpl; try constructor.
+        - reflexivity.
+        -
+          simpl in M2. apply match_on_union in M2.
+          eapply option_rel_bind_rel.
+          apply IHl; auto.
+          tauto.
+          intros; subst.
+          constructor.
+          f_equal.
+          apply option_rel_eq_eq.
+          apply eval_atom_match_on; tauto.
+      }
+      intros; subst.
+      apply option_rel_refl; auto.
+  Qed.
+
+  Lemma eval_comp_match_on (ge1 ge2:genv) (te:tenv) (c:comp):
+    forall le1 le2 ty
+           (MATCH : match_on  (comp_has_var c)  ge1 le1 ge2 le2),
+      option_rel eq (eval_comp te ge1 le1 ty c) (eval_comp te ge2 le2 ty c).
+  Proof.
+    destruct c; try (intros; simpl; apply option_rel_refl; auto; fail).
+    - intros.
+      apply eval_atom_match_on; auto.
+    - repeat (intros; apply option_rel_bind_equal).
+      simpl in MATCH.
+      rewrite! match_on_union in MATCH.
+      intros. eapply option_rel_bind_rel.
+      apply eval_atom_match_on; tauto.
+      intros. eapply option_rel_bind_rel.
+      apply eval_atom_match_on; tauto.
+      intros. eapply option_rel_bind_rel.
+      apply eval_atom_match_on; tauto.
+      intros ; subst. apply option_rel_refl;auto.
+    - repeat (intros; apply option_rel_bind_equal).
+      simpl in MATCH.
+      rewrite! match_on_union in MATCH.
+      intros. eapply option_rel_bind_rel.
+      apply eval_atom_match_on; tauto.
+      intros. eapply option_rel_bind_rel.
+      apply eval_atom_match_on; tauto.
+      intros. subst. apply option_rel_refl;auto.
+    - repeat (intros; apply option_rel_bind_equal).
+      unfold comp_has_var in MATCH.
+      rewrite! match_on_union in MATCH.
+      intros. destruct a; try constructor.
+      destruct MATCH as (M1 & M2).
+      eapply option_rel_bind_rel.
+      unfold eval_var. eapply option_rel_bind_rel.
+      apply M1. auto with bset.
+      intros. subst.
+      apply option_rel_refl. apply RelationClasses.eq_Reflexive.
+      intros.
+      eapply option_rel_bind_rel with (RA:=eq).
+      { clear -  M2.
+        revert l0.
+        induction l; destruct l0; simpl; try constructor.
+        - reflexivity.
+        -
+          simpl in M2. apply match_on_union in M2.
+          eapply option_rel_bind_rel.
+          apply IHl; auto.
+          tauto.
+          intros; subst.
+          constructor.
+          f_equal.
+          apply option_rel_eq_eq.
+          apply eval_atom_match_on; tauto.
+      }
+      intros; subst.
+      apply option_rel_refl; auto.
+  Qed.
+
+
   Definition cast_int (t:typ) (i:int) : option(eval_typ t) :=
     match t with
     | TInt32 s => Some i
@@ -800,7 +1343,7 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
         let* av := mmap (eval_literal te) a in
         eval_array_lit av
     | LRecord rc _ rid =>
-        let* rcv := map_err (eval_literal te) rc in
+        let* rcv := MapList.mmap _ (eval_literal te) rc in
         let* fields := TEnv.get_rdef te rid in
         eval_record_lit rid rcv fields
     end.
@@ -902,6 +1445,65 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
     inv H. rewrite PTree.gss. reflexivity.
   Qed.
 
+  (* [lenv_of_record_of_lenv] the [BOUND] hyp is necessary.
+     Otherwise, we could overwrite the local environment
+     with a value of the global environment.
+     NB: I think the issue disappear if there is a single environment *)
+  Lemma lenv_of_record_of_lenv :
+    forall ge rt le r
+           (BOUND : forall x v, List.In (x,v) rt -> SSet.mem x (STree.keys le) = true)
+           (NODU  : MapList.nodup String.string_dec rt = true),
+      record_of_lenv  ge rt le = Some r ->
+      lenv_of_record  rt r le = le.
+  Proof.
+    induction rt.
+    - simpl. reflexivity.
+    - simpl.
+      intros.
+      monadInv H.
+      simpl.
+      destruct a.
+      destruct (MapList.mem string_dec t rt) eqn:MEM; try discriminate.
+      simpl in EQ.
+      simpl in EQ1.
+      unfold cast_value in EQ1.
+      destruct x.
+      simpl in x0.
+      assert (t1 = t0).
+      { apply cast_typ_ok_imp_typ_eq in EQ1.
+        congruence.
+      }
+      subst.
+      rewrite cast_typ_id in EQ1.
+      inv EQ1. simpl.
+      unfold get_env in EQ.
+      destruct (STree.get t le) eqn:GET.
+      + inv GET. inv EQ.
+        unfold lenv_update.
+        rewrite STree.get_set_same by auto.
+        apply IHrt; auto.
+        intros.
+        eapply BOUND. right; eauto.
+      + rewrite STree.keys_get_mem_false_iff in GET.
+        erewrite BOUND in GET. discriminate.
+        left ; reflexivity.
+  Qed.
+
+  Lemma keys_lenv_of_record : forall rt le r,
+      forall x, SSet.mem x (STree.keys (lenv_of_record rt r le)) = SSet.mem x (STree.keys le) || MapList.mem string_dec x rt.
+  Proof.
+    induction rt;simpl; auto.
+    - intros. rewrite orb_comm. reflexivity.
+    - destruct a.
+      intros.
+      rewrite IHrt.
+      simpl.
+      rewrite keys_lenv_update.
+      rewrite SSet.mem_add.
+      destruct (string_dec x s) ; destruct (string_dec s x); try congruence.
+      simpl. rewrite orb_comm. reflexivity.
+  Qed.
+
 
   Section EVAL_EXPR.
 
@@ -909,7 +1511,8 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
 
     Variable eval_expr : tenv -> genv -> lenv -> (forall (ty: typ) (e: EXPR), option(eval_typ ty)).
 
-  Fixpoint eval_fun_rec (te: tenv) (ge: genv) (le: lenv) (params: smaplist typ) (tret: typ) (e: EXPR) :
+
+    Fixpoint eval_fun_rec (te: tenv) (ge: genv) (le: lenv) (params: smaplist typ) (tret: typ) (e: EXPR) :
     eval_funtyp eval_typ (List.map snd  params) (eval_typ tret) :=
     match params  with
     | [] => fun _ : unit => eval_expr te ge le tret e
@@ -973,13 +1576,13 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
     let '(tret, params) := (fn_return f, fn_params f) in
     if MapList.nodup Ident.eq_dec params then
       let* tret' := btyp_to_typ te tret in
-      let* params' := map_err (btyp_to_typ te) params in
+      let* params' := MapList.mmap _ (btyp_to_typ te) params in
       let fv := Val (TFun (List.map (fun x => snd x) params') tret') (eval_fun te ge params' tret' (fn_body f)) in
       genv_update ge x fv
     else fail.
 
   Definition fields_btyp_to_typ (te: tenv) (fields: smaplist btyp) : option (smaplist typ) :=
-    map_err (btyp_to_typ te) fields.
+    MapList.mmap _ (btyp_to_typ te) fields.
 
   Definition eval_decl_fun (te:tenv) (impl ge : genv) (x: ident) (params : list (Syntax.param_attr * btyp)) (tret:btyp) : option genv :=
     let* tparams := mmap (Typing.btyp_to_typ te) (List.map snd params) in
@@ -1043,7 +1646,7 @@ Definition eval_record_upd_aux  (fields: smaplist typ) (rc: eval_recordtyp eval_
     intros.
     destruct (MapList.nodup Ident.eq_dec (fn_params f)); try discriminate.
     destruct (btyp_to_typ te (fn_return f)); try discriminate.
-    simpl in H. destruct (map_err (btyp_to_typ te) (fn_params f)); try discriminate.
+    simpl in H. destruct (MapList.mmap _ (btyp_to_typ te) (fn_params f)); try discriminate.
     simpl in H.
     eapply genv_update_preserve_defs;eauto.
   Qed.

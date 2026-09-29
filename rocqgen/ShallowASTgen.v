@@ -1,4 +1,4 @@
-From Stdlib Require Import List String ZArith.
+From Stdlib Require Import Bool List String ZArith.
 From compcert Require Import Maps.
 From BarocqComp  Require Import Pp Printer.
 From BarocqComp Require Import StateMonads Res Maps2 Types Utils Syntax Barray Benum Barocq ShallowAST.
@@ -58,8 +58,10 @@ Module NormalizationR.
 
   Variable pure_funs: SSet.t.
 
-  Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BNF.expr :=
-    let fix norm_expr_aux (e: Barocq.expr) : crmon (smaplist BNF.expr * atom) :=
+  Section NORM_EXPR_AUX.
+    Variable norm_expr_rec : Barocq.expr -> crmon BNF.expr.
+
+    Fixpoint norm_expr_aux (e: Barocq.expr) : crmon (smaplist BNF.expr * atom) :=
       match e with
       | Barocq.ETrue => sret (nil, ATrue)
       | Barocq.EFalse => sret (nil, AFalse)
@@ -133,16 +135,84 @@ Module NormalizationR.
         do x <- fresh_var;
         do be <- norm_expr_rec e;
         sret ((x, be) :: nil, AVar x)
-      end
-    in
-    let fix letseq (le: smaplist BNF.expr) (e: expr) : BNF.expr :=
-      match le with
-      | nil => e
-      | (x, be) :: le' =>
-          ELetIn x be (letseq le' e)
-      end
-    in
-    let fix norm_exprlist_rec (e: Barocq.expr) (la: list atom) (le: list Barocq.expr) : crmon (smaplist BNF.expr * BNF.expr) :=
+      end.
+
+
+
+  Fixpoint norm_atom (a:Syntax.atom) : crmon (smaplist BNF.expr * atom) :=
+    match a with
+    | Syntax.ATrue => sret (nil,ATrue)
+    | Syntax.AFalse => sret (nil,AFalse)
+    | Syntax.AInt32 i s => sret (nil, AInt32 i s)
+    | Syntax.AInt64 i s => sret (nil, AInt64 i s)
+    | Syntax.AConstr id i t => sret (nil, AConstr id)
+    | Syntax.AVar id ty => sret (nil, AVar id)
+    | Syntax.ACast e1 ty =>
+          match ty with
+          | BEnum _ =>
+              do (li1, a1) <- norm_atom e1;
+              do x <- fresh_var;
+              sret (li1 ++ [(x, (EAtom (ACast a1 ty)))], AVar x)
+          | _ =>
+              do (li1, a1) <- norm_atom e1;
+              sret (li1, ACast a1 ty)
+          end
+    | Syntax.AUnaryOp op e1 ty =>
+        do (li, a1) <- norm_atom e1;
+        sret (li, AUnaryOp op a1)
+
+    | Syntax.ABinaryOp op e1 e2 ty =>
+          do (li1, a1) <- norm_atom e1;
+          do (li2, a2) <- norm_atom e2;
+          match op with
+          | BopDiv | BopMod =>
+              do x <- fresh_var;
+              sret (li1 ++ li2 ++ [(x, (EAtom (ABinaryOp op a1 a2)))], AVar x)
+          | _ =>
+            sret (li1 ++ li2, ABinaryOp op a1 a2)
+          end
+
+    | Syntax.AArrayGet e1 e2 ly ty =>
+          do (li1, a1) <- norm_atom e1;
+          do (li2, a2) <- norm_atom e2;
+          do x <- fresh_var;
+          sret (li1 ++ li2 ++ [(x, EArrayGet a1 a2)], AVar x)
+    | Syntax.ARecordProj e1 f _ _  =>
+          do (li1, a1) <- norm_atom e1;
+          sret (li1, ARecordProj a1 f)
+    | Syntax.APureCall id ty args ty1 =>
+          do (l_args, a_args) <-
+            List.fold_left
+              (fun acc arg =>
+                do (acc_l, acc_args) <- acc;
+                do (lia, a) <- norm_atom arg;
+                sret (acc_l ++ lia, acc_args ++ [a]))
+              args
+              (sret ([], []));
+          let impure_call :=
+            do x <- fresh_var;
+            sret (l_args ++ [(x, EApp (AVar id) a_args)], AVar x)
+          in
+          if SSet.mem id pure_funs then
+            sret (l_args, AApp id a_args)
+          else impure_call
+    end.
+
+
+  End  NORM_EXPR_AUX.
+
+  Fixpoint letseq (le : smaplist BNF.expr) (e:expr) : BNF.expr :=
+    match le with
+    | nil => e
+    | (x, be) :: le' =>
+        ELetIn x be (letseq le' e)
+    end.
+
+  Section NORM_EXPRLIST_REC.
+
+    Variable norm_expr_aux : Barocq.expr -> crmon (smaplist BNF.expr * atom).
+
+    Fixpoint norm_exprlist_rec (e: Barocq.expr) (la: list atom) (le: list Barocq.expr) : crmon (smaplist BNF.expr * BNF.expr) :=
       match le with
       | nil =>
           do er <- lift_err (bnfexpr_of_atomlist e (rev' la));
@@ -151,21 +221,38 @@ Module NormalizationR.
           do (lx, a1) <- norm_expr_aux e1;
           do (lr, er) <- norm_exprlist_rec e (a1 :: la) le';
           sret (lx ++ lr, er)
-      end
-    in
-    let norm_exprlist (e: Barocq.expr) (le: list Barocq.expr) : crmon BNF.expr :=
+      end.
+
+    Definition norm_exprlist (e: Barocq.expr) (le: list Barocq.expr) : crmon BNF.expr :=
       do (lx, er) <- norm_exprlist_rec e [] le;
-      sret (letseq lx er)
-    in
-    let fix norm_match_cases (cases: list (pattern * Barocq.expr)) : crmon (list (pattern * BNF.expr)) :=
+      sret (letseq lx er).
+
+  End NORM_EXPRLIST_REC.
+
+  Section NORM_MATCH_CASES.
+    Variable norm_expr_rec : Barocq.expr -> crmon BNF.expr.
+
+    Fixpoint norm_match_cases (cases: list (pattern * Barocq.expr)) : crmon (list (pattern * BNF.expr)) :=
       match cases with
       | nil => sret nil
       | (c, e) :: cases' =>
           do ne <- norm_expr_rec e;
           do ncases' <- norm_match_cases cases';
           sret ((c, ne) :: ncases')
-      end
-    in
+      end.
+
+    Fixpoint norm_bindings (letw : list (ident * Barocq.expr)) : crmon (list (ident * BNF.expr)) :=
+      match letw with
+      | nil => sret nil
+      | (c,e) :: letw' =>
+          do ne <- norm_expr_rec e;
+          do nletw <- norm_bindings letw';
+          sret ((c,ne)::nletw)
+      end.
+
+  End NORM_MATCH_CASES.
+
+    Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BNF.expr :=
     match e with
     | Barocq.ETrue =>
         sret (EAtom ATrue)
@@ -180,34 +267,44 @@ Module NormalizationR.
     | Barocq.EVar x =>
         sret (EAtom (AVar x))
     | Barocq.ECast e1 ty =>
-        norm_exprlist e [e1]
+        norm_exprlist (norm_expr_aux norm_expr_rec)  e [e1]
     | Barocq.EUnaryOp op e1 =>
-        norm_exprlist e [e1]
+        norm_exprlist (norm_expr_aux norm_expr_rec) e [e1]
     | Barocq.EBinaryOp op e1 e2 =>
-        norm_exprlist e [e1; e2]
+        norm_exprlist (norm_expr_aux norm_expr_rec) e [e1; e2]
     | Barocq.EArrayGet e1 e2 =>
-        norm_exprlist e [e1; e2]
+        norm_exprlist (norm_expr_aux norm_expr_rec) e [e1; e2]
     | Barocq.EArraySet e1 e2 e3 =>
-        norm_exprlist e [e1; e2; e3]
+        norm_exprlist (norm_expr_aux norm_expr_rec) e [e1; e2; e3]
     | Barocq.ERecordProj e1 k =>
-        norm_exprlist e [e1]
+        norm_exprlist (norm_expr_aux norm_expr_rec) e [e1]
     | Barocq.ERecordUpdate e1 k e2 =>
-        norm_exprlist e [e1; e2]
+        norm_exprlist (norm_expr_aux norm_expr_rec) e [e1; e2]
     | Barocq.EApp e1 args =>
-        norm_exprlist e (e1 :: args)
+        norm_exprlist (norm_expr_aux norm_expr_rec) e (e1 :: args)
     | Barocq.EIfThenElse e1 e2 e3 =>
-        do (le, c) <- norm_expr_aux e1;
+        do (le, c) <- norm_expr_aux norm_expr_rec e1;
         do ne2 <- norm_expr_rec e2;
         do ne3 <- norm_expr_rec e3;
         sret (letseq le (EIfThenElse c ne2 ne3))
     | Barocq.EMatch e1 cases =>
-        do (le, a) <- norm_expr_aux e1;
-        do ncases <- norm_match_cases cases;
+        do (le, a) <- norm_expr_aux norm_expr_rec e1;
+        do ncases <- norm_match_cases norm_expr_rec cases;
         sret (letseq le (EMatch a ncases))
     | Barocq.ELetIn x e1 e2 =>
         do ne1 <- norm_expr_rec e1;
         do ne2 <- norm_expr_rec e2;
         sret (ELetIn x ne1 ne2)
+    | Barocq.EActR l =>
+        do l' <- norm_bindings norm_expr_rec l ;
+        sret (EActR l')
+    | Barocq.ELetW l cond variant body e =>
+        do ncond <- norm_expr_rec cond;
+        do nvariant <- norm_expr_rec variant;
+        do nl <- norm_bindings norm_expr_rec l ;
+        do nbody    <- norm_expr_rec body;
+        do ne <- norm_expr_rec e;
+        sret (ELetW nl ncond nvariant nbody ne)
     | Barocq.EAttr s e =>
         do ne <- norm_expr_rec e;
         sret (EAttr s ne)
@@ -302,8 +399,69 @@ Module NormalizationB.
 
   Definition fresh_var : crmon ident := NormalizationR.fresh_var.
 
-  Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BNF.expr :=
-    let fix norm_exprlist_rec (e: Barocq.expr) (la: list atom) (le: list Barocq.expr) : crmon BNF.expr :=
+  Section NORMW.
+    Variable norm_expr_rec : Barocq.expr -> crmon BNF.expr.
+
+    Fixpoint norm_letw (letw : list (ident * Barocq.expr)) : crmon (list (ident * BNF.expr)) :=
+      match letw with
+      | nil => sret nil
+      | (c,e) :: letw' =>
+          do ne <- norm_expr_rec e;
+          do nletw <- norm_letw letw';
+          sret ((c,ne)::nletw)
+      end.
+
+  End NORMW.
+
+
+  Section NORM_ATOMS.
+    Variable norm_atom : Syntax.atom ->  crmon (list (ident * BNF.expr) * atom).
+
+    Fixpoint norm_atoms (l:list Syntax.atom) : crmon (list (ident * BNF.expr) * list atom)  :=
+      match l with
+      | nil => sret (nil,nil)
+      | a::l => do (l1,a1) <- norm_atom a ;
+                do (ll,la) <- norm_atoms l ;
+                sret (l1++ll, a1::la)
+      end.
+  End NORM_ATOMS.
+
+  Fixpoint norm_atom (a:Syntax.atom) : crmon (list (ident * BNF.expr) * atom):=
+    match a with
+    | Syntax.ATrue => sret (nil, ATrue)
+    | Syntax.AFalse => sret (nil, AFalse)
+    | Syntax.AInt32 i s => sret (nil, AInt32 i s)
+    | Syntax.AInt64 i s => sret (nil,AInt64 i s)
+    | Syntax.AConstr i _ _ => sret (nil,AConstr i)
+    | Syntax.AVar v _ =>  sret (nil,AVar v)
+    | Syntax.ACast a ty =>
+        do (l1,a1) <- norm_atom a ;
+        sret (l1, ACast a1 ty)
+    | Syntax.AUnaryOp op a1 _ =>
+        do (l1,a1) <- norm_atom a1 ;
+        sret (l1,AUnaryOp op a1)
+
+    | Syntax.ABinaryOp op a1 a2 _ =>
+        do (l1,a1) <- norm_atom a1 ;
+        do (l2,a2) <- norm_atom a2 ;
+        sret (l1++l2, ABinaryOp op a1 a2)
+    | Syntax.AArrayGet a1 a2 _ _ =>
+        do (l1,a1) <- norm_atom a1 ;
+        do (l2,a2) <- norm_atom a2 ;
+        do x <- fresh_var ;
+        sret (l1 ++ l2 ++ [(x, EArrayGet a1 a2)] , AVar x)
+    | Syntax.ARecordProj a f _ _ =>
+        do (l1,a) <- norm_atom a ;
+        sret (l1, ARecordProj a f)
+    | Syntax.APureCall f _ args _ =>
+        do (ll,la) <- norm_atoms norm_atom args ;
+        sret(ll,AApp f la)
+    end.
+
+  Section NORM.
+    Variable norm_expr_rec : Barocq.expr -> crmon BNF.expr.
+
+    Fixpoint norm_exprlist_rec (e:Barocq.expr) (la:list atom) (le:list Barocq.expr) : crmon BNF.expr :=
       match le with
       | nil => lift_err (NormalizationR.bnfexpr_of_atomlist e (rev' la))
       | e1 :: le' =>
@@ -315,20 +473,31 @@ Module NormalizationB.
               do ner <- norm_exprlist_rec e (AVar x :: la) le';
               sret (ELetIn x ne1 ner)
           end
-      end
-    in
-    let norm_exprlist (e: Barocq.expr) (le: list Barocq.expr) : crmon BNF.expr :=
-      norm_exprlist_rec e [] le
-    in
-    let fix norm_match_cases (cases: list (pattern * Barocq.expr)) : crmon (list (pattern * BNF.expr)) :=
+      end.
+
+    Definition norm_exprlist (e:Barocq.expr) (le : list Barocq.expr) : crmon BNF.expr :=
+      norm_exprlist_rec e [] le.
+
+
+    Fixpoint norm_match_cases (cases: list (pattern * Barocq.expr)) : crmon (list (pattern * BNF.expr)) :=
       match cases with
       | nil => sret nil
       | (c, e) :: cases' =>
           do ne <- norm_expr_rec e;
           do ncases' <- norm_match_cases cases';
           sret ((c, ne) :: ncases')
-      end
-    in
+      end.
+
+  End NORM.
+
+  Fixpoint letseq (le : smaplist BNF.expr) (e:BNF.expr) : BNF.expr :=
+    match le with
+    | nil => e
+    | (x, be) :: le' =>
+        ELetIn x be (letseq le' e)
+    end.
+
+  Fixpoint norm_expr_rec (e: Barocq.expr) : crmon BNF.expr :=
     match e with
     | Barocq.ETrue =>
         sret (EAtom ATrue)
@@ -343,21 +512,21 @@ Module NormalizationB.
     | Barocq.EVar x =>
         sret (EAtom (AVar x))
     | Barocq.ECast e1 ty =>
-        norm_exprlist e [e1]
+        norm_exprlist norm_expr_rec e [e1]
     | Barocq.EUnaryOp op e1 =>
-        norm_exprlist e [e1]
+        norm_exprlist norm_expr_rec e [e1]
     | Barocq.EBinaryOp op e1 e2 =>
-        norm_exprlist e [e1; e2]
+        norm_exprlist norm_expr_rec e [e1; e2]
     | Barocq.EArrayGet e1 e2 =>
-        norm_exprlist e [e1; e2]
+        norm_exprlist norm_expr_rec e [e1; e2]
     | Barocq.EArraySet e1 e2 e3 =>
-        norm_exprlist e [e1; e2; e3]
+        norm_exprlist norm_expr_rec e [e1; e2; e3]
     | Barocq.ERecordProj e1 k =>
-        norm_exprlist e [e1]
+        norm_exprlist norm_expr_rec e [e1]
     | Barocq.ERecordUpdate e1 k e2 =>
-        norm_exprlist e [e1; e2]
+        norm_exprlist norm_expr_rec e [e1; e2]
     | Barocq.EApp e1 args =>
-        norm_exprlist e (e1 :: args)
+        norm_exprlist norm_expr_rec e (e1 :: args)
     | Barocq.EIfThenElse e1 e2 e3 =>
         do ne2 <- norm_expr_rec e2;
         do ne3 <- norm_expr_rec e3;
@@ -369,7 +538,7 @@ Module NormalizationB.
             sret (ELetIn x1 ne1 (EIfThenElse (AVar x1) ne2 ne3))
         end
     | Barocq.EMatch e1 cases =>
-        do ncases <- norm_match_cases cases;
+        do ncases <- norm_match_cases norm_expr_rec cases;
         match atom_of_expr e1 with
         | OK a1 => sret (EMatch a1 ncases)
         | Error _ =>
@@ -381,6 +550,16 @@ Module NormalizationB.
         do ne1 <- norm_expr_rec e1;
         do ne2 <- norm_expr_rec e2;
         sret (ELetIn x ne1 ne2)
+    | Barocq.ELetW l cond variant body e =>
+        do l <- norm_letw norm_expr_rec l;
+        do cond <- norm_expr_rec cond;
+        do variant <- norm_expr_rec variant;
+        do nbody <- norm_expr_rec body ;
+        do ne    <- norm_expr_rec e ;
+        sret (ELetW l cond variant nbody ne)
+    | Barocq.EActR l =>
+        do l <- norm_letw norm_expr_rec l;
+        sret (EActR l)
     | Barocq.EAttr s e =>
         do ne <- norm_expr_rec e;
         sret (EAttr s ne)
@@ -477,6 +656,8 @@ Module Monadification.
     | ELetMon _ _ _ ty
     | ERet _ ty => ty
     | EAttr _ _ ty => ty
+    | ELetW _ _ _ _ _ ty => ty
+    | EActR _ ty => ty
     end.
 
   Fixpoint mtyp_eq_dec (t1 t2: mtyp) : { t1 = t2 } + { t1 <> t2 }.
@@ -486,6 +667,8 @@ Module Monadification.
     - apply signedness_eq_dec.
     - apply Ident.eq_dec.
     - apply Ident.eq_dec.
+    - apply list_eq_dec. apply pair_eq_dec. apply Ident.eq_dec.
+      apply mtyp_eq_dec.
     - apply list_eq_dec. apply mtyp_eq_dec.
     - apply Ident.eq_dec.
   Defined.
@@ -498,6 +681,7 @@ Module Monadification.
   | MArray bt => Pp.seq (Bstr "[" :: pp_mtyp bt :: Bstr "]" :: nil)
   | MEnum id => Bcat (Bstr "enum ") (Bstr id)
   | MRecord id  => Bcat (Bstr "record ") (Bstr id)
+  | MActR l     => Bstr "actr"
   | MFun args r  => Bcat (pp_list (Bstr " -> ") pp_mtyp args) (pp_mtyp r)
   | MAbs id      => Bcat (Bstr "abs ") (Bstr id)
   | MRes bt      => Bcat (Bstr "res ") (pp_mtyp bt)
@@ -535,6 +719,15 @@ Module Monadification.
           Error (MSG "lcontext_update: types do not match. Variable "
                      ::
                      MSG x :: MSG " has type ":: MSG (Pp.pp (pp_mtyp t)) :: MSG " instead of " :: MSG (Pp.pp (pp_mtyp ty)) :: nil) *)
+
+  Fixpoint lcontext_update_list (lx:lcontext) (l : list (ident * expr)) : lcontext :=
+    match l with
+    | nil => lx
+    | (id,e)::l' =>
+        lcontext_update_list (lcontext_update lx id (shrink_mres (typof_expr e))) l'
+    end.
+
+
 
   Open Scope state_err_monad_scope.
 
@@ -813,6 +1006,7 @@ Module Monadification.
     | BArray ta _ => MArray (monadify_btyp ta)
     | BEnum el => MEnum el
     | BRecord s _ => MRecord s
+    | BActR l     => MActR (MapList.map monadify_btyp l)
     | BFun tparams tret =>
         MFun (map monadify_btyp tparams) (MRes (monadify_btyp tret))
     | BAbs t => MAbs t
@@ -905,6 +1099,7 @@ Module Monadification.
     | MInt64 _
     | MArray _
     | MRecord _ 
+    | MActR _
     | MEnum _
     | MAbs _ => MRes ty
     | MFun tparams tret =>
@@ -942,6 +1137,19 @@ Module Monadification.
       end;
     eret (ERet (EAtom a' (typof_atom a')) ty').
 
+
+  Section MONADIFY.
+    Variable monadify_expr_rec : forall (me: menv) (gx: gcontext) (lx: lcontext) (e: BNF.expr) (mflag: bool), res expr.
+
+    Fixpoint monadify_list (me:menv) (gx:gcontext) (lx:lcontext) (l:list (ident * BNF.expr)) : res ((list (ident * expr)) * bool) :=
+      match l with
+      | nil => OK (nil,false)
+      | (id,e)::l' => do e' <- monadify_expr_rec me gx lx e false ;
+                  do (l',b)  <- monadify_list me gx lx l' ;
+                  OK ((id,e')::l', b || is_mres (typof_expr e'))
+      end.
+
+  End MONADIFY.
 
   Fixpoint monadify_expr_rec (me: menv) (gx: gcontext) (lx: lcontext) (e: BNF.expr) (mflag: bool) : res expr :=
     match e with
@@ -1070,6 +1278,20 @@ Module Monadification.
         do e' <- monadify_expr_rec me gx lx e false;
         let  t:= typof_expr e' in
         eret (EAttr s e' t)
+    | BNF.ELetW l cond variant body e =>
+        do (l, b) <- monadify_list monadify_expr_rec me gx lx l ;
+        let lx' := lcontext_update_list lx l in
+        do cond' <- monadify_expr_rec me gx lx' cond false;
+	do variant' <- monadify_expr_rec me gx lx' variant false;
+	do body'    <- monadify_expr_rec me gx lx' body false;
+	do e'       <- monadify_expr_rec me gx lx' e true;
+        eret (ELetW l cond' variant' body' e' (typof_expr e'))
+    | BNF.EActR l =>
+        do (l, b) <- monadify_list monadify_expr_rec me gx lx l ;
+	let ty := (MapList.map typof_expr l) in 
+	if mflag
+        then eret (ERet (EActR l (MActR ty)) (MRes (MActR ty)))
+        else eret ((EActR l (MActR ty) ))
     end.
 
   Definition monadify_expr (me: menv) (gx: gcontext) (lx: lcontext) (e: BNF.expr) : res expr :=

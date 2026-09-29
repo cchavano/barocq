@@ -1,7 +1,7 @@
 From Stdlib Require Import List Bool BinNums.
 From compcert Require Import Coqlib Integers.
 From VST Require Import Zlist.
-From BarocqComp Require Import Ident Intop Utils ZlistPlus Pp.
+From BarocqComp Require Import Ident Intop Utils ZlistPlus Pp Res Maps2.
 From BarocqComp Require Import Option.
 Local Open Scope option_monad_scope.
 
@@ -195,6 +195,14 @@ Inductive pattern : Type :=
   | PIdent (i: ident) (z: Z) : pattern
   | PWildcard : pattern.
 
+Definition pattern_eqb (p1 p2:pattern) :=
+  match p1 , p2 with
+  | PWildcard , PWildcard => true
+  | PIdent i1 z1 , PIdent i2 z2 => String.eqb i1 i2 && Z.eqb z1 z2
+  | _ , _ => false
+  end.
+
+
 Fixpoint ematch_with {elems: list ident} {A: Type} (e: enum elems) (cases: list (pattern * option A)) : option A :=
   match cases with
   | nil => fail
@@ -207,6 +215,97 @@ Fixpoint ematch_with {elems: list ident} {A: Type} (e: enum elems) (cases: list 
       | PWildcard => ai
       end
   end.
+
+Definition match_pattern {elems : list ident} (pi:pattern) (e:enum elems) :=
+  match pi with
+  | PWildcard => Some true
+  | PIdent i _ => match make_enum elems i with (* Why do we do that ? *)
+                  | None => None
+                  | Some ei => if enum_eq ei e then Some true else Some false
+                  end
+  end.
+
+
+Lemma ematch_with_inv_Some : forall {elems: list ident} {A: Type} (e:enum elems) (cases : list (pattern * option A)) v,
+    ematch_with e cases = Some v ->
+    exists p c, In (p,c) cases /\ match_pattern p e = Some true /\ c = Some v.
+Proof.
+  induction cases; simpl.
+  - discriminate.
+  - destruct a.
+    destruct p.
+    + intros. destruct (make_enum elems i) eqn:MK.
+      simpl in H. destruct (enum_eq e0 e) eqn:EQ ; try discriminate.
+      subst.
+      exists (PIdent i z), (Some v).
+      repeat split; auto.
+      simpl. rewrite MK. rewrite EQ. reflexivity.
+      apply IHcases in H.
+      destruct H as (p & c & IN & M  &EQ1).
+      exists p,c. tauto.
+      discriminate.
+    + intros. subst.
+      exists  (PWildcard) , (Some v).
+      simpl. tauto.
+Qed.
+
+
+Lemma ematch_with_map_err :
+  forall {A B: Type} elems (e:enum elems)
+         (fe: option A -> res (option B)) (cases:list (pattern * option A)) v cases',
+    Benum.ematch_with e cases  =     Some  v ->
+    MapList.map_err fe
+      cases = OK cases' ->
+    exists p v0 v1, In (p,v0) cases /\ fe v0 = OK v1 /\ Benum.ematch_with e cases' =  v1.
+Proof.
+  induction cases;simpl.
+  - discriminate.
+  - intros.
+    destruct a as (pi,ai).
+    Res.monadInv H0. Res.monadInv EQ. inv EQ2.
+    destruct pi; auto.
+    + intros. destruct (make_enum elems i) eqn:MK; try discriminate.
+      simpl in H.
+      destruct (enum_eq e0 e) eqn:EQ; try discriminate.
+      * do 3 eexists.
+        split. left. reflexivity.
+        split; eauto. simpl.
+        rewrite MK. simpl. rewrite EQ. reflexivity.
+      * eapply IHcases in H; eauto.
+        destruct H as (p1 & v1 & v2 & IN & F & M).
+        do 3 eexists. split. right. eauto.
+        split; eauto. simpl. rewrite MK. simpl. rewrite EQ.
+        auto.
+    + do 3 eexists.
+      split. left. reflexivity.
+      split; eauto.
+Qed.
+
+Fixpoint ematch_with_factor {elems: list ident} {A: Type} (e: enum elems) (cases: list (pattern * option A)) : option A :=
+  match cases with
+  | nil => fail
+  | (pi, ai)::cases' =>
+      match match_pattern pi e with
+      | None => None
+      | Some b => if b then ai else ematch_with_factor e cases'
+      end
+  end.
+
+Lemma ematch_with_factor_eq : forall elems A (e: enum elems) (cases: list (pattern * option A)),
+    ematch_with e cases = @ematch_with_factor elems A e cases.
+Proof.
+  induction cases.
+  - reflexivity.
+  - simpl.
+    destruct a.
+    destruct p.
+    simpl.
+    destruct (make_enum elems i).
+    simpl. destruct (enum_eq e0 e); auto.
+    reflexivity.
+    reflexivity.
+Qed.
+
 
 Fixpoint ematch_with2 {elems: list ident} {A E: Type} (e: enum elems) (cases: list (pattern * option A))
   (E_eq_dec: forall (x y: E), {x = y} + {x <> y}) (f: enum elems -> E) : option A :=

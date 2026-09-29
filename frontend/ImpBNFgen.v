@@ -1,7 +1,7 @@
 From Stdlib Require Import String List Eqdep.
 From compcert Require Import Coqlib.
 From compcert Require Axioms.
-From BarocqComp Require Import Res Syntax Utils Types BarocqBNF ImpBNF Maps2 Denot.
+From BarocqComp Require Import Res Syntax Utils Denot Types BarocqBNF ImpBNF Maps2 Denot.
 Import ListNotations.
 
 Open Scope string_scope.
@@ -31,6 +31,12 @@ Fixpoint transl_expr (e: expr) : res tailcomp :=
   | EMatch a cases ty =>
       do cases' <- MapList.map_err transl_expr cases;
       eret (TcSwitch a cases' ty)
+  | EActR l ty => OK (TcActRecord l ty)
+  | ELetW init cond decr body e2 ty =>
+      do init' <- MapList.map_err transl_expr init;
+      do body'  <- transl_expr body;
+      do e2'    <- transl_expr e2;
+      eret (TcWhile init' cond decr body' e2' ty)
   | EAttr id e =>
       do tc <- transl_expr e;
       eret (TcAttr id tc)
@@ -49,8 +55,7 @@ Definition check_params_noshadow {A T: Type} (ge: STree.t A) (ls_init: SSet.t) (
     (ls_init).
 
 Definition transl_function (gs: SSet.t) (f: BarocqBNF.function) : res ImpBNF.function :=
-  do ls <- check_params_noshadow gs SSet.empty (fn_params f);
-  if wf_expr gs ls (fn_body f) then
+  if wf_expr gs (sset_of_bindings (fn_params f)) (fn_body f) then
     do body <- transl_expr (fn_body f);
     eret {|
       fn_return := fn_return f;
@@ -100,7 +105,7 @@ Section CORRECTNESS.
       ImpBNF.typof_tailcomp te tc = BarocqBNF.typof_expr te e.
   Proof.
     induction e; unfold BarocqBNF.typof_expr, ImpBNF.typof_tailcomp,
-    ImpBNF.btypof_tailcomp; simpl; intros.
+    ImpBNF.btypof_tailcomp; fold btypof_tailcomp; simpl; intros.
     - inversion H. reflexivity.
     - inversion H. reflexivity.
     - inversion H. reflexivity. 
@@ -109,89 +114,41 @@ Section CORRECTNESS.
     - monadInv H. inv EQ2. reflexivity.
     - monadInv H. inv EQ0. reflexivity.
     - monadInv H. inv EQ2. reflexivity.
-    - monadInv H. inv EQ0. eapply IHe; eauto.
+    - monadInv H. reflexivity.
+    - monadInv H. inv EQ3. reflexivity.
+    - monadInv H. inv EQ0. simpl.
+      eapply IHe; eauto.
   Qed.
   
-  (* Defines wether environment e2 shadows some variables of environment e1 *)
-  Definition env_noshadow {A B} (e1: STree.t A) (e2: STree.t B) : Prop :=
-    forall x v,
-      STree.get x e1 = Some v ->
-      STree.get x e2 = None.
-
-  Lemma env_noshadow_set:
-    forall (A B: Type) (e1: STree.t A) (e2: STree.t B) x,
-      env_noshadow e1 e2 ->
-      STree.get x e1 = None ->
-      (forall b, env_noshadow e1 (STree.set x b e2)).
-  Proof.
-    unfold env_noshadow. intros.
-    specialize (H _ _ H1).
-    destruct (string_dec x0 x).
-    - subst. congruence.
-    - rewrite STree.gso; tauto.
-  Qed.
-
-  Definition match_lenv (le1 le2: lenv) : Prop :=
-    forall x v,
-      lenv_get tabs le1 x = Some v ->
-      lenv_get tabs le2 x = Some v.
-
-  Lemma match_lenv_refl:
-    forall (le: lenv), match_lenv le le.
-  Proof.
-    intros. unfold match_lenv. tauto.
-  Qed.
-
-  Lemma match_lenv_update1:
-    forall (le: lenv) k v,
-    lenv_get tabs le k = None ->
-    match_lenv le (lenv_update tabs le k v).
-  Proof.
-    unfold match_lenv, eval_var; intros.
-    destruct (Ident.eq_dec x k).
-    - subst. rewrite H in H0. discriminate. 
-    - unfold lenv_update. unfold lenv_get in *.
-      rewrite STree.gso; auto.
-  Qed.
-
-  Lemma match_lenv_update2:
-    forall (le1 le2: lenv) (k: string) v,
-      match_lenv le1 le2 ->
-      match_lenv (lenv_update tabs le1 k v) (lenv_update tabs le2 k v).
-  Proof.
-    unfold match_lenv, lenv_get, lenv_update; intros.
-    destruct (Ident.eq_dec x k).
-    - subst. rewrite STree.gss in H0. simpl in H0.
-      inv H0. rewrite STree.gss. reflexivity.
-    - rewrite STree.gso in *; try exact n.
-      apply (H _ _ H0).
-  Qed.
-
-  Lemma match_lenv_trans:
-    forall (le1 le2 le3: lenv),
-      match_lenv le1 le2 ->
-      match_lenv le2 le3 ->
-      match_lenv le1 le3.
-  Proof.
-    unfold match_lenv; intros.
-    specialize (H _ _ H1). specialize (H0 _ _ H).
-    exact H0.
-  Qed.
 
   Lemma eval_var_match_lenv_eq:
     forall ge le1 le2 x ty v,
       env_noshadow ge le2 ->
-      match_lenv le1 le2 ->
+      match_lenv tabs le1 le2 ->
       ((lenv_get tabs le1 x = Some v) \/ (genv_get tabs ge x = Some v)) ->
       eval_var tabs ge le2 x ty = eval_var tabs ge le1 x ty.
   Proof.
-    unfold env_noshadow, match_lenv, eval_var; intros.
-    destruct H1.
-    - specialize (H0 x v H1). rewrite H0, H1. reflexivity.
-    - destruct (lenv_get tabs le1 x) eqn:Eget1.
-      * specialize (H0 _ _ Eget1). rewrite H0. reflexivity.
-      * rewrite H1; simpl. unfold genv_get in H1.
-        specialize (H x v H1). unfold lenv_get. rewrite H. simpl. reflexivity.
+    intros.
+    assert (ME : match_env tabs ge le1 ge le2).
+    { apply match_lenv_match_env; auto. }
+    unfold eval_var.
+    specialize (ME x). inv ME.
+    - simpl.
+      symmetry in H3.
+      unfold get_env,lenv_get,genv_get in *.
+      destruct H1.
+      + rewrite H1 in H3. discriminate.
+      + rewrite H1 in *.
+        specialize (H0 x).
+        unfold lenv_get in H0.
+        inv H0.
+        rewrite <- H4 in H3. discriminate.
+        apply H in H1.
+        rewrite H1 in *.
+        rewrite H5 in H3. discriminate.
+    - rewrite H4.
+      apply Option.bind_equal.
+      reflexivity.
   Qed.
 
   Theorem var_defined_env_get:
@@ -212,9 +169,9 @@ Section CORRECTNESS.
   Theorem eval_atom_match_lenv_eq:
     forall te ge le1 le2,
     env_noshadow ge le2 ->
-    match_lenv le1 le2 ->
+    match_lenv tabs le1 le2 ->
     (forall a ty,
-      wf_atom (STree.keys ge) (STree.keys le1) a = true ->
+        wf_atom (STree.keys ge) (STree.keys le1) a = true ->
       eval_atom tabs te ge le2 ty a =
       eval_atom tabs te ge le1 ty a).
   Proof.
@@ -238,6 +195,26 @@ Section CORRECTNESS.
       erewrite IHa2; eauto.
     - destruct (Typing.typof_atom te a); simpl; try reflexivity.
       erewrite IHa; eauto.
+  (*  -  destruct ty0;auto.
+       revert l0.
+       induction l; simpl.
+       + destruct l0; auto.
+       + destruct a as (x1,e1).
+         simpl in H2.
+         rewrite andb_true_iff in H2.
+         destruct H2 as [ALL1 ALL2].
+         destruct l0;auto.
+         destruct p as (x1',t1).
+         destruct (string_dec x1 x1');auto.
+         * subst.
+           rewrite (H1 (x1',e1)).
+           unfold snd.
+           destruct (eval_atom tabs te ge le1 t1 e1); auto.
+           rewrite IHl; auto.
+           intros. apply H1;auto.
+           simpl. tauto.
+           simpl. tauto.
+           tauto. *)
     - destruct (Typing.btyp_to_typ te tf); simpl; try reflexivity.
       apply andb_prop in H2. destruct H2.
       apply var_defined_env_get in H2; try tauto.
@@ -272,6 +249,10 @@ Section CORRECTNESS.
       reflexivity.
   Qed.
 
+
+
+
+
   Definition wf_comp (globs: SSet.t) (locals: SSet.t) (c: comp) : bool :=
     match c with
     | CpAtom a => wf_atom globs locals a
@@ -290,7 +271,7 @@ Section CORRECTNESS.
   Lemma eval_comp_match_lenv_eq:
     forall te ge le1 le2,
       env_noshadow ge le2 ->
-      match_lenv le1 le2 ->
+      match_lenv tabs le1 le2 ->
       (forall c ty, wf_comp (STree.keys ge) (STree.keys le1) c = true ->
         eval_comp tabs te ge le2 ty c =
         eval_comp tabs te ge le1 ty c).
@@ -338,266 +319,1111 @@ Section CORRECTNESS.
     | H : (bind ?V _) = Some _ |- context[?V] => destruct V; simpl in H
     end.
 
-  Fixpoint transl_expr_correct_ok e:
-    forall te ge le1 le2 ty tc v
+  Lemma eval_act_record_ok :
+    forall te ge le1 le2 l l0
+           (WF :
+             forallb
+               (fun x : ident * atom =>
+                  wf_atom (STree.keys ge) (STree.keys le1) (snd x))
+               l =
+               true)
+           (NOSHADOW : env_noshadow ge le2)
+           (MATCH_LENV : match_lenv tabs le1 le2),
+      eval_act_record tabs (eval_atom tabs) te ge l l0 le2 = eval_act_record tabs (eval_atom tabs) te ge l l0 le1.
+Proof.
+  induction l; simpl; auto.
+  - destruct a.
+    destruct l0; try congruence.
+    destruct p.
+    destruct (string_dec i s); try congruence.
+    subst.
+    intros.
+    rewrite andb_true_iff in WF.
+    destruct WF as (WF1 & WF2).
+    rewrite eval_atom_match_lenv_eq with (le1 := le1) by auto.
+    rewrite IHl by auto.
+    reflexivity.
+Qed.
+
+Lemma var_defined_le : forall G L L' i,
+  var_defined G L i = true ->
+  (forall x : StringIndexed.t, SSet.mem x L = true -> SSet.mem x L' = true) ->
+  var_defined G L' i = true.
+Proof.
+  unfold var_defined. intros.
+  rewrite! orb_true_iff in *.
+  destruct H; try tauto.
+  left. apply H0 ; auto.
+Qed.
+
+Lemma wf_atom_le  (G L L': SSet.t) a :
+    wf_atom G L a = true ->
+    (forall x, SSet.mem x L = true -> SSet.mem x L' = true) ->
+    wf_atom G L' a = true.
+Proof.
+  induction a using atom_depth_ind; simpl; auto.
+  - apply var_defined_le.
+  - intros. rewrite! andb_true_iff in *. destruct H.
+    split; eauto.
+  - intros. rewrite! andb_true_iff in *. destruct H.
+    split; eauto.
+  - intros. rewrite! andb_true_iff in *.
+    destruct H0 ; split;eauto.
+    eapply var_defined_le;eauto.
+    rewrite! forallb_forall in *.
+    intros.
+    eapply H ; eauto.
+Qed.
+
+Lemma add_bindings_add_assoc : forall {A: Type} x S (l:list (ident * A)),
+  add_bindings (SSet.add x S) l =
+  SSet.add x (add_bindings S l).
+Proof.
+  induction l; simpl; auto.
+  - rewrite! IHl.
+    rewrite SSet.add_swap.
+    reflexivity.
+Qed.
+
+
+Lemma update_seq_lenv_keys : forall te ge l acc lei,
+    update_seq_lenv tabs (eval_expr tabs te ge) te l
+      acc = Some lei ->
+    forall x,
+      SSet.mem x (STree.keys lei) =
+        SSet.mem x (STree.keys acc) || MapList.mem string_dec x l.
+Proof.
+  induction l; simpl.
+  - intros.
+    inv H.
+    rewrite orb_false_r.
+    reflexivity.
+  - intros.
+    monadInv H.
+    destruct a.
+    apply IHl with (x:=x) in EQ2.
+    rewrite EQ2.
+    unfold lenv_update.
+    simpl.
+    rewrite STree.keys_set.
+    rewrite SSet.mem_add.
+    destruct (string_dec i x); destruct (string_dec x i); try congruence.
+    subst.
+    simpl. rewrite orb_comm. reflexivity.
+Qed.
+
+Lemma update_seq_lenv_keys_eq : forall te ge l acc lei,
+    update_seq_lenv tabs (eval_expr tabs te ge) te l
+      acc = Some lei ->
+    STree.keys lei = add_bindings (STree.keys acc) l.
+Proof.
+  induction l; simpl.
+  - congruence.
+  - intros.
+    monadInv H.
+    apply IHl in EQ2.
+    rewrite EQ2.
+    rewrite keys_lenv_update.
+    rewrite add_bindings_add_assoc.
+    reflexivity.
+Qed.
+
+
+Lemma match_lenv_get_env : forall ge le1 le2 x v,
+    match_lenv tabs le1 le2 ->
+    env_noshadow ge le2 ->
+    get_env tabs ge le1 x  = Some v ->
+    get_env tabs ge le2 x = Some v.
+Proof.
+  unfold get_env.
+  intros.
+  specialize (H x). inv H.
+  unfold lenv_get in H3.
+  rewrite <- H3 in H1.
+  destruct (STree.get x le2) eqn:EQ;auto.
+  apply H0 in H1. congruence.
+  unfold lenv_get in H4. rewrite <- H4.
+  auto.
+Qed.
+
+
+Lemma record_of_lenv_match_env : forall ge rt le1 le2 r,
+  record_of_lenv tabs ge rt le1 = Some r ->
+  match_lenv tabs le1 le2 ->
+  env_noshadow ge le2 ->
+  record_of_lenv tabs ge rt le2 = Some r.
+Proof.
+  induction rt ; simpl; auto.
+  - intros. monadInv H.
+    eapply match_lenv_get_env in EQ; eauto.
+    rewrite EQ. simpl.
+    rewrite EQ1. simpl.
+    eapply IHrt in EQ0; eauto.
+    rewrite EQ0.
+    simpl. reflexivity.
+Qed.
+
+
+Lemma update_seq_lenv_less_def :
+  forall te ge l le1 le1'
+         (WF: wf_init (STree.keys ge) (wf_expr (STree.keys ge)) (STree.keys le1) l =
+                true),
+
+    update_seq_lenv tabs (eval_expr tabs te ge) te l le1 = Some le1' ->
+    match_lenv tabs le1 le1'.
+Proof.
+  induction l; simpl.
+  -  intros. inv H.
+     apply match_lenv_refl.
+  - intros.
+    monadInv H.
+    rewrite! andb_true_iff in WF.
+    eapply IHl in EQ2.
+    eapply match_lenv_trans; eauto.
+    apply match_lenv_update1.
+    destruct WF as ((WFa & _) & _).
+    unfold wf_binding in WFa.
+    rewrite! andb_true_iff in WFa.
+    rewrite! negb_true_iff in WFa.
+    unfold lenv_get. rewrite STree.keys_get_mem_false_iff.
+    tauto.
+    rewrite keys_lenv_update.
+    tauto.
+Qed.
+
+Lemma transl_expr_same_typ :
+  forall te l init',
+    MapList.map_err transl_expr l = OK init' ->
+    MapList.mmap _  (typof_expr te) l = MapList.mmap (key:=ident) _ (typof_tailcomp te) init'.
+Proof.
+  induction l; simpl.
+  - intros. inv H.
+    reflexivity.
+  - intros.
+    Res.monadInv H.
+    destruct a.
+    Res.monadInv EQ.
+    inv EQ2.
+    simpl.
+    rewrite transl_expr_preserve_typ with (e:=e); auto.
+    apply bind_equal.
+    intros.
+    apply bind_gequal.
+    apply IHl in EQ1.
+    rewrite EQ1.
+    apply option_rel_refl.
+    unfold RelationClasses.Reflexive.
+    reflexivity.
+Qed.
+
+Lemma keys_lenv_of_record_same : forall rt r le,
+  (forall (x0 : StringIndexed.t) (v : typ),
+    In (x0, v) rt -> SSet.mem x0 (STree.keys le) = true) ->
+    STree.keys (lenv_of_record tabs rt r le) =
+      STree.keys le.
+Proof.
+  induction rt; simpl; auto.
+  intros.
+  destruct a.
+  simpl.
+  rewrite IHrt; auto.
+  -
+    rewrite keys_lenv_update.
+    apply SSet.add_already_mem.
+    eapply H. left; reflexivity.
+  - intros.
+    rewrite keys_lenv_update.
+    rewrite SSet.mem_add.
+    destruct (string_dec x0  t); auto.
+    eapply H; eauto.
+Qed.
+
+Lemma  match_lenv_lenv_of_record:
+  forall  (lt : @MapList.t string typ) (r : eval_recordtyp (eval_typ tabs) lt)
+          (le1 le2 : lenv),
+    match_lenv tabs le1 le2 ->
+    match_lenv tabs (lenv_of_record tabs lt r le1)
+      (lenv_of_record tabs lt r le2).
+Proof.
+  induction lt; simpl.
+  - auto.
+  - intros.
+    apply IHlt.
+    apply match_lenv_update2; auto.
+Qed.
+
+Lemma env_noshadow_keys : forall (ge:genv) (le le':lenv),
+    STree.keys le = STree.keys le' ->
+    env_noshadow ge le ->
+    env_noshadow ge le'.
+Proof.
+  unfold env_noshadow; repeat intro.
+  apply H0 in H1.
+  rewrite STree.keys_get_mem_false_iff in *.
+  congruence.
+Qed.
+
+Lemma get_lenv_of_record : forall rt r le x,
+  ~ In x (map fst rt) ->
+  STree.get x (lenv_of_record tabs rt r le)  = STree.get x le.
+Proof.
+  induction rt; simpl;auto.
+  - intros.
+    destruct (string_dec (fst a) x).
+    + tauto.
+    + destruct (In_dec string_dec x (map fst rt)).
+      * tauto.
+      * rewrite IHrt by auto.
+        unfold lenv_update.
+        rewrite STree.gsspec.
+        destruct a as (x',ty); simpl in *.
+        destruct (STree.elt_eq x x'); try congruence.
+Qed.
+
+
+Lemma match_lenv_new_keys : forall le1 le2 rt r,
+    match_lenv tabs le1 le2 ->
+    (forall x v, In (x,v) rt -> SSet.mem x (STree.keys le1) = false) ->
+    match_lenv tabs le1 (lenv_of_record tabs rt r le2).
+Proof.
+  unfold match_lenv.
+  intros.
+  generalize (H x).
+  intro Hx ; inv Hx.
+  constructor.
+  destruct (In_dec string_dec x (map fst rt)).
+  - rewrite in_map_iff in i.
+  destruct i as (st & EQ & IN).
+  destruct st ; simpl in *.
+  subst.
+  apply H0 in IN.
+  rewrite <- STree.keys_get_mem_false_iff in IN.
+  unfold lenv_get. rewrite IN. constructor.
+  - unfold lenv_get in *. rewrite get_lenv_of_record by auto.
+    rewrite H3.
+    apply less_def_refl.
+Qed.
+
+
+Lemma match_env_new_keys : forall ge1 le1 ge2 le2 rt r,
+    match_env tabs ge1 le1 ge2 le2 ->
+    (forall x v, In (x,v) rt -> SSet.mem x (STree.keys le1) = false) ->
+    (forall x v, In (x,v) rt -> SSet.mem x (STree.keys ge1) = false) ->
+    match_env tabs ge1 le1 ge2 (lenv_of_record tabs rt r le2).
+Proof.
+  unfold match_env.
+  intros.
+  generalize (H x).
+  intro Hx ; inv Hx.
+  constructor.
+  destruct (In_dec string_dec x (map fst rt)).
+  - rewrite in_map_iff in i.
+    destruct i as (st & EQ & IN).
+    destruct st ; simpl in *.
+    subst.
+    specialize (H0 _ _ IN).
+    specialize (H1 _ _ IN).
+    rewrite <- STree.keys_get_mem_false_iff in H0.
+    rewrite <- STree.keys_get_mem_false_iff in H1.
+    unfold get_env. rewrite H0. rewrite H1. constructor.
+  - unfold get_env.
+    rewrite get_lenv_of_record by auto.
+    unfold get_env in H4.
+    rewrite H4.
+    apply less_def_refl.
+Qed.
+
+
+
+Definition match_venv (ty:typ) (ge:genv) (le1:lenv) (v: eval_typ tabs ty) (v_le:eval_typ tabs ty * lenv) : Prop :=
+  v = fst v_le /\ match_env tabs ge le1 ge (snd v_le).
+
+Lemma match_on_wf_atoms : forall ge le1 le2 l,
+    forallb (wf_atom (STree.keys ge) (STree.keys le1)) l = true ->
+    match_env tabs ge le1 ge le2 ->
+  match_on tabs (BSet.union_list AtomOrdered.has_var l) ge le1 ge le2.
+Proof.
+  induction l; simpl.
+  - intros. apply match_on_bot.
+  - intros. rewrite match_on_union.
+    rewrite andb_true_iff in H.
+    destruct H; split; auto.
+    eapply wf_atom_match_on; eauto.
+Qed.
+
+
+Lemma eval_match_ok : forall
+    (WF : genv -> lenv -> expr -> bool)
+    (MATCH : genv -> lenv -> genv -> lenv -> Prop)
+    (P     : forall (ty: typ), genv -> lenv -> eval_typ tabs ty -> eval_typ tabs ty* lenv -> Prop)
+    (l : list (Benum.pattern * expr))
+    (transl_expr_correct_ok :
+      forall (p: Benum.pattern) (e : expr) (te : Typing.tenv)
+             (ge le1 : STree.t (value tabs)) (le2 : lenv)
+             (ty : typ) (tc : tailcomp),
+        In (p,e) l ->
+        WF ge le1 e = true ->
+        MATCH ge le1 ge le2 ->
+        transl_expr e = OK tc ->
+        option_rel (P ty ge le1)
+          (eval_expr_rec tabs te ge le1 ty e)
+          (eval_tailcomp_rec tabs te ge le2 ty tc))
+    te t0 v
+    (ge : genv) (le1 le2:lenv)
+    l' ty
+    (WF_EXPR :
+    forallb
+      (fun '(_, ei) => WF ge le1 ei) l =
+    true)
+    (M : MATCH ge le1 ge le2)
+    (EQ : MapList.map_err transl_expr l = OK l'),
+  option_rel (P ty ge le1)
+    (eval_match tabs t0 v
+       (MapList.map (eval_expr_rec tabs te ge le1 ty) l))
+    (eval_match tabs t0 v
+       (MapList.map (eval_tailcomp_rec tabs te ge le2 ty) l')).
+Proof.
+  unfold eval_match.
+  destruct t0; try constructor.
+  induction l; simpl.
+  - intros. inv EQ.
+    simpl. constructor.
+  - intros.
+    Res.monadInv EQ.
+    destruct a; simpl in EQ0.
+    Res.monadInv EQ0.
+    inv EQ2.
+    simpl.
+    rewrite andb_true_iff in WF_EXPR.
+    destruct WF_EXPR as (WF1 & WF2).
+    destruct p.
+    + eapply option_rel_bind_equal; intros.
+      destruct (Benum.enum_eq a v); auto.
+      eapply transl_expr_correct_ok; eauto.
+      left. reflexivity.
+      eapply IHl; eauto.
+      intros. eapply transl_expr_correct_ok; eauto.
+      simpl. right. eauto.
+    + eapply transl_expr_correct_ok; eauto.
+      left. reflexivity.
+Qed.
+
+
+Lemma transl_let_ok :
+forall
+    (WF : genv -> lenv -> expr -> bool)
+    (MATCH : genv -> lenv -> genv -> lenv -> Prop)
+    (P     : forall (ty: typ), genv -> lenv -> eval_typ tabs ty -> eval_typ tabs ty* lenv -> Prop)
+    (transl_expr_correct_ok :
+      forall (e : expr) (te : Typing.tenv)
+             (ge le1 : STree.t (value tabs)) (le2 : lenv)
+             (ty : typ) (tc : tailcomp),
+        WF ge le1 e = true ->
+        MATCH ge le1 ge le2 ->
+        transl_expr e = OK tc ->
+        option_rel (P ty ge le1)
+          (eval_expr_rec tabs te ge le1 ty e)
+          (eval_tailcomp_rec tabs te ge le2 ty tc)),
+forall (MUP : forall ge1 le1 ge2 le2 x v1,
+           MATCH ge1 le1 ge2 le2 ->
+           MATCH ge1 (lenv_update tabs le1 x v1) ge2 (lenv_update tabs le2 x v1)),
+forall te t1 ty ge le1 v1 v2_le2 x e2 tc2
+       (WFUP : WF ge (lenv_update tabs le1 x (Val tabs t1 v1)) e2 = true),
+    P t1 ge le1 v1 v2_le2 ->
+    (P t1 ge le1 v1 v2_le2 -> v1 = fst v2_le2) ->
+    (P t1 ge le1 (fst v2_le2) v2_le2 -> MATCH ge le1 ge (snd v2_le2)) ->
+    forall (PUP : forall v0 v v_le2, P ty ge (lenv_update tabs le1 x v0) v v_le2 ->
+                       P ty ge le1 v v_le2),
+    transl_expr e2 = OK tc2 ->
+    option_rel (P ty ge le1)
+      (eval_expr_rec tabs te ge (lenv_update tabs le1 x (Val tabs t1 v1))
+         ty e2)
+      (eval_tailcomp_rec tabs te ge
+         (lenv_update tabs (snd v2_le2) x (Val tabs t1 (fst v2_le2))) ty tc2).
+Proof.
+  intros.
+  eapply option_rel_weaken.
+  eapply transl_expr_correct_ok; auto.
+  specialize (H0 H).
+  subst.
+  apply MUP. apply H1; auto.
+  intros.
+  eapply PUP; eauto.
+Defined.
+
+Lemma match_on_wf_atoms_snd : forall l ge le1 le2
+    (WF_EXPR : forallb (fun x : ident * atom => wf_atom (STree.keys ge) (STree.keys le1) (snd x)) l = true)
+    (MATCH : match_env tabs ge le1 ge le2),
+  match_on tabs (BSet.union_list (fun x : string * atom => AtomOrdered.has_var (snd x)) l) ge le1 ge le2.
+Proof.
+  intros.
+  eapply match_on_le.
+  eapply match_on_wf_atoms with (l:= map snd l); eauto.
+  rewrite forallb_forall in *; intros.
+  rewrite in_map_iff in H.
+  destruct H as ((id,a) & EQ  & IN).
+  apply WF_EXPR in IN.
+  simpl in *; congruence.
+  apply BSet.subset_union_list.
+  reflexivity.
+Qed.
+
+Lemma wf_init_indep_bindings : forall  l,
+    wf_init_syntax  l  = true ->
+  ForallP
+    (fun x_e : ident * expr =>
+     BSet.is_empty
+       (BSet.inter (has_var (snd x_e)) (bset_of_bindings l)))
+    l.
+Proof.
+  unfold wf_init_syntax.
+  intro.
+  generalize (bset_of_bindings_eq l).
+  generalize (bset_of_bindings l) as bs1.
+  generalize (sset_of_bindings l) as ss2.
+  unfold wf_init_for_binders.
+  induction l; simpl; auto.
+  intros.
+  rewrite andb_true_iff in H0.
+  unfold wf_binding_syntax in H0.
+  destruct H0.
+  split; intros.
+  - rewrite SSet.bset_is_empty in H0.
+    revert H0.
+    eapply BSet.is_empty_morph.
+    intros.
+    rewrite SSet.bset_inter.
+    unfold BSet.inter.
+    f_equal.
+    rewrite has_var_eq. reflexivity.
+    auto.
+  - eapply IHl;eauto.
+Qed.
+
+Lemma get_update_seq_lenv :
+  forall te ge init le1 le1'
+         (UP : update_seq_lenv tabs (eval_expr_rec tabs te ge) te init le1 =
+                 Some le1')
+         (DUP : MapList.nodup string_dec init = true),
+  forall k,
+    (MapList.mem string_dec k init = false ->
+     lenv_get tabs  le1' k =  lenv_get tabs le1 k)
+    /\
+      forall e, (In (k,e) init ->
+                 exists ty, typof_expr te e = Some ty /\
+                              exists (v : eval_typ tabs ty),
+                                lenv_get tabs le1' k = Some (Val tabs ty v)).
+Proof.
+  induction init; simpl.
+  - intros. inv UP. split; tauto.
+  - intros.
+    destruct a as (k1,k1e).
+    monadInv UP. simpl in *.
+    destruct (MapList.mem string_dec k1 init) eqn:MEM in DUP; try discriminate.
+    split; intros.
+    + destruct (string_dec k1 k); subst.
+      * congruence.
+      * eapply IHinit with (k:= k) in EQ2; auto.
+        destruct EQ2.
+        rewrite H0 by auto.
+        unfold lenv_get,lenv_update.
+        rewrite STree.gso by congruence.
+        reflexivity.
+    + destruct H.
+      * inv H.
+        apply IHinit with (k:= k) in EQ2.
+        destruct EQ2.
+        apply H in MEM.
+        unfold lenv_get,lenv_update in MEM.
+        rewrite STree.gss in MEM.
+        eexists ; split; eauto.
+        auto.
+      * apply IHinit with (k:= k) in EQ2; auto.
+        destruct EQ2.
+        apply H1; auto.
+Qed.
+
+
+Lemma get_update_seq_lenv_in :
+  forall te ge init le1 le1'
+         (UP : update_seq_lenv tabs (eval_expr_rec tabs te ge) te init le1 =
+                 Some le1')
+         (DUP : MapList.nodup string_dec init = true),
+  forall k e, In (k,e) init ->
+              exists ty, typof_expr te e = Some ty /\
+                           exists (v : eval_typ tabs ty),
+                             lenv_get tabs le1' k = Some (Val tabs ty v).
+Proof.
+  intros.
+  specialize (get_update_seq_lenv te ge init le1 le1' UP DUP k).
+  intros.
+  destruct H0 as (_ & H0).
+  apply H0;auto.
+Qed.
+
+
+Lemma record_of_lenv_update_seq_lenv :
+  forall te ge init rt le1 le1'
+         (UP : update_seq_lenv tabs (eval_expr_rec tabs te ge) te init le1 =
+                 Some le1')
+         (DUP : MapList.nodup string_dec init = true)
+         (TYP : MapList.mmap _  (typof_expr te) init = Some rt),
+    exists r, record_of_lenv tabs ge rt le1' = Some r.
+Proof.
+  intros.
+  specialize (get_update_seq_lenv_in te ge init le1 le1' UP DUP).
+  clear UP DUP.
+  revert rt TYP.
+  induction init.
+  - simpl. intros. inv TYP. simpl. eexists. reflexivity.
+  - intros.
+    simpl in TYP.
+    monadInv TYP.
+    monadInv EQ.
+    apply IHinit in EQ1.
+    destruct EQ1 as (r1 & EVAL).
+    simpl.
+    simpl in H.
+    destruct a as (k1,e1).
+    specialize (H k1 e1  (or_introl eq_refl)).
+    destruct H as (ty & TY & (v & GET)).
+    unfold get_env.
+    simpl. unfold lenv_get in GET.
+    rewrite GET.
+    simpl.
+    simpl in EQ0. assert (x1 = ty) by congruence ; subst.
+    rewrite cast_typ_id.
+    simpl.
+    eexists.
+    rewrite EVAL.
+    reflexivity.
+    intros.
+    apply H.
+    simpl; tauto.
+Qed.
+
+Lemma option_rel_bind_trans : forall
+    {A1 A2 A3 B1 B2} (R: B1 -> B2 -> Prop)  (X1': option A3) (X1: option A1)
+    (X2:option A2) F1 Y1 Y1' Y2,
+    option_rel (fun r le => F1 r = le) X1 X1' ->
+    forall (EQ: forall x, option_rel eq (Y1' (F1 x)) (Y1 x)),
+    option_rel R (let* x := X1' in Y1' x)%option_monad (let* x := X2 in Y2 x)%option_monad ->
+    option_rel R (let* x := X1 in Y1 x)%option_monad (let* x := X2 in Y2 x)%option_monad.
+Proof.
+  intros.
+  inv H.
+  - simpl in *; auto.
+  - simpl in H0.
+    specialize (EQ x).
+    apply option_rel_eq_eq in EQ. rewrite EQ in H0.
+    simpl; auto.
+Qed.
+
+Lemma update_seq_lenv_mmap :
+  forall te ge init le1 leinit rt
+         (UP:update_seq_lenv tabs (eval_expr_rec tabs te ge) te init le1 =  Some leinit)
+         (MMAP: MapList.mmap _ (typof_expr te) init = Some rt),
+  forall (x : StringIndexed.t) (v : typ),
+    In (x, v) rt -> SSet.mem x (STree.keys leinit) = true.
+Proof.
+  intros.
+  apply update_seq_lenv_keys with (x:=x) in UP.
+  rewrite UP.
+  rewrite orb_true_iff.
+  right.
+  apply MapList.mmap_In  with (vr:=x) (v:=v) in MMAP; auto.
+  destruct MMAP as (v1 & IN & EQ).
+  eapply MapList.in_mem;eauto.
+Qed.
+
+
+Lemma match_env_update_seq_lenv :
+  forall te (ge:genv) init le1  leinit
+         (WF: wf_init (STree.keys ge) (wf_expr (STree.keys ge)) (STree.keys le1) init = true)
+         (UP : update_seq_lenv tabs (eval_expr_rec tabs te ge) te init le1 =
+                 Some leinit),
+    match_env tabs ge le1 ge leinit.
+Proof.
+  induction init ; simpl.
+  - intros. inv UP. apply match_env_refl.
+  - intros.
+    monadInv UP.
+    unfold wf_binding in WF.
+    rewrite! andb_true_iff in WF.
+    rewrite! negb_true_iff in WF.
+    apply IHinit in EQ2.
+    eapply match_env_trans;eauto.
+    eapply match_env_update1.
+    rewrite STree.keys_get_mem_false_iff. tauto.
+    rewrite STree.keys_get_mem_false_iff. tauto.
+    rewrite keys_lenv_update. tauto.
+Qed.
+
+
+Lemma record_of_lenv_match_env_less_def :
+  forall ge leinit leinit' rt
+         (MATCH : match_env tabs ge leinit ge leinit'),
+    less_def
+      (record_of_lenv tabs ge rt leinit)
+      (record_of_lenv tabs ge rt leinit').
+Proof.
+  induction rt; simpl.
+  - intros. constructor.
+  - intros.
+    eapply less_def_bind_less_def.
+    apply MATCH.
+    intros.
+    eapply less_def_bind_eq.
+    intros.
+    eapply less_def_bind_less_def.
+    apply IHrt; auto.
+    constructor.
+Qed.
+
+Lemma transl_expr_correct_ok e:
+    forall te ge le1 le2 ty tc
       (WF_EXPR: wf_expr (STree.keys ge) (STree.keys le1) e = true)
-      (NOSHADOW: env_noshadow ge le2)
-      (MATCH_LENV: match_lenv le1 le2)
-      (TRANSL: transl_expr e = OK tc)
-      (EVAL_EXPR: BarocqBNF.eval_expr_rec tabs te ge le1 ty e = Some v),
-      (exists le2', ImpBNF.eval_tailcomp_rec tabs te ge le2 ty tc = Some (v, le2')
-        /\ env_noshadow ge le2'
-        /\ match_lenv le1 le2').
+      (MATCH_LENV: match_env tabs ge le1 ge le2)
+      (TRANSL: transl_expr e = OK tc),
+      option_rel  (match_venv ty ge le1)
+      (BarocqBNF.eval_expr_rec tabs te ge le1 ty e)
+      (ImpBNF.eval_tailcomp_rec tabs te ge le2 ty tc).
   Proof.
-    destruct e; simpl; intros.
+    induction e using expr_depth_ind; intros.
     (* atom *)
-    - inv TRANSL. monadInv EVAL_EXPR. simpl. eexists.
-      repeat split; eauto. unfold Typing.typof_comp. simpl.
-      unfold Typing.typof_atom in EQ.
-      rewrite EQ; simpl. erase_cast EQ0.
-      erewrite eval_atom_match_lenv_eq; simpl; eauto.
-      rewrite ecast_typ_id.  setoid_rewrite EQ0; simpl. reflexivity.
-    (* array set *)
     - inv TRANSL. simpl.
-      unfold Typing.typof_comp; simpl.
-      repeat destruct_bind; try discriminate.
+      eapply option_rel_bind_rel with (RA:=eq).
+      apply option_rel_refl. auto.
+      intros ; subst.
+      apply option_rel_intro_bind.
+      eapply option_rel_bind_rel with (RA:=eq).
+      eapply option_rel_ecast_typ.
+      eapply eval_atom_match_on.
+      eapply wf_atom_match_on;eauto.
+      { intros. subst.
+        constructor. split;auto.
+      }
+    (* array set *)
+    - inv TRANSL.
+      rewrite eval_expr_rec_eq.
       simpl.
-      monadInv EVAL_EXPR. destruct_conj WF_EXPR.
-      erewrite eval_atom_match_lenv_eq; eauto.
-      rew EQ.
-      erewrite eval_atom_match_lenv_eq; eauto.
-      rew EQ1. simpl.
-      erewrite eval_atom_match_lenv_eq; eauto.
-      rew EQ0. simpl.
-      setoid_rewrite EQ3.
-      eexists. simpl. split; eauto.
+      simpl in WF_EXPR; rewrite! andb_true_iff in WF_EXPR.
+      eapply option_rel_bind_rel with (RA:=eq).
+      apply option_rel_refl. auto.
+      intros ; subst.
+      apply option_rel_intro_bind.
+      eapply option_rel_bind_rel with (RA:=eq).
+      eapply option_rel_ecast_typ.
+      repeat (apply option_rel_bind_equal;intros).
+      eapply option_rel_bind_rel.
+      eapply eval_atom_match_on.
+      { eapply wf_atom_match_on;eauto.
+        tauto.
+      }
+      intros. subst.
+      eapply option_rel_bind_rel.
+      eapply eval_atom_match_on.
+      { eapply wf_atom_match_on;eauto.
+        tauto.
+      }
+      intros. subst.
+      eapply option_rel_bind_rel.
+      eapply eval_atom_match_on.
+      { eapply wf_atom_match_on;eauto.
+        tauto.
+      }
+      intros; subst.
+      apply option_rel_refl; auto.
+      { intros; constructor.
+        split;auto.
+      }
     (* record update *)
-    - inv TRANSL; simpl.
-      unfold Typing.typof_comp; simpl.
-      repeat destruct_bind; try discriminate.
-      simpl.  destruct_conj WF_EXPR.
-      monadInv EVAL_EXPR.
-      erewrite eval_atom_match_lenv_eq; eauto.
-      rew EQ; simpl.
-      erewrite eval_atom_match_lenv_eq; eauto.
-      rew EQ1; simpl. setoid_rewrite EQ2.
-      exists le2; repeat split; auto.
+    - inv TRANSL.
+      rewrite eval_expr_rec_eq.
+      simpl.
+      simpl in WF_EXPR; rewrite! andb_true_iff in WF_EXPR.
+      eapply option_rel_bind_rel with (RA:=eq).
+      apply option_rel_refl. auto.
+      intros ; subst.
+      apply option_rel_intro_bind.
+      eapply option_rel_bind_rel with (RA:=eq).
+      eapply option_rel_ecast_typ.
+      repeat (apply option_rel_bind_equal;intros).
+      eapply option_rel_bind_rel.
+      eapply eval_atom_match_on.
+      { eapply wf_atom_match_on;eauto.
+        tauto.
+      }
+      intros. subst.
+      eapply option_rel_bind_rel.
+      eapply eval_atom_match_on.
+      { eapply wf_atom_match_on;eauto.
+        tauto.
+      }
+      intros. subst.
+      apply option_rel_refl; auto.
+      { intros; constructor.
+        split;auto.
+      }
     (* application *)
-    - destruct a; simpl; try discriminate.
-      simpl in TRANSL. inv TRANSL. simpl.
-      unfold Typing.typof_comp; simpl.
-      destruct_conj WF_EXPR. simpl in C.
-      apply var_defined_env_get in C; try tauto. destruct C.
-      simpl in EVAL_EXPR. monadInv EVAL_EXPR.
-      unfold Typing.typof_atom in EQ1. simpl in EQ1.
-      rewrite EQ, EQ1; simpl.
-      destruct x1; try discriminate.
-      monadInv EQ2.
-      erewrite eval_var_match_lenv_eq; eauto. rewrite EQ0; simpl.
-      assert (EQM: DList.map2 (eval_typ tabs) (eval_atom tabs te ge le2) l l0 =
-                DList.map2 (eval_typ tabs) (eval_atom tabs te ge le1) l l0).
+    - destruct f; try discriminate.
+      simpl in TRANSL. inv TRANSL.
+      rewrite eval_expr_rec_eq.
+      simpl.
+      simpl in WF_EXPR; rewrite! andb_true_iff in WF_EXPR.
+      eapply option_rel_bind_rel with (RA:=eq).
+      apply option_rel_refl. auto.
+      intros ; subst.
+      apply option_rel_intro_bind.
+      eapply option_rel_bind_rel with (RA:=eq).
+      eapply option_rel_ecast_typ.
+      repeat (apply option_rel_bind_equal;intros).
+      destruct a; try constructor;auto.
+      eapply option_rel_bind_rel.
+      { eapply eval_var_same with (ty:= TFun l a); eauto.
+        tauto.
+      }
+      intros.
+      eapply option_rel_bind_rel with (RA:=eq).
+      apply option_rel_map2_eval_atoms.
+      eapply match_on_wf_atoms;eauto.
+      tauto.
+      intros; subst.
+      apply option_rel_refl;auto.
+      intros; subst.
+      constructor; split; auto.
+    - (* act record *)
+      inv TRANSL.
+      unfold eval_expr_rec.
+      destruct ty; try constructor.
+      destruct o; try constructor.
+      unfold eval_tailcomp_rec.
+      apply option_rel_bind_equal.
+      intros. destruct (typ_eqb (TRecord None l0) a); try constructor.
+      eapply option_rel_intro_bind.
+      eapply option_rel_bind_rel with (RA:=eq).
+      simpl in WF_EXPR.
+      apply option_rel_eval_act_record.
       {
-        apply DList.map2_eq.
-        rewrite Forall_forall.
+        eapply match_on_wf_atoms_snd; eauto.
+      }
+      intros. subst.
+      constructor. split; auto.
+    (* if-then-else *)
+    - Res.monadInv TRANSL.
+      inv EQ2. simpl.
+      simpl in WF_EXPR.
+      rewrite! andb_true_iff in WF_EXPR.
+      eapply option_rel_bind_rel.
+      eapply eval_atom_match_on with (ty:=TBool);eauto.
+      eapply wf_atom_match_on; eauto. tauto.
+      intros; subst.
+      destruct y.
+      eapply IHe1; eauto.
+      tauto.
+      eapply IHe2; eauto.
+      tauto.
+    (* match-with *)
+    - Res.monadInv TRANSL. inv EQ0.
+      simpl in *.
+      rewrite andb_true_iff in WF_EXPR.
+      eapply option_rel_bind_equal; intros.
+      eapply option_rel_bind_rel.
+      eapply eval_atom_match_on.
+      eapply wf_atom_match_on;tauto.
+      intros; subst.
+      destruct WF_EXPR as (_ & WF_EXPR).
+      eapply eval_match_ok.
+      { intros; eapply H; eauto. apply H4. }
+      apply WF_EXPR.
+      auto.
+      auto.
+    (* let-in *)
+    - Res.monadInv TRANSL. inv EQ2. simpl.
+      eapply option_rel_bind_rel with (RA:=eq).
+      apply transl_expr_preserve_typ with (te:=te) in EQ.
+      rewrite EQ. apply option_rel_refl;auto.
+      simpl in WF_EXPR.
+      rewrite! andb_true_iff in WF_EXPR.
+      repeat rewrite negb_true_iff in WF_EXPR.
+      intros; subst.
+      rewrite bind2_bind.
+      unfold uncurry.
+      eapply option_rel_bind_rel.
+      eapply IHe1; auto.
+      { tauto. }
+      intros.
+      eapply option_rel_weaken.
+      eapply IHe2.
+      rewrite keys_lenv_update.
+      tauto.
+      destruct H. subst.
+      apply match_env_update. auto.
+      auto.
+      intros.
+      destruct H6 ; split; auto.
+      { repeat intro.
+        specialize (H7 x3).
+        unfold get_env at 1.
+        unfold get_env at 1 in H7.
+        unfold lenv_update in H7.
+        rewrite STree.gsspec in H7.
+        destruct (STree.elt_eq x3 x).
+        + subst.
+          destruct (STree.get x le1) eqn:GET.
+          apply STree.keys_get_some_mem in GET.
+          intuition congruence.
+          destruct (STree.get x ge) eqn:GET2.
+          apply STree.keys_get_some_mem in GET2.
+          intuition congruence.
+          constructor.
+        + auto.
+      }
+    - (* while *)
+      Res.monadInv TRANSL.
+      inv EQ3.
+      simpl.
+      (** parallel -> sequential *)
+      assert (SEQ : update_para_lenv tabs (eval_expr_rec tabs te ge) te le1 init le1 =
+    update_seq_lenv tabs (eval_expr_rec tabs te ge) te init le1).
+      {
+        apply option_rel_eq_eq.
+        apply update_para_seq_wf.
+        apply wf_init_indep_bindings; auto.
+        simpl in WF_EXPR.
+        rewrite! andb_true_iff in WF_EXPR.
+        tauto.
+      }
+      rewrite SEQ. clear SEQ.
+      rename e1 into body.
+      rename x into init'.
+      rename x1 into e2'.
+      rename x0 into body'.
+      eapply option_rel_bind_rel with
+        (RA := (fun le1 le2 => match_env tabs ge le1 ge le2)).
+      {
+        clear IHe2. clear IHe1.
+        revert EQ MATCH_LENV.
+        simpl in WF_EXPR.
+        rewrite !andb_true_iff in WF_EXPR.
+        destruct WF_EXPR as ((_ & WFI) & _).
+        revert WFI.
+        revert init' le1 le2.
+        induction init.
+        - simpl. intros. inv EQ.
+          simpl. constructor. auto.
+        - simpl.
+          intros.
+          Res.monadInv EQ.
+          destruct a as (id,eid).
+          Res.monadInv EQ2.
+          inv EQ4.
+          simpl.
+          rewrite transl_expr_preserve_typ with (e:=eid) (te:=te).
+          eapply option_rel_bind_equal.
+          intros.
+          unfold wf_binding in WFI.
+          rewrite !andb_true_iff in WFI.
+          eapply option_rel_bind_rel.
+          apply H with (x:= id); eauto.
+          simpl; left ; reflexivity.
+          tauto.
+          intros. destruct y.
+          unfold match_venv in H1.
+          simpl in H1 ; destruct H1; subst.
+          apply IHinit; auto.
+          intros. apply H with (x:=x); auto.
+          simpl ; tauto.
+          rewrite keys_lenv_update.
+          tauto.
+          apply match_env_update; auto.
+          auto.
+      }
+      intros.
+      rename x into leinit.
+      rename y into leinit'.
+      (* Evaluation of variant *)
+      eapply option_rel_bind_equal.
+      intros.
+      eapply option_rel_bind_rel with (RA:=eq).
+      apply eval_atom_match_on.
+      eapply wf_atom_match_on; eauto.
+      simpl in WF_EXPR.
+      rewrite! andb_true_iff in WF_EXPR.
+      apply update_seq_lenv_keys_eq in H1.
+      rewrite H1. tauto.
+      intros; subst.
+      eapply option_rel_bind_equal.
+      intros.
+      eapply option_rel_bind_rel with (RA:=eq).
+      { rewrite option_rel_eq_eq.
+        apply transl_expr_same_typ; auto. }
+      intros. subst.
+      rename y into vfuel.
+      rename a0 into fuel.
+      rename y0 into rt.
+      assert (INIT : exists r, record_of_lenv tabs ge rt leinit = Some r).
+      {
+        eapply record_of_lenv_update_seq_lenv; eauto.
+        simpl in WF_EXPR.
+        rewrite! andb_true_iff in WF_EXPR.
+        intuition idtac;
+        eapply wf_init_no_dup; eauto.
+      }
+      destruct INIT as (rinit & INIT).
+      rewrite INIT.
+      simpl.
+      (** Synchronise the loop *)
+      assert (MEM : forall (x : StringIndexed.t) (v : typ),
+                 In (x, v) rt -> SSet.mem x (STree.keys leinit) = true).
+      {
+        eapply update_seq_lenv_mmap; eauto.
+      }
+      pose proof (alternate_while tabs te ge rt fuel rinit leinit cond body) as W2.
+      rewrite lenv_of_record_of_lenv with (ge:=ge) in W2;auto.
+      eapply option_rel_bind_trans with (Y1':= fun x => eval_expr_rec tabs te ge x ty e2).
+      eapply W2.
+      intro. apply option_rel_refl. auto.
+      clear W2.
+      (** WF *)
+      assert (Mle1 : match_env tabs ge le1 ge leinit).
+      {
+        eapply match_env_update_seq_lenv in H1; auto.
+        simpl in WF_EXPR.
+        rewrite! andb_true_iff in WF_EXPR.
+        tauto.
+      }
+      assert (RLENV : record_of_lenv tabs ge rt leinit' = Some rinit).
+      {
+        assert (RINITLD := record_of_lenv_match_env_less_def ge leinit leinit' rt H0).
+        rewrite INIT in RINITLD. inv RINITLD. inv H11.
+        rewrite <- H10. reflexivity.
+      }
+      rewrite RLENV. unfold bind at 3.
+      eapply option_rel_bind_rel with
+        (RA:= fun le1' le2' =>
+                STree.keys le1' = STree.keys leinit /\
+                  match_env tabs ge le1 ge le1' /\
+                  match_env tabs ge le1' ge le2').
+      apply While.while_rel.
+      { repeat split; auto.
+      }
+      { (* eval cond *)
+        intros i1 i2 (M1 & M2 & M3).
+        eapply option_rel_eq_eq.
+        eapply eval_atom_match_on with (ty:= TBool).
+        eapply wf_atom_match_on; eauto.
+        rewrite M1.
+        simpl in WF_EXPR.
+        rewrite! andb_true_iff in WF_EXPR.
+        apply update_seq_lenv_keys_eq in H1.
+        rewrite H1. tauto.
+      }
+      {
+        (* eval body *)
+        intros i1 i2 (M1 & M2 & M3).
+        eapply option_rel_bind_rel.
+        { eapply IHe1; eauto.
+          rewrite M1.
+          apply update_seq_lenv_keys_eq in H1.
+          rewrite H1.
+          simpl in WF_EXPR.
+          rewrite! andb_true_iff in WF_EXPR.
+          tauto.
+        }
+        intros vbody vbody' M EB EB'.
+        destruct vbody' as (vbody' & leb).
+        constructor.
+        repeat split.
+        - rewrite BarocqBNF.keys_lenv_of_record_same; auto.
+          intros. rewrite M1. eapply MEM ;eauto.
+        - unfold match_venv in M.
+          simpl in M. destruct M; subst.
+          eapply match_env_new_keys;eauto.
+          + intros.
+          destruct (SSet.mem x (STree.keys le1)) eqn:MLE1;auto.
+          eapply MapList.mmap_In in H8; eauto.
+          destruct H8 as (ex & IN & _).
+          apply wf_init_mem1 with (globs := STree.keys ge)
+                                 (wf_expr := wf_expr (STree.keys ge))
+                                 (l:=init) in MLE1.
+          apply MapList.in_mem  with (key_eq := string_dec) in IN.
+          congruence.
+          simpl in WF_EXPR. rewrite! andb_true_iff in WF_EXPR.
+          tauto.
+          + intros.
+          destruct (SSet.mem x (STree.keys ge)) eqn:MLE1;auto.
+          eapply MapList.mmap_In in H8; eauto.
+          destruct H8 as (ex & IN & _).
+          apply wf_init_mem2 with (locals := STree.keys le1)
+                                 (wf_expr := wf_expr (STree.keys ge))
+                                 (l:=init) in MLE1.
+          apply MapList.in_mem  with (key_eq := string_dec) in IN.
+          congruence.
+          simpl in WF_EXPR. rewrite! andb_true_iff in WF_EXPR.
+          tauto.
+        - unfold match_venv in M.
+          simpl in M. destruct M ; subst.
+          apply match_env_lenv_of_record; auto.
+      }
+      intros whiler whiler' (K & M1 & M2).
+      intros.
+      eapply option_rel_weaken.
+      eapply IHe2; eauto.
+      { (* wf e2 *)
+        rewrite K.
+        apply update_seq_lenv_keys_eq in H1.
+        rewrite H1.
+        simpl in WF_EXPR.
+        rewrite! andb_true_iff in WF_EXPR.
+        tauto.
+      }
+      { (* weakening *)
         intros.
-        apply eval_atom_match_lenv_eq; auto.
-        rewrite List.forallb_forall in C0.
+        unfold match_venv in H13.
+        destruct H13 ; subst.
+        unfold match_venv. split ; auto.
+        eapply match_env_trans.
+        apply M1.
         auto.
       }
-      setoid_rewrite EQ2 in EQM.
-      rew EQM. simpl.
-      setoid_rewrite EQ4. simpl.
-      exists le2. repeat split. 
-      exact NOSHADOW. exact MATCH_LENV.
-    (* if-then-else *)
-    - Res.monadInv TRANSL. inv EQ2. simpl. monadInv EVAL_EXPR.
-      destruct_conj WF_EXPR.
-      erewrite eval_atom_match_lenv_eq; eauto.
-      setoid_rewrite EQ0; simpl.
-      destruct x1.
-      eapply transl_expr_correct_ok with (e := e1); eauto.
-      eapply transl_expr_correct_ok with (e := e2); eauto.
-    (* match-with *)
-    - Res.monadInv TRANSL. inv EQ0. monadInv EVAL_EXPR. simpl.
-      destruct_conj WF_EXPR.
-      setoid_rewrite EQ0; simpl. erewrite eval_atom_match_lenv_eq; eauto.
-      setoid_rewrite EQ2; simpl.
-      destruct x0; simpl in EQ3; try discriminate. unfold ImpBNF.eval_match.
-      revert b le1 le2 ty v C C0 NOSHADOW MATCH_LENV x EQ i l0 EQ0 x1 EQ2 EQ3.
-      induction l; intros.
-      + simpl in EQ. inv EQ. simpl in EQ3. discriminate.
-      + simpl in EQ. Res.monadInv EQ. destruct a0. Res.monadInv EQ1. inv EQ5.
-        simpl in EQ3. simpl. simpl in C0. destruct_conj C0.
-        destruct p.
-        * monadInv EQ3. rewrite EQ1; simpl.
-          destruct (Benum.enum_eq x0 x1).
-          -- eapply transl_expr_correct_ok; eauto.
-          -- eapply IHl; eauto.
-        * eapply transl_expr_correct_ok; eauto.
-    (* let-in *)
-    - Res.monadInv TRANSL. inv EQ2. monadInv EVAL_EXPR. simpl.
-      destruct_conj WF_EXPR. 
-      pose proof (transl_expr_preserve_typ te _ _ EQ).
-      rewrite H. rewrite EQ0; simpl.
-      rename x1 into ty1. rename x2 into v1. rename x into tc1.
-      rename x0 into tc2. rename v into v2.
-      eapply transl_expr_correct_ok in EQ3; eauto. destruct EQ3. destruct_conj H0.
-      rewrite C1; simpl. rename x into le2'.
-      eapply transl_expr_correct_ok with
-        (le1 := (lenv_update tabs le1 i (Val tabs ty1 v1)))
-        (le2 := lenv_update tabs le2' i (Val tabs ty1 v1))
-      in EQ4; eauto.
-      destruct EQ4. destruct_conj H0.
-      rename x into le2''.
-      eexists. rewrite C4; repeat split.
-      exact C8. apply match_lenv_trans with (le2 := (lenv_update tabs le1 i (Val tabs ty1 v1))).
-      eapply match_lenv_update1. unfold lenv_get. apply negb_true_iff in C3.
-      apply STree.keys_get_mem_false_iff in C3. rewrite C3. reflexivity. exact C9.
-      unfold lenv_update. rewrite STree.keys_set. exact C0.
-      apply env_noshadow_set. exact C5. apply negb_true_iff in C.
-      apply STree.keys_get_mem_false_iff in C. exact C.
-      apply match_lenv_update2. exact C6.
-    (* attr *)
-    - Res.monadInv TRANSL. inv EQ0. simpl. eapply transl_expr_correct_ok; eauto.
+      clear W2.
+      apply MapList.mmap_fst in H8.
+      apply MapList.nodup_fst with (eq_dec:=string_dec) in H8.
+      rewrite <- H8.
+      simpl in WF_EXPR.
+      rewrite! andb_true_iff in WF_EXPR.
+      intuition idtac.
+      eapply wf_init_no_dup; eauto.
+    - (* attr *)
+      Res.monadInv TRANSL. inv EQ0. simpl. eapply IHe; eauto.
   Qed.
 
   Ltac ecast_typ_err_resolve :=
     try (unfold ecast_typ; destruct (typ_eq_dec _ _); subst; simpl); eauto.
 
-  Fixpoint transl_expr_correct_err e:
-    forall te ge le1 le2 ty tc
-      (WF_EXPR: wf_expr (STree.keys ge) (STree.keys le1) e = true)
-      (NOSHADOW: env_noshadow ge le2)
-      (MATCH_LENV: match_lenv le1 le2)
-      (TRANSL: transl_expr e = OK tc),
-      BarocqBNF.eval_expr_rec tabs te ge le1 ty e = None ->
-      (ImpBNF.eval_tailcomp_rec tabs te ge le2 ty tc = None).
-  Proof.
-    destruct e; simpl; intros; simpl.
-    - inv TRANSL. simpl. unfold Typing.typof_atom in H.
-      unfold Typing.typof_comp; simpl.
-      destruct (Typing.btyp_to_typ te (btypof_atom a)); simpl in H; simpl; eauto.
-      erewrite eval_atom_match_lenv_eq; eauto. setoid_rewrite H; simpl; eauto.
-    - inv TRANSL. destruct_conj WF_EXPR. simpl.
-      unfold Typing.typof_comp; simpl.
-      destruct (Typing.btyp_to_typ te b); simpl in H; simpl; eauto.
-      destruct (Typing.typof_atom te a); simpl in H; simpl; ecast_typ_err_resolve.
-      destruct (Typing.typof_atom te a0); simpl in H; simpl; ecast_typ_err_resolve.
-      destruct (Typing.typof_atom te a1); simpl in H; simpl; ecast_typ_err_resolve.
-      erewrite eval_atom_match_lenv_eq; eauto.
-      destruct (eval_atom tabs te ge le1 t0 a); simpl in H; simpl; ecast_typ_err_resolve.
-      erewrite eval_atom_match_lenv_eq; eauto.
-      destruct (eval_atom tabs te ge le1 t a0); simpl in H; simpl; ecast_typ_err_resolve.
-      erewrite eval_atom_match_lenv_eq; eauto.
-      destruct (eval_atom tabs te ge le1 t1 a1); simpl in H; simpl; ecast_typ_err_resolve.
-      destruct (eval_array_set tabs t0 e t e0 t1 e1 ty); simpl in H; simpl; eauto.
-      rewrite ecast_typ_id in H. discriminate.
-    - inv TRANSL. simpl. destruct_conj WF_EXPR.
-      unfold Typing.typof_comp; simpl.
-      destruct (Typing.btyp_to_typ te b); simpl in H; simpl; eauto.
-      destruct (Typing.typof_atom te a); simpl in H; simpl; ecast_typ_err_resolve.
-      destruct (Typing.typof_atom te a0); simpl in H; simpl; ecast_typ_err_resolve.
-      erewrite eval_atom_match_lenv_eq; eauto.
-      destruct (eval_atom tabs te ge le1 t0 a); simpl in H; simpl; ecast_typ_err_resolve.
-      erewrite eval_atom_match_lenv_eq; eauto.
-      destruct (eval_atom tabs te ge le1 t a0); simpl in H; simpl; ecast_typ_err_resolve.
-      destruct (eval_record_update tabs t0 e i t e0 ty); simpl in H; simpl; eauto.
-      rewrite ecast_typ_id in H. discriminate. 
-    - destruct a; simpl in H; try discriminate.
-      simpl in TRANSL. inv TRANSL. simpl.
-      destruct_conj WF_EXPR.
-      unfold Typing.typof_atom in H. simpl in H.
-      unfold Typing.typof_comp; simpl.
-      destruct (Typing.btyp_to_typ te b); simpl in H; simpl; eauto.
-      destruct (Typing.btyp_to_typ te b0); simpl in H; simpl; ecast_typ_err_resolve.
-      destruct t0; simpl; unfold efail in H; eauto.
-      simpl in C. eapply var_defined_env_get in C; destruct C; eauto.
-      erewrite eval_var_match_lenv_eq; eauto.
-      destruct (eval_var tabs ge le1 i (TFun l0 t0)); simpl in H; simpl; try congruence.
-        assert (
-            DList.map2 (eval_typ tabs) (eval_atom tabs te ge le2) l l0 =
-              DList.map2 (eval_typ tabs) (eval_atom tabs te ge le1) l l0).
-        {
-          apply DList.map2_eq.
-          apply Forall_forall.
-          intros.
-          apply eval_atom_match_lenv_eq; eauto.
-          rewrite List.forallb_forall in C0.
-          apply C0 ; auto.
-        }
-        destruct (DList.map2 (eval_typ tabs)
-                    (eval_atom tabs te ge le1) l l0) eqn:Hmap2.
-      + simpl in H.
-        setoid_rewrite H1. simpl.
-        rewrite ecast_typ_id in H.
-        setoid_rewrite H. reflexivity.
-      + simpl in H.
-        setoid_rewrite H1. simpl. reflexivity.
-    - Res.monadInv TRANSL. inv EQ2. simpl.
-      destruct_conj WF_EXPR.
-      erewrite eval_atom_match_lenv_eq; eauto.
-      destruct (eval_atom tabs te ge le1 TBool a); simpl in H; simpl; eauto.
-      destruct e.
-      + eapply transl_expr_correct_err with (e := e1); eauto.
-      + eapply transl_expr_correct_err with (e := e2); eauto. 
-    - Res.monadInv TRANSL. inv EQ0. simpl. destruct_conj WF_EXPR.
-      destruct (Typing.typof_atom te a); simpl in H; simpl; eauto.
-      erewrite eval_atom_match_lenv_eq; eauto.
-      destruct (eval_atom tabs te ge le1 t a); simpl in H; simpl; eauto.
-      destruct t; simpl in H; inv H; simpl; try unfold efail; eauto.
-      revert b le1 le2 ty C C0 NOSHADOW MATCH_LENV i l0 e x EQ H1.
-      induction l; intros.
-      + simpl in EQ. inv EQ. simpl. unfold efail; eauto.
-      + simpl in EQ. Res.monadInv EQ. destruct a0. Res.monadInv EQ0.
-        inv EQ2. simpl in C0. destruct_conj C0.
-        simpl in H1. simpl. destruct p.
-        * destruct (Benum.make_enum l0 i0); simpl in H1; simpl; eauto.
-          destruct (Benum.enum_eq e1 e).
-          -- eapply transl_expr_correct_err; eauto.
-          -- eapply IHl; eauto.
-        * eapply transl_expr_correct_err; eauto.
-    - simpl in TRANSL. Res.monadInv TRANSL.
-      inv EQ2. simpl. destruct (typof_expr te e1) eqn:Etypof_expr; simpl in H.
-      + rewrite transl_expr_preserve_typ with (e := e1). 
-        rewrite Etypof_expr. simpl.
-        simpl in WF_EXPR. apply andb_prop in WF_EXPR. destruct WF_EXPR.
-        apply andb_prop in H0. destruct H0. apply andb_prop in H0. destruct H0.
-        destruct (eval_expr_rec tabs te ge le1 t e1) eqn:Eeval_e1; simpl in H.
-        * eapply transl_expr_correct_ok in Eeval_e1; eauto.
-          destruct Eeval_e1 as [le2' [EVAL_TC [NOSHADOW_LE2' MATCH_LENV_LE2']]].
-          rewrite EVAL_TC. simpl. eapply transl_expr_correct_err with (e := e2); eauto.
-          unfold lenv_update. rewrite STree.keys_set. exact H1.
-          unfold lenv_update. apply env_noshadow_set. exact NOSHADOW_LE2'.
-          unfold negb in H0. destruct (SSet.mem i (STree.keys ge)) eqn:Hmemi; try discriminate.
-          apply STree.keys_get_mem_false_iff. exact Hmemi.
-          apply match_lenv_update2. exact MATCH_LENV_LE2'.
-        * eapply transl_expr_correct_err in Eeval_e1; eauto.
-          rewrite Eeval_e1. simpl. reflexivity.
-        * exact EQ. 
-      + inv H. rewrite transl_expr_preserve_typ with (e := e1).
-        rewrite Etypof_expr. simpl. eauto.
-        exact EQ.
-    - Res.monadInv TRANSL. inv EQ0. simpl.
-      eapply transl_expr_correct_err; eauto.
-  Qed.
-
   Lemma transl_expr_correct:
     forall e te ge le1 le2 ty tc
     (WF_EXPR: wf_expr (STree.keys ge) (STree.keys le1) e = true)
-    (NOSHADOW: env_noshadow ge le2)
-    (MATCH_LENV: match_lenv le1 le2)
+    (MATCH_LENV: match_env tabs ge le1 ge le2)
     (TRANSL: transl_expr e = OK tc),
-      ImpBNF.eval_tailcomp tabs te ge le2 ty tc =
-      BarocqBNF.eval_expr tabs te ge le1 ty e. 
+            BarocqBNF.eval_expr tabs te ge le1 ty e = ImpBNF.eval_tailcomp tabs te ge le2 ty tc.
   Proof.
-    intros. unfold eval_expr, eval_tailcomp. 
-    destruct (eval_expr_rec tabs te ge le1 ty e) eqn:Eeval_e.
-    - eapply transl_expr_correct_ok in Eeval_e; eauto.
-      destruct Eeval_e. destruct_conj H. rewrite C. reflexivity.
-    - eapply transl_expr_correct_err in Eeval_e; eauto.
-      rewrite Eeval_e. reflexivity.
+    intros.
+    unfold eval_tailcomp.
+    rewrite bind2_bind.
+    unfold uncurry.
+    apply option_rel_eq_eq.
+    replace (eval_expr tabs te ge le1 ty e)
+      with (bind (eval_expr tabs te ge le1 ty e) (fun x => Some x)).
+    eapply option_rel_bind_rel.
+    eapply transl_expr_correct_ok; auto.
+    intros. unfold match_venv in H.
+    destruct H ; subst. constructor. reflexivity.
+    destruct (eval_expr tabs te ge le1 ty e); reflexivity.
   Qed.
 
+(*
   Lemma params_noshadow : 
     forall {A T: Type} (params: smaplist T) (ge: STree.t A) ls ls',
       env_noshadow ge ls ->
@@ -617,47 +1443,71 @@ Section CORRECTNESS.
           eapply IHparams with (ls := SSet.add s ls); eauto.
           apply env_noshadow_set. exact H. exact Hgets_ge.
   Qed.
+ *)
 
   Lemma transl_function_correct_aux:
-    forall params ls e tc te ge le tret
-    (NOSHADOW: env_noshadow ge le)
-    (CHECK_PARAMS: check_params_noshadow (STree.keys ge) (STree.keys le) params = OK ls)
-    (WF_EXPR: wf_expr (STree.keys ge) ls e = true)
-    (TRANSL: transl_expr e = OK tc),
-      eval_fun_rec tabs  (eval_tailcomp tabs) te ge le params tret tc =
-      eval_fun_rec tabs  (eval_expr tabs) te ge le params tret e.
+    forall params  e tc te ge le tret
+           (NODUP      : MapList.nodup string_dec params = true)
+           (WF_EXPR: wf_expr (STree.keys ge) (SSet.union (STree.keys le) (sset_of_bindings params)) e = true)
+           (TRANSL: transl_expr e = OK tc),
+      (eval_fun_rec tabs  (eval_tailcomp tabs) te ge le params tret tc) =
+        (eval_fun_rec tabs  (eval_expr tabs) te ge le params tret e).
   Proof.
     induction params; intros.
     - simpl. apply Axioms.functional_extensionality; intro.
-      unfold check_params_noshadow in CHECK_PARAMS. 
-      simpl in CHECK_PARAMS. inv CHECK_PARAMS.
+      symmetry.
       apply transl_expr_correct; try tauto.
-      apply match_lenv_refl.
-    - simpl. unfold check_params_noshadow in CHECK_PARAMS.
-      simpl in CHECK_PARAMS.
-      destruct params.
-      + apply Axioms.functional_extensionality; intros.
-        simpl in CHECK_PARAMS. destruct a.
+      simpl in WF_EXPR.
+      rewrite SSet.union_empty in WF_EXPR. auto.
+      apply match_env_refl.
+    - destruct params.
+      + simpl. apply Axioms.functional_extensionality; intros.
+        (*simpl in CHECK_PARAMS. destruct a.
         destruct (STree.get s (STree.keys ge)) eqn:Egets_ge; try discriminate.
-        destruct (SSet.mem s (STree.keys le)); try discriminate.
+        destruct (SSet.mem s (STree.keys le)); try discriminate. *)
+        symmetry.
         apply transl_expr_correct; auto.
-        * simpl in *. inv CHECK_PARAMS.
-          unfold lenv_update. rewrite STree.keys_set.
-          exact WF_EXPR.
-        * simpl in *. inv CHECK_PARAMS.
-          unfold lenv_update. apply env_noshadow_set.
-          exact NOSHADOW. apply STree.keys_get_none_iff. exact Egets_ge.
-        * apply match_lenv_refl.
-      + simpl in CHECK_PARAMS. destruct a. 
+        * rewrite keys_lenv_update.
+          rewrite <- WF_EXPR.
+          apply wf_expr_morph;eauto.
+          intros.
+          rewrite SSet.mem_add.
+          rewrite SSet.mem_union.
+          rewrite mem_sset_of_bindings.
+          simpl. destruct a; simpl.
+          destruct (string_dec x0 s); destruct (string_dec s x0); try congruence.
+          rewrite orb_comm. reflexivity.
+          rewrite orb_comm. reflexivity.
+        *  apply match_env_refl.
+      + (*simpl in CHECK_PARAMS. destruct a.
         destruct (STree.get s (STree.keys ge)) eqn:Egets_ge; try discriminate.
         destruct (SSet.mem s (STree.keys le)); try discriminate.
-        simpl in CHECK_PARAMS.
+        simpl in CHECK_PARAMS. *)
+        cbn.
         apply Axioms.functional_extensionality; intros.
-        eapply IHparams; eauto; simpl.
-        unfold lenv_update. apply env_noshadow_set; auto.
-        apply STree.keys_get_none_iff. exact Egets_ge.
-        unfold check_params_noshadow, lenv_update. simpl.
-        rewrite STree.keys_set. exact CHECK_PARAMS. 
+        eapply IHparams; eauto; cbn.
+        destruct p.
+        { simpl in NODUP.
+          destruct a. destruct (string_dec s s0); try discriminate.
+          destruct (MapList.mem string_dec s0 params); try discriminate.
+          auto.
+        }
+        rewrite <- WF_EXPR.
+        apply wf_expr_morph.
+        intros.
+        change ((SSet.union_list (fun x1 : StringIndexed.t * typ => SSet.singleton (fst x1)) params))
+                 with (sset_of_bindings params).
+        rewrite! SSet.mem_union.
+        rewrite keys_lenv_update.
+        rewrite SSet.mem_add.
+        rewrite! mem_sset_of_bindings.
+        simpl. destruct a. simpl.
+        destruct p; simpl.
+        rewrite SSet.mem_singleton.
+        destruct (string_dec x0 s) ;
+          destruct (string_dec s x0); try congruence.
+        simpl. rewrite orb_comm. reflexivity.
+        destruct (string_dec s0 x0);auto.
   Qed.
 
   Lemma transl_function_correct:
@@ -666,30 +1516,36 @@ Section CORRECTNESS.
     eval_def_fun tabs (eval_tailcomp tabs) te ge x f' =
     eval_def_fun tabs (eval_expr tabs) te ge x f.
   Proof.
-    unfold transl_function, eval_def_fun, eval_fun. intros.
-    destruct f; simpl in TRANSL. Res.monadInv TRANSL. rename x0 into ls.
-    destruct (wf_expr (STree.keys ge) ls fn_body) eqn:WF_EXPR; try discriminate. 
-    Res.monadInv EQ0. rename x0 into tc. destruct f'. inv EQ2.
-    simpl. destruct (MapList.nodup Ident.eq_dec fn_params0); try reflexivity.
-    destruct (Typing.btyp_to_typ te fn_return0); simpl; try reflexivity.
-    destruct (map_err _ _) eqn:H; simpl; try reflexivity. repeat f_equal.
-    erewrite transl_function_correct_aux; eauto.
-    unfold  env_noshadow; intros. reflexivity.
-    simpl. unfold SSet.empty, SSet._Set.empty in EQ.
-    assert (forall {A B C} (params: smaplist A) (ge: STree.t C) ls ls' f (params': smaplist B),
-      check_params_noshadow ge ls params = OK ls' ->
-      map_err f params = Some params' ->
-      check_params_noshadow ge ls params' = OK ls').
-    { clear; induction params; intros.
-    - simpl in H0. inv H0. exact H.
-    - simpl in H0. monadInv H0. destruct a. simpl in EQ.
-      monadInv EQ.
-      unfold check_params_noshadow. simpl.
-      unfold check_params_noshadow in H. simpl in H.
-      destruct (STree.get s ge); try discriminate.
-      + destruct (SSet.mem s ls); simpl in H; try discriminate.
-        simpl. eapply IHparams; eauto. }
-    eapply H0; eauto.
+    intros.
+    apply option_rel_eq_eq.
+    unfold transl_function, eval_def_fun, eval_fun in *.
+    destruct f; simpl in TRANSL.
+    destruct (wf_expr (STree.keys ge) (sset_of_bindings fn_params) fn_body) eqn:WF ; try discriminate.
+    Res.monadInv TRANSL. destruct f'. inv EQ0.
+    simpl.
+    destruct (MapList.nodup Ident.eq_dec fn_params0) eqn:ND;auto.
+    eapply option_rel_bind_equal.
+    intros.
+    eapply option_rel_bind_equal.
+    intros.
+    rewrite transl_function_correct_aux with (e:=fn_body); eauto.
+    apply option_rel_eq_eq. reflexivity.
+    { rewrite <-  ND.
+      symmetry.
+      apply MapList.nodup_fst.
+      apply MapList.mmap_fst in H0; auto.
+    }
+    { rewrite <- WF.
+      apply wf_expr_morph.
+      intros.
+      rewrite SSet.mem_union.
+      rewrite SSet.mem_empty.
+      rewrite! mem_sset_of_bindings.
+      simpl.
+      apply MapList.mem_fst.
+      apply MapList.mmap_fst in H0; auto.
+    }
+    constructor.
   Qed.
 
   Lemma transl_globdef_correct:

@@ -1,11 +1,10 @@
-From Stdlib Require Import List.
+From Stdlib Require Import Bool List.
 From compcert Require Import Integers Maps.
-From BarocqComp Require Import Types Syntax Benum Pp Printer.
+From BarocqComp Require Import  Utils ExtOrdered Types Syntax Benum Pp Printer.
 
 (** * Abstract syntax *)
 
 (** ** Types *)
-
 Inductive typ2 : Type :=
   | TVoid : typ2
   | TBool : typ2
@@ -14,8 +13,25 @@ Inductive typ2 : Type :=
   | TArray : typ2 -> layout -> typ2
   | TEnum : ident -> typ2
   | TRecord : ident -> list ident -> typ2
+  | TActR   : list (ident * typ2) -> typ2
   | TFun : list typ2 -> typ2 -> typ2
   | TAbs : ident -> typ2.
+
+Fixpoint typ2_eqb (t1 t2:typ2) :=
+  match t1 , t2 with
+  | TVoid , TVoid => true
+  | TBool , TBool => true
+  | TInt32 s1 , TInt32 s2 => signedness_eqb s1 s2
+  | TInt64 s1 , TInt64 s2 => signedness_eqb s1 s2
+  | TArray t1 l1 , TArray t2 l2 => typ2_eqb t1 t2 && layout_eqb l1 l2
+  | TEnum i1 , TEnum i2 => String.eqb i1 i2
+  | TRecord i1 l1 , TRecord i2 l2 => String.eqb i1 i2 && forall2b String.eqb l1 l2
+  | TActR l1 , TActR l2  => forall2b (pair_eqb String.eqb typ2_eqb) l1 l2
+  | TFun l1 r1 , TFun l2 r2 => forall2b typ2_eqb l1 l2 && typ2_eqb r1 r2
+  | TAbs i1 , TAbs i2 => String.eqb i1 i2
+  | _ , _ => false
+  end.
+
 
 (** ** Literals *)
 
@@ -71,11 +87,51 @@ Definition typof_atom (a: atom) : typ2 :=
   | APureCall _ _ _ ty => ty
   end.
 
+Fixpoint atom_eqb (a1 a2:atom) : bool :=
+  match a1,a2 with
+  | ATrue, ATrue => true
+  | AFalse, AFalse => true
+  | AInt32 i1 s1 , AInt32 i2 s2 =>
+      Int.eq i1 i2 && signedness_eqb s1 s2
+  | AInt64 i1 s1 , AInt64 i2 s2 =>
+      Int64.eq i1 i2 && signedness_eqb s1 s2
+  | AConstr i1 id1 ty1 , AConstr i2 id2 ty2 =>
+      String.eqb i1 i2 && Int.eq id1 id2 && typ2_eqb ty1 ty2
+  | AVar i1 t1 , AVar i2 t2 =>
+      String.eqb i1 i2 && typ2_eqb t1 t2
+  | ACast a1 ty1 , ACast a2 ty2 =>
+      atom_eqb a1 a2 && typ2_eqb ty1 ty2
+  | AUnaryOp o1 a1 t1 , AUnaryOp o2 a2 t2 =>
+      AtomOrdered.unary_op_eqb o1 o2 && atom_eqb a1 a2 && typ2_eqb t1 t2
+  | ABinaryOp b1 a1 a1' t1 , ABinaryOp b2 a2 a2' t2 =>
+      AtomOrdered.binary_op_eqb b1 b2 && atom_eqb a1 a2 &&
+        atom_eqb a1' a2' && typ2_eqb t1 t2
+  | AArrayGet a1 a1' l1 t1, AArrayGet a2 a2' l2 t2 =>
+      atom_eqb a1 a2 && atom_eqb a1' a2' && layout_eqb l1 l2 && typ2_eqb t1 t2
+  | ARecordProj a1 i1 l1 t1, ARecordProj a2 i2 l2 t2 =>
+      atom_eqb a1 a2 && String.eqb i1 i2 && layout_eqb l1 l2 && typ2_eqb t1 t2
+  | APureCall o1 t1 l1 t1' , APureCall o2 t2 l2 t2' =>
+      String.eqb o1 o2 && typ2_eqb t1 t2 &&
+        forall2b atom_eqb l1 l2 && typ2_eqb t1' t2'
+  | _ , _ => false
+end.
+
+
 (** ** "Effectul" computations *)
 
 Inductive ecomp : Type :=
   | EcArraySet : atom -> atom -> atom -> ecomp
   | EcRecordUpdate : atom -> ident -> atom -> ecomp.
+
+
+Definition ecomp_eqb (e1 e2:ecomp) :=
+  match e1, e2 with
+  | EcArraySet a1 a2 a3, EcArraySet a1' a2' a3' =>
+      atom_eqb a1 a1' && atom_eqb a2 a2' && atom_eqb a3 a3'
+  | EcRecordUpdate a1 i a2 , EcRecordUpdate a1' i' a2' =>
+      atom_eqb a1 a1' && String.eqb i i' && atom_eqb a2 a2'
+  | _  , _ => false
+  end.
 
 (** ** Statements *)
 
@@ -85,9 +141,33 @@ Inductive statement : Type :=
   | StEcomp : ecomp -> statement
   | StCall : option ident -> ident -> typ2 -> list atom -> typ2 -> statement
   | StIfThenElse : atom -> statement -> statement -> statement
+  | StWhile : atom -> atom -> statement -> statement
   | StSwitch : atom -> list (pattern * statement) -> statement
   | StSequence : statement -> statement -> statement
   | StReturn : option atom -> statement.
+
+Fixpoint statement_eqb (s1 s2: statement) : bool :=
+  match s1 , s2 with
+  | StSkip , StSkip => true
+  | StSet i1 a1 , StSet i2 a2 =>
+      String.eqb i1 i2 && atom_eqb a1 a2
+  | StEcomp ec1, StEcomp ec2 => ecomp_eqb ec1 ec2
+  | StCall o1 i1 t1 l1 t1' , StCall o2 i2 t2 l2 t2' =>
+      option_eqb String.eqb o1 o2 &&
+        String.eqb i1 i2 && typ2_eqb t1 t2 &&
+        forall2b atom_eqb l1 l2 && typ2_eqb t1' t2'
+  | StIfThenElse a1 s1 s1', StIfThenElse a2 s2 s2' =>
+      atom_eqb a1 a2 && statement_eqb s1 s2 && statement_eqb s1' s2'
+  | StWhile a1 a1' s1 , StWhile a2 a2' s2 =>
+      atom_eqb a1 a2 && atom_eqb a1' a2' && statement_eqb s1 s2
+  | StSwitch a1 l1 , StSwitch a2 l2 =>
+      atom_eqb a1 a2 && forall2b (pair_eqb pattern_eqb statement_eqb) l1 l2
+  | StSequence s1 s1' , StSequence s2 s2' =>
+      statement_eqb s1 s2 && statement_eqb s1' s2'
+  | StReturn o1 , StReturn o2 =>
+      option_eqb atom_eqb o1 o2
+  | _ , _ => false
+  end.
 
 (** ** Functions *)
 
@@ -105,6 +185,7 @@ Module Pp.
   Import String.
   Import ListNotations.
 
+
   Fixpoint pp_typ2 (t:typ2) : box :=
     match t with
     | TVoid => Bstr "void"
@@ -114,6 +195,7 @@ Module Pp.
     | TArray ty _ => Pp.seq (Bstr "[" :: pp_typ2 ty :: Bstr "]" :: nil)
     | TEnum id    => Bcat (Bstr "enum ") (Bstr id)
     | TRecord id _ => Bcat (Bstr "record ") (Bstr id)
+    | TActR l      => Pp.seq (Bstr "{" :: pp_list (Bstr ", ") (pp_pair (Bstr ":") Bstr pp_typ2) l :: Bstr "}" :: nil)
     | TFun args r => Pp.seq (Bstr "(" :: pp_list (Bstr ", ") pp_typ2 args :: Bstr ") -> " :: pp_typ2 r :: nil)
     | TAbs id   => Bcat (Bstr "abs ") (Bstr id)
     end.
@@ -173,6 +255,10 @@ Module Pp.
         let c  := pp_atom a in
         let cd := Bcat (Bstr "if ") c in
         Bstack cd (Bstack s1 s2 Left) Left
+    | StWhile cond variant body =>
+        Pp.seq
+          (Bstr "while " :: pp_atom cond :: Bstr " decr " :: pp_atom variant :: Bstr " do " ::
+             pp_statement body :: Bstr " done " :: nil)
     | StSwitch a l => pp_match pp_atom pp_statement "match " a l
     | StSequence s1 s2 =>
         let s1 := pp_statement s1 in

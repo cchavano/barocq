@@ -1,7 +1,7 @@
 (** Decompile BarocqBNF into Barocq.
     This is useful to reuse the generation of the shallow embedding. *)
 
-From BarocqComp Require Import Syntax Barocq.
+From BarocqComp Require Import Syntax Barocq Maps2.
 From BarocqComp Require Import BarocqBNF.
 From Stdlib Require Import List.
 
@@ -30,7 +30,10 @@ Fixpoint decompile_expr (e:BarocqBNF.expr) : Barocq.expr :=
   | EIfThenElse c t e bt => Barocq.EIfThenElse (decompile_atom c) (decompile_expr t) (decompile_expr e)
   | EMatch c m bt => Barocq.EMatch (decompile_atom c) (List.map (fun p => (fst p, decompile_expr (snd p))) m)
   | ELetIn x e1 e2 bt => Barocq.ELetIn x (decompile_expr e1) (decompile_expr e2)
+  | EActR ar bt       => Barocq.EActR (MapList.map decompile_atom ar)
   | EAttr s e => Barocq.EAttr s (decompile_expr e)
+  | ELetW l cond variant body e _ => Barocq.ELetW (MapList.map decompile_expr l) (decompile_atom cond) (decompile_atom variant)
+                                              (decompile_expr body) (decompile_expr e)
   end.
 
 Definition decompile_fun (f:function) : Barocq.function :=

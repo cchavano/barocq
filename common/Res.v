@@ -90,6 +90,16 @@ Definition bind_catch {A B: Type} (f: res A) (g: A -> res B) (h: res B) : res B 
   | Error _ => h
   end. 
 
+Definition bind_cont {A B: Type} (f: res A) (g: A -> res B) (h: errmsg -> res B) : res B :=
+  match f with
+  | OK a => g a
+  | Error e => h e
+  end.
+
+
+
+
+
 Definition of_opt {A: Type} (o: option A) : res A :=
   match o with
   | Some v => OK v
@@ -130,6 +140,12 @@ Notation "'do' ( X , Y , Z , W ) <- A ; B" := (bind2 A (fun '(X, Y, Z) W => B))
 Notation "do/c X <- A '/>' M ; B" := (bind_catch A (fun X => B) M)
   (at level 200, X name, A at level 100, M at level 100, B at level 200)
   : error_monad_scope.
+
+Notation "do/c ( X , E ) <- A '/>' M ; B" := (bind_catch A (fun X => B) (fun E => M))
+  (at level 200, X name, E name, A at level 100, M at level 100, B at level 200)
+  : error_monad_scope.
+
+
 
 Remark bind_inversion:
   forall (A B: Type) (f: res A) (g: A -> res B) (y: B),
@@ -186,6 +202,18 @@ Section mmap.
     constructor. auto. auto.
   Qed.
 End mmap.
+
+
+Section mmapsnd.
+  Context (K A B : Type).
+  Variable (f: A -> res B).
+
+  Definition assoc_mmap (l: list (K * A))  : res (list (K * B)) :=
+    mmap (fun x => do x' <- f (snd x) ;
+                   OK (fst x, x')) l.
+
+End mmapsnd.
+
 
 Definition res_pred {A : Type} (P : A -> Prop) (r:res A) :=
   match r with

@@ -4,6 +4,10 @@ open Bparser
 
 let token_to_string (tok : Bparser.token) : string =
   match tok with
+  | WHILE -> "WHILE"
+  | DONE   -> "DONE"
+  | DO     -> "DO"
+  | DECR   -> "DECR"
   | MODULE -> "MODULE"
   | IMPORT -> "IMPORT"
   | COMPUTE -> "COMPUTE"

@@ -98,7 +98,10 @@ Fixpoint btyp_to_typ (te: tenv) (ty: btyp) : option typ :=
       ret (TEnum tn elems) 
   | BRecord tr _ =>
       let* fields := TEnv.get_rdef te tr in
-      ret (TRecord tr fields)
+      ret (TRecord (Some tr) fields)
+  | BActR l =>
+      let* fields := MapList.mmap _ (btyp_to_typ te) l in
+      ret (TRecord None fields)
   | BFun tparams tret =>
       let* tparams' := mmap (btyp_to_typ te) tparams in
       let* tret' := btyp_to_typ te tret in
@@ -128,6 +131,7 @@ Definition tenv_of_type_defs (tds: smaplist (type_def field_descr)) : option ten
 Definition gcontext : Type := STree.t btyp.
 
 Definition lcontext : Type := STree.t btyp.
+
 
 Definition gcontext_get (gx: gcontext) (x: ident) : res btyp :=
   match STree.get x gx with
@@ -177,7 +181,9 @@ Definition typof_var (gx: gcontext) (lx: lcontext) (x: ident) : res btyp :=
       | OK (BEnum _) =>
           efailwith "Typing.typof_var: enum constructors cannot be used in constant definitions"
       | OK ty => eret ty
-      | Error _ => efailwith "Typing.typof_var: unknown identifier"
+      | Error _ => Error (MSG "Typing.typof_var: unknown identifier "::MSG x ::
+                            MSG " not in " :: MSG (Pp.pp  (STree.pp (Pp.Bstr ",")(fun _ => Pp.Bemp) lx)) :: nil)
+
       end
   end.
 

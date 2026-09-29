@@ -631,6 +631,35 @@ module HelperTactics = struct
         (" _ = let* x := if ?C then _ else _ in _", "rewrite bind_if");
         ("(let* x := if ?C then _ else _ in _) = _", "rewrite bind_if");
         ("(if ?C then _  else _) = (if ?D then _ else _)", "apply elim_if");
+        ("bind ?X _ = bind2 _ _", "rewrite bind2_bind");
+
+        ("bind (While.while _ _ _ _)  _ = bind (WhileLib.nwhile_nn' _ _ _ _) _",
+         "rewrite WhileLib.nwhile_nn_eq");
+
+        ("bind (While.while _ _ _ _)  _ = bind (WhileLib.nwhile_no' _ _ _ _) _",
+         "rewrite WhileLib.nwhile_no_eq");
+
+        ("bind (While.while _ _ _ _)  _ = bind (WhileLib.nwhile_on' _ _ _ _) _",
+         "rewrite WhileLib.nwhile_on_eq");
+
+        ("bind (While.while _ _ _ _)  _ = bind (WhileLib.nwhile' _ _ _ _) _",
+         "rewrite WhileLib.nwhile_eq;rewrite WhileLib.nwhile_while");
+        
+        ("_ = bind (Coqlib.option_map ?F ?V) ?R", "rewrite bind_option_map");
+        ("bind (While.while _ _ _ _) _ = bind (While.while _ _ _ _) _","apply WhileLib.bind_while");
+        ("WhileLib.record_tuple ?A ?B ?C",
+         "unfold WhileLib.record_tuple, WhileLib.record_of_tuple,\
+          WhileLib.conv_tuplel,WhileLib.conv_mktuple_rec,WhileLib.assoc_prod,fst,snd");
+        ("context [bind2 _ _]", "rewrite bind2_bind") (* TODO better pattern *);
+        ("_ = Coqlib.option_map WhileLib.conv_tuplel (WhileLib.uncurry ?F ?V)", "unfold WhileLib.uncurry");
+        ("Coqlib.option_map ?F1 (bind ?F2 ?F3) = Coqlib.option_map ?G1 (bind ?G2 ?G3)", "rewrite! option_map_bind");
+        ("WhileLib.compat_fun _ _ _",
+         "repeat intro; unfold WhileLib.record_tuple in * |- ; subst");
+        ("WhileLib.compat_fun _ _",
+         "repeat intro; unfold WhileLib.record_tuple in * |- ; subst");
+        ("WhileLib.compat_body _ _",
+         "repeat intro;unfold WhileLib.record_tuple in * |- ; subst;repeat rewrite WhileLib.uncurry_mkarrow_map_eq");
+        ("WhileLib.uncurry (WhileLib.mkarrow_map _) _", "rewrite WhileLib.uncurry_mkarrow_map_eq");
         ("bind ?X _ = _   ", "corres_rewrite X");
         (" _ ", "progress rewrite_prelude");
         ("_ = match ?E with _ => _ end", "destruct E; try reflexivity");
@@ -645,7 +674,7 @@ module HelperTactics = struct
     fprintf
       out
       "Ltac corres_rb :=\n\
-       %sautorewrite * with corresRB_consts;\n\
+       %stry autorewrite * with corresRB_consts;\n\
        %scorres_rb_rec.\n"
       indent
       indent;
@@ -656,7 +685,7 @@ module HelperTactics = struct
     sprintf
       "From Stdlib Require Import String.\n\
        From compcert Require Import Integers.\n\
-       From BarocqComp Require Import Utils Option.\n\
+       From BarocqComp Require Import Utils Option Barray Benum Brecord.\n\
        From %s Require Import %s_Types %s_ShallowR %s_ShallowB.\n\
        Local Open Scope option_monad_scope.\n"
       !coqlib
@@ -693,7 +722,7 @@ let imports () : string =
   sprintf
     "From Stdlib Require Import String.\n\
      From compcert Require Import Integers.\n\
-     From BarocqComp Require Import Option.\n\
+     From BarocqComp Require Import Option Barray.\n\
      From %s Require Import %s_Types %s_ShallowR %s_ShallowB \
      %s_CorresRB_Tactics.\n\n\
      Open Scope option_monad_scope.\n\

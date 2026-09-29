@@ -39,6 +39,9 @@ let list_to_string ?(delim : string * string = ("", "")) ?(sep : string = "")
   in
   sprintf "%s%s" (fst delim) (aux l)
 
+let pair_to_string (f1: 'a -> string) (f2: 'b -> string) (p : 'a * 'b) =
+  sprintf "(%s,%s)" (f1 (fst p)) (f2 (snd p))
+
 let list_to_string_bracket ?(sep : string = "; ") (f : 'a -> string)
     (l : 'a list) : string =
   list_to_string ~delim:("[", "]") ~sep f l
@@ -73,6 +76,14 @@ let output_list ?(delim : string * string = ("", "")) ?(sep : string = "")
     | x :: r -> Printf.fprintf o "%a%s%a" f x sep aux r
   in
   Printf.fprintf o "%s%a" (fst delim) aux l
+
+let output_pair 
+      (f1 : out_channel -> 'a -> unit)
+      (f2 : out_channel -> 'b -> unit)
+      (o : out_channel) (x : 'a * 'b) : unit =
+  Printf.fprintf o "(%a,%a)" f1 (fst x) f2 (snd x)
+
+
 
 let opt_parens (is_simpl : 'a -> bool) (to_string : 'a -> string) (x : 'a) :
     string =

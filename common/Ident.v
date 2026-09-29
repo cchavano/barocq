@@ -31,27 +31,27 @@ Definition concat (i1 i2: ident) : ident :=
 
 Definition eq_dec := string_dec.
 
-Definition eqb : ident -> ident -> bool := String.eqb.
+Definition eqb : ident -> ident -> bool := Stdlib.Strings.String.eqb.
 
 Definition compare (i1 i2: ident) : comparison :=
-  String.compare i1 i2.
+  Str.compare i1 i2.
 
 Lemma compare_eq :
   forall (i1 i2: ident), compare i1 i2 = Eq <-> i1 = i2.
 Proof.
-  apply string_compare_eq_iff.
+  apply Str.compare_eq.
 Qed.
 
 Lemma compare_trans :
   forall (i1 i2 i3: ident) (c: comparison),
   compare i1 i2 = c -> compare i2 i3 = c -> compare i1 i3 = c.
 Proof.
-  apply string_compare_trans.
+  apply Str.compare_trans.
 Qed.
 
 Lemma compare_antisym :
   forall (i1 i2: ident),
   compare i1 i2 = CompOpp (compare i2 i1).
 Proof.
-  apply String.compare_antisym.
+  apply Str.compare_antisym.
 Qed.

@@ -22,6 +22,7 @@ let funtyp_to_string (f : 'typ -> string) (tparams : 'typ list) (tret : 'typ) :
 
 let rec typ_to_string (ty : typ) : string =
   match ty with
+  | TUnit -> "unit"
   | TBool -> "bool"
   | TInt32 Signed -> "i32"
   | TInt32 Unsigned -> "u32"
@@ -29,7 +30,9 @@ let rec typ_to_string (ty : typ) : string =
   | TInt64 Unsigned -> "u64"
   | TArray t -> sprintf "[%s]" (typ_to_string t)
   | TEnum (te, _) -> ident_to_string te
-  | TRecord (tr, _) -> ident_to_string tr
+  | TRecord (tr, _) -> begin match tr with
+                       | None -> "{}"
+                       | Some tr -> ident_to_string tr end
   | TAbs t -> ident_to_string t
   | TFun (tparams, tret) -> funtyp_to_string typ_to_string tparams tret
 
@@ -48,6 +51,12 @@ let rec btyp_to_string_rec (ly : layout) (ty : btyp) : string =
       | LyUnboxed None -> sprintf "#%s" tr'
       | _ -> assert false
       end
+  | BActR l ->
+     let rec string_of_list () l =
+       match l with
+       | [] -> ""
+       | (s,ty) ::l -> sprintf "%s:%s;%a" (ident_to_string s) (btyp_to_string_rec ly ty) string_of_list l in
+     sprintf "{%a}" string_of_list l
   | BArray (ta, ba) ->
       let ta' = btyp_to_string_rec ba ta in
       begin match ly with

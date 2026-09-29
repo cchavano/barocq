@@ -107,6 +107,7 @@ let rec btyp_to_deep (ty : btyp) : string =
         (ident_to_deep tr)
         (list_to_string_bracket ident_to_deep ub)
   | BAbs t -> sprintf "BAbs %s" (ident_to_deep t)
+  | BActR l -> sprintf "BActR %s" (list_to_string_bracket (pair_to_string ident_to_deep btyp_to_deep) l)
   | BFun (tparams, tret) ->
       sprintf
         "BFun %s %s"
@@ -280,6 +281,21 @@ module Barocq = struct
                 (expr_to_deep prefix' e2)
                 (btyp_to_deep bt)
           end
+      | EActR(l,bt) ->
+         sprintf "EActR %s (%s)" 
+           (list_to_string_bracket (pair_to_string ident_to_deep (expr_to_deep "")) l)
+           (btyp_to_deep bt)
+      
+      | ELetW(l,cond,variant,body,e,bt) ->
+         sprintf "ELetW %s\n(%s)\n(%s)\n(%s)\n(%s) (%s)" 
+
+           (list_to_string_bracket (pair_to_string ident_to_deep (expr_to_deep "")) l)
+           (expr_to_deep prefix' cond)
+           (expr_to_deep prefix' variant)
+           (expr_to_deep prefix' body)
+           (expr_to_deep prefix' e)
+           (btyp_to_deep bt)
+         
       | EAttr (x, e1) ->
           sprintf "EAttr %s (%s)" (ident_to_deep x) (expr_to_deep prefix e1))
 
@@ -606,6 +622,11 @@ module BarocqBNFDeep = struct
           args
           (btyp_to_deep btr)
 
+  let output_ident o id =
+    output_string o (ident_to_deep id)
+
+
+  
   let rec expr_to_deep (prefix : string) (o : out_channel) (e : expr) =
     let prefix' = prefix ^ indent in
     match e with
@@ -689,6 +710,19 @@ module BarocqBNFDeep = struct
               e2
               (btyp_to_deep bt)
         end
+    | EActR(l,bt) ->
+         Printf.fprintf o "EActR %a (%s)" 
+           (rocq_list_to_deep (output_pair output_ident (atom_to_deep ""))) l
+           (btyp_to_deep bt)
+  
+    | ELetW(l,cond,variant,body,e,bt) ->
+       Printf.fprintf o "ELetW %a\n(%a)\n(%a)\n(%a)\n(%a) (%s)" 
+           (rocq_list_to_deep (output_pair output_ident (expr_to_deep ""))) l
+           (atom_to_deep prefix') cond
+           (atom_to_deep prefix') variant
+           (expr_to_deep prefix') body
+           (expr_to_deep prefix') e
+           (btyp_to_deep bt)
     | EAttr (x, e1) ->
         Printf.fprintf
           o

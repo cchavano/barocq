@@ -1,9 +1,9 @@
 -include Makefile.config
 
 COMMON=\
-	Unsigned63.v ZifyUint63.v StateMonads.v Res.v Utils.v Barray.v Brecord.v Benum.v Maps2.v Option.v\
+	Unsigned63.v ZifyUint63.v StateMonads.v BSet.v Res.v Utils0.v Utils.v Barray.v Brecord.v Benum.v Maps2.v Option.v While.v WhileLib.v\
 	ZlistPlus.v Types.v Syntax.v Typing.v Intop.v Ident.v MergeSort.v DList.v Denot.v\
-	Graph.v ExtOrdered.v Pp.v Printer.v\
+	Graph.v ExtOrdered.v  Pp.v Printer.v\
 
 FRONTEND=\
 	Barocq.v Renaming.v BarocqBNF.v BarocqBNFgen.v\
@@ -15,7 +15,7 @@ BACKEND=\
 
 ROCQGEN=\
 	ShallowAST.v ShallowASTgen.v ShallowNotations.v BarocqBNFUndo.v\
-	ExtEqual.v BarocqVC.v BarocqBNFVC.v CorresBD_Tactics.v
+	ExtEqual.v  BarocqBNFVC.v CorresBD_Tactics.v # BarocqVC.v is out-dated
 
 BCOMP=Compiler.v
 

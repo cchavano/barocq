@@ -1,0 +1,11 @@
+module Test
+
+defn fact(n:u64) : u64 =
+  let { r <- 1ul ,  i <- n , } =
+      while (0ul < i) decr i do
+      	{ r <- r * i , i <- i - 1ul, }
+      done in
+      r
+
+
+

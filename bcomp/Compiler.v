@@ -6,7 +6,7 @@ From BarocqComp Require Import Imp2Copy.
 From BarocqComp Require Import BarocqBNFUndo. (* force dependency *)
 
 Inductive ir_name :=
-| Ir_Barocq
+| Ir_Barocq (n:nat)
 | Ir_BBNF
 | Ir_IBNF
 | Ir_Imp1
@@ -26,9 +26,12 @@ Definition opt_flag_eqb (o1 o2:opt_flag) :=
   | _ , _ => false
   end.
 
+
+
+
 Definition pp_ir (i:ir_name) :=
   match i with
-  | Ir_Barocq     => Bstr "barocq"
+  | Ir_Barocq  n   => Bcat (Bstr "barocq_v") (Bstr (Printer.string_of_nat n))
   | Ir_BBNF       => Bstr "bbnf"
   | Ir_IBNF       => Bstr "ibnf"
   | Ir_Imp1       => Bstr "imp1"
@@ -40,6 +43,7 @@ Definition pp_ir (i:ir_name) :=
 Definition ir_name_eq_dec (p1 p2:ir_name) : {p1 = p2} + {p1 <> p2}.
 Proof.
   decide equality.
+  apply PeanoNat.Nat.eq_dec.
 Defined.
 
 Record compiler_opt :=
@@ -83,8 +87,9 @@ Import MonComp.
 Local Open Scope state_err2_monad_scope.
 
 Definition compile_aux (opt : compiler_opt) (globinfo: option (ident * ident)) (prog: Barocq.program) : MonComp.M unit :=
+  do _ <- insert_log opt (Ir_Barocq 0) Barocq.Pp.pp_program Barocq prog ;
   let prog := Renaming.rename_program prog in
-  do _ <- insert_log opt Ir_Barocq Barocq.Pp.pp_program Barocq prog ;
+  do _ <- insert_log opt (Ir_Barocq 1) Barocq.Pp.pp_program Barocq prog ;
   do/l btyped <- Barocq.Typing.typecheck_program prog;
   do/l bbnf <- BarocqBNFgen.norm_program btyped;
   do _ <- insert_log opt Ir_BBNF BarocqBNF.Pp.pp_program BarocqBNF bbnf;

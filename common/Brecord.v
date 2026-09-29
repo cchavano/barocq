@@ -89,6 +89,20 @@ Fixpoint grecord_mmap {A: Type} (F1 : A -> Type) (F2 : A -> Type) (F : forall (x
                 Some  ( Field (fst p) fd, rc)
   end.
 
+Section FOLDLEFT.
+  Context {A : Type}.
+  Context {F : A ->Type}.
+  Context {B : Type}.
+  Variable G : string -> forall (x:A),F x -> B -> B.
+
+  Fixpoint grecord_fold_left (fields : SMAPLIST.smaplist A) : grecord F fields ->  B -> B:=
+    match fields with
+    | nil => fun r acc => acc
+    | p::fields' => fun r acc => grecord_fold_left fields' (snd r) (G (fst p) _ (proj_field (fst r)) acc)
+    end.
+
+End FOLDLEFT.
+
 
 Section REL.
   Context {A: Type}.

@@ -1,7 +1,6 @@
 (** Invalid Path for imp1 *)
-From Stdlib Require Import Uint63.
 From Stdlib Require Import String FMapInterface FMapList ZArith Int ListSet.
-From BarocqComp Require Import Option Res Maps2 Types Syntax Imp1 Graph Typing Utils Pp Printer.
+From BarocqComp Require Import Option Unsigned63 Res Maps2 Types Syntax Imp1 Graph Typing Utils Pp Printer.
 From BarocqComp Require Import Imp1ElimAlias.
 From Stdlib Require Import FMapPositive.
 
@@ -18,6 +17,10 @@ Import G.PathTree.
 Module InvMap.
 
   Definition t := STree.t G.PathTree.t.
+
+  Definition eqb (m1 m2 : t) :=
+    STree.beq G.PathTree.eqb m1 m2.
+
 
   Definition is_field (fd : EdgeLabel.t) : bool :=
     match fd with
@@ -402,15 +405,31 @@ Definition inv_comp  (te:tenv) (age: aenv) (d:domain) (ge:genv)  (env:InvMap.t) 
 Definition join (v1 v2 : option G.PathTree.t * InvMap.t) : res (option G.PathTree.t * InvMap.t) :=
   OK (InvMap.merge (fst v1) (fst v2) , InvMap.join (snd v1) (snd v2)).
 
+Definition eqb (v1 v2 : option G.PathTree.t * InvMap.t) :=
+  ExtOrdered.option_eqb G.PathTree.eqb (fst v1) (fst v2) &&
+    InvMap.eqb (snd v1) (snd v2).
+
+Definition leb (v1 v2: option G.PathTree.t * InvMap.t) :=
+  do v1_v2 <- join v1 v2 ;
+  OK (eqb v1_v2 v2).
+
 Fixpoint inv_statement (te:tenv) (age:aenv) (d:domain) (ge:genv) (env:InvMap.t) (s:statement) :=
   match s with
   | StSkip     => OK (None, env)
   | StSet id c => do (p,env') <- inv_comp te age d ge env c;
                   OK (None, InvMap.set id p env')
   | StIfThenElse _ s1 s2 =>
+      (* Should we check that condition has no invalid path ? *)
       do e1 <- inv_statement te age d ge env s1;
       do e2 <- inv_statement te age d ge env s2;
       join e1 e2
+  | StWhile cond variant body =>
+      do d' <- widen_domain
+                 (itern (restrict_to_domain (eval_statement te age body)) domain_leb domain_merge d 10) ;
+      match d' with
+      | inl d' => inv_statement te age d' ge env body
+      |  _     => efail
+      end
   | StSwitch a l =>
       let ld := List.map (fun x => inv_statement te age d ge env (snd x)) l in
       merge_list join ld

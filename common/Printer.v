@@ -91,6 +91,10 @@ Fixpoint pp_btyp (bt: btyp) :=
   | BArray bt ly => Pp.seq (Bstr "[" :: pp_btyp bt :: Bstr "]" :: nil)
   | BEnum id => Bcat (Bstr "enum ") (Bstr id)
   | BRecord id _ => Bcat (Bstr "record ") (Bstr id)
+  | BActR l      => Pp.seq (Bstr "{" ::
+                               (pp_list (Bstr " ")
+                                  (pp_pair (Bstr ":") Bstr pp_btyp) l) ::
+                              Bstr "}"::nil)
   | BFun args r => Pp.seq (Bstr "(" :: pp_list (Bstr ", ") pp_btyp args :: Bstr ") -> " :: pp_btyp r :: nil)
   | BAbs id      => Bcat (Bstr "abs ") (Bstr id)
   end.

@@ -24,12 +24,13 @@ Proof.
 Defined.
 
 Inductive typ : Type :=
+  | TUnit : typ
   | TBool : typ
   | TInt32 : signedness -> typ
   | TInt64 : signedness -> typ
   | TArray : typ -> typ
   | TEnum : ident -> list ident -> typ
-  | TRecord : ident -> list (ident * typ) -> typ
+  | TRecord : option ident -> list (ident * typ) -> typ
   | TFun : list typ -> typ -> typ
   | TAbs : ident -> typ.
 
@@ -72,13 +73,15 @@ Proof.
   - apply list_eq_dec. apply Ident.eq_dec. 
   - apply Ident.eq_dec.
   - apply list_eq_dec. decide equality. apply Ident.eq_dec.
-  - apply Ident.eq_dec.
+  - apply option_eq_dec.
+    apply Ident.eq_dec.
   - apply list_eq_dec. apply typ_eq_dec.
   - apply Ident.eq_dec.
 Defined.
 
 Fixpoint typ_depth (t:typ) : nat :=
   match t with
+  | TUnit
   | TBool
   | TInt32 _  | TInt64 _ => O
   | TArray ty => S (typ_depth ty)
@@ -90,6 +93,8 @@ Fixpoint typ_depth (t:typ) : nat :=
 
 Section TYPIND.
   Variable P : typ -> Prop.
+
+  Variable PTUnit : P TUnit.
 
   Variable PTBool : P TBool.
 
@@ -190,6 +195,9 @@ Qed.
 
 Fixpoint typ_compare (t1 t2:typ) :=
   match t1 , t2 with
+  | TUnit , TUnit => Eq
+  | TUnit , _     => Lt
+  | _     , TUnit => Gt
   | TBool , TBool => Eq
   | TBool ,  _    => Lt
   |   _   , TBool => Gt
@@ -206,7 +214,7 @@ Fixpoint typ_compare (t1 t2:typ) :=
   | TEnum _ _ , _   => Lt
   | _ , TEnum _ _   => Gt
   | TRecord i1 l1 , TRecord i2 l2 =>
-      pair_compare String.compare (list_compare (pair_compare String.compare typ_compare)) (i1,l1) (i2,l2)
+      pair_compare (option_compare String.compare) (list_compare (pair_compare String.compare typ_compare)) (i1,l1) (i2,l2)
   | TRecord _ _ , _ => Lt
   | _ , TRecord _ _ => Gt
   | TFun l1 t1 , TFun l2 t2 => pair_compare (list_compare typ_compare) typ_compare (l1,t1) (l2,t2)
@@ -217,68 +225,100 @@ Fixpoint typ_compare (t1 t2:typ) :=
 
 Fixpoint typ_eqb (t1 t2:typ) :=
   match t1 , t2 with
+  | TUnit , TUnit => true
   | TBool , TBool => true
   | TInt32 s1 , TInt32 s2 => signedness_eqb s1 s2
   | TInt64 s1 , TInt64 s2 => signedness_eqb s1 s2
   | TArray t1 , TArray t2 => typ_eqb t1 t2
-  | TRecord i1 l1 , TRecord i2 l2 => if String.eqb i1 i2
-                                     then forall2b (fun '(x,t1) '(y,t2) => if String.eqb x y then typ_eqb t1 t2 else false) l1 l2
-                                     else false
-  | TFun a1 r1 , TFun a2 r2 => if typ_eqb r1 r2
-                               then forall2b typ_eqb a1 a2
-                               else false
+  | TEnum i1 l1 ,  TEnum i2 l2 => pair_eqb String.eqb (forall2b String.eqb) (i1,l1) (i2,l2)
+  | TRecord i1 l1 , TRecord i2 l2 => pair_eqb (option_eqb String.eqb)
+                                       (forall2b (pair_eqb String.eqb typ_eqb)) (i1,l1) (i2,l2)
+  | TFun a1 r1 , TFun a2 r2 => pair_eqb typ_eqb (forall2b typ_eqb) (r1,a1) (r2,a2)
   | TAbs i1 , TAbs i2 => String.eqb i1 i2
   | _ , _ => false
   end.
 
 Lemma signedness_eqb_true : forall s s',
-    signedness_eqb s s' = true -> s =  s'.
+    signedness_eqb s s' = true <-> s =  s'.
 Proof.
-  destruct s, s'; simpl; congruence.
+  destruct s, s'; simpl; intuition congruence.
 Qed.
 
-Fixpoint typ_eqb_true (t1 t2:typ) {struct t1} : typ_eqb t1 t2 = true -> t1 = t2.
+Lemma typ_eqb_true : forall (t1 t2:typ), typ_eqb t1 t2 = true <-> t1 = t2.
 Proof.
-  destruct t1; destruct t2; simpl; try congruence.
-  -  intros.
-     apply signedness_eqb_true in H; congruence.
-  -  intros. apply signedness_eqb_true in H; congruence.
-  - intros.
-    f_equal ; apply typ_eqb_true;assumption.
-  - destruct (String.eqb i i0) eqn:EQ ; try discriminate.
-    intro.
-    f_equal.
-    rewrite String.eqb_eq in EQ. assumption.
-    revert l0 H.
-    induction l.
-    +  simpl. destruct l0. reflexivity.
-       discriminate.
-    + simpl.
-      destruct l0; try discriminate.
-      destruct a,p.
-      destruct (String.eqb i1 i2) eqn:EQ1 ; try discriminate.
-      destruct (typ_eqb t t0) eqn:TYP.
-      apply typ_eqb_true in TYP.
-      intros.
-      f_equal.
-      rewrite String.eqb_eq in EQ1.
-      congruence.
-      apply IHl;auto.
-      discriminate.
-  -  destruct (typ_eqb t1 t2) eqn:TB; try discriminate.
-     intro.
-     f_equal.
-     revert l0 H.
-     induction l; destruct l0; simpl; try discriminate.
-     auto.
-     destruct (typ_eqb a t) eqn:TB'.
-     apply typ_eqb_true in TB'.
-     intro.
-     f_equal; auto. discriminate.
-     apply typ_eqb_true; auto.
-  - intros. f_equal.
-    rewrite String.eqb_eq in H.
-    assumption.
+  induction t1 using  typ_depth_ind;
+    destruct t2; unfold typ_eqb ; try intuition congruence.
+  - rewrite signedness_eqb_true; intuition congruence.
+  - rewrite signedness_eqb_true; intuition congruence.
+  - rewrite pair_eqb_eq.
+    intuition congruence.
+    apply String.eqb_eq.
+    intros.
+    apply forall2b_eqb_eq.
+    intros.
+    apply String.eqb_eq.
+  - rewrite String.eqb_eq.
+    intuition  congruence.
+  - fold typ_eqb.
+    rewrite IHt1. intuition congruence.
+  - fold typ_eqb.
+    rewrite pair_eqb_eq.
+    intuition congruence.
+    intros. simpl.  apply option_eqb_eq.
+    intros. apply String.eqb_eq.
+    intros.
+    apply forall2b_eqb_eq.
+    intros.
+    apply pair_eqb_eq; intros.
+    apply String.eqb_eq.
+    apply H; auto.
+  - fold typ_eqb.
+    rewrite pair_eqb_eq.
+    intuition congruence.
+    simpl. apply IHt1.
+    simpl. apply forall2b_eqb_eq.
+    intros; auto.
+Qed.
+
+Lemma typ_compare_eq :
+  forall (t1:typ) (t2:typ), typ_compare t1 t2 = Eq <-> t1 = t2.
+Proof.
+  induction t1 using typ_depth_ind.
+  - destruct t2 ; simpl; intuition congruence.
+  - destruct t2 ; simpl; intuition congruence.
+  - destruct t2 ; simpl; try intuition congruence.
+    rewrite signedness_compare_eq. intuition congruence.
+  - destruct t2 ; simpl; try intuition congruence.
+    rewrite signedness_compare_eq. intuition congruence.
+  - destruct t2 ; simpl; try intuition congruence.
+    rewrite pair_compare_eq. intuition congruence.
+    apply string_compare_eq.
+    apply list_compare_eq.
+    intros. apply string_compare_eq.
+  - destruct t2 ; simpl ; try intuition congruence.
+    rewrite string_compare_eq.
+    intuition congruence.
+  - destruct t2 ; simpl ; try intuition congruence.
+    rewrite IHt1. intuition congruence.
+  - destruct t2 ; simpl ; try intuition congruence.
+    rewrite pair_compare_eq.
+    intuition congruence.
+    apply option_compare_eq.
+    apply string_compare_eq.
+    apply list_compare_eq.
+    intros.
+    destruct x,y.
+    apply pair_compare_eq.
+    apply string_compare_eq.
+    change t with (snd (s,t)).
+    apply H; auto.
+  - destruct t2 ; simpl ; try intuition congruence.
+    rewrite pair_compare_eq.
+    intuition congruence.
+    apply list_compare_eq.
+    intros.
+    apply H; auto.
+    apply IHt1;auto.
 Qed.
 
 
@@ -288,6 +328,16 @@ Inductive layout : Type :=
   | LyPrim : layout
   | LyBoxed : layout
   | LyUnboxed : option Z -> layout.
+
+
+Definition layout_eqb (l1 l2:layout) :=
+  match l1, l2 with
+  | LyPrim , LyPrim
+  | LyBoxed , LyBoxed => true
+  | LyUnboxed z1 , LyUnboxed z2 => ExtOrdered.option_eqb Z.eqb z1 z2
+  | _ , _ => false
+  end.
+
 
 Definition layout_eq_dec (b1 b2: layout) : { b1 = b2 } + { b1 <> b2 }.
 Proof.
@@ -371,8 +421,9 @@ Inductive btyp : Type :=
   | BInt32 : signedness -> btyp
   | BInt64 : signedness -> btyp
   | BArray : btyp -> layout -> btyp
-  | BEnum : ident -> btyp
+  | BEnum  : ident -> btyp
   | BRecord : ident -> list ident -> btyp (* we register the list of unboxed fields *)
+  | BActR   : list (ident * btyp) -> btyp (* Activation record, for typing loop body *)
   | BFun : list btyp -> btyp -> btyp
   | BAbs : ident -> btyp.
 
@@ -381,6 +432,13 @@ Definition btyp_is_prim (ty: btyp) : bool :=
   | BBool | BInt32 _ | BInt64 _ | BEnum _ => true
   | _ => false
   end.
+
+Definition btyp_is_int (ty: btyp) : bool :=
+  match ty with
+  | BInt32 _ | BInt64 _  => true
+  | _ => false
+  end.
+
 
 Definition field_descr : Type := btyp * layout.
 
@@ -393,6 +451,9 @@ Proof.
   - apply Ident.eq_dec.
   - apply list_eq_dec. apply Ident.eq_dec.
   - apply Ident.eq_dec.
+  - apply list_eq_dec.
+    apply pair_eq_dec. exact Ident.eq_dec.
+    exact btyp_eq_dec.
   - apply list_eq_dec. apply btyp_eq_dec.
   - apply Ident.eq_dec.
 Defined.
@@ -416,6 +477,7 @@ Fixpoint btyp_depth (t:btyp) : nat :=
   | BArray t' _ => S (btyp_depth t')
   | BEnum _ => O
   | BRecord _ _ => O
+  | BActR  l    => S (List.fold_right (fun e acc => max (btyp_depth (snd e)) acc) O l)
   | BFun l t' => S (List.fold_right (fun e acc => max (btyp_depth e) acc) (btyp_depth t') l)
   | BAbs _ => O
   end.
@@ -437,6 +499,8 @@ Section BTYPIND.
 
   Variable PBRecord : forall i ub, P (BRecord i ub).
 
+  Variable PBActR : forall l, (forall x, In x l -> P (snd x)) -> P (BActR l).
+
   Variable PBFun : forall l r, (forall x, In x l -> P x) -> P r -> P (BFun l r).
 
   Lemma btyp_depth_ind : forall t, P t.
@@ -451,6 +515,21 @@ Section BTYPIND.
       simpl;intros.
       +  apply PBArray.
          apply H with (m:=n). lia. congruence.
+      +  apply PBActR.
+         intros.
+         apply H with (m:= btyp_depth (snd x)); auto.
+         rewrite Heqn.
+         clear - H0.
+         {
+           induction l.
+          - simpl in H0. tauto.
+          - simpl.
+            simpl in H0.
+            destruct H0; subst.
+            +  lia.
+            + apply IHl in H.
+              lia.
+        }
       +  apply PBFun.
          intros.
         apply H with (m:=btyp_depth x);auto.
@@ -532,10 +611,23 @@ Section EVALTYP.
                                       end
     end.
 
+  (* Should have its own library, eventually - also look at WhileLib.v *)
+
+  Polymorphic Fixpoint eval_tuple (tparams: list typ) : Type :=
+    match tparams with
+    | nil => unit
+    | tx::tparams' => match tparams' with
+                      | nil => eval_typ tx
+                      |  _  => eval_typ tx * eval_tuple tparams'
+                      end
+    end.
+
+
 End EVALTYP.
 
 Polymorphic Fixpoint eval_typ (am: PMap.t Type) (t: typ) {struct t}: Type :=
   match t with
+  | TUnit => unit
   | TBool => bool
   | TInt32 _ => int
   | TInt64 _ => int64
@@ -569,123 +661,118 @@ Qed.
 (** Ordered Type *)
 From Stdlib Require Import OrderedType.
 
-Module TypOrdered <: OrderedType.
+Module TypeOrderedCmp <: OrderedCompare.
+  (* Using directly a comparison function. *)
   Definition t := typ.
 
   Definition depth := typ_depth.
-  Definition eq : t -> t -> Prop := @eq t.
-  Definition lt : t -> t -> Prop := fun x y => typ_compare x y = Lt.
 
-  Lemma eq_refl : forall (x:t), x = x.
-  Proof. reflexivity. Qed.
+  Definition compare := typ_compare.
 
-  Lemma eq_sym : forall (x y:t), x = y -> y = x.
-  Proof. congruence. Qed.
-
-  Lemma eq_trans : forall (x y z:t), x = y -> y = z -> x = z.
-  Proof. congruence. Qed.
-
-  Lemma typ_compare_eq : forall (x y:typ),
-      typ_compare x y = Eq <-> x = y.
+  Lemma compare_antisym  : forall x y, compare x y = CompOpp (compare y x).
   Proof.
-    induction x using typ_depth_ind; destruct y; simpl; try intuition congruence.
-    - intros. rewrite signedness_compare_eq.
-      intuition congruence.
-    - intros. rewrite signedness_compare_eq.
-      intuition congruence.
-    - intros.
-      rewrite pair_compare_eq.
-      intuition congruence.
-      rewrite string_compare_eq_iff.
-      tauto.
-      apply list_compare_eq.
+    induction x using typ_depth_ind.
+    - destruct y; simpl; try congruence.
+    - destruct y; simpl; try congruence.
+    - destruct y ; simpl; try congruence.
+      destruct s,s0; reflexivity.
+    - destruct y ; simpl; try congruence.
+      destruct s,s0; reflexivity.
+    - destruct y ; simpl; try congruence.
+      apply pair_compare_antisym.
+      apply String.compare_antisym.
+      intros. simpl.
+      apply ExtOrdered.list_compare_antisym.
+      apply string_compare_eq.
       intros.
-      apply string_compare_eq_iff.
-    -  intros. rewrite string_compare_eq_iff.
-       intuition congruence.
-    - rewrite IHx. intuition congruence.
-    -
+      apply String.compare_antisym.
+    - destruct y ; simpl; try congruence.
+      apply String.compare_antisym.
+    - destruct y ; simpl; try congruence.
+    - destruct y ; simpl; try congruence.
+      apply pair_compare_antisym.
       intros.
-      rewrite pair_compare_eq.
-      intuition congruence.
-      rewrite string_compare_eq_iff.
-      tauto.
-      rewrite list_compare_eq.
-      tauto.
+      simpl.
+      apply option_compare_antisym.
+      destruct i,o; simpl;auto.
+      apply String.compare_antisym.
+      apply ExtOrdered.list_compare_antisym.
       intros.
       destruct x,y.
-      rewrite pair_compare_eq.
-      intuition congruence.
-      rewrite string_compare_eq_iff.
-      tauto.
-      apply H with (y:= t1) in H0.
-      simpl in H0. tauto.
-    - rewrite pair_compare_eq.
-      intuition congruence.
-      rewrite list_compare_eq.
-      tauto.
-      auto.
-      auto.
+      apply pair_compare_eq.
+      apply string_compare_eq.
+      apply typ_compare_eq.
+      intros.
+      apply pair_compare_antisym.
+      apply String.compare_antisym.
+      apply H;auto.
+    - destruct y ; simpl; try congruence.
+      apply pair_compare_antisym.
+      simpl.
+      apply ExtOrdered.list_compare_antisym.
+      apply typ_compare_eq.
+      intros.
+      apply H;auto.
+      simpl.
+      apply IHx.
   Qed.
 
-  Lemma typ_compare_refl  : forall (x:t), typ_compare x x = Eq.
-  Proof.
-    intros.
-    rewrite typ_compare_eq.
-    reflexivity.
-  Qed.
-    
-  Lemma typ_eq_trans  : forall (x y z:t), forall c, typ_compare x y = c -> typ_compare y z = c  -> typ_compare x z = c.
+
+  Lemma compare_trans : forall x y z c,
+      (compare x y = c -> compare y z = c -> compare x z = c).
   Proof.
     induction x using typ_depth_ind.
     - destruct y; simpl; try congruence;
-        destruct z; try congruence.
+        destruct z; simpl; try intuition congruence.
+    - destruct y; simpl; try  congruence;
+        destruct z; simpl; try intuition congruence.
     - destruct y ; simpl; try congruence;
-        destruct z; try congruence.
+        destruct z; simpl; try intuition congruence.
       apply signedness_compare_trans.
     - destruct y ; simpl; try congruence;
-        destruct z; try congruence.
+        destruct z; simpl; try intuition congruence.
       apply signedness_compare_trans.
+    -
+      destruct y ; simpl; try congruence;
+        destruct z; simpl; try intuition congruence.
+      intro c.
+      { apply pair_compare_trans.
+        apply string_compare_eq.
+        apply string_compare_trans.
+        intro.
+        apply ExtOrdered.list_compare_trans.
+        apply string_compare_eq.
+        intros x y z c1 _ _ _.
+        apply string_compare_trans.
+      }
     - destruct y ; simpl; try congruence;
-        destruct z; try congruence.
-      apply pair_compare_trans.
-      intros. rewrite string_compare_eq_iff in H.
-      auto.
-      apply string_compare_trans.
-      intro.
-      apply ExtOrdered.list_compare_trans.
-      apply string_compare_eq_iff.
-      intros x y z c0 I1 I2 I3.
+        destruct z; simpl; try intuition congruence.
+      intro  c.
       apply string_compare_trans.
     - destruct y ; simpl; try congruence;
-        destruct z; try congruence.
-      apply string_compare_trans.
-    - destruct y ; simpl; try congruence;
-        destruct z; try congruence.
-      intro.
+        destruct z; simpl; try intuition congruence.
       apply IHx.
     - destruct y ; simpl; try congruence;
-        destruct z; try congruence.
+        destruct z; simpl; try intuition congruence.
+      intro.
       apply pair_compare_trans.
-      intros a v. rewrite string_compare_eq_iff.
-      congruence.
+      intros x y.
+      apply option_compare_eq.
+      apply string_compare_eq.
+      intro.
+      apply option_compare_trans.
       apply string_compare_trans.
       intro.
       apply ExtOrdered.list_compare_trans.
-      intros.
-      destruct x,y;
-      rewrite pair_compare_eq.
-      tauto.
-      apply string_compare_eq_iff.
+      intros x y.
+      destruct x,y; apply pair_compare_eq.
+      apply string_compare_eq.
       apply typ_compare_eq.
-      intros x y z c' I1 I2 I3.
-      destruct x, y, z.
+      intros x y z c1 I1 I2 I3.
       apply pair_compare_trans.
-      intros. rewrite string_compare_eq_iff in *. auto.
+      apply string_compare_eq.
       apply string_compare_trans.
-      change t0 with (snd (s,t0)).
-      apply H.
-      auto.
+      apply H; auto.
     - destruct y ; simpl; try congruence;
         destruct z; try congruence.
       apply pair_compare_trans.
@@ -701,93 +788,22 @@ Module TypOrdered <: OrderedType.
       apply IHx.
   Qed.
 
-  Lemma typ_antisym  : forall (x y:t), typ_compare x y = CompOpp (typ_compare y x).
-  Proof.
-    induction x using typ_depth_ind.
-    - destruct y; simpl; try congruence.
-    - destruct y ; simpl; try congruence.
-      destruct s,s0; reflexivity.
-    - destruct y ; simpl; try congruence.
-      destruct s,s0; reflexivity.
-    - destruct y ; simpl; try congruence.
-      apply pair_compare_antisym.
-      apply String.compare_antisym.
-      intros.
-      apply ExtOrdered.list_compare_antisym.
-      apply string_compare_eq_iff.
-      intros.
-      apply String.compare_antisym.
-    - destruct y ; simpl; try congruence.
-      apply String.compare_antisym.
-    - destruct y ; simpl; try congruence.
-    - destruct y ; simpl; try congruence.
-      apply pair_compare_antisym.
-      intros.
-      apply String.compare_antisym.
-      intros.
-      apply ExtOrdered.list_compare_antisym.
-      intros.
-      destruct x,y.
-      apply pair_compare_eq.
-      apply string_compare_eq_iff.
-      apply typ_compare_eq.
-      intros.
-      apply pair_compare_antisym.
-      apply String.compare_antisym.
-      apply H;auto.
-    - destruct y ; simpl; try congruence.
-      apply pair_compare_antisym.
-      simpl.
-      apply ExtOrdered.list_compare_antisym.
-      intros.
-      apply typ_compare_eq.
-      intros.
-      apply H;auto.
-      simpl.
-      apply IHx.
-  Qed.
+  Lemma compare_eq :forall t1 t2, compare t1 t2 = Eq <-> t1 = t2.
+  Proof. apply typ_compare_eq. Qed.
 
-  Definition lt_trans  (x y z:t): lt x y -> lt y z -> lt x z.
-  Proof.
-    unfold lt.
-    apply typ_eq_trans.
-  Qed.
 
-  Lemma lt_not_eq : forall x y, lt x y -> eq x y -> False.
-  Proof.
-    unfold lt. intros.
-    unfold eq in H0. subst.
-    rewrite typ_compare_refl in H. discriminate.
-  Qed.
 
-  Definition compare : forall x y : t, Compare lt eq x y.
-  Proof.
-    intros.
-    destruct (typ_compare x y) eqn:TC.
-    - apply EQ. rewrite typ_compare_eq in TC. apply TC.
-    - apply LT;auto.
-    - apply GT.
-      rewrite typ_antisym in TC.
-      unfold lt.
-      destruct (typ_compare y x); try discriminate.
-      reflexivity.
-  Qed.
+End  TypeOrderedCmp.
 
-  Definition eq_dec (x y:t) : {x = y} + {x <> y}.
-  Proof.
-    destruct (typ_compare x y) eqn:EQB.
-    - left. apply typ_compare_eq in EQB. auto.
-    - right. intro.
-      subst. rewrite typ_compare_refl in EQB. discriminate.
-    - right. intro.
-      subst. rewrite typ_compare_refl in EQB. discriminate.
-  Qed.
+
+Module TypOrdered <: OrderedType.
+  Include ExtOrdered.MakeEq(TypeOrderedCmp).
+
+  Definition depth := typ_depth.
+
+
 
 End TypOrdered.
-
-Module BtypOrdered <: OrderedType.
-
-  Definition t := btyp.
 
   Fixpoint btyp_compare (x y:btyp) : comparison :=
      match x , y with
@@ -809,6 +825,9 @@ Module BtypOrdered <: OrderedType.
      | BRecord i1 ub1 , BRecord i2 ub2 => pair_compare String.compare (list_compare Ident.compare) (i1, ub1) (i2, ub2)
      | BRecord _ _ , _          => Lt
      | _          , BRecord _ _ => Gt
+     | BActR l1   , BActR l2    => list_compare (pair_compare Ident.compare btyp_compare) l1 l2
+     | BActR _    , _           => Lt
+     | _          , BActR _     => Gt
      | BFun l1 t1 , BFun l2 t2 => pair_compare (list_compare btyp_compare) btyp_compare (l1,t1) (l2,t2)
      | BFun _  _  , _          => Lt
      | _          , BFun _ _   => Gt
@@ -816,20 +835,16 @@ Module BtypOrdered <: OrderedType.
      | BAbs i , BAbs  j => String.compare i j
      end.
 
-  Definition eq : t -> t -> Prop := @eq t.
-  Definition lt : t -> t -> Prop := fun x y => btyp_compare x y = Lt.
+Module BtypOrderedCmp <: OrderedCompare.
 
-  Lemma eq_refl : forall (x:t), x = x.
-  Proof. reflexivity. Qed.
+  Definition t := btyp.
 
-  Lemma eq_sym : forall (x y:t), x = y -> y = x.
-  Proof. congruence. Qed.
 
-  Lemma eq_trans : forall (x y z:t), x = y -> y = z -> x = z.
-  Proof. congruence. Qed.
+  Definition compare := btyp_compare.
 
-  Lemma btyp_compare_eq : forall x y,
-      btyp_compare x y = Eq <-> x = y.
+
+  Lemma compare_eq : forall x y,
+      compare x y = Eq <-> x = y.
   Proof.
     induction x using btyp_depth_ind.
     - destruct y; simpl; intuition congruence.
@@ -840,10 +855,10 @@ Module BtypOrdered <: OrderedType.
       rewrite signedness_compare_eq.
       intuition congruence.
     - destruct y; simpl; try intuition  congruence.
-      rewrite string_compare_eq_iff.
+      rewrite string_compare_eq.
       intuition congruence.
     - destruct y; simpl; try intuition  congruence.
-      rewrite string_compare_eq_iff.
+      rewrite string_compare_eq.
       intuition congruence.
     - destruct y; simpl; try intuition  congruence.
       rewrite pair_compare_eq.
@@ -853,9 +868,17 @@ Module BtypOrdered <: OrderedType.
     - destruct y; simpl; try intuition  congruence.
       rewrite pair_compare_eq.
       intuition congruence.
-      rewrite string_compare_eq_iff. tauto.
+      rewrite string_compare_eq. tauto.
       rewrite list_compare_eq. tauto.
-      intros. apply string_compare_eq_iff.
+      intros. apply string_compare_eq.
+    - destruct y; simpl; try intuition congruence.
+      rewrite list_compare_eq. intuition congruence.
+      intros.  destruct x as [x1 x2].
+      destruct y as [y1 y2].
+      rewrite pair_compare_eq. intuition congruence.
+      rewrite string_compare_eq. tauto.
+      apply H with (y:= y2) in H0.
+      apply H0.
     - destruct y; simpl; try intuition  congruence.
       rewrite pair_compare_eq.
       intuition congruence.
@@ -863,15 +886,7 @@ Module BtypOrdered <: OrderedType.
       apply IHx.
   Qed.
 
-  Lemma btyp_compare_refl : forall x,
-      btyp_compare x x = Eq.
-  Proof.
-    intros.
-    rewrite btyp_compare_eq.
-    reflexivity.
-  Qed.
-
-  Lemma btyp_compare_trans : forall x y z c,
+  Lemma compare_trans : forall x y z c,
       btyp_compare x y = c -> btyp_compare y z = c -> btyp_compare x z = c.
   Proof.
     induction x using btyp_depth_ind.
@@ -887,33 +902,44 @@ Module BtypOrdered <: OrderedType.
       apply string_compare_trans.
     - destruct y,z; simpl; try intuition congruence.
       intros. erewrite pair_compare_trans with (a2 := y) (b2 := l) (c := c); eauto.
-      apply btyp_compare_eq.
+      apply compare_eq.
       apply layout_compare_trans.
     - destruct y,z; simpl; try intuition congruence.
       intros. erewrite pair_compare_trans with (a2 := i0) (b2 := l) (c := c); eauto.
-      apply string_compare_eq_iff.
+      apply string_compare_eq.
       apply string_compare_trans.
       intros. erewrite ExtOrdered.list_compare_trans; eauto.
-      apply string_compare_eq_iff.
+      apply string_compare_eq.
       intros. apply (string_compare_trans _ _ _ _ H6 H7).
       congruence.
+    - destruct y,z; simpl;try intuition congruence.
+      intro.
+      apply ExtOrdered.list_compare_trans.
+      intros. destruct x, y; rewrite pair_compare_eq.
+      tauto. apply string_compare_eq.
+      apply compare_eq.
+      intros until 3.
+      apply pair_compare_trans.
+      apply string_compare_eq.
+      apply string_compare_trans.
+      intro. apply H; auto.
     - destruct y,z; simpl; try intuition congruence.
       intro.
       apply pair_compare_trans.
       intros a b.
       rewrite list_compare_eq; auto.
       intros.
-      apply btyp_compare_eq.
+      apply compare_eq.
       intro.
       apply ExtOrdered.list_compare_trans.
       intros.
-      apply btyp_compare_eq.
+      apply compare_eq.
       intros x0 y0 z0 c1 I1 I2 I3.
       apply H; auto.
       apply IHx.
   Qed.
 
-  Lemma btyp_antisym  : forall (x y:t), btyp_compare x y = CompOpp (btyp_compare y x).
+  Lemma compare_antisym  : forall (x y:t), compare x y = CompOpp (compare y x).
   Proof.
     induction x using btyp_depth_ind.
     - destruct y; simpl; try congruence.
@@ -933,55 +959,31 @@ Module BtypOrdered <: OrderedType.
       apply pair_compare_antisym.
       simpl. apply String.compare_antisym.
       apply list_compare_antisym.
-      apply string_compare_eq_iff.
+      apply string_compare_eq.
       intros. apply String.compare_antisym.
+    - destruct y ; simpl; try congruence.
+      apply ExtOrdered.list_compare_antisym.
+      { intros x y; apply pair_compare_eq.
+      apply string_compare_eq.
+      apply compare_eq.
+      }
+      intros.
+      apply pair_compare_antisym.
+      apply String.compare_antisym.
+      apply H; auto.
     - destruct y ; simpl; try congruence.
       apply pair_compare_antisym.
       simpl.
       apply ExtOrdered.list_compare_antisym.
       intros.
-      apply btyp_compare_eq.
+      apply compare_eq.
       intros.
       apply H;auto.
       simpl.
       apply IHx.
   Qed.
 
-  Definition lt_trans  (x y z:t): lt x y -> lt y z -> lt x z.
-  Proof.
-    unfold lt.
-    apply btyp_compare_trans.
-  Qed.
+End BtypOrderedCmp.
 
-  Lemma lt_not_eq : forall x y, lt x y -> eq x y -> False.
-  Proof.
-    unfold lt. intros.
-    unfold eq in H0. subst.
-    rewrite btyp_compare_refl in H. discriminate.
-  Qed.
 
-  Definition compare : forall x y : t, Compare lt eq x y.
-  Proof.
-    intros.
-    destruct (btyp_compare x y) eqn:TC.
-    - apply EQ. rewrite btyp_compare_eq in TC. apply TC.
-    - apply LT;auto.
-    - apply GT.
-      rewrite btyp_antisym in TC.
-      unfold lt.
-      destruct (btyp_compare y x); try discriminate.
-      reflexivity.
-  Qed.
-
-  Definition eq_dec (x y:t) : {x = y} + {x <> y}.
-  Proof.
-    destruct (btyp_compare x y) eqn:EQB.
-    - left. apply btyp_compare_eq in EQB. auto.
-    - right. intro.
-      subst. rewrite btyp_compare_refl in EQB. discriminate.
-    - right. intro.
-      subst. rewrite btyp_compare_refl in EQB. discriminate.
-  Qed.
-
-End BtypOrdered.
-
+Module BtypOrdered := ExtOrdered.Make(BtypOrderedCmp).

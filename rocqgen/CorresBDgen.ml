@@ -36,9 +36,10 @@ module Deeptypes = struct
     | MInt32 Types.Unsigned -> Printf.sprintf "%stuint32" prefix
     | MInt64 Types.Signed -> Printf.sprintf "%stint64" prefix
     | MInt64 Types.Unsigned -> Printf.sprintf "%stuint64" prefix
-    | MArray ta -> sprintf "TArray %s" (opt_parens prefix ta)
+    | MArray ta -> sprintf "(TArray %s)" (opt_parens prefix ta)
     | MEnum eid -> Printf.sprintf "%s%s" prefix (ident_to_string eid)
     | MRecord rid -> Printf.sprintf "%s%s" prefix (ident_to_string rid)
+    | MActR    _  -> failwith "mtyp_to_typ_string: MActR is not implemented"
     | MFun (tparams, tret) ->
         sprintf
           "TFun %s %s"
@@ -416,11 +417,11 @@ module VCgen = struct
         begin match bd with
         | Barocq.Typed.DefFun (fid, f) ->
             let vars =
-              BarocqVC.vars_of_expr Maps2.STree.empty f.Syntax.fn_body
+              Barocq.Typed.vars_of_expr Maps2.STree.empty f.Syntax.fn_body
             in
             let sdefs_needed =
               List.filter
-                (fun d -> BarocqVC.has_var (ident_of_globdef d) vars)
+                (fun d -> Barocq.Typed.has_var (ident_of_globdef d) vars)
                 sdefs
             in
             fprintf

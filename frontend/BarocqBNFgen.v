@@ -7,6 +7,7 @@ Local Open Scope error_monad_scope.
 
 (** Normalization *)
 
+
 Section NORM.
 
   Variable pure_funs: SSet.t.
@@ -49,6 +50,51 @@ Section NORM.
     | _ => efail
     end.
 
+  Fixpoint atom_of_expr (e:BarocqTyped.expr) : res atom :=
+    match e with
+    | BarocqTyped.ETrue => eret ATrue
+    | BarocqTyped.EFalse => eret AFalse
+    | BarocqTyped.EInt32 i s => eret (AInt32 i s)
+    | BarocqTyped.EInt64 i s => eret (AInt64 i s)
+    | BarocqTyped.EConstr id i bt => eret (AConstr id i bt)
+    | BarocqTyped.EVar id bt => eret (AVar id bt)
+    | BarocqTyped.ECast e bt =>
+        do a <- atom_of_expr e ;
+        eret (ACast a bt)
+    | BarocqTyped.EUnaryOp op e bt =>
+        do a <- atom_of_expr e;
+        eret (AUnaryOp op a bt)
+    | BarocqTyped.EBinaryOp op e1 e2 bt =>
+        do a1 <- atom_of_expr e1;
+        do a2 <- atom_of_expr e2;
+        eret (ABinaryOp op a1 a2 bt)
+    | BarocqTyped.EArrayGet e1 e2 ly bt =>
+        do a1 <- atom_of_expr e1;
+        do a2 <- atom_of_expr e2;
+        eret (AArrayGet a1 a2 ly bt)
+    | BarocqTyped.EArraySet _ _ _ _ => Error (msg "array set is not an atom")
+    | BarocqTyped.ERecordProj e1 id ly bt =>
+        do a1 <- atom_of_expr e1;
+        eret (ARecordProj a1 id ly bt)
+    | BarocqTyped.ERecordUpdate _ _ _ _ => Error (msg "record update is not an atom")
+    | BarocqTyped.EApp e1 l1 bt =>
+        match e1 with
+        | BarocqTyped.EVar x bt =>  if negb (SSet.mem x pure_funs)
+                        then Error (msg "function should be pure")
+                        else
+                          do l1 <- mmap atom_of_expr l1;
+                          eret (APureCall x bt l1 bt)
+        | _ => Error (msg "function should be a function name")
+        end
+  | BarocqTyped.EIfThenElse  _ _ _ _ => Error (msg "conditional is not an atom")
+  | BarocqTyped.EMatch _ _ _ => Error (msg "match is not an atom")
+  | BarocqTyped.ELetIn _ _ _ _ => Error (msg "let is not an atom")
+  | BarocqTyped.EActR _ _      => Error (msg "a (activation) record  is not an atom")
+  | BarocqTyped.ELetW _ _ _ _ _ _  => Error (msg "a loop is not an atom")
+  | BarocqTyped.EAttr _ _ => Error (msg "an attribute is not an atom")
+    end.
+
+
   Close Scope error_monad_scope.
 
   Import MonCounterErr.
@@ -57,8 +103,29 @@ Section NORM.
 
   Definition fresh_var : crmon ident := Utils.fresh_var_err "b".
 
-  Fixpoint norm_expr_rec (e: BarocqTyped.expr) : crmon BarocqBNF.expr :=
-    let fix norm_expr_aux (e: BarocqTyped.expr) : crmon ((smaplist BarocqBNF.expr) * atom) :=
+  Section NORMINIT.
+    Variable norm_expr_rec : BarocqTyped.expr -> crmon BarocqBNF.expr.
+
+    Fixpoint norm_while_init (l:list (ident * BarocqTyped.expr)) : crmon (list  (ident * BarocqBNF.expr)) :=
+      match l with
+      | nil => sret nil
+      | (v,e)::l => do e1 <- norm_expr_rec e;
+                    do l1 <- norm_while_init l;
+                    sret ((v,e1) ::l1)
+      end.
+  End NORMINIT.
+
+  Fixpoint letseq (le:smaplist BarocqBNF.expr) (e:BarocqBNF.expr) (bt:btyp) : BarocqBNF.expr :=
+    match le with
+    | nil => e
+    | (x,be) :: le' => ELetIn x be (letseq le' e bt) bt
+    end.
+
+  Section NORMAUX.
+    Variable norm_expr_rec : BarocqTyped.expr -> crmon BarocqBNF.expr.
+
+
+    Fixpoint norm_expr_aux (e: BarocqTyped.expr) : crmon ((smaplist BarocqBNF.expr) * atom) :=
       match e with
       | BarocqTyped.ETrue => sret (nil, ATrue)
       | BarocqTyped.EFalse => sret (nil, AFalse)
@@ -121,19 +188,10 @@ Section NORM.
           do x <- fresh_var;
           do be <- norm_expr_rec e;
           sret ((x, be) :: nil, AVar x (BarocqTyped.typof_expr e))
-      end
-    in
-    let fix letseq (le: smaplist BarocqBNF.expr) (e: BarocqBNF.expr) : BarocqBNF.expr :=
-      let te := BarocqBNF.btypof_expr e in
-      let fix mk_rec le :=
-        match le with
-        | nil => e
-        | (x, be) :: le' =>
-            ELetIn x be (mk_rec le') te
-        end
-      in mk_rec le
-    in
-    let fix norm_exprlist_rec (e: BarocqTyped.expr) (la: list atom) (le: list BarocqTyped.expr) : crmon ((smaplist BarocqBNF.expr) * BarocqBNF.expr) :=
+      end.
+
+    Fixpoint norm_exprlist_rec (e: BarocqTyped.expr) (la: list atom) (le: list BarocqTyped.expr) :
+      crmon ((smaplist BarocqBNF.expr) * BarocqBNF.expr) :=
       match le with
       | nil =>
           do er <- lift_err (bnfexpr_of_atomlist e (rev' la));
@@ -142,21 +200,35 @@ Section NORM.
           do (lx, a1) <- norm_expr_aux e1;
           do (lr, er) <- norm_exprlist_rec e (a1 :: la) le';
           sret (lx ++ lr, er)
-      end
-    in
-    let norm_exprlist (e: BarocqTyped.expr) (le: list BarocqTyped.expr) : crmon BarocqBNF.expr :=
+      end.
+
+    Definition norm_exprlist (e: BarocqTyped.expr) (le: list BarocqTyped.expr) : crmon BarocqBNF.expr :=
       do (lx, er) <- norm_exprlist_rec e [] le;
-      sret (letseq lx er)
-    in
-    let fix norm_match_cases (cases: list (pattern * BarocqTyped.expr)) : crmon (list (pattern * BarocqBNF.expr)) :=
+      sret (letseq lx er (btypof_expr er)).
+
+    Fixpoint norm_match_cases (cases: list (pattern * BarocqTyped.expr)) : crmon (list (pattern * BarocqBNF.expr)) :=
       match cases with
       | nil => sret nil
       | (c, e) :: cases' =>
           do ne <- norm_expr_rec e;
           do ncases' <- norm_match_cases cases';
           sret ((c, ne) :: ncases')
-      end
-    in
+      end.
+
+    Fixpoint norm_bindings (l : list (ident * BarocqTyped.expr)) : crmon ((smaplist BarocqBNF.expr) * list (ident *atom)) :=
+      match l with
+      | nil => sret (nil,nil)
+      | (x,e)::l' =>
+          do (l1,a1) <- norm_expr_aux e ;
+          do (lr,ar) <- norm_bindings l';
+          sret (l1++lr,(x,a1)::ar)
+      end.
+
+
+End NORMAUX.
+
+
+  Fixpoint norm_expr_rec (e: BarocqTyped.expr) : crmon BarocqBNF.expr :=
     match e with
     | BarocqTyped.ETrue =>
         sret (EAtom ATrue)
@@ -171,39 +243,51 @@ Section NORM.
     | BarocqTyped.EVar x ty =>
         sret (EAtom (AVar x ty))
     | BarocqTyped.ECast e1 ty =>
-        norm_exprlist e [e1]
+        norm_exprlist norm_expr_rec e [e1]
     | BarocqTyped.EUnaryOp op e1 _ =>
-        norm_exprlist e [e1]
+        norm_exprlist norm_expr_rec e [e1]
     | BarocqTyped.EBinaryOp op e1 e2 _ =>
-        norm_exprlist e [e1; e2]
+        norm_exprlist norm_expr_rec e [e1; e2]
     | BarocqTyped.EArrayGet e1 e2 _ _ =>
-        norm_exprlist e [e1; e2]
+        norm_exprlist norm_expr_rec e [e1; e2]
     | BarocqTyped.EArraySet e1 e2 e3 _ =>
-        norm_exprlist e [e1; e2; e3]
+        norm_exprlist norm_expr_rec e [e1; e2; e3]
     | BarocqTyped.ERecordProj e1 k _ _ =>
-        norm_exprlist e [e1]
+        norm_exprlist norm_expr_rec e [e1]
     | BarocqTyped.ERecordUpdate e1 k e2 _ =>
-        norm_exprlist e [e1; e2]
+        norm_exprlist norm_expr_rec e [e1; e2]
     | BarocqTyped.EApp e1 args _ =>
-        norm_exprlist e (e1 :: args)
+        norm_exprlist norm_expr_rec e (e1 :: args)
     | BarocqTyped.EIfThenElse e1 e2 e3 ty =>
-        do (le, c) <- norm_expr_aux e1;
+        do (le, c) <- norm_expr_aux norm_expr_rec e1;
         do ne2 <- norm_expr_rec e2;
         do ne3 <- norm_expr_rec e3;
-        sret (letseq le (EIfThenElse c ne2 ne3 ty))
+        sret (letseq le (EIfThenElse c ne2 ne3 ty) ty)
     | BarocqTyped.EMatch e1 cases ty =>
-        do (le, a) <- norm_expr_aux e1;
-        do ncases <- norm_match_cases cases;
-        sret (letseq le (EMatch a ncases ty))
+        do (le, a) <- norm_expr_aux norm_expr_rec e1;
+        do ncases <- norm_match_cases norm_expr_rec cases;
+        sret (letseq le (EMatch a ncases ty) ty)
     | BarocqTyped.ELetIn x e1 e2 ty =>
         do ne1 <- norm_expr_rec e1;
         do ne2 <- norm_expr_rec e2;
         sret (ELetIn x ne1 ne2 ty)
+    | BarocqTyped.EActR l ty =>
+        do (le,al) <- norm_bindings norm_expr_rec l ;
+        sret (letseq le (EActR al ty) ty)
+    | BarocqTyped.ELetW init cond decr body e2 ty =>
+        do init' <- norm_while_init norm_expr_rec init ;
+        do body' <- norm_expr_rec body;
+        do e2'   <- norm_expr_rec e2;
+        (** Beware: we assume that [cond] and [decr] are already atoms *)
+
+        do cond' <- lift_err (atom_of_expr cond);
+        do decr'  <- lift_err (atom_of_expr decr);
+        sret (BarocqBNF.ELetW init' cond' decr' body' e2' ty)
     | BarocqTyped.EAttr s e =>
         do ne <- norm_expr_rec e;
         sret (EAttr s ne)
   end.
-    
+
   Close Scope state_err_monad_scope.
 
   Local Open Scope error_monad_scope.
@@ -251,4 +335,3 @@ End NORM.
 
 Definition norm_program (prog: BarocqTyped.program) : res BarocqBNF.program :=
   norm_program_rec (BarocqTyped.pure_functions prog) prog.
-  

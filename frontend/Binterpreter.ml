@@ -11,6 +11,7 @@ exception Error of string
 let rec val_to_string (ty : typ) (x : 'a) : string =
   let o = Obj.magic x in
   match ty with
+  | TUnit -> sprintf "()"
   | TBool -> sprintf "%B" o
   | TInt32 Signed -> i32_to_string o
   | TInt32 Unsigned -> u32_to_string o

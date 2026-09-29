@@ -36,7 +36,68 @@ Definition fresh_var (se: STree.t ident) (x: ident) : MonRename.M (ident * STree
     let x' := mk_local_id n x in
     ((x', STree.set x x' se), STree.set x n s).
 
-Fixpoint rename_expr (se: STree.t ident) (e: expr) : MonRename.M expr :=
+
+Fixpoint rename_atom (se: STree.t ident) (e: atom) :  atom :=
+  match e with
+  | ATrue | AFalse
+  | AInt32 _ _ | AInt64 _ _
+  | AConstr _ _ _  =>  e
+  | AVar x ty =>
+      let x' := rename_var se x in  (AVar x' ty)
+  | ACast e1 ty =>
+      let e1' := rename_atom se e1 in
+       (ACast e1' ty)
+  | AUnaryOp op e1 ty =>
+      let e1' := rename_atom se e1 in
+      AUnaryOp op e1' ty
+  | ABinaryOp op e1 e2 ty=>
+      let e1' := rename_atom se e1 in
+      let e2' := rename_atom se e2 in
+      ABinaryOp op e1' e2' ty
+  | AArrayGet e1 e2 ly ty =>
+      let e1' := rename_atom se e1 in
+      let e2' := rename_atom se e2 in
+      AArrayGet e1' e2' ly ty
+  | ARecordProj e1 f ly bt =>
+      let e1' := rename_atom se e1 in
+      ARecordProj e1' f ly bt
+  | APureCall f bt args bty =>
+      let args' := List.map (rename_atom se) args in
+      APureCall f bt args' bty
+  end.
+
+Section RenameBinding.
+
+  Variable rename_expr : STree.t ident -> STree.t ident -> expr -> MonRename.M expr.
+
+
+  Fixpoint rename_bindings (sfi: STree.t ident) (si:STree.t ident) (se:STree.t ident)   (l : list (Syntax.ident * expr)) :
+    MonRename.M (STree.t ident * list (Syntax.ident * expr)) :=
+    match l with
+    | nil => sret (se,nil)
+    | (x,e)::l =>
+        (* rhs are rename using the current mapping - this is a parallel assignment *)
+        do e' <- rename_expr sfi si e ;
+        do (x', se') <- fresh_var se x;
+        do (se'', l) <- rename_bindings sfi si se' l ;
+        sret(se'',(x',e')::l)
+    end.
+
+  Fixpoint rename_actr (sf : STree.t ident) (se: STree.t ident) (l : list (Syntax.ident * expr)) :
+    MonRename.M (list (Syntax.ident * expr)) :=
+    match l with
+    | nil => sret nil
+    | (x,e)::l => do e' <- rename_expr sf se e ;
+                  let x' := rename_var sf x in
+                   do l <- rename_actr sf se l ;
+                   sret((x',e')::l)
+    end.
+
+
+End RenameBinding.
+
+
+Fixpoint rename_expr (sf: STree.t ident) (se: STree.t ident) (e: expr) : MonRename.M expr :=
   match e with
   | ETrue | EFalse
   | EInt32 _ _ | EInt64 _ _
@@ -45,65 +106,74 @@ Fixpoint rename_expr (se: STree.t ident) (e: expr) : MonRename.M expr :=
       let x' := rename_var se x in
       sret (EVar x')
   | ECast e1 ty =>
-      do e1' <- rename_expr se e1;
+      do e1' <- rename_expr sf se e1;
       sret (ECast e1' ty)
   | EUnaryOp op e1 =>
-      do e1' <- rename_expr se e1;
+      do e1' <- rename_expr sf se e1;
       sret (EUnaryOp op e1')
   | EBinaryOp op e1 e2 =>
-      do e1' <- rename_expr se e1;
-      do e2' <- rename_expr se e2;
+      do e1' <- rename_expr sf se e1;
+      do e2' <- rename_expr sf se e2;
       sret (EBinaryOp op e1' e2')
   | EArrayGet e1 e2 =>
-      do e1' <- rename_expr se e1;
-      do e2' <- rename_expr se e2;
+      do e1' <- rename_expr sf se e1;
+      do e2' <- rename_expr sf se e2;
       sret (EArrayGet e1' e2')
   | EArraySet e1 e2 e3 =>
-      do e1' <- rename_expr se e1;
-      do e2' <- rename_expr se e2;
-      do e3' <- rename_expr se e3;
+      do e1' <- rename_expr sf se e1;
+      do e2' <- rename_expr sf se e2;
+      do e3' <- rename_expr sf se e3;
       sret (EArraySet e1' e2' e3')
   | ERecordProj e1 f =>
-      do e1' <- rename_expr se e1;
+      do e1' <- rename_expr sf se e1;
       sret (ERecordProj e1' f)
   | ERecordUpdate e1 f e2 =>
-      do e1' <- rename_expr se e1;
-      do e2' <- rename_expr se e2;
+      do e1' <- rename_expr sf se e1;
+      do e2' <- rename_expr sf se e2;
       sret (ERecordUpdate e1' f e2')
   | EApp e1 args =>
-      do e1' <- rename_expr se e1;
+      do e1' <- rename_expr sf se e1;
       do args' <-
         List.fold_right
           (fun e acc =>
             do acc <- acc;
-            do e' <- rename_expr se e;
+            do e' <- rename_expr sf se e;
             sret (e' :: acc))
           (sret nil)
           args;
       sret (EApp e1' args')
   | EIfThenElse e1 e2 e3 =>
-      do e1' <- rename_expr se e1;
-      do e2' <- rename_expr se e2;
-      do e3' <- rename_expr se e3;
+      do e1' <- rename_expr sf se e1;
+      do e2' <- rename_expr sf se e2;
+      do e3' <- rename_expr sf se e3;
       sret (EIfThenElse e1' e2' e3')
   | EMatch e1 cases =>
-      do e1' <- rename_expr se e1;
+      do e1' <- rename_expr sf se e1;
       do cases' <-
         List.fold_right
           (fun '(pi, ei) acc =>
             do acc <- acc;
-            do ei' <- rename_expr se ei;
+            do ei' <- rename_expr sf se ei;
             sret ((pi, ei') :: acc))
           (sret nil)
           cases;
       sret (EMatch e1' cases')
   | ELetIn x e1 e2 =>
-      do e1' <- rename_expr se e1;
+      do e1' <- rename_expr sf se e1;
       do (x', se') <- fresh_var se x;
-      do e2' <- rename_expr se' e2;
+      do e2' <- rename_expr sf se' e2;
       sret (ELetIn x' e1' e2')
+  | EActR l => do l' <- rename_actr rename_expr sf se l ;
+               sret (EActR l')
+  | ELetW init cond decr body e2 =>
+      do (sf',init') <- rename_bindings rename_expr sf se se init;
+      do cond' <- rename_expr sf sf' cond;
+      do decr' <- rename_expr sf sf' decr;
+      do body' <- rename_expr sf' sf' body;
+      do e2'   <- rename_expr sf sf' e2;
+      sret (ELetW init' cond' decr' body' e2')
   | EAttr a e1 =>
-      do e1' <- rename_expr se e1;
+      do e1' <- rename_expr sf se e1;
       sret (EAttr a e1')
   end.
 
@@ -118,7 +188,7 @@ Definition rename_function (f: function) : function :=
       (fn_params f)
       (STree.empty, STree.empty)
   in
-  let (body, _) := rename_expr le_init (fn_body f) s_init in
+  let (body, _) := rename_expr STree.empty le_init (fn_body f) s_init in
   {|
     fn_return := fn_return f;
     fn_params := params;

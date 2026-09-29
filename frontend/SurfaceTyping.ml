@@ -32,6 +32,7 @@ type btyp =
   | BArray of btyp * Types.layout
   | BEnum of string * string
   | BRecord of string * string * string list
+  | BActR of (string * btyp) list
   | BAbs of string * string
   | BFun of btyp list * btyp
 
@@ -110,6 +111,13 @@ let rec btyp_to_string (ty : btyp) : string =
       | Types.LyUnboxed _ -> sprintf "[%s]#%s" s (btyp_to_string t)
       | _ -> sprintf "[%s]%s" s (btyp_to_string t)
       end
+  | BActR l ->
+     let rec string_of_list () l =
+       match l with
+       | [] -> ""
+       | (x,bt)::l -> sprintf "%s:%s;%a" x (btyp_to_string bt) string_of_list l in
+     sprintf "{%a}"string_of_list l
+     
   | BEnum (mname, tid) | BRecord (mname, tid, _) | BAbs (mname, tid) ->
       if mname = !curr_mname then tid else sprintf "%s::%s" mname tid
   | BFun (tparams, tret) ->
@@ -1016,6 +1024,8 @@ let rec transl_btyp (ty : btyp) : Types.btyp =
       let rid' = PrintUtils.ident_of_string (prefix_ident mname rid) in
       let ub' = List.map PrintUtils.ident_of_string ub in
       Types.BRecord (rid', ub')
+  | BActR l ->
+     Types.BActR (List.map (fun (s,ty) -> (PrintUtils.ident_of_string s,transl_btyp ty)) l)
   | BAbs (mname, tid) ->
       let tid' = PrintUtils.ident_of_string (prefix_ident mname tid) in
       Types.BAbs tid'
@@ -1219,9 +1229,40 @@ let rec typecheck_raw_expr (imports : ident list) (gte : gtenv) (ce : cenv)
       | _ -> assert false
       end
   | ELetIn (x, e1, e2) -> typecheck_let_in imports gte ce gx lx x e1 e2
+  | EActR l -> typecheck_actr imports gte ce gx lx l
+  | ELetW (w,e) -> typecheck_while imports gte ce gx lx w e
   | EAttr (x, e) ->
       let e, t = typecheck_expr imports gte ce gx lx e in
       (Barocq.EAttr (PrintUtils.ident_of_string x.content, e), t)
+
+and typecheck_actr (imports: ident list) (gte : gtenv) (ce: cenv)
+(gx: gcontext) (lx: lcontext) (l : (SurfaceAST.ident * SurfaceAST.expr) list) =
+  let l = List.map (fun (x,e) ->
+              let (e,ty) = typecheck_expr imports gte ce gx lx e in 
+              ((x.content ,e),(x.content,ty))) l in 
+  (Barocq.EActR (List.map fst l), BActR (List.map snd l)) 
+  
+
+and typecheck_while (imports : ident list) (gte : gtenv) (ce: cenv)
+  (gx : gcontext) (lx : lcontext)  (w:while_loop) (e: SurfaceAST.expr) =
+  let {init; cond;decr;body} = w in
+  (* Get the type of the initialisation *)
+  let (le,lty) = List.fold_right (fun  (x,e) (le,lty) ->
+               let (e,te) = typecheck_expr imports gte ce gx lx e in
+               let fd = transl_field_name x in
+               ((fd,e)::le , (x,te)::lty)) init ([],[]) in 
+  (* Augment the local context with the initialised variables *)
+  let lx = List.fold_right (fun (x,tx) lx -> lcontext_update lx x tx) lty lx in
+  (* The type of the condition is bool *)
+  let (cond',_) = typecheck_expr_expecting imports gte ce gx lx cond (Expect_typ BBool) in
+  let (decr',_) = typecheck_expr_expecting imports gte ce gx lx decr Expect_int in
+  (* The type of the body is an activation record *)
+  let tbody = BActR (List.map (fun (fd,ty) -> fd.content, ty) lty) in 
+  let lx' = List.fold_right (fun (x,ty) lx -> lcontext_update lx x ty) lty lx in
+  let (body',_) = typecheck_expr_expecting imports gte ce gx lx' body 
+                    (Expect_typ tbody) in 
+  let (e,ty) = typecheck_expr imports gte ce gx lx' e in
+  (Barocq.ELetW(le,cond', decr',body',e), ty)
 
 and typecheck_expr (imports : ident list) (gte : gtenv) (ce : cenv)
     (gx : gcontext) (lx : lcontext) (e : expr) : Barocq.expr * btyp =

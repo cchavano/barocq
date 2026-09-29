@@ -504,6 +504,7 @@ Section SEM.
             ieval_match ta va ty vcases
         | _ => fail
         end
+    | StWhile cond variant body => fail (* for now *)
     | StSequence s1 s2 =>
         let* (e1, m1, inv1) := ieval_statement te ge e m inv None s1 in
         ieval_statement te ge e1 m1 inv1 ty s2
@@ -558,7 +559,7 @@ Section SEM.
     let '(tret, params) := (fn_return f, fn_params f) in
     if MapList.nodup Ident.eq_dec params then
       let* tret := btyp_to_typ te tret in
-      let* params := Denot.map_err (btyp_to_typ te) params in
+      let* params := MapList.mmap _ (btyp_to_typ te) params in
       let g := GFun (List.map snd params) tret (ieval_fun te ge params tret (fn_body f)) in
       genv_update ge x g
     else fail.

@@ -74,8 +74,10 @@
         ("defn", DEFN); ("decl", DECL);
         ("let", LET); ("in", IN);
         ("match", MATCH); ("with", WITH); ("end", END);
-        ("as", AS); ("if", IF); ("then", THEN); ("else", ELSE)
-      ]
+        ("as", AS); ("if", IF); ("then", THEN); ("else", ELSE);
+        (* loop support *)
+         ("while",WHILE); ("decr",DECR); ("do", DO) ; ("done", DONE)
+]
 }
 
 let digit = ['0'-'9']

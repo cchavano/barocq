@@ -2,7 +2,7 @@ Set Universe Polymorphism.
 From Stdlib Require Import List String ListDec PArith Bool.
 From compcert Require Import Coqlib Integers Maps Ctypes.
 From BarocqComp Require Import Maps2 Utils Res Intop Barray Brecord Benum Types Typing Syntax Pp Printer.
-From BarocqComp Require Import Option Denot.
+From BarocqComp Require Import Option While Denot.
 From BarocqComp Require DList.
 Import ListNotations.
 
@@ -31,6 +31,11 @@ Inductive expr : Type :=
   | EIfThenElse (e1 e2 e3: expr) : expr                      (* if e1 then e2 else e3 *)
   | EMatch (e: expr) (cases: list (pattern * expr)) : expr   (* match e with V1 -> e1 ... Vn -> en end *)    
   | ELetIn (x: ident) (e1 e2: expr) : expr                   (* let x = e1 in e2 *)
+  | EActR (l:list (ident * expr))                      (* { x1 <- e1, ..., xn <- en } *)
+  | ELetW  (init:list (ident * expr))
+     (cond : expr) (variant: expr) (body : expr) (e2:expr)   (* let {v1 <- e1 ... vn <- en } =
+                                                                while cond decr variant do body done in
+                                                                e2 *)
   | EAttr (x: ident) (e: expr).                              (* expression with a decoration  *)
 
 (** ** Functions *)
@@ -93,6 +98,8 @@ Section TOTALITY.
         end
     | ERecordUpdate e1 _ e2
     | ELetIn _ e1 e2 => (expr_is_tot e1) && (expr_is_tot e2)
+    | EActR l  => List.forallb (fun x => expr_is_tot (snd x)) l
+    | ELetW  _ _ _ _ _ => false (* while loop may not terminate *)
     | EApp e1 args =>
         match e1 with
         | EVar f =>
@@ -162,6 +169,13 @@ Module Pp.
     | EMatch e cases => pp_match pp_expr pp_expr "match " e cases
     | ELetIn id e1 e2 => (Bstack (Pp.seq (Bstr "let " :: Bstr id :: Bstr " = " :: pp_expr e1 :: nil))
                             (Bcat (Bstr "in ") (pp_expr e2)) Left)
+    | EActR l   => Pp.seq (Bstr "{" :: pp_list (Bstr ", ") (fun '(x,e) => Pp.seq (Bstr x :: Bstr " <- " :: pp_expr e :: nil)) l ::
+                                   Bstr "}" :: nil)
+    | ELetW  init cond variant body e2 =>
+        Bstack (Pp.seq (Bstr "let {" :: pp_list (Bstr ", ") (fun '(x,e) => Pp.seq (Bstr x :: Bstr " <- " :: pp_expr e :: nil)) init :: Bstr "} = "::
+                          Bstr "while " :: pp_expr cond :: Bstr " decr " :: pp_expr variant :: Bstr " do " ::
+                          pp_expr body :: Bstr " done " :: nil))
+               (Bcat (Bstr "in ") (pp_expr e2)) Left
     | EAttr id e => Pp.seq (Bstr "#[ " :: Bstr id :: Bstr " ]"  :: pp_expr e :: nil)
     end.
 
@@ -225,6 +239,8 @@ Module Typed.
     | EIfThenElse : expr -> expr -> expr -> btyp -> expr
     | EMatch : expr -> list (pattern * expr) -> btyp -> expr
     | ELetIn : ident -> expr -> expr -> btyp -> expr
+    | EActR : list (ident * expr) -> btyp -> expr
+    | ELetW  : list (ident *  expr) -> expr -> expr -> expr -> expr -> btyp -> expr
     | EAttr : ident -> expr -> expr.
 
   Fixpoint typof_expr (e: expr) : btyp :=
@@ -245,6 +261,8 @@ Module Typed.
     | EApp _ _ ty
     | EIfThenElse _ _ _ ty
     | ELetIn _ _ _ ty => ty
+    | ELetW  _ _ _ _ _ ty => ty
+    | EActR _ ty => ty
     | EAttr _ e1 => typof_expr e1
     end.
 
@@ -276,6 +294,24 @@ Module Typed.
 
   Variable pure_funs: SSet.t.
 
+  (** [atom_is_pure a] holds if the atom [a] only calls pure functions. *)
+  Fixpoint atom_is_pure (a:atom) : bool :=
+    match a with
+    | ATrue
+    | AFalse
+    | AInt32 _ _
+    | AInt64 _ _
+    | AConstr _ _ _
+    | AVar _ _  => true
+    | ACast a _ => atom_is_pure a
+    | AUnaryOp _ a1  _ => atom_is_pure a1
+    | ABinaryOp _ a1 a2 _ => atom_is_pure a1 && atom_is_pure a2
+    | AArrayGet a1 a2 _ _ => atom_is_pure a1 && atom_is_pure a2
+    | ARecordProj a _ _ _ => atom_is_pure a
+    | APureCall f _ args _ => SSet.mem f pure_funs && (List.forallb atom_is_pure args)
+    end.
+
+
   Fixpoint expr_is_pure (e: expr) : bool :=
     match e with
     | ETrue | EFalse | EInt32 _ _ | EInt64 _ _
@@ -286,6 +322,10 @@ Module Typed.
     | EBinaryOp _ e1 e2 _
     | EArrayGet e1 e2 _ _
     | ELetIn _ e1 e2 _ => (expr_is_pure e1) && (expr_is_pure e2)
+    | EActR l _   => List.forallb (fun x => expr_is_pure (snd x)) l
+    | ELetW  init cond decr body e2 _ => List.forallb (fun x => expr_is_pure (snd x)) init &&
+                                         expr_is_pure cond && expr_is_pure decr && expr_is_pure body
+                                       && expr_is_pure e2
     | EApp e1 args _ =>
         match e1 with
         | EVar f _ =>
@@ -318,7 +358,59 @@ Module Typed.
         end)
       prog
       SSet.empty.
-  
+
+  Section REMOVELETW.
+
+    Fixpoint remove_let {A: Type} (l : list (ident * A)) (vars : STree.t unit) (vars2 : STree.t unit) :=
+      match l with
+      | nil => vars2
+      | (x,_)::l => match STree.get x vars with
+                    | Some _ => remove_let l vars vars2
+                    | None   => remove_let l vars (STree.remove x vars2)
+                    end
+      end.
+
+  End REMOVELETW.
+
+
+  Fixpoint vars_of_expr (vars : STree.t unit) (e:expr)  : STree.t unit :=
+    match e with
+    | ETrue  | EFalse  |EInt32 _ _ | EInt64 _ _ | EConstr _ _ _ => vars
+    | EVar id _ => STree.set id tt vars
+    | ECast e _ => vars_of_expr vars e
+    | EUnaryOp _ e _ => vars_of_expr vars e
+    | EBinaryOp _ e1 e2 _ | EArrayGet e1 e2 _ _ => vars_of_expr (vars_of_expr vars e1) e2
+    | EArraySet e1 e2 e3 _ => vars_of_expr (vars_of_expr (vars_of_expr vars e1) e2) e3
+    | ERecordProj e _ _ _ => vars_of_expr vars e
+    | ERecordUpdate e1 _ e2 _ => vars_of_expr (vars_of_expr vars e1) e2
+    | EApp e l _   => List.fold_left vars_of_expr l (vars_of_expr vars e)
+    | EIfThenElse e1 e2 e3 _ => vars_of_expr (vars_of_expr (vars_of_expr vars e1) e2) e3
+    | EMatch e1 cases _  =>
+        MapList.fold_left (fun vars _ ep => vars_of_expr vars ep) cases (vars_of_expr vars e1)
+    | ELetIn x e1 e2 _ => (* Ignore scopes - should remove x from e2 *)
+        let vars_e2 :=
+          match STree.get x vars with
+          | Some _ => vars_of_expr vars e2
+          | None   => STree.remove x (vars_of_expr vars e2)
+          end in vars_of_expr vars_e2 e1
+    | EActR l  _     => (** What about field names? *)
+        List.fold_left (fun acc '(_,a) => vars_of_expr acc a) l vars
+    | ELetW l cond variant body e _ =>
+        (* scopes? *)
+        let vars_e2 := remove_let l vars (vars_of_expr vars e) in
+        let vars_loop := vars_of_expr (vars_of_expr (vars_of_expr vars_e2 body) cond) variant in
+        MapList.fold_left (fun vars _ e => vars_of_expr vars e) l vars_loop
+    | EAttr _ e => vars_of_expr vars e
+    end.
+
+  Definition has_var (s:string) (vars:STree.t unit) :=
+    match STree.get s vars with
+    | None => false
+    | Some _ => true
+    end.
+
+
+
 End Typed.
 
 Module BarocqTyped := Barocq.Typed.
@@ -402,6 +494,32 @@ Module Typing.
         let lx' := lcontext_update lx x (typof_expr e1') in
         do e2' <- typecheck_expr be gx lx' e2;
         eret (ELetIn x e1' e2' (typof_expr e2'))
+    | Barocq.EActR l =>
+        do tl <- MapList.map_err (typecheck_expr be gx lx) l;
+        eret (EActR tl (BActR (map (fun '(x,e) => (x,typof_expr e)) tl)))
+    | Barocq.ELetW init cond variant body e2 =>
+        (* bindings of updatable variables *)
+        do init' <- MapList.map_err (typecheck_expr be gx lx) init;
+          let tinit := MapList.map (fun e => typof_expr e) init' in
+          let lx' := List.fold_right (fun '(x,ty) lx => lcontext_update lx x ty) lx tinit in
+          (* should typecheck cond and variant? *)
+          do cond' <- typecheck_expr be gx lx' cond;
+          do variant' <- typecheck_expr be gx lx' variant;
+          do body' <- typecheck_expr be gx lx' body;
+          do e2' <- typecheck_expr be gx lx' e2 ;
+          if negb (btyp_eqb BBool (typof_expr cond'))
+          then Error (MSG "loop guard " :: MSG "should have type bool." :: nil)
+          else if negb (btyp_is_int (typof_expr variant'))
+               then Error (MSG "loop variant " :: MSG "should have type int."::nil)
+               else
+                 if negb (btyp_eqb (typof_expr body') (BActR tinit))
+                 then Error (MSG "loop body " :: MSG "is wrongly typed.":: MSG nl ::
+                               MSG (Pp.pp (Pp.pp_expr e)) ::
+                               MSG " Expected type:" :: MSG (Pp.pp (pp_btyp (BActR tinit))) ::
+                               MSG " <> " :: MSG (Pp.pp (pp_btyp (typof_expr body'))) ::
+                               nil)
+                 else
+                   eret (ELetW init' cond' variant' body' e2' (typof_expr e2'))
     | Barocq.EAttr a e => do e <- typecheck_expr be gx lx e ;
                           eret (EAttr a e)
     end.
@@ -463,7 +581,7 @@ Module Typing.
   Definition typecheck_globdef (be:benv) (gx:gcontext) (d: Barocq.globdef) : res (benv * gcontext * BarocqTyped.globdef) :=
     match xtypecheck_globdef be gx d with
     | OK r => OK r
-    | Error m => Error (MSG "Cannot typecheck " :: MSG (ident_of_globdef d) :: m)
+    | Error m => Error (MSG "Cannot typecheck " :: MSG (ident_of_globdef d) :: MSG " " ::m)
     end.
 
   Fixpoint typecheck_globdefs (be: benv) (gx: gcontext) (defs: list Barocq.globdef) : res (list BarocqTyped.globdef) :=
@@ -528,6 +646,22 @@ Section DENOT.
 
   Definition typof_expr (te:tenv) (e:expr) : option typ :=
     btyp_to_typ te (typof_expr e).
+
+
+  Section EVALEXPR.
+    Variable eval_expr : forall (ty:typ), expr -> option (eval_typ ty).
+
+    Fixpoint update_lenv (te:tenv) (l:list (string * expr)) (le:lenv) : option lenv :=
+      match l with
+      | nil => Some le
+      | xe::l   => let* ty := typof_expr te (snd xe) in
+                   let* v := eval_expr ty (snd xe) in
+                   update_lenv te l (lenv_update tabs le (fst xe) (Val _ ty v))
+      end.
+
+
+  End EVALEXPR.
+
 
   Fixpoint eval_expr (te: tenv) (ge: genv) (le: lenv) (ty:typ) (e: expr)  : option (eval_typ ty) :=
     match e with
@@ -596,12 +730,29 @@ Section DENOT.
         let* te1:= typof_expr te e1 in
         let* v1 := eval_expr te ge le te1 e1 in
         let vcases := MapList.map (eval_expr te ge le ty) cases in
-        eval_match tabs te1 v1 ty vcases
+        eval_match tabs te1 v1  vcases
     | ELetIn x e1 e2 _ =>
         let* te1 := typof_expr te e1 in
         let* v1 := eval_expr te ge le te1 e1 in
         let le' := lenv_update tabs le x (Val tabs te1 v1) in
         eval_expr te ge le' ty e2
+    | EActR l _ =>
+        match ty with
+        | TRecord _ lty => eval_act_record tabs eval_expr te ge l lty le
+        |   _            => None
+        end
+    | ELetW init cond decr body e2 _ =>
+        let* le' := update_lenv (eval_expr te ge le) te init le  in
+        let* tyd := typof_expr te decr in
+        let* m := eval_expr  te ge le' tyd decr in
+        let* n := nat_of_val tabs m in
+        let* tyb := mmap (fun x => let* ty := typof_expr te (snd x) in Some (fst x, ty)) init in
+        let* initr := record_of_lenv tabs ge tyb le' in
+                let C := fun r =>
+                   eval_expr te ge (lenv_of_record _ _ r le') TBool cond in
+        let B := fun r => eval_expr te ge (lenv_of_record _ _ r le') (TRecord None tyb) body in
+        let* whiler := while C B n initr in
+        eval_expr te ge (lenv_of_record _ _ whiler le') ty e2
     | EAttr _ e1 => eval_expr te ge le ty e1
     end.
 
@@ -673,12 +824,29 @@ Section DENOT.
         let* te1:= typof_expr te e1 in
         let* v1 := eval_expr te ge le te1 e1 in
         let vcases := MapList.map (eval_expr te ge le ty) cases in
-        eval_match tabs te1 v1 ty vcases
+        eval_match tabs te1 v1  vcases
     | ELetIn x e1 e2 _ =>
         let* te1 := typof_expr te e1 in
         let* v1 := eval_expr te ge le te1 e1 in
         let le' := lenv_update tabs le x (Val tabs te1 v1) in
         eval_expr te ge le' ty e2
+    | EActR l _ =>
+        match ty with
+        | TRecord _ lty => eval_act_record tabs eval_expr te ge l lty le
+        |   _            => None
+        end
+    | ELetW init cond decr body e2 _ =>
+        let* le' := update_lenv (eval_expr te ge le) te init le  in
+        let* tyd := typof_expr te decr in
+        let* m := eval_expr  te ge le' tyd decr in
+        let* n := nat_of_val tabs m in
+        let* tyb := mmap (fun x => let* ty := typof_expr te (snd x) in Some (fst x, ty)) init in
+        let* initr := record_of_lenv tabs ge tyb le' in
+                let C := fun r =>
+                   eval_expr te ge (lenv_of_record _ _ r le') TBool cond in
+        let B := fun r => eval_expr te ge (lenv_of_record _ _ r le') (TRecord None tyb) body in
+        let* whiler := while C B n initr in
+        eval_expr te ge (lenv_of_record _ _ whiler le') ty e2
     | EAttr _ e1 => eval_expr te ge le ty e1
     end.
   Proof.
@@ -695,7 +863,7 @@ Section DENOT.
         let* av := mmap (eval_literal te) a in
         eval_array_lit tabs av
     | LRecord rc _ rid =>
-        let* rcv := map_err (eval_literal te) rc in
+        let* rcv := MapList.mmap _ (eval_literal te) rc in
         let* fields := TEnv.get_rdef te rid in
         eval_record_lit tabs rid rcv fields
     end.
@@ -785,19 +953,19 @@ Section DENOT.
   Definition mk_fun_value (te: tenv) (ge: genv) (params: smaplist btyp) (tret: btyp) (e: expr) : option (value tabs) :=
     if MapList.nodup Ident.eq_dec params then
       let* tret' := btyp_to_typ te tret in
-      let* params' := map_err (btyp_to_typ te) params in
+      let* params' := MapList.mmap _ (btyp_to_typ te) params in
       ret (Val tabs (TFun (List.map (fun x => snd x) params') tret') (eval_fun te ge params' tret' e))
     else fail.
 
   Definition fields_btyp_to_typ (te: tenv) (fields: smaplist btyp) : option (smaplist typ) :=
-    map_err (btyp_to_typ te) fields.
+    MapList.mmap _ (btyp_to_typ te) fields.
 
   Definition eval_def_type (te: tenv) (tid: ident) (td: type_def field_descr) : option tenv :=
     match td with
     | TdEnum elems =>
         TEnv.update_defs te tid (TdEnum elems)
     | TdRecord fields =>
-        let* fields' := map_err (btyp_to_typ te) (MapList.map fst fields) in
+        let* fields' := MapList.mmap _ (btyp_to_typ te) (MapList.map fst fields) in
         TEnv.update_defs te tid (TdRecord fields')
     end.
 

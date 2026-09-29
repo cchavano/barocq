@@ -24,6 +24,7 @@ let rec mtyp_to_rocq (ty : mtyp) : string =
   | MArray ta -> sprintf "list %s" (opt_parens ta)
   | MEnum te -> ident_to_string te
   | MRecord tr -> ident_to_string tr
+  | MActR _    -> failwith "mtyp_to_rocq MActR is not implemented"
   | MAbs t -> ident_to_string t
   | MFun (tparams, tret) -> (
       match tparams with
@@ -264,6 +265,103 @@ let field_name_prefix (ty : mtyp) : string =
   | _ -> assert false
 
 let typof_atom (a : atom) : mtyp = ShallowASTgen.Monadification.typof_atom a
+let typof_expr (e : expr) : mtyp = ShallowASTgen.Monadification.typof_expr e
+
+
+let rec string_of_list (sep:string) (string_of : unit -> 'a ->  string) () (l : 'a list) = 
+  match l with
+  | [] -> ""
+  | [e] -> string_of () e 
+  | e ::l -> sprintf "%a%s%a" string_of e sep (string_of_list sep string_of) l
+
+let print_binding_names (sep:string) () (l:(ident * 'a) list) : string =
+  let f () (x:ident * 'a) = ident_to_string (fst x) in 
+  string_of_list sep f () l
+
+let print_fun_args   () (l:(ident * ShallowAST.Monadic.expr) list) : string =
+  let f () (id,e) = sprintf "(%s:%s)" (ident_to_string id) (mtyp_to_rocq (typof_expr e)) in 
+  string_of_list " " f () l
+
+let rec print_fun_args_as_tuple  () (l:(ident * ShallowAST.Monadic.expr) list) : string =
+  match l with
+  | [] -> ""
+  | [id,_] -> (ident_to_string id)
+  | (id,_)::l -> sprintf "(%s,%a)" (ident_to_string id) print_fun_args_as_tuple l
+
+
+let rec print_type_tuple () (l:(ident * ShallowAST.Monadic.expr) list) =
+    match l with
+    | [] -> ""
+    | (_,e)::l -> sprintf "%s * (%a)" (mtyp_to_rocq (typof_expr e)) print_type_tuple l
+
+let rec print_type_as_list () (l:(ident * ShallowAST.Monadic.expr) list) =
+    match l with
+    | [] -> ""
+    | [_,e] -> sprintf "%s" (mtyp_to_rocq (typof_expr e))
+    | (_,e)::l -> sprintf "%s ; %a" (mtyp_to_rocq (typof_expr e)) print_type_as_list l
+
+
+let rec print_type_as_record () (l:(ident * ShallowAST.Monadic.expr) list) =
+    match l with
+    | [] -> ""
+    | [id,e] -> sprintf "(\"%s\",%s)" (ident_to_string id) (mtyp_to_rocq (typof_expr e))
+    | (id,e)::l -> sprintf "(\"%s\",%s) ; %a" (ident_to_string id) (mtyp_to_rocq (typof_expr e)) print_type_as_record l
+
+let rec bind_proj_of_record (record_name : string) () (l:(ident * ShallowAST.Monadic.expr) list) =
+  match l with
+  | [] -> ""
+  | (id,e)::l -> sprintf "let %s := project %s \"%s\" eq_refl in\n%a"
+                   (ident_to_string id) record_name (ident_to_string id) (bind_proj_of_record record_name) l
+           
+
+
+let print_actr (expr_to_rocq_rec : string -> unit -> ShallowAST.Monadic.expr -> string) () (l:(ident * ShallowAST.Monadic.expr) list) =
+  if !shver = ShallowASTgen.ShallowR
+  then
+    let rec output_lexpr () l =
+      match l with
+      | [] -> ""
+      | [_,e] -> expr_to_rocq_rec "" () e
+      | (_,e)::l -> sprintf "%a,%a" (expr_to_rocq_rec "") e  output_lexpr l in 
+            
+    sprintf "(%a)" output_lexpr l
+  else
+    let rec output_lexpr () l =
+           match l with
+           | [] -> "tt"
+           | (id,e)::l -> sprintf "(Field \"%s\" (%a),(%a))" (ident_to_string id) (expr_to_rocq_rec "") e  output_lexpr l in 
+           sprintf "(%a)" output_lexpr l
+
+
+
+let print_fun_args_tuple (string_of : unit -> ShallowAST.Monadic.expr -> string)  () (l:(ident * ShallowAST.Monadic.expr) list) : string =
+  let f () (id,e) = sprintf "(%s,%s)" (ident_to_string id) (mtyp_to_rocq (typof_expr e)) in 
+  
+  string_of_list " " f () l
+
+
+
+let print_init (string_of : unit -> 'a -> string) () (l: 'a list) = 
+  let rec print_init_rec  () (l: 'a list) =
+    match l with
+    | [] -> ""
+    | [e] -> string_of () e
+    | e::l -> sprintf "%a,%a" string_of e print_init_rec l in
+  sprintf "(%a)" print_init_rec l
+  
+
+let rec bindings_to_rocq (prefix : string) (expr_to_rocq_rec : string -> unit -> expr -> string)
+          () (e: (ident * expr) list) : string =
+  match e with
+  | [] -> ""
+  | (id,e)::l ->
+     let star = if is_mres (typof_expr e) then "*" else "" in
+     sprintf "%slet%s %s:=%a in\n%a"
+       prefix
+       star (ident_to_string id)
+       (expr_to_rocq_rec prefix) e
+       (bindings_to_rocq prefix expr_to_rocq_rec) l 
+  
 
 let imod_of_mtyp (ty : mtyp) : string =
   match ty with
@@ -272,6 +370,15 @@ let imod_of_mtyp (ty : mtyp) : string =
   | MInt64 Signed -> "I64"
   | MInt64 Unsigned -> "U64"
   | _ -> ""
+
+let cast_nat (ty:mtyp) =
+  match ty with
+  | MInt32 Signed ->  "I32.to_nat"
+  | MInt32 Unsigned -> "U32.to_nat"
+  | MInt64 Signed ->  "I64.to_nat"
+  | MInt64 Unsigned -> "U64.to_nat"
+  |  _  -> failwith "cast_Z expects an integer type"
+
 
 let rec atom_to_rocq (a : atom) : string =
   match a with
@@ -383,12 +490,25 @@ let rec atom_to_rocq (a : atom) : string =
       sprintf
         "%s %s"
         (ident_to_string f)
-        (list_to_string ~sep:" " atom_to_rocq args)
+        (list_to_string ~sep:" " opt_parens args)
 
 and opt_parens (a : atom) : string =
   PrintUtils.opt_parens is_simpl_atom atom_to_rocq a
 
-let rec expr_to_rocq_rec (prefix : string) (e : expr) : string =
+let select_while  (tcond:mtyp) (tbody:mtyp) =
+  match is_mres tcond , is_mres tbody with
+  | true , true -> "nwhile"
+  | true , false -> "nwhile_on"
+  | false , true -> "nwhile_no"
+  | false , false -> "nwhile_nn"
+      
+let expr_to_rocq_rec_ret (prefix: string) (expr_to_rocq_rec : string -> unit -> expr -> string) () (e:expr) =
+      if is_mres (typof_expr e)
+      then expr_to_rocq_rec prefix () e
+      else sprintf "%sret (%a)" prefix (expr_to_rocq_rec "") e
+
+
+let rec expr_to_rocq_rec (prefix : string) () (e : expr) : string =
   let prefix' = prefix ^ indent in
   let str =
     match e with
@@ -416,20 +536,20 @@ let rec expr_to_rocq_rec (prefix : string) (e : expr) : string =
         begin match e3 with
         | EIfThenElse _ ->
             sprintf
-              "if %s then\n%s\n%selse%s"
+              "if %s then\n%a\n%selse%s"
               (opt_parens a1)
-              (expr_to_rocq_rec prefix' e2)
+              (expr_to_rocq_rec prefix') e2
               prefix
-              (let e3_str = expr_to_rocq_rec prefix e3 in
+              (let e3_str = expr_to_rocq_rec prefix () e3 in
                let e3_start = String.length prefix - 1 in
                String.sub e3_str e3_start (String.length e3_str - e3_start))
         | _ ->
             sprintf
-              "if %s then\n%s\n%selse\n%s"
+              "if %s then\n%a\n%selse\n%a"
               (opt_parens a1)
-              (expr_to_rocq_rec prefix' e2)
+              (expr_to_rocq_rec prefix') e2
               prefix
-              (expr_to_rocq_rec prefix' e3)
+              (expr_to_rocq_rec prefix') e3
         end
     | EMatch (a1, cases, _) ->
         begin match !shver with
@@ -454,44 +574,94 @@ let rec expr_to_rocq_rec (prefix : string) (e : expr) : string =
         begin match e1 with
         | ELetIn _ | ELetMon _ | EIfThenElse _ | EMatch _ ->
             sprintf
-              "let %s :=\n%s\n%sin\n%s"
+              "let %s :=\n%a\n%sin\n%a"
               (ident_to_string x)
-              (expr_to_rocq_rec prefix' e1)
+              (expr_to_rocq_rec prefix') e1
               prefix
-              (expr_to_rocq_rec prefix e2)
+              (expr_to_rocq_rec prefix) e2
         | _ ->
             sprintf
-              "let %s := %s in\n%s"
+              "let %s := %a in\n%a"
               (ident_to_string x)
-              (expr_to_rocq_rec "" e1)
-              (expr_to_rocq_rec prefix e2)
+              (expr_to_rocq_rec "") e1
+              (expr_to_rocq_rec prefix) e2
         end
     | ELetMon (x, e1, e2, _) ->
         begin match e1 with
         | ELetIn _ | ELetMon _ | EIfThenElse _ | EMatch _ ->
             sprintf
-              "let* %s :=\n%s\n%sin\n%s"
+              "let* %s :=\n%a\n%sin\n%a"
               (ident_to_string x)
-              (expr_to_rocq_rec prefix' e1)
+              (expr_to_rocq_rec prefix') e1
               prefix
-              (expr_to_rocq_rec prefix e2)
+              (expr_to_rocq_rec prefix) e2
         | _ ->
             sprintf
-              "let* %s := %s in\n%s"
+              "let* %s := %a in\n%a"
               (ident_to_string x)
-              (expr_to_rocq_rec "" e1)
-              (expr_to_rocq_rec prefix e2)
+              (expr_to_rocq_rec "") e1
+              (expr_to_rocq_rec prefix) e2
         end
+    | ELetW(init,cond,variant,body,e,ty) ->
+       letw_to_string prefix prefix' init cond variant body e ty
+    | EActR(l,_) ->
+       print_actr expr_to_rocq_rec () l
+       
     | ERet (e1, _) ->
         begin match e1 with
         | EAtom (a1, _) -> sprintf "ret %s" (opt_parens a1)
-        | EApp _ -> sprintf "ret (%s)" (expr_to_rocq_rec "" e1)
+        | EApp _ -> sprintf "ret (%a)" (expr_to_rocq_rec "") e1
+        | EActR _ -> sprintf "ret (%a)" (expr_to_rocq_rec "") e1
         | _ -> assert false
         end
-    | EAttr (_, s, _) -> expr_to_rocq_rec prefix s
+    | EAttr (_, s, _) -> expr_to_rocq_rec prefix () s
   in
   prefix ^ str
 
+and letw_to_string (prefix: string) (prefix' : string) (init : (Syntax.ident * ShallowAST.Monadic.expr) list)
+(cond : ShallowAST.Monadic.expr) (variant : ShallowAST.Monadic.expr)
+(body: ShallowAST.Monadic.expr) (e:ShallowAST.Monadic.expr) (ty: ShallowAST.Monadic.mtyp) = 
+  ShallowASTgen.Monadification.(
+    let fuel = sprintf "(%s (%a))" (cast_nat (typof_expr variant)) (expr_to_rocq_rec "") variant in 
+    if !shver = ShallowASTgen.ShallowR
+    then  (* We use rocq tuple (left-associative) *)
+         sprintf "%alet* (%a) :=\n%sWHILE(\n%s(fun %a => %a),\n%s(fun %a => %a),\n%s%s ,\n%s%a) in\n%s%a"
+           (bindings_to_rocq prefix expr_to_rocq_rec) init
+           (print_binding_names ",") init
+           prefix'
+           prefix'
+           print_fun_args  init
+           (expr_to_rocq_rec "") cond
+            prefix'
+           print_fun_args  init
+           (expr_to_rocq_rec "") body
+           prefix'
+           fuel
+            prefix'
+           (print_actr expr_to_rocq_rec)  init
+           prefix
+           (expr_to_rocq_rec "") e
+  else (* We use Barocq record *)
+    sprintf "%alet* _r := (while\n%s(fun (_r: record [%a]) => %a%a)\n%s(fun (_r: record [%a]) => %a%a)\n%s%s\n%s%a) in\n%s\
+             %a%a"
+      (bindings_to_rocq prefix expr_to_rocq_rec) init
+      prefix' 
+      print_type_as_record init
+      (bind_proj_of_record "_r") init
+      (expr_to_rocq_rec_ret "" expr_to_rocq_rec) cond
+      prefix'
+      print_type_as_record init
+      (bind_proj_of_record "_r") init
+      (expr_to_rocq_rec_ret "" expr_to_rocq_rec) body
+      prefix'
+      fuel
+      prefix'
+      (print_actr expr_to_rocq_rec)  init
+      prefix
+     (bind_proj_of_record "_r") init
+     (expr_to_rocq_rec "") e
+  )
+  
 and match_case_to_string (prefix : string) ((p, ep) : Benum.pattern * expr) :
     string =
   match !shver with
@@ -502,10 +672,10 @@ and match_case_to_string (prefix : string) ((p, ep) : Benum.pattern * expr) :
         | Benum.PWildcard -> "_"
       in
       sprintf
-        "%s| %s =>\n%s"
+        "%s| %s =>\n%a"
         prefix
         case
-        (expr_to_rocq_rec (prefix ^ make_indent 2) ep)
+        (expr_to_rocq_rec (prefix ^ make_indent 2)) ep
   | ShallowASTgen.ShallowB ->
       let case =
         match p with
@@ -516,9 +686,9 @@ and match_case_to_string (prefix : string) ((p, ep) : Benum.pattern * expr) :
               (Camlcoq.Z.to_int z)
         | Benum.PWildcard -> "PWildcard"
       in
-      sprintf "%s(%s,\n%s)" prefix case (expr_to_rocq_rec (prefix ^ indent) ep)
+      sprintf "%s(%s,\n%a)" prefix case (expr_to_rocq_rec (prefix ^ indent)) ep
 
-let expr_to_rocq (e : expr) : string = expr_to_rocq_rec PrintUtils.indent e
+let expr_to_rocq (e : expr) : string = expr_to_rocq_rec PrintUtils.indent () e
 
 let param_to_rocq (param : ident * mtyp) : string =
   sprintf "(%s: %s)" (ident_to_string (fst param)) (mtyp_to_rocq (snd param))
@@ -686,7 +856,7 @@ module SR = struct
     "From Stdlib Require Import Bool List BinIntDef.\n\
      From compcert Require Import Integers.\n\
      From RecordUpdate Require Import RecordUpdate.\n\
-     From BarocqComp Require Import Option Barray Intop Utils.\n\
+     From BarocqComp Require Import Option WhileLib Barray Intop Utils.\n\
      From BarocqComp Require Import ShallowNotations.\n"
 
   let print_program (out : out_channel) (prog : program) : unit =
@@ -876,7 +1046,7 @@ module SB = struct
       "From Stdlib Require Import Bool List BinIntDef String.\n\
        From compcert Require Import Integers.\n\
        From RecordUpdate Require Import RecordUpdate.\n\
-       From BarocqComp Require Import Ident Option Barray Benum Brecord Intop.\n\
+       From BarocqComp Require Import Ident Option While WhileLib Barray Benum Brecord Intop.\n\
        From %s Require Import %s_Types.\n\
        From BarocqComp Require Import ShallowNotations.\n"
       !coqlib

@@ -40,6 +40,7 @@ module Deeptypes = struct
     | MArray ta -> sprintf "TArray %s" (opt_parens ta)
     | MEnum eid -> ident_to_string eid
     | MRecord rid -> ident_to_string rid
+    | MActR _     -> failwith "mtyp_to_typ_string: MActR is not implemented"
     | MFun (tparams, tret) ->
         sprintf
           "TFun %s %s"

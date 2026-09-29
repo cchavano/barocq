@@ -1,7 +1,7 @@
 (* Imperative Imp1 *)
 From Stdlib Require Import Bool List String PArith Lia Eqdep.
 From compcert Require Import Integers Coqlib.
-From BarocqComp Require Import Denot Benum Barray Brecord Option Intop Maps2 Utils Syntax Types Typing.
+From BarocqComp Require Import Denot Benum Barray Brecord Option While Intop Maps2 Utils Syntax Types Typing.
 From BarocqComp Require Import Imp1.
 From BarocqComp Require Printer Pp.
 
@@ -71,7 +71,7 @@ Definition addr := positive.
 
 Inductive ptr : typ -> Type :=
 | PtrA : forall (a:addr) (ty:typ), ptr (TArray ty)
-| PtrR : forall (a:addr) (id:ident) (l : smaplist typ), ptr (TRecord id l)
+| PtrR : forall (a:addr) (id:ident) (l : smaplist typ), ptr (TRecord (Some id) l)
 | PtrF : forall (id:ident) (l:list typ) (r:typ), ptr (TFun l r)
 | PtrAbs : forall (a:addr) (id:ident), ptr (TAbs id).
 
@@ -120,7 +120,7 @@ Section S.
   Inductive mval : typ -> Type :=
   | MArray : forall (ty:typ) (a : array (val ty)), mval (TArray ty)
   | MRecord : forall (id:ident) (rty :smaplist typ)
-                     (r :grecord val rty), mval (TRecord id rty) (* id should not be there *)
+                     (r :grecord val rty), mval (TRecord (Some id) rty) (* id should not be there *)
   | MAbs : forall (id:ident),SMap.get id abs -> mval (TAbs id).
 
   Definition ptr_of_val (ty:typ) (v:val ty) :=
@@ -151,7 +151,7 @@ Section S.
     | TRecord i l => ptr ty
     | TFun _ _    => ptr ty
     | TAbs  _     => ptr ty
-    | TBool  | TInt32 _ | TInt64 _ | TEnum _ _ => pval ty
+    | TUnit | TBool  | TInt32 _ | TInt64 _ | TEnum _ _ => pval ty
     end.
 
   Definition decomp_val (ty: typ) (v:val ty) : decomp_val_t ty.
@@ -163,6 +163,7 @@ Section S.
     - destruct ty; auto.
       inv p. inv p.
       inv p. inv p.
+      inv p.
   Defined.
 
   Definition decomp_pval_t (ty:typ) : Type :=
@@ -606,14 +607,17 @@ Section S.
   Lemma decomp_mval_eq (ty:typ) (v: mval ty):
     match ty as ty' return ty = ty'-> Prop with
     | TArray ty' => fun EQ => exists a, cast (f_equal mval EQ) v = MArray ty' a
-    | TRecord i l =>fun EQ => exists r, cast (f_equal mval EQ) v = MRecord i l r
+    | TRecord (Some n) l => (fun EQ =>
+                              exists r, cast (f_equal mval EQ) v = MRecord n l r)
+    | TRecord None l => fun EQ => False
     | TAbs t      =>fun EQ => exists a, cast (f_equal mval EQ) v = MAbs t a
     | TFun l r    =>  fun _ => False
+    | TUnit       => fun _ => False
     | TBool       => fun EQ => False
     | TInt32 s      => fun EQ => False
     | TInt64 s      => fun EQ => False
     | TEnum i l     => fun EQ => False
-    end eq_refl .
+    end eq_refl.
   Proof.
     destruct v.
     -  eexists ; reflexivity.
@@ -659,9 +663,11 @@ Section S.
   Lemma decomp_ptr_eq (ty:typ) (v: ptr ty):
     match ty as ty' return ty = ty'-> Prop with
     | TArray ty' => fun EQ => exists a, cast (f_equal ptr EQ) v = PtrA a ty'
-    | TRecord i l =>fun EQ => exists a, cast (f_equal ptr EQ) v = PtrR a i l
+    | TRecord (Some i) l =>fun EQ => exists a, cast (f_equal ptr EQ) v = PtrR a i l
+    | TRecord None l =>fun EQ => False
     | TAbs t      =>fun EQ => exists a, cast (f_equal ptr EQ) v = PtrAbs a t
     | TFun l r    =>  fun EQ => exists id, cast (f_equal ptr EQ) v = PtrF id l r
+    | TUnit       => fun EQ => False
     | TBool       => fun EQ => False
     | TInt32 s      => fun EQ => False
     | TInt64 s      => fun EQ => False
@@ -861,6 +867,7 @@ Section S.
   Proof.
     destruct ty.
     (* Pointer to primitive is not possible *)
+    - exfalso. apply (decomp_ptr _ p).
     - exfalso. apply (decomp_ptr _ p).
     - exfalso. apply (decomp_ptr _ p).
     - exfalso. apply (decomp_ptr _ p).
@@ -1341,6 +1348,13 @@ Section S.
     | _               => false (* cannot happen *)
     end.
 
+  Definition  nat_of_val (ty:typ) (v:val ty) : option nat :=
+    match v with
+    | Vprim ty v => nat_of_val _ (eval_pval v)
+    |  _         => None
+    end.
+
+
   Fixpoint eval_statement (te:tenv) (ge:genv) (e:env) (m:mem) (ty:option typ) (s:statement)  : option (typ_of_statement ty * mem) :=
     match s with
     | StSkip   => match ty with
@@ -1358,6 +1372,18 @@ Section S.
     | StIfThenElse a s1 s2 =>
         let* v := eval_atom te ge e m TBool a in
         eval_statement te ge e m ty (if bool_of_valbool v then s1 else s2)
+    | StWhile cond variant body =>
+        match ty with
+        | None =>
+            let* tyd := (typof_atom te variant) in
+            let* v := eval_atom te ge e m tyd variant in
+            let* n := nat_of_val _ v in
+            let C := fun '(le,m) => let*  vb := eval_atom te ge le m TBool cond in
+                               Some (bool_of_valbool vb) in
+            let B := fun '(le,m) => eval_statement te ge le m None body in
+            while C B n (e,m)
+        | Some _ => fail
+        end
     | StSwitch a l =>
         let* ta := typof_atom te a in
         let* va  := eval_atom te ge e m ta a  in
@@ -1396,7 +1422,7 @@ Section S.
     if MapList.nodup Ident.eq_dec params
     then
       let* tret' := btyp_to_typ te tret in
-      let* params' := Denot.map_err (btyp_to_typ te) params in
+      let* params' := MapList.mmap _ (btyp_to_typ te) params in
       Some (GFun (List.map snd params') tret' (eval_fun_rec te ge  env_empty params' tret' s))
     else fail.
 
@@ -1449,7 +1475,7 @@ Section S.
     | LRecord rc ub rid =>
         let* tr := btyp_to_typ te (BRecord rid ub) in
         match tr with
-        | TRecord id l =>
+        | TRecord (Some id) l =>
             let* (r,m) := mmap_fold (fun x m => let* (v,m) := eval_literal te (snd x) m in
                                                 Some ((fst x,v),m)) rc m in
             let* r := eval_record_lit r l in

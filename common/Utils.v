@@ -1,54 +1,14 @@
 From Stdlib Require Import PArith ZArith String DecimalString List Bool MSetPositive.
 From compcert Require Import Coqlib Ctypesdefs Maps Integers.
+From BarocqComp  Require Import Unsigned63 ZifyUint63.
 From BarocqComp Require Import StateMonads Res Option Ident ZlistPlus.
+From BarocqComp Require Export Utils0.
 Local Open Scope error_monad_scope.
 Local Open Scope option_monad_scope.
 Import MonCounter.
 Import MonCounterErr.
 Import ListNotations.
 
-Lemma elim_if : forall {A: Type} (c:bool) (e1 e1' e2 e2':A),
-  e1 = e1' -> e2 = e2' ->
-  (if c then e1 else e2) = (if c then e1' else e2').
-Proof.
-  destruct c; auto.
-Qed.
-
-Polymorphic Definition cast {A B: Type} (EQ : A = B) (v: A) : B.
-  rewrite EQ in v. exact v.
-Defined.
-
-Lemma cast_ok_imp_eq:
-  forall (A B: Type) (EQ: A = B) (v: A) (v': B),
-  @cast A B EQ v = v' ->
-  A = B.
-Proof.
-  tauto.
-Qed.
-
-(** Given a goal of the form [Forall P l], instead of doing [repeat Forall_cons] (slow),
-    do [apply Forall_app_sound]  (fast) *)
-
-(* [Forall_app [l1;...;ln] G] generates the formula P l1 -> ... -> P ln -> G *)
-Fixpoint Forall_app {A: Type} (P : A -> Prop) (l:list A) (G:Prop) {struct l} :=
-  match l with
-  | nil => G
-  | e::l' => P e -> (Forall_app P l' G)
-  end.
-
-Lemma Forall_app_Forall : forall {A: Type} (P : A -> Prop) l G,
-    (Forall P l -> G) ->  Forall_app P l G.
-Proof.
-  induction l; simpl;auto.
-Qed.
-
-Lemma Forall_app_sound : forall {A: Type} (P: A -> Prop) l,
-    Forall_app P l (Forall P l).
-Proof.
-  intros.
-  apply Forall_app_Forall.
-  auto.
-Qed.
 
 (** * Identifiers *)
 
@@ -185,20 +145,149 @@ Proof.
     f_equal. apply transl_correct. exact EQ.
     eapply IHl; eauto.
 Qed.
-  
-Section S.
-  (** is-it already defined elsewhere? *)
-  Context {A B: Type}.
-  Variable f : A -> B -> bool.
 
-  Fixpoint forall2b  (l1: list A) (l2: list B) {struct l1} : bool :=
-    match l1 , l2 with
-  | nil , nil => true
-  | e1::l1, e2::l2 => if f e1 e2 then forall2b l1 l2 else false
-  | _ , _ => false
-  end.
+Module UInt63Cmp.
+  Definition t := int.
 
-End S.
+  Definition compare := Unsigned63.compare.
+
+  Lemma compare_eq : forall i j, compare i j = Eq <-> i = j.
+  Proof.
+    intros.
+    rewrite compare_def_spec.
+    unfold compare_def.
+    destruct (i <?j)%uint63 eqn:LT.
+    split. congruence.
+    lia.
+    destruct (i =?j)%uint63 eqn:EQ.
+    split. lia.
+    reflexivity.
+    split ; (congruence || lia).
+  Qed.
+
+  Lemma compare_antisym : forall i j, compare i j  = CompOpp (compare j i).
+  Proof.
+    intros.
+    rewrite! compare_def_spec in *.
+    unfold compare_def in *.
+    destruct (i <?j)%uint63 eqn:LT1;
+    destruct (j <?i)%uint63 eqn:LT2; try lia.
+    destruct (j =?i)%uint63 eqn:EQ ; try lia.
+    reflexivity.
+    destruct (i =?j)%uint63 eqn:EQ; try lia.
+    reflexivity.
+    destruct (i =?j)%uint63 eqn:EQ1; try lia.
+    destruct (j =?i)%uint63 eqn:EQ2; try lia.
+    reflexivity.
+  Qed.
+
+  Lemma compare_trans : forall i j k c, (i ?= j)%uint63 = c -> (j ?= k)%uint63 = c -> (i ?= k)%uint63 = c.
+  Proof.
+    intros.
+    rewrite! compare_def_spec in *.
+    unfold compare_def in *.
+    destruct (i <?j)%uint63 eqn:LT1.
+  - destruct (j <? k)%uint63 eqn:LT2.
+    + subst.
+      replace (i <? k)%uint63 with true by lia.
+    auto.
+    + subst.
+      destruct (j =? k)%uint63 ; discriminate.
+  - destruct (i =? j)%uint63 eqn:EQ1;
+    subst.
+    assert (i = j) by lia.
+    subst.
+    auto.
+    destruct (j <? k)%uint63 eqn:LT; try discriminate.
+    destruct (j =? k)%uint63 eqn:EQ2; try discriminate.
+    destruct (i <? k)%uint63 eqn:LT2; try congruence.
+    lia.
+    destruct (i =? k)%uint63 eqn:EQ3; try congruence.
+    lia.
+Qed.
+
+End UInt63Cmp.
+
+Module UnsignedInt63 <: OrderedType.OrderedType.
+  Definition t := int.
+
+  Definition eq := @eq t.
+
+  Definition lt: t -> t -> Prop := fun x y => Unsigned63.compare x y = Lt.
+
+  Definition eq_refl : forall x, eq x x.
+  Proof.
+    reflexivity.
+  Qed.
+
+  Lemma eq_sym   : forall x y, eq x y -> eq y x.
+  Proof.
+    unfold eq.
+    congruence.
+  Qed.
+
+  Lemma eq_trans : forall x y z, eq x y -> eq y z -> eq x z.
+  Proof.
+    unfold eq. congruence.
+  Qed.
+
+  Lemma lt_trans : forall x y z, lt x y -> lt y z -> lt x z.
+  Proof.
+    unfold lt. intros x y z.
+    apply UInt63Cmp.compare_trans.
+  Qed.
+
+  Lemma lt_not_eq : forall x y, lt x y -> not (eq x y).
+  Proof.
+    unfold lt,eq. repeat intro.
+    subst.
+    assert (( y ?= y)%uint63 = Eq).
+    { rewrite UInt63Cmp.compare_eq.
+      reflexivity.
+    } congruence.
+  Qed.
+
+  Definition compare : forall x y : t, OrderedType.Compare lt eq x y.
+  Proof.
+    intros.
+    unfold lt,eq.
+    destruct (x ?= y)%uint63 eqn:CMP.
+    - apply OrderedType.EQ.  rewrite UInt63Cmp.compare_eq in CMP. auto.
+    - apply OrderedType.LT ;assumption.
+    - apply OrderedType.GT. rewrite UInt63Cmp.compare_antisym.
+      unfold UInt63Cmp.compare.
+      rewrite CMP. reflexivity.
+  Qed.
+
+  Definition eq_dec : forall (x y:t),{x = y} + {~ (x = y)} := eqs.
+
+  Definition eqb (x y:t) :=
+    match UInt63Cmp.compare x y with
+    | Eq => true
+    | _  => false
+    end.
+
+  Lemma eqb_eq : forall x y, eqb x y = true <-> eq x y.
+  Proof.
+    unfold eq,eqb. intros.
+    destruct (UInt63Cmp.compare x y) eqn:EQ.
+    - rewrite UInt63Cmp.compare_eq in EQ. intuition congruence.
+    - split ; intro; subst. discriminate.
+      assert (UInt63Cmp.compare y y = Eq).
+      {
+        rewrite UInt63Cmp.compare_eq.  reflexivity.
+      }
+      congruence.
+    - split ; intro; subst. discriminate.
+      assert (UInt63Cmp.compare y y = Eq).
+      {
+        rewrite UInt63Cmp.compare_eq.  reflexivity.
+      }
+      congruence.
+  Qed.
+
+End UnsignedInt63.
+
 
 (** * Sets *)
 
@@ -352,25 +441,164 @@ Section FORALL3.
 
 End FORALL3.
 
-(* Tactics *)
+(* decide equality of pairs *)
 
-Ltac destruct_conj H :=
-  match type of H with
-  | _ && _ = _ =>
-      apply andb_prop in H;
-      destruct_conj H
-  | _ /\ _ =>
-      let c1 := fresh "C" in
-      let c2 := fresh "C" in
-      destruct H as [c1 c2];
-      destruct_conj c1;
-      destruct_conj c2
-  | _ => idtac
-  end.
-      
-Ltac inv H := Coqlib.inv H.
+Definition pair_eq_dec {A B: Type}
+  (eqA : forall (a1 a2:A),{a1=a2}+{a1<> a2})
+  (eqB : forall (a1 a2:B),{a1=a2}+{a1<> a2}) :
+  forall (x:A * B) (y:A * B), {x = y} + {x <> y}.
+Proof.
+  decide equality.
+Defined.
 
-Ltac rew H :=
-  match type of H with
-  | ?A = _ => destruct A ; try discriminate ; inv H
+Import Datatypes.
+
+Definition compare_eqb (c1 c2: comparison) : bool :=
+  match c1 , c2 with
+  | Eq , Eq => true
+  | Lt , Lt => true
+  | Gt , Gt => true
+  | _ , _   => false
   end.
+
+Definition compare_le (c:comparison) :=
+  match c with
+  | Eq | Lt => true
+  | _   => false
+  end.
+
+Definition compare_eq (c:comparison) :=
+  match c with
+  | Eq  => true
+  | _   => false
+  end.
+
+Definition compare_lt (c:comparison) :=
+  match c with
+  | Lt  => true
+  | _   => false
+  end.
+
+(** Iterator *)
+Fixpoint iternd {A: Type} (F: A -> res A) (leb : A -> A -> bool)
+               (join : A -> A -> res A)  (d:A)  (n:nat) : res A * (list A) :=
+  match n with
+  | O => (Res.Error (MSG "Not enough fuel" :: nil) , (d::nil))
+  | S n => match F d with
+           | Res.Error m => (Res.Error (MSG "itern: function returns an error "::m),d::nil)
+           | OK d1   =>
+               match join d d1 with
+               | Res.Error e => (Res.Error (MSG "itern: join fails "::e), d::d1::nil)
+               | OK d1d  =>
+                   if leb d1d d
+                   then (OK d,d::nil)
+                   else let (r,l) := iternd F leb join d1d n in
+                        (r, d::l)
+               end
+           end
+  end.
+
+
+
+Fixpoint itern {A: Type} (F : A -> res A) (leb : A -> A -> bool)
+               (join : A -> A -> res A)  (d:A)  (n:nat) : res A:=
+  match n with
+  | O => Res.Error (MSG "Not enough fuel" ::nil)
+  | S n =>
+      match F d with
+      | Res.Error m => Res.Error (MSG "itern: function returns an error "::m)
+      | OK d1   =>
+          match join d d1 with
+          | Res.Error e => Res.Error (MSG "itern: join fails "::e)
+          | OK d1d  =>
+              if leb d1d d
+              then OK d
+              else itern F leb join d1d n
+          end
+      end
+  end.
+
+Section ITER.
+  Variable A : Type.
+  Variable F : A -> res A.
+  Variable join : A -> A -> res A.
+  Variable leb  : A -> A -> bool.
+
+  Variable join_ub_l : forall a1 a2 r,
+      join a1 a2 = OK r ->
+      leb a1 r = true.
+
+  Variable join_ub_r : forall a1 a2 r,
+      join a1 a2 = OK r ->
+      leb a2 r = true.
+
+  Variable leb_trans : forall a1 a2 a3,
+      leb a1 a2 = true ->
+      leb a2 a3 = true ->
+      leb a1 a3 = true.
+
+  Variable leb_refl : forall a1,
+      leb a1 a1 = true.
+
+
+  Lemma itern_iternd : forall n d0,
+      itern F leb join d0 n = fst (iternd F leb join d0 n).
+  Proof.
+    induction n; simpl; auto.
+    intros.
+    destruct (F d0); try congruence.
+    destruct (join d0 a); try reflexivity.
+    destruct (leb a0 d0); try congruence.
+    reflexivity.
+    rewrite IHn. destruct (iternd F leb join a0 n).
+    reflexivity.
+    reflexivity.
+  Qed.
+
+  Lemma itern_le : forall n d0 d1 ,
+      itern F leb join d0 n = OK d1 ->
+      leb d0 d1 = true.
+  Proof.
+    induction n.
+    - simpl. discriminate.
+    - simpl. intros.
+      destruct (F d0) eqn:Fd; try discriminate.
+      destruct (join d0 a) eqn:J; try discriminate.
+      destruct (leb a0 d0) eqn:LE.
+      * inv H.
+        apply leb_refl.
+      * eapply IHn in H.
+        apply join_ub_l in J.
+        eapply leb_trans;eauto.
+  Qed.
+
+  Definition lebr (x : res A) (y:A) : bool :=
+    match x with
+    | Res.Error _ => false
+    | Res.OK x    => leb x y
+    end.
+
+
+  Lemma itern_fix : forall n d0 d1 ,
+      itern F leb join d0 n = OK d1 ->
+      lebr (F d1) d1 = true /\  leb d0 d1 = true.
+  Proof.
+    induction n.
+    - simpl. discriminate.
+    - simpl. intros.
+      destruct (F d0) eqn:Fd; try discriminate.
+      destruct (join d0 a) eqn:J; try discriminate.
+      destruct (leb a0 d0) eqn:LE.
+      * inv H.
+        repeat split; auto.
+        rewrite Fd. simpl.
+        apply join_ub_r in J.
+        eapply leb_trans;eauto.
+      * apply IHn in H.
+        destruct H as (LE1 & LE2).
+        split; auto.
+        apply join_ub_l in J.
+        eapply leb_trans;eauto.
+  Qed.
+
+End ITER.

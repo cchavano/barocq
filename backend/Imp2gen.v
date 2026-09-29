@@ -16,6 +16,7 @@ Fixpoint transl_btyp (ty: btyp) : typ2 :=
   | BEnum eid => TEnum eid
   | BArray ta ly => TArray (transl_btyp ta) ly
   | BRecord rid ub => TRecord rid ub
+  | BActR l        => TActR (List.map (fun x => (fst x, transl_btyp (snd x))) l)
   | BFun tparams tret => TFun (List.map transl_btyp tparams) (transl_btyp tret)
   | BAbs t => TAbs t
   end.
@@ -68,6 +69,8 @@ Fixpoint transl_statement (s: Imp1.statement) : Imp2.statement :=
       StCall (Some x) f (transl_btyp tf) args' (transl_btyp ty)
   | Imp1.StIfThenElse a s1 s2 =>
       StIfThenElse (transl_atom a) (transl_statement s1) (transl_statement s2)
+  | Imp1.StWhile cond variant body =>
+      StWhile (transl_atom cond) (transl_atom variant) (transl_statement body)
   | Imp1.StSwitch a cases =>
       let cases' := MapList.map transl_statement cases in
       StSwitch (transl_atom a) cases'

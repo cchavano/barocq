@@ -1,8 +1,7 @@
   (** Must alias for imp1 *)
 From compcert Require Import Maps.
-From Stdlib Require Import Uint63.
 From Stdlib Require Import String FMapInterface FMapList ZArith Int ListSet.
-From BarocqComp Require Import Option Res Maps2 Types Syntax Imp1 Graph Typing Utils Pp.
+From BarocqComp Require Import Unsigned63 Option Res Maps2 Types Syntax Imp1 Graph Typing Utils Pp MergeSort.
 From Stdlib Require Import FMapPositive.
 Local Open Scope error_monad_scope.
 
@@ -15,7 +14,7 @@ Local Open Scope error_monad_scope.
     or put a default contract on function pointers.
  *)
 
-Module EdgeLabel <: OrderedType.
+Module EdgeLabel <: EdgeLabelT.
 
 Inductive edge :=
 | Field (id:Syntax.ident)
@@ -66,7 +65,7 @@ Lemma edge_compare_eq : forall x y,
     edge_compare x y = Eq <-> x = y.
 Proof.
   destruct x, y; simpl; try intuition congruence.
-  - rewrite ExtOrdered.string_compare_eq_iff. intuition congruence.
+  - rewrite ExtOrdered.string_compare_eq. intuition congruence.
   - rewrite AtomOrdered.atom_compare_eq. intuition congruence.
 Qed.
   Lemma edge_compare_refl : forall x,
@@ -299,6 +298,13 @@ Inductive KVar :=
 | KNode (n:int) (* Reference in the alias graph *)
 | KFun  (f:afunction) (* a function pointer *).
 
+Definition kvar_eq_dec (k1 k2:KVar): {k1 = k2} + { k1 <> k2}.
+Proof.
+  decide equality.
+  apply eqs.
+  apply afunction_eq_dec.
+Defined.
+
 Definition get_node (k:KVar) : option int :=
   match k with
   | KNode n => Some n
@@ -325,6 +331,10 @@ Module Vars.
       Vars : STree.t KVar;
       RVar : IntMap.t (list ident);
     }.
+
+  Definition equal (v1 v2:t) :=
+    STree.beq (eqb_of_dec kvar_eq_dec) (Vars v1) (Vars v2).
+
 
   Definition fold_dead {A: Type} (F : string -> A -> A) (acc:A) (vrs:t) :=
     STree.fold (fun acc x k => if is_dead k then F x acc else acc) (Vars vrs) acc.
@@ -434,7 +444,7 @@ Module Vars.
       destruct (kvar_case v).
       + destruct H0 as (n2 & H0).
          subst.
-         destruct (Int.eq_dec n n2).
+         destruct (UnsignedInt63.eq_dec n n2).
          rewrite IntMap.findl_eq by auto.
          rewrite IntMap.findl_remove.
          destruct (IntMap.Facts.eq_dec n n1).
@@ -493,7 +503,7 @@ Module Vars.
        destruct (kvar_case v).
        + destruct H0 as (n2 & H0).
          subst.
-         destruct (Int.eq_dec n n2).
+         destruct (UnsignedInt63.eq_dec n n2).
          rewrite IntMap.findl_eq by auto.
          destruct (STree.elt_eq x k); subst.
          simpl. intuition congruence.
@@ -559,6 +569,37 @@ Record domain := mkdom
       IsPure: bool (* No side-effect *)
     }.
 
+Definition atoms_eqb (s1 s2 : SMap.t (list atom)) :=
+  SMap.beq (fun l1 l2 =>
+              forall2b (eqb_of_dec AtomOrdered.eq_dec)
+                (MergeSort.sort AtomOrdered.leb l1)
+                (MergeSort.sort AtomOrdered.leb l2))
+    s1 s2.
+
+
+Definition domain_leb (d1 d2:domain) :=
+  Vars.equal (Vars d1) (Vars d2)
+  && G.graph_leb (Pto d2) (Pto d1)
+  && atoms_eqb (Atoms d1) (Atoms d2)
+  &&  Bool.eqb (IsPure d1) (IsPure d2).
+
+Definition domain_lebd (d1 d2:domain) : option box :=
+  if negb (Vars.equal (Vars d1) (Vars d2))
+  then Some (Bstr "Variables are not equal")
+  else if negb (G.graph_leb (Pto d2) (Pto d1))
+       then Some (Bstr "Graphs are not equal")
+       else if negb (atoms_eqb (Atoms d1) (Atoms d2))
+            then Some (Bstr "Atoms are not the same")
+            else if negb (Bool.eqb (IsPure d1) (IsPure d2))
+                 then Some (Bstr "Purity does not match")
+                 else None.
+
+
+
+
+
+
+
 Definition pp_domain (d:domain) :=
   Bstack (Bstr "") (Bcat (Bframe "_" "|"  (Vars.pp (Vars d))) (G.pp (Pto d))) Middle.
 
@@ -616,7 +657,7 @@ Definition eval_var (env:aenv) (vars:Vars.t) (id:ident) (*(bt:btyp)*) :=
     end.
 
   Definition bind_path (d:domain) (o:int) (acc: EdgeLabel.t) : res (domain * KVar) :=
-    if Int.eq_dec o (G.root (Pto d))
+    if UnsignedInt63.eq_dec o (G.root (Pto d))
     then Error (MSG "(bug) trying to bind a path to the root node."::nil)
     else
     match G.create_edge EdgeLabel.next_label o acc (Pto d) with
@@ -852,7 +893,7 @@ Definition update_var (l:list int) (k:KVar)  :=
   | KDead => KDead
   | KPrim => KPrim
   | KFun f => KFun f
-  | KNode n => if List.in_dec Int.eq_dec n l then KDead else KNode n
+  | KNode n => if List.in_dec UnsignedInt63.eq_dec n l then KDead else KNode n
   end.
 
 (*Definition update_vars (d:domain) (l:list int)  :=
@@ -943,7 +984,7 @@ Definition merge_var (m1: IntMap.t int) (m2:IntMap.t int) (k1 k2:KVar)  :=
   | KNode n1 , KNode n2 =>
       match IntMap.find n1 m1 , IntMap.find n2 m2 with
       | Some n1' , Some n2' =>
-          if Int.eq_dec n1' n2' then KNode n1'
+          if UnsignedInt63.eq_dec n1' n2' then KNode n1'
           else KDead
       |  _       ,  _        => KDead
       end
@@ -972,7 +1013,7 @@ Definition merge_vars (m1 m2: IntMap.t int) (v1 v2 : STree.t KVar) :=
 Definition merge_atoms (m1 m2:SMap.t (list atom)) :=
   PMap.combine (ListSet.set_inter Syntax.AtomOrdered.eq_dec) m1 m2.
 
-Definition merge_domain (d1 d2:domain) : res domain :=
+Definition domain_merge (d1 d2:domain) : res domain :=
   let (v1,pt1,at1,p1) := d1 in
   let (v2,pt2,at2,p2) := d2 in
   do (pto,m) <- inter_pto pt1 pt2;
@@ -1008,7 +1049,7 @@ Definition join_sfunction (s1 s2:sfunction)  : res sfunction :=
 
 Definition merge  (v1 v2 : domain + (sfunction * bool) ) :=
   match v1 , v2 with
-  | inl d1 , inl d2 => do d <- merge_domain d1 d2;
+  | inl d1 , inl d2 => do d <- domain_merge d1 d2;
                        OK (inl d)
   | inr (sf1,p1) , inr (sf2,p2) => do sf <- join_sfunction sf1 sf2;
                          OK (inr (sf,p1 && p2))
@@ -1033,6 +1074,55 @@ Definition expr_of_path (l : list EdgeLabel.t) :=
             end
   end.
 
+Definition leb_ext_domain (d1 d2 : domain + (sfunction * bool)) : bool:=
+  match d1, d2 with
+  | inl d1 , inl d2 => domain_leb d1 d2
+  | inr (sf1,b1) , inr(sf2,b2) => if sfunction_eq_dec sf1 sf2
+                                  then Bool.eqb b1 b2
+                                  else false
+  | _ , _ => false
+  end.
+
+
+Definition restrict_to_domain (F : domain -> res (domain + (sfunction * bool))) :=
+  fun d =>
+    do d1 <- F d ;
+    match d1 with
+    |inl d1 => OK d1
+    |inr _  => Error (msg "Loop is wrongly typed")
+    end.
+
+Definition widen_domain (d : res domain) : res (domain + (sfunction * bool)) :=
+    do d1 <- d ;
+    OK (inl d1).
+
+Definition pp_result (r : domain + (sfunction * bool)) : box :=
+    match r with
+    | inl d => pp_domain d
+    | inr _ => Bstr "sfunction * bool"
+    end.
+
+Fixpoint domain_list_pp_debug (l:list domain) : box :=
+  match l with
+  | nil => Bemp
+  | d1::r =>
+      Bcat (pp_domain d1)
+           (Bcat (Bstr " ")
+              match r with
+              | nil => Bemp
+              | d2::_ =>
+                  Bcat
+                    match domain_lebd d2 d1 with
+                    | None => Bemp
+                    | Some e =>  e
+                    end  (domain_list_pp_debug r)
+
+              end)
+  end.
+
+
+
+
 Fixpoint eval_statement (te:tenv) (env: aenv) (s:statement) (d:domain) : res (domain + (sfunction * bool)) :=
   match s with
   | StSkip    => OK (inl d)
@@ -1048,6 +1138,13 @@ Fixpoint eval_statement (te:tenv) (env: aenv) (s:statement) (d:domain) : res (do
       do d1 <- eval_statement te env s1 d;
       do d2 <- eval_statement te env s2 d;
       merge d1 d2
+  | StWhile cond variant body =>
+      let (r,l) := (iternd (restrict_to_domain (eval_statement te env body)) domain_leb domain_merge d  5) in
+      match r with
+      | OK _ => widen_domain r
+      | Error e => Error (MSG(Pp.pp (domain_list_pp_debug l)) :: e)
+      end
+
   | StSwitch a l => let ld := List.map (fun x => eval_statement te env (snd x) d) l in
                     merge_list merge ld
   | StSequence s1 s2 => do d1 <- eval_statement te env s1 d;
@@ -1158,6 +1255,7 @@ Fixpoint assigned (s:statement) : SSet.t :=
   | StSkip     => SSet.empty
   | StSet id _ => SSet.add id  SSet.empty
   | StIfThenElse _ s1 s2 => SSet.union (assigned s1) (assigned s2)
+  | StWhile _ _ body => assigned body
   | StSwitch _ l => List.fold_right (fun e acc => SSet.union (assigned (snd e)) acc) SSet.empty l
   | StSequence s1 s2 => SSet.union (assigned s1) (assigned s2)
   | StReturn _ => SSet.empty
@@ -1183,7 +1281,7 @@ Fixpoint bind_params (v:Vars.t) (g:G.t) (l :list (ident * typ)) :=
 
 Definition init_domain (l:list (ident * typ)) :=
   (* We make a dummy record which field are the parameters *)
-  let rec := TRecord "root"%string l in
+  let rec := TRecord None l in
   let g := G.mkroot rec in
   (* We bind each of the parameter in the graph *)
   bind_params (Vars.empty) g l.
@@ -1200,7 +1298,7 @@ Definition init_domain (l:list (ident * typ)) :=
  *)
 
 Definition domain_of_function (te:tenv) (f:function) : res domain :=
-  do params <- Res.of_opt (Denot.map_err (btyp_to_typ te) (fn_params f));
+  do params <- Res.of_opt (MapList.mmap _ (btyp_to_typ te) (fn_params f));
   if MapList.nodup  Ident.eq_dec params
   then let modified := assigned (fn_body f) in
        if List.forallb (fun i_t => negb (SSet.mem (fst i_t) modified)) params
@@ -1226,9 +1324,9 @@ Definition eval_function (te:tenv) (env:aenv) (f:function) : res afunction :=
   | inr (r,pure) =>
       do r <- sfunction_of_path (fn_params f) r;
       do tr <- Res.of_opt (btyp_to_typ te (fn_return f));
-      do params <- Res.of_opt (Denot.map_err (btyp_to_typ te) (fn_params f));
+      do params <- Res.of_opt (MapList.mmap _ (btyp_to_typ te) (fn_params f));
       OK (mk_function tr params (r,pure))
-  |  _    => efail
+  | inl _ => Error (msg "statement does not return")
   end.
 
 
@@ -1323,6 +1421,7 @@ Fixpoint statement_has_update (s:statement) :=
   | StIfThenElse a s1 s2 => statement_has_update s1 || statement_has_update s2
   | StSwitch a l =>
       List.existsb (fun x => statement_has_update (snd x)) l
+  | StWhile _ _ body => statement_has_update body
   | StSequence s1 s2 =>
       statement_has_update s1 || statement_has_update s2
   | StReturn a => false
@@ -1364,6 +1463,7 @@ Fixpoint has_nop (s:statement) :=
       (if is_nop s1 then false else has_nop s1)
       ||
       (if is_nop s2 then false else has_nop s2)
+  | StWhile _ _ body => has_nop body
   | StSwitch a l => List.existsb (fun x => has_nop (snd x)) l
   | StReturn _   => false
   | StSet id c   => is_nop s
@@ -1381,6 +1481,9 @@ Fixpoint transl_statement (te:tenv) (env: aenv) (d:domain) (s:statement) : res s
       OK (StIfThenElse a s1' s2')
   | StSwitch a l => do l' <- MapList.map_err (transl_statement te env d) l;
                     OK (StSwitch a l')
+  | StWhile cond variant body =>
+      do body' <- transl_statement te env d body;
+      OK (StWhile cond variant body')
   | StSequence s1 s2 =>
       do s1' <- transl_statement te env d s1;
       do d'  <- eval_statement te env s1 d;

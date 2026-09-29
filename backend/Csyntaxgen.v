@@ -39,6 +39,7 @@ Section TRANSL.
         let tret' := transl_typ2_rec LyBoxed tret in
         tptr (Tfunction tparams' tret' cc_default)
     | TAbs t => tptr (PMap.get (Ident.to_pos t) abs_types_impl)
+    | TActR _ => Tvoid (* this should not happen *)
     end.
 
   Definition transl_typ2 (ty: typ2) : Ctypes.type :=
@@ -67,6 +68,7 @@ Section TRANSL.
     | TRecord _ _
     | TFun _ _ 
     | TAbs _ => Xptr
+    | TActR _ => Xptr (* should not happen *)
     end.
 
   Definition transl_typ2_lit (ty: typ2) (n: Z) : Ctypes.type :=
@@ -257,6 +259,10 @@ Section TRANSL.
         do s1' <- transl_statement s1;
         do s2' <- transl_statement s2;
         eret (Sifthenelse e s1' s2')
+    | StWhile cond _ body =>
+        do cond' <- transl_atom cond;
+        do body' <- transl_statement body;
+        OK (Swhile cond' body')
     | StSwitch a cases =>
         do e <- transl_atom a;
         match typeof e with
@@ -288,6 +294,7 @@ Section TRANSL.
     | Imp2.StSet x a => MapList.add Ident.eq_dec x (typof_atom a) MapList.empty
     | Imp2.StIfThenElse _ s1 s2
     | Imp2.StSequence s1 s2 => MapList.merge Ident.eq_dec (all_locals s1) (all_locals s2)
+    | Imp2.StWhile cond _ body => all_locals body
     | Imp2.StSwitch _ cases =>
         MapList.fold_left
           (fun acc _ si => MapList.merge Ident.eq_dec (all_locals si) acc)

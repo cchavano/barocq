@@ -73,6 +73,8 @@ Section REWRITE.
         StIfThenElse (rewrite_atom a) (rewrite_statement s1) (rewrite_statement s2)
     | StSwitch a cases =>
         StSwitch (rewrite_atom a) (MapList.map rewrite_statement cases)
+    | StWhile cond variant body =>
+        StWhile (rewrite_atom cond) (rewrite_atom variant) (rewrite_statement body)
     | StSequence s1 s2 =>
         StSequence (rewrite_statement s1) (rewrite_statement s2)
     | StReturn a =>
