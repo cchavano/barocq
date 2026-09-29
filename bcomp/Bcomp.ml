@@ -17,7 +17,7 @@ let syntax_error_msg lexbuf msg =
     sep
     msg
 
-let version = "v0.5.2"
+let version = "v0.6.0"
 
 let opt_show_version = ref false
 
