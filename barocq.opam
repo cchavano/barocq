@@ -1,21 +1,21 @@
 opam-version: "2.0"
 name: "project"
-version: "0.6.0"
+version: "0.6.1"
 synopsis: "The Barocq compiler"
 maintainer: "Clément Chavanon <clement.chavanon@inria.fr>"
 authors: "Clément Chavanon and Frédéric Besson"
-homepage: "https://gitlab.inria.fr/cchavano/barocq"
+homepage: "https://github.com/cchavano/barocq"
 license: "GNU Lesser General Public License"
-bug-reports: "https://gitlab.inria.fr/cchavano/barocq/-/issues"
-dev-repo: "git+https://gitlab.inria.fr/cchavano/barocq.git"
+bug-reports: "https://github.com/cchavano/barocq/issues"
+dev-repo: "git+https://github.com/cchavano/barocq.git"
 depends: [
   "ocaml" {>= "4.14" & < "5~"}
   "menhir" {>= "20200624" & != "20260122" & != "dev"}
   "coq" {>= "8.20.1" & < "9.2~"}
   "coq-record-update" {= "0.3.6"}
   "coq-vst-zlist" {= "2.13"}
-  "compcert-ce" {= "3.17-20260611ce"}
+  "compcert-brc" {= "3.17-brc1"}
 ]
-pin-depends: ["compcert-ce.3.17-20260611ce" "git+https://gitlab.inria.fr/cchavano/compcert-ce.git#main"]
+pin-depends: ["compcert-brc.3.17-brc1" "git+https://github.com/cchavano/barocq#main"]
 build: [[make]]
 install: [make "install-all"]
