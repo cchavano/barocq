@@ -16,6 +16,6 @@ depends: [
   "coq-vst-zlist" {= "2.13"}
   "compcert-brc" {= "3.17-brc1"}
 ]
-pin-depends: ["compcert-brc.3.17-brc1" "git+https://github.com/cchavano/barocq#main"]
+pin-depends: ["compcert-brc.3.17-brc1" "git+https://github.com/cchavano/CompCert-Brc#main"]
 build: [[make]]
 install: [make "install-all"]
