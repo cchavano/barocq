@@ -63,13 +63,16 @@ type raw_expr =
   | EIfThenElse of expr * expr * expr
   | EMatch of expr * (pattern * expr) list
   | ELetIn of ident * expr * expr
-  | ELetW  of while_loop * expr
+  | ELetW of while_loop * expr
   | EAttr of ident * expr
 
-and while_loop = {init : (ident * expr) list;
-                  cond : expr;
-                  decr : expr;
-                  body : expr}
+and while_loop = {
+  init : (ident * expr) list;
+  cond : expr;
+  decr : expr;
+  body : expr;
+}
+
 and expr = raw_expr Location.t
 
 type c_visibility =

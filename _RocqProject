@@ -1,9 +1,11 @@
+-R _build/lib BarocqComp.lib
 -R _build/common BarocqComp.common
 -R _build/frontend BarocqComp.frontend
 -R _build/backend BarocqComp.backend
 -R _build/rocqgen BarocqComp.rocqgen
 -R _build/bcomp BarocqComp.bcomp
 
+_build/lib
 _build/common
 _build/frontend
 _build/backend

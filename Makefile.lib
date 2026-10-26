@@ -1,0 +1,44 @@
+-include Makefile.config
+
+LIB=\
+	Unsigned63.v ZifyUint63.v StateMonads.v BSet.v Res.v Utils0.v Utils.v Barray.v Brecord.v Benum.v Maps2.v Option.v\
+	While.v WhileLib.v ZlistPlus.v Intop.v Ident.v DList.v ExtOrdered.v Pp.v MergeSort.v
+
+VSOURCE=$(addprefix lib/,$(LIB))
+VBUILD=$(addprefix $(BUILD_DIR)/,$(VSOURCE))
+
+COQINCLUDES=-R $(BUILD_DIR)/lib BarocqComp.lib
+COQC=coqc $(COQOPT) $(COQINCLUDES)
+COQEXEC=coqtop $(COQOPT) $(COQINCLUDES) -batch -load-vernac-source
+COQDEP=coqdep $(COQINCLUDES)
+
+all: .depend $(VBUILD:.v=.vo)
+
+$(BUILD_DIR)/lib: 
+	mkdir -p $(BUILD_DIR)/lib
+
+builddir: $(BUILD_DIR)/lib
+
+$(BUILD_DIR)/%.v: %.v | builddir
+	@echo COPY $< to $@
+	@cp $< $@
+
+.depend: $(VBUILD)
+	@echo Analyzing Rocq dependencies
+	@$(COQDEP) $^ > .depend
+
+%.vo: %.v
+	@echo COQC $*.v
+	@$(COQC) $*.v
+
+clean:
+	rm -rf _build/lib
+
+install:
+	@echo INSTALL BarocqComp lib files in $(INSTALL_DEV_DIR)
+	@install -d $(INSTALL_DEV_DIR)/lib;
+	@install -m 0644 $(BUILD_DIR)/lib/*.v $(BUILD_DIR)/lib/*.vo $(BUILD_DIR)/lib/*.glob $(INSTALL_DEV_DIR)/lib/;
+
+.PHONY: builddir
+
+-include .depend
