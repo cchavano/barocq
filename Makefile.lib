@@ -2,7 +2,7 @@
 
 LIB=\
 	Unsigned63.v ZifyUint63.v StateMonads.v BSet.v Res.v Utils0.v Utils.v Barray.v Brecord.v Benum.v Maps2.v Option.v\
-	While.v WhileLib.v ZlistPlus.v Intop.v Ident.v DList.v ExtOrdered.v Pp.v MergeSort.v
+	While.v WhileLib.v ZlistPlus.v Intop.v Ident.v DList.v ExtOrdered.v Pp.v MergeSort.v ShallowLib.v
 
 VSOURCE=$(addprefix lib/,$(LIB))
 VBUILD=$(addprefix $(BUILD_DIR)/,$(VSOURCE))
@@ -12,7 +12,7 @@ COQC=coqc $(COQOPT) $(COQINCLUDES)
 COQEXEC=coqtop $(COQOPT) $(COQINCLUDES) -batch -load-vernac-source
 COQDEP=coqdep $(COQINCLUDES)
 
-all: .depend $(VBUILD:.v=.vo)
+all: .depend-lib $(VBUILD:.v=.vo)
 
 $(BUILD_DIR)/lib: 
 	mkdir -p $(BUILD_DIR)/lib
@@ -23,15 +23,16 @@ $(BUILD_DIR)/%.v: %.v | builddir
 	@echo COPY $< to $@
 	@cp $< $@
 
-.depend: $(VBUILD)
+.depend-lib: $(VBUILD)
 	@echo Analyzing Rocq dependencies
-	@$(COQDEP) $^ > .depend
+	@$(COQDEP) $^ > .depend-lib
 
 %.vo: %.v
 	@echo COQC $*.v
 	@$(COQC) $*.v
 
 clean:
+	rm -rf .depend-lib
 	rm -rf _build/lib
 
 install:
@@ -41,4 +42,4 @@ install:
 
 .PHONY: builddir
 
--include .depend
+-include .depend-lib

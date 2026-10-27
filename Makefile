@@ -188,7 +188,7 @@ format: $(MLFORMAT)
 
 # Cleaning
 
-clean_theories:
+clean-theories:
 	rm -f $(VBUILD)
 	rm -f $(VBUILD:.v=.vo)
 	rm -f $(VBUILD:.v=.vok)
@@ -209,6 +209,9 @@ clean:
 	rm -f barocq
 	rm -f .lia.cache
 
+clean-lib:
+	$(MAKE) -f Makefile.lib clean
+
 cleanall:
 	$(MAKE) clean
 	$(MAKE) uninstall-all
@@ -216,7 +219,7 @@ cleanall:
 FORCE:
 
 .PHONY:\
-	nolib builddir extrdep vbuild depend depend1\
+	lib nolib builddir extrdep vbuild depend depend1\
     vofiles extraction format theories FORCE\
 	install install-dev install-all\
 	uninstall uninstall-lib uninstall-dev uninstall-all\
