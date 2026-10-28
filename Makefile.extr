@@ -204,9 +204,17 @@ clean:
 
 # Generation of .depend.extr
 
+# Files under $(BUILD_DIR)/$(MLDIRS) are created by this make run (as
+# prerequisites of depend), so they must not be found with $(wildcard):
+# make < 4.4 can answer from a stale directory cache and miss them.
+# Directories populated before this make starts can still be globbed.
+DEPEND_DIRS=$(BUILD_DIR)/extraction $(addprefix $(COMPCERT_DIR)/, $(CDIRS))
+DEPEND_ML=$(sort $(foreach d,$(DEPEND_DIRS),$(wildcard $(d)/*.ml)) $(filter %.ml,$(MLFILES)))
+DEPEND_MLI=$(sort $(foreach d,$(DEPEND_DIRS),$(wildcard $(d)/*.mli)) $(filter %.mli,$(MLFILES)))
+
 depend: $(MLFILES)
 	@echo "Analyzing OCaml dependencies"
-	@$(OCAMLDEP) $(foreach d,$(DIRS),$(wildcard $(d)/*.ml)) $(GENERATED) >.depend.extr || { rm -f .depend.extr; exit 2; }
-	@$(OCAMLDEP) $(foreach d,$(DIRS),$(wildcard $(d)/*.mli)) $(GENERATED) >>.depend.extr || { rm -f .depend.extr; exit 2; }
+	@$(OCAMLDEP) $(DEPEND_ML) >.depend.extr || { rm -f .depend.extr; exit 2; }
+	@$(OCAMLDEP) $(DEPEND_MLI) >>.depend.extr || { rm -f .depend.extr; exit 2; }
 
 .PHONY: builddir
