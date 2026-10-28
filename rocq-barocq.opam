@@ -1,5 +1,5 @@
 opam-version: "2.0"
-name: "barocq"
+name: "rocq-barocq"
 version: "0.6.1"
 synopsis: "The Barocq compiler"
 maintainer: "Clément Chavanon <clement.chavanon@inria.fr>"
@@ -19,4 +19,4 @@ depends: [
 conflicts: ["rocq-barocq-lib"]
 pin-depends: ["compcert-brc.3.17-brc1" "git+https://github.com/cchavano/CompCert-Brc#main"]
 build: [[make]]
-install: [make "install-all"]
+install: [make "install"]

@@ -12,7 +12,7 @@ COQC=coqc $(COQOPT) $(COQINCLUDES)
 COQEXEC=coqtop $(COQOPT) $(COQINCLUDES) -batch -load-vernac-source
 COQDEP=coqdep $(COQINCLUDES)
 
-all: .depend-lib $(VBUILD:.v=.vo)
+all: .depend.lib $(VBUILD:.v=.vo)
 
 $(BUILD_DIR)/lib: 
 	mkdir -p $(BUILD_DIR)/lib
@@ -23,16 +23,16 @@ $(BUILD_DIR)/%.v: %.v | builddir
 	@echo COPY $< to $@
 	@cp $< $@
 
-.depend-lib: $(VBUILD)
+.depend.lib: $(VBUILD)
 	@echo Analyzing Rocq dependencies
-	@$(COQDEP) $^ > .depend-lib
+	@$(COQDEP) $^ > .depend.lib
 
 %.vo: %.v
 	@echo COQC $*.v
 	@$(COQC) $*.v
 
 clean:
-	rm -rf .depend-lib
+	rm -rf .depend.lib
 	rm -rf _build/lib
 
 install:
@@ -40,6 +40,6 @@ install:
 	@install -d $(INSTALL_DEV_DIR)/lib;
 	@install -m 0644 $(BUILD_DIR)/lib/*.v $(BUILD_DIR)/lib/*.vo $(BUILD_DIR)/lib/*.glob $(INSTALL_DEV_DIR)/lib/;
 
-.PHONY: builddir
+.PHONY: builddir clean
 
--include .depend-lib
+-include .depend.lib

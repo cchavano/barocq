@@ -1,5 +1,7 @@
 -include Makefile.config
 
+##### VARIABLES #####
+
 NOLIB=false
 
 LIB=\
@@ -23,16 +25,19 @@ ROCQGEN=\
 
 BCOMP=Compiler.v
 
-VDIRS=common frontend backend rocqgen bcomp
+VDIRS_NOLIB=common frontend backend rocqgen bcomp
+VDIRS=lib $(VDIRS_NOLIB)
 
-VSOURCE=\
-	$(addprefix common/,$(COMMON)) $(addprefix frontend/,$(FRONTEND))\
-	$(addprefix backend/,$(BACKEND)) $(addprefix rocqgen/, $(ROCQGEN))\
-	$(addprefix bcomp/,$(BCOMP))
+VSOURCE_NOLIB=\
+	$(addprefix common/,$(COMMON)) \
+	$(addprefix frontend/,$(FRONTEND)) $(addprefix backend/,$(BACKEND)) \
+	$(addprefix rocqgen/, $(ROCQGEN)) $(addprefix bcomp/,$(BCOMP))
 
-ifeq ($(NOLIB), false)
-    VDIRS+=lib
-	VSOURCE+=$(addprefix lib/,$(LIB))
+VSOURCE=$(addprefix lib/,$(LIB)) $(VSOURCE_NOLIB)
+
+ifeq ($(NOLIB), true)
+    VDIRS:=$(VDIRS_NOLIB)
+	VSOURCE:=$(VSOURCE_NOLIB)
 endif
 
 VDIRS_BUILD=$(addprefix $(BUILD_DIR)/, $(VDIRS))
@@ -48,18 +53,17 @@ COQEXEC=coqtop $(COQOPT) $(COQINCLUDES) -batch -load-vernac-source
 COQDEP=coqdep $(COQINCLUDES)
 OCAMLFORMAT=ocamlformat -i
 
+##### BUILD TARGETS #####
+
 all:
-	@if [ "$(NOLIB)" = false ]; then \
-		rm -f .nolib; \
-	else \
-		echo Building without the lib directory; \
-	fi
 	@test -f .depend || $(MAKE) depend
 	$(MAKE) barocq
 
 nolib:
-	@touch .nolib
 	@$(MAKE) all NOLIB=true
+
+lib: Makefile.lib
+	$(MAKE) -f $<
 
 $(VDIRS_BUILD):
 	@for dir in $(VDIRS) ; do \
@@ -87,8 +91,6 @@ $(BUILD_DIR)/%.v: %.v | builddir
 	@echo COPY $< to $@
 	@cp $< $@
 
-vbuild: $(VBUILD) extrdep
-
 $(BUILD_DIR)/extraction.v: extraction.v | builddir
 	@echo COPY extraction.v to $@
 	@cp extraction.v $(BUILD_DIR)
@@ -107,9 +109,7 @@ depend: depend1
 	@echo COQC $*.v
 	@$(COQC) $*.v
 
-theories: $(VBUILD:.v=.vo)
-
-vofiles: $(VBUILD:.v=.vo) $(EXTRDEP.v=.vo)
+theories: depend $(VBUILD:.v=.vo)
 
 # Extraction
 
@@ -130,54 +130,35 @@ $(BUILD_DIR)/extraction/STAMP: $(VBUILD:.v=.vo) $(EXTRDEP.v=.vo) $(BUILD_DIR)/ex
 barocq: .depend.extr compcert.ini FORCE
 	$(MAKE) -f Makefile.extr barocq
 
-# Lib only
+##### INSTALL #####
 
-lib: Makefile.lib
-	$(MAKE) -f $<
-
-# Binary and Rocq library installation
-
-install:
-	@echo INSTALL barocq to $(INSTALL_DIR)/barocq
-	@install barocq $(INSTALL_DIR)/barocq
-
-install-dev:
-	@echo INSTALL source files to $(INSTALL_DEV_DIR)
-	@for d in $(VDIRS); do \
+define INSTALL_ROUTINE
+	@echo INSTALL Rocq files to $(INSTALL_DEV_DIR)
+	@for d in $(1) lib; do \
 		set -e; \
-		if ! ([ "$$d" = lib ] && [ -f ".nolib" ]); then \
-			install -d $(INSTALL_DEV_DIR)/$$d; \
-			install -m 0644 $(BUILD_DIR)/$$d/*.v $(BUILD_DIR)/$$d/*.vo $(BUILD_DIR)/$$d/*.glob $(INSTALL_DEV_DIR)/$$d/; \
-		fi; \
+		install -d $(INSTALL_DEV_DIR)/$$d; \
+		install -m 0644 $(BUILD_DIR)/$$d/*.v $(BUILD_DIR)/$$d/*.vo $(BUILD_DIR)/$$d/*.glob $(INSTALL_DEV_DIR)/$$d/; \
 	done
 	@install -d $(INSTALL_DEV_DIR)/misc
 	@install misc/CorresBD_Proof.v $(INSTALL_DEV_DIR)/misc/CorresBD_Proof.v
+endef
 
-install-all:
-	$(MAKE) install install-dev
+install:
+	$(MAKE) install-comp
+	$(call INSTALL_ROUTINE,$(VDIRS))
+
+install-nolib:
+	$(MAKE) install-comp
+	$(call INSTALL_ROUTINE,$(VDIRS_NOLIB))
 
 install-lib: Makefile.lib
 	$(MAKE) -f $< install
 
-uninstall:
-	rm -f $(INSTALL_DIR)/barocq
+install-comp:
+	@echo INSTALL barocq to $(INSTALL_DIR)/barocq
+	@install barocq $(INSTALL_DIR)/barocq
 
-uninstall-lib:
-	rm -rf $(addprefix $(INSTALL_DEV_DIR)/, lib)
-
-uninstall-dev:
-	@echo Uninstalling dev files
-	@if [ -f ".nolib" ]; then \
-		rm -rf $(addprefix $(INSTALL_DEV_DIR)/, $(filter-out lib, $(VDIRS))); \
-		rm -rf $(INSTALL_DEV_DIR)/misc; \
-	else \
-		rm -rf $(INSTALL_DEV_DIR); \
-	fi
-
-uninstall-all:
-	$(MAKE) uninstall uninstall-dev
-
-# Formatting
+##### FORMAT #####
 
 MLSOURCE=$(foreach dir,$(MLDIRS),$(wildcard $(dir)/*.ml $(dir)/*.mli))
 MLFORMAT=$(filter-out common/uint63.ml common/uint63.mli, $(MLSOURCE))
@@ -186,7 +167,7 @@ format: $(MLFORMAT)
 	@echo OCAMLFORMAT $^
 	@$(OCAMLFORMAT) $^
 
-# Cleaning
+##### CLEAN #####
 
 clean-theories:
 	rm -f $(VBUILD)
@@ -203,26 +184,35 @@ clean-theories:
 
 clean:
 	rm -rf $(BUILD_DIR)
-	rm -f compcert.ini
-	rm -f .depend.extr
-	rm -f .depend
-	rm -f barocq
 	rm -f .lia.cache
+	rm -f .depend.extr .depend.lib .depend
+	rm -f compcert.ini
+	rm -f barocq
+
+cleanall:
+	$(MAKE) clean
+	rm -rf $(INSTALL_DEV_DIR)
+
+cleanall-nolib:
+	$(MAKE) clean
+	rm -rf $(addprefix $(INSTALL_DEV_DIR)/,$(VDIRS_NOLIB))
+	rm -rf $(INSTALL_DEV_DIR)/misc
 
 clean-lib:
 	$(MAKE) -f Makefile.lib clean
 
-cleanall:
-	$(MAKE) clean
-	$(MAKE) uninstall-all
+cleanall-lib:
+	$(MAKE) clean-lib
+	rm -rf $(INSTALL_DEV_DIR)/lib
+
+##### OTHERS #####
 
 FORCE:
 
 .PHONY:\
-	lib nolib builddir extrdep vbuild depend depend1\
-    vofiles extraction format theories FORCE\
-	install install-dev install-all\
-	uninstall uninstall-lib uninstall-dev uninstall-all\
-	clean clean_theories cleanall
+	nolib builddir extrdep depend1 depend theories lib \
+	install install-nolib install-lib install-comp \
+	format \
+	clean-theories clean cleanall cleanall-nolib clean-lib cleanall-lib
 
 -include .depend

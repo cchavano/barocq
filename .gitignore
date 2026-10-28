@@ -8,8 +8,7 @@ barocq
 compcert.ini
 dune-project
 .vscodeignore
-.depend
-.depend.extr
+.depend*
 *_old.*
 *_bak.*
 .lia.cache
