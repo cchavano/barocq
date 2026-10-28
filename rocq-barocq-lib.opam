@@ -1,19 +1,22 @@
 opam-version: "2.0"
-name: "rocq-barocq-lib"
-version: "0.6.1"
+version: "dev"
 synopsis: "Rocq library of the Barocq compiler"
 maintainer: "Clément Chavanon <clement.chavanon@inria.fr>"
 authors: "Clément Chavanon and Frédéric Besson"
 homepage: "https://github.com/cchavano/barocq"
-license: "GNU Lesser General Public License"
+license: "LGPL-3.0-only"
 bug-reports: "https://github.com/cchavano/barocq/issues"
 dev-repo: "git+https://github.com/cchavano/barocq.git"
 depends: [
-  "ocaml" {>= "4.14" & < "5~"}
   "coq" {>= "8.20.1" & < "9.2~"}
   "coq-vst-zlist" {= "2.13"}
   "compcert-brc" {= "3.17-brc1"}
 ]
 pin-depends: ["compcert-brc.3.17-brc1" "git+https://github.com/cchavano/CompCert-Brc#main"]
-build: [[make "lib"]]
+build: [make "lib"]
 install: [make "install-lib"]
+tags: [
+  "category:Computer Science/Data Types and Data Structures"
+  "keyword:Barocq"
+  "logpath:BarocqComp"
+]

@@ -1,11 +1,10 @@
 opam-version: "2.0"
-name: "rocq-barocq"
-version: "0.6.1"
+version: "dev"
 synopsis: "The Barocq compiler"
 maintainer: "Clément Chavanon <clement.chavanon@inria.fr>"
 authors: "Clément Chavanon and Frédéric Besson"
 homepage: "https://github.com/cchavano/barocq"
-license: "GNU Lesser General Public License"
+license: "LGPL-3.0-only"
 bug-reports: "https://github.com/cchavano/barocq/issues"
 dev-repo: "git+https://github.com/cchavano/barocq.git"
 depends: [
@@ -15,11 +14,8 @@ depends: [
   "coq-record-update" {= "0.3.6"}
   "coq-vst-zlist" {= "2.13"}
   "compcert-brc" {= "3.17-brc1"}
-  "rocq-barocq-lib" {= "0.6.1"}
+  "rocq-barocq-lib" {= "dev"}
 ]
-pin-depends: [
-  ["compcert-brc.3.17-brc1" "git+https://github.com/cchavano/CompCert-Brc#main"]
-  ["rocq-barocq-lib.0.6.1" "git+https://github.com/cchavano/barocq#main"]
-]
-build: [[make nolib]]
+pin-depends: ["compcert-brc.3.17-brc1" "git+https://github.com/cchavano/CompCert-Brc#main"]
+build: [make "nolib"]
 install: [make "install-nolib"]
