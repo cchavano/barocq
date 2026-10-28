@@ -15,8 +15,11 @@ depends: [
   "coq-record-update" {= "0.3.6"}
   "coq-vst-zlist" {= "2.13"}
   "compcert-brc" {= "3.17-brc1"}
+  "rocq-barocq-lib" {= "0.6.1"}
 ]
-conflicts: ["rocq-barocq-lib"]
-pin-depends: ["compcert-brc.3.17-brc1" "git+https://github.com/cchavano/CompCert-Brc#main"]
-build: [[make]]
-install: [make "install"]
+pin-depends: [
+  ["compcert-brc.3.17-brc1" "git+https://github.com/cchavano/CompCert-Brc#main"]
+  ["rocq-barocq-lib.0.6.1" "git+https://github.com/cchavano/barocq#main"]
+]
+build: [[make nolib]]
+install: [make "install-nolib"]
