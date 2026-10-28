@@ -9,6 +9,7 @@ bug-reports: "https://github.com/cchavano/barocq/issues"
 dev-repo: "git+https://github.com/cchavano/barocq.git"
 depends: [
   "coq" {>= "8.20.1" & < "9.2~"}
+  "coq-record-update" {= "0.3.6"}
   "coq-vst-zlist" {= "2.13"}
   "compcert-brc" {= "3.17-brc1"}
 ]
