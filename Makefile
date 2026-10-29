@@ -134,7 +134,7 @@ barocq: .depend.extr compcert.ini FORCE
 
 define INSTALL_ROUTINE
 	@echo INSTALL Rocq files to $(INSTALL_DEV_DIR)
-	@for d in $(1) lib; do \
+	@for d in $(1); do \
 		set -e; \
 		install -d $(INSTALL_DEV_DIR)/$$d; \
 		install -m 0644 $(BUILD_DIR)/$$d/*.v $(BUILD_DIR)/$$d/*.vo $(BUILD_DIR)/$$d/*.glob $(INSTALL_DEV_DIR)/$$d/; \
