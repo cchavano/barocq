@@ -16,6 +16,6 @@ depends: [
   "compcert-brc" {= "3.17-brc1"}
   "rocq-barocq-lib" {= "dev"}
 ]
-pin-depends: ["compcert-brc.3.17-brc1" "git+https://github.com/cchavano/CompCert-Brc#main"]
+pin-depends: ["compcert-brc.3.17-brc1" "git+https://github.com/cchavano/CompCert-Brc#barocq-v0.6"]
 build: [make "nolib"]
 install: [make "install-nolib"]
