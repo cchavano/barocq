@@ -8,12 +8,12 @@ license: "LGPL-3.0-only"
 bug-reports: "https://github.com/cchavano/barocq/issues"
 dev-repo: "git+https://github.com/cchavano/barocq.git"
 depends: [
-  "coq" {>= "8.20.1" & < "9.2~"}
+  "coq" {>= "8.20.1" & < "9.3~"}
   "coq-record-update" {= "0.3.6"}
   "coq-vst-zlist" {= "2.13"}
-  "compcert-brc" {= "3.17-brc1"}
+  "compcert-brc" {= "3.18-brc1"}
 ]
-pin-depends: ["compcert-brc.3.17-brc1" "git+https://github.com/cchavano/CompCert-Brc#barocq-v0.6"]
+pin-depends: ["compcert-brc.3.18-brc1" "git+https://github.com/cchavano/CompCert-Brc#main"]
 build: [make "lib"]
 install: [make "install-lib"]
 tags: [
