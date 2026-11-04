@@ -56,6 +56,7 @@ Separate Extraction
   AST.builtin_arg
   AST.builtin_res
   Memdata.size_chunk
+  Memdata.min_safe_alignment
   Values
   Csyntax.program
   Initializers.constval_cast

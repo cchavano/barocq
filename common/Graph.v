@@ -3,7 +3,7 @@
 From compcert Require Import Coqlib.
 From Stdlib Require Import Lia ZifyBool.
 From Stdlib Require Import FMapInterface ZArith Int.
-From Stdlib Require Import FMapAVL.
+From Stdlib Require FMapAVL.
 From Stdlib Require FSetAVL.
 From Stdlib Require Import List String.
 Import ListNotations.
@@ -312,7 +312,7 @@ From Stdlib Require FMapFacts.
 
 Module Map(O:OrderedType).
 
-  Module M := Make(O).
+  Module M := FMapAVL.Make(O).
   Module Facts := FMapFacts.Facts(M).
   Include M.
 
