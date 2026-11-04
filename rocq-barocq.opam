@@ -10,7 +10,7 @@ dev-repo: "git+https://github.com/cchavano/barocq.git"
 depends: [
   "ocaml" {>= "4.14" }
   "menhir" {>= "20200624" & != "20260122" & != "dev"}
-  "coq" {>= "8.20.1" & < "9.3~"}
+  "coq" {>= "9.0~" & < "9.3~"}
   "coq-record-update" {= "0.3.6"}
   "coq-vst-zlist" {= "2.13"}
   "compcert-brc" {= "3.18-brc1"}
