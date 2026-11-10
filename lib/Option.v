@@ -401,7 +401,7 @@ Lemma option_eq_dec (T: Type) (eq_dec : forall (x y: T), {x = y} + { x <> y})
                   (x y: option T) : {x = y} + {x <> y}.
 Proof.
   decide equality.
-Qed.
+Defined.
 
 (** * Reasoning over monadic computations *)
 

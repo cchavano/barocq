@@ -17,7 +17,7 @@ Ltac vc :=
   | |- @check_value  _ _ _ _ => reflexivity
   | |-
       let ge := genv_has_property ?ABS ?ENV ?L in
-      let v  := eval_fun ?A ?ABS ?TE ge ?P ?R
+      let v  := eval_fun ?ABS ?TE ge ?P ?R
                   (Syntax.fn_body ?F) in
       eq_value ?ABS (VAL ?TY ?G) ?DTYP v
     => let L1 := (eval unfold L in L) in
