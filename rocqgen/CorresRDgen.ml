@@ -87,7 +87,7 @@ module Deeptypes = struct
                fields)
         in
         sprintf
-          "%s\n%sDefinition %s : typ := TRecord %s fields_of_%s."
+          "%s\n%sDefinition %s : typ := TRecord (Some %s) fields_of_%s."
           fields
           indent
           (ident_to_string tname)
