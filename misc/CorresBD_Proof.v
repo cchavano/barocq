@@ -73,7 +73,7 @@ Proof.
     }
     - (* discharge all the proof obligations *)
       apply (Forall_app_sound _ vc).
-      all: time vc.
+      all: time (abstract vc).
     - apply wf_env_empty.
   }
   apply eval_prog_has_property with (gds:= prog_defs) (te:= typing_env); auto.
