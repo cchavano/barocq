@@ -1,5 +1,5 @@
 opam-version: "2.0"
-version: "0.7.0"
+version: "0.7.1"
 synopsis: "The Barocq compiler"
 maintainer: "Clément Chavanon <clement.chavanon@inria.fr>"
 authors: "Clément Chavanon and Frédéric Besson"
@@ -14,7 +14,7 @@ depends: [
   "coq-record-update" {= "0.3.6"}
   "coq-vst-zlist" {= "2.13"}
   "compcert-brc" {= "3.18-brc1"}
-  "rocq-barocq-lib" {= "dev"}
+  "rocq-barocq-lib" {= "0.7.1"}
 ]
 pin-depends: ["compcert-brc.3.18-brc1" "git+https://github.com/cchavano/CompCert-Brc#barocq-v0.7"]
 build: [make "nolib"]
