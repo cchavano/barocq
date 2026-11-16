@@ -17,7 +17,7 @@ Ltac vc :=
   | |- @check_value  _ _ _ _ => reflexivity
   | |-
       let ge := genv_has_property ?ABS ?ENV ?L in
-      let v  := eval_fun ?A ?ABS ?TE ge ?P ?R
+      let v  := eval_fun ?ABS ?TE ge ?P ?R
                   (Syntax.fn_body ?F) in
       eq_value ?ABS (VAL ?TY ?G) ?DTYP v
     => let L1 := (eval unfold L in L) in
@@ -73,7 +73,7 @@ Proof.
     }
     - (* discharge all the proof obligations *)
       apply (Forall_app_sound _ vc).
-      all: time vc.
+      all: time (abstract vc).
     - apply wf_env_empty.
   }
   apply eval_prog_has_property with (gds:= prog_defs) (te:= typing_env); auto.
